@@ -183,12 +183,9 @@ If you are unsure whether an idea fits the project, please open an issue first t
 ## Community and support
 
 - **Discord** — best for questions, setup help, and chatting with other users: https://discord.gg/DGC6AzWrnt
-- **WeChat group** — scan the QR code below to join.
 - **QQ group** — 318412485.
 - **GitHub Issues** — best for bugs, installation problems, model-integration problems, and feature requests.
 - **Email** — best for private or sensitive topics: z@proofhound.org
-
-<p align="center"><img src="docs/assets/wechat-group-qr.png" alt="ProofHound WeChat group QR code" width="280" /></p>
 
 ## License
 
