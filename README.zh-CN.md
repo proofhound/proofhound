@@ -111,7 +111,6 @@ flowchart TD
     WORK --> PROV[(你的模型供应商)]
     SRV --> PG[(PostgreSQL · Drizzle)]
     SRV --> REDIS[(Redis · 限流 + 队列)]
-    SRV --> OBJ[(对象存储<br/>数据集 · 导出)]
     WORK --> PG
     WORK --> REDIS
 ```
@@ -123,7 +122,6 @@ flowchart TD
 | 数据库 | PostgreSQL + Drizzle ORM（`ph_*` schema），不依赖专有 SQL 扩展 |
 | 编排 | DBOS + BullMQ + Node.js LLM worker |
 | 限流 | Redis 集中限流（RPM / TPM / 并发） |
-| 存储 | 可替换的 `StorageProvider`（数据集与导出） |
 | 日志 | Pino，stdout JSON；每次 LLM 调用在写入运行结果前都记录完整入参与响应 |
 
 ## 模型与供应商

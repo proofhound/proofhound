@@ -112,7 +112,6 @@ flowchart TD
     WORK --> PROV[(Your model providers)]
     SRV --> PG[(PostgreSQL · Drizzle)]
     SRV --> REDIS[(Redis · limits + queues)]
-    SRV --> OBJ[(Object storage<br/>datasets · exports)]
     WORK --> PG
     WORK --> REDIS
 ```
@@ -124,7 +123,6 @@ flowchart TD
 | Database | PostgreSQL + Drizzle ORM (`ph_*` schema), no proprietary SQL extensions |
 | Orchestration | DBOS + BullMQ + Node.js LLM worker |
 | Rate limiting | Centralized in Redis (RPM / TPM / concurrency) |
-| Storage | Pluggable `StorageProvider` for datasets and exports |
 | Logging | Pino, stdout JSON; every LLM call is logged with full input and response before run results are written |
 
 ## Models and providers
