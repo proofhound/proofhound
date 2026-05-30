@@ -147,7 +147,7 @@ Built-in provider types: OpenAI · Azure OpenAI · Anthropic · DeepSeek · Kimi
 
 **Self-hosted, low lock-in.** PostgreSQL for storage, Redis for centralized rate limits, stdout JSON for logs — and your own models, credentials, providers, and usage costs.
 
-## Roadmap
+## In development
 
 - **Generative-task optimization** — evaluation, comparison, and optimization strategies beyond the current classification-first workflow.
 - **ProofHound Cloud** — a hosted edition to cut deployment and operations work. _Coming soon._
