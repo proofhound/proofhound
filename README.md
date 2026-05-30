@@ -58,20 +58,31 @@ It is built for developers first: clone, `pnpm dev`, connect a model, and start 
 
 ProofHound runs one lifecycle, and every stage writes to the same fact tables — so a model invocation stays traceable from a dataset sample all the way to production behavior and back. Follow it in order:
 
+<p align="center"><img src="docs/assets/screenshots/dashboard-en.png" alt="ProofHound dashboard" width="100%" /></p>
+
+**Prompt versions** — every edit creates an immutable version with its variables, output fields, and judgment rules; once an experiment, optimization, or release references it, the version is frozen, so every result maps back to the exact prompt used.
+
+**Dataset regression** — run a version against a dataset of expected outputs and get accuracy, precision, recall, F1, per-class metrics, failed samples, and full invocation details — not an aggregate score that hides minority-class behavior.
+
+**Experiments** — batch prompt version × dataset × model, then stop, resume, compare across runs, and export; every run is reproducible because the version it used is frozen.
+
+<p align="center"><img src="docs/assets/screenshots/experiments-en.png" alt="Experiments" width="100%" /></p>
+
+**Automatic optimization** — analyze failed samples, generate new candidate versions, and re-run regression round by round, targeting class-level goals (e.g. lift recall on a high-risk class) and falling back to the best version when a round regresses.
+
+<p align="center"><img src="docs/assets/screenshots/optimization-en.png" alt="Automatic optimization" width="100%" /></p>
+
+**Canary & production releases** — promote a proven version through queue-connector canaries with traffic split and dual-run, then 100% promotion, config updates, rollback, and forced stop; webhook ingress can go straight to production.
+
 <!--
-  SCREENSHOT — Product overview (the single hero of this section)
-  Capture: the most representative screen — e.g. an experiment with its metrics, or a run-result trace.
-  Save to: docs/assets/screenshots/overview.png
-  Then replace this comment with:
-  <p align="center"><img src="docs/assets/screenshots/overview.png" alt="ProofHound overview" width="100%" /></p>
+  SCREENSHOT — Canary / production release (English UI) pending.
+  The current local instance had no release lane configured, so an English release screenshot
+  could not be captured. Configure a release lane, capture the release topology view to
+  docs/assets/screenshots/release-en.png, then add:
+  <p align="center"><img src="docs/assets/screenshots/release-en.png" alt="Canary and production releases" width="100%" /></p>
 -->
 
-- **Prompt versions** — every edit creates an immutable version with its variables, output fields, and judgment rules; once an experiment, optimization, or release references it, the version is frozen, so every result maps back to the exact prompt used.
-- **Dataset regression** — run a version against a dataset of expected outputs and get accuracy, precision, recall, F1, per-class metrics, failed samples, and full invocation details — not an aggregate score that hides minority-class behavior.
-- **Experiments** — batch prompt version × dataset × model, then stop, resume, compare across runs, and export; every run is reproducible because the version it used is frozen.
-- **Automatic optimization** — analyze failed samples, generate new candidate versions, and re-run regression round by round, targeting class-level goals (e.g. lift recall on a high-risk class) and falling back to the best version when a round regresses.
-- **Canary & production releases** — promote a proven version through queue-connector canaries with traffic split and dual-run, then 100% promotion, config updates, rollback, and forced stop; webhook ingress can go straight to production.
-- **Run results** — every stage above writes one immutable record per call: input variables, rendered prompt, raw output, structured output, judgment, latency, tokens, and cost. Human annotations go to a separate table, never mutating the original.
+**Run results** — every stage above writes one immutable record per call: input variables, rendered prompt, raw output, structured output, judgment, latency, tokens, and cost. Human annotations go to a separate table, never mutating the original.
 
 ## Get started
 
