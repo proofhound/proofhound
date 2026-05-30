@@ -5,7 +5,9 @@
 <h1 align="center">ProofHound</h1>
 
 <p align="center">
-  面向 self-hosted 场景的 Prompt 全生命周期平台：提示词版本、数据集回归、实验、自动优化、灰度发布、正式发布、运行结果、人工标注与回滚。
+  <b>让提示词工程大幅省力的自托管平台</b><br/>
+  覆盖完整生命周期，内置数据驱动的自动优化。<br/>
+  版本、回归测试、实验、优化、发布、回滚——数据与模型都在你自己手里。
 </p>
 
 <p align="center">
@@ -14,6 +16,14 @@
 </p>
 
 <p align="center">
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#工作原理">工作原理</a> ·
+  <a href="https://discord.gg/DGC6AzWrnt">Discord</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/proofhound/proofhound"><img alt="GitHub stars" src="https://img.shields.io/github/stars/proofhound/proofhound?style=flat&logo=github&label=Stars" /></a>
+  <a href="https://discord.gg/DGC6AzWrnt"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" /></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
   <img alt="Node.js 24.x" src="https://img.shields.io/badge/Node.js-24.x-339933?logo=nodedotjs&logoColor=white" />
   <img alt="pnpm 10.x" src="https://img.shields.io/badge/pnpm-10.x-F69220?logo=pnpm&logoColor=white" />
@@ -22,148 +32,188 @@
   <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-ready-0F766E" />
 </p>
 
-ProofHound 覆盖提示词版本、数据集回归、实验、自动优化、灰度发布、正式发布、运行结果、人工标注与回滚。
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/8290f7f3-0fc8-4464-87b1-d351b3d54fb5" controls muted playsinline width="100%" title="ProofHound 快速开始演示"></video>
+</p>
 
-它的目标很直接：把过去需要工程师反复写脚本、接实验、看样本、改 Prompt、再接上线流程的工作，收敛到一个可追溯、可回归、可灰度、可回滚的平台里。接入完成后，新的 Prompt 版本可以在平台内完成实验、优化和发布，减少反复开发和人工巡检成本。
+ProofHound 把提示词工程变成一条数据驱动、可追溯的工作流。不必再东拼西凑脚本、临时实验、表格和手写的上线逻辑——数据集回归、实验、自动优化、灰度与正式发布、不可变的运行结果与回滚，整条闭环都在一个地方完成，自托管在你自己掌控的基础设施上。
 
-当前开源版聚焦单工作区本地管理端，适合团队自托管部署；数据层保留 `project_id` 边界，便于未来接入外部控制面。
+它首先为开发者而建：clone、`pnpm dev`、接上一个模型，几分钟就能开始做实验。而因为整套调优流程围绕数据集、指标和提示词版本被产品化，非技术成员也能定义目标、启动优化、推进发布。开源版以单工作区的本地管理端形态运行，并保留 `project_id` 数据边界，便于未来接入外部控制面而不改动核心资源语义。
 
-## 快速预览
+## 能力清单
 
-<video src="https://github.com/user-attachments/assets/e10a278c-1b86-4eb8-b0c8-1bd5e5d2a72f" controls muted playsinline width="100%" title="ProofHound 快速开始演示"></video>
+- **提示词版本** —— 不可变版本、可移动标签、变量清单、输出字段、判定规则与版本 diff
+- **数据集回归** —— 支持 CSV / TSV / JSONL / JSON 数组 / ZIP 上传，字段角色映射，样本浏览、过滤与导出
+- **实验** —— 提示词版本 × 数据集 × 模型 的批量回归，支持停止、恢复、对比与导出
+- **自动优化** —— 分析失败样本与目标指标，生成候选版本，逐轮重跑
+- **灰度与正式发布** —— 统一发布线路，支持切流、双跑、晋升、配置变更与回滚
+- **运行结果** —— 实验、优化、灰度与正式发布的每一次 LLM 调用都写入同一份不可变记录
+- **人工标注** —— 写入独立表，绝不修改原始运行结果
+- **连接器** —— 把提示词接到队列连接器与 webhook 入站，承接线上流量
+- **MCP 通道** —— 内置，Agent 可管理提示词版本、启动实验 / 优化、查询结果
+- **自带模型** —— OpenAI、Azure OpenAI、Anthropic、DeepSeek 等，用你自己的 Key 与定价
 
-## 解决了什么问题
+## 功能导览
 
-### 数据驱动的自动迭代
+ProofHound 跑的是同一条生命周期，每个阶段都写入同一套事实表——所以一次模型调用从数据集样本一路到线上表现都可追溯，并能反查回来。按顺序往下看：
 
-ProofHound 以数据集和运行结果为事实来源。你可以上传带期望输出的数据集，创建实验，得到 Accuracy、Precision、Recall、F1、分类维度指标、失败样本和完整调用明细。
+<!--
+  截图 —— 产品总览（本节唯一主视觉）
+  拍：最有代表性的界面，例如带指标的实验、或一条运行结果追溯。
+  存到：docs/assets/screenshots/overview.png
+  然后把本注释替换为：
+  <p align="center"><img src="docs/assets/screenshots/overview.png" alt="ProofHound overview" width="100%" /></p>
+-->
 
-在此基础上，优化任务会自动分析错误样本、归纳失败模式、生成新的提示词版本，并再次运行回归实验。系统会比较每一轮指标，识别退步样本，必要时回退到历史最佳版本继续优化，让 Prompt 改动不再依赖“肉眼逐条看、凭感觉改”。
+- **提示词版本** —— 每次修改都生成一个不可变版本，连同变量、输出字段与判定规则；一旦被实验、优化或发布引用即被冻结，因此每个结果都能对应到当时确切的提示词内容。
+- **数据集回归** —— 用一个版本跑带期望输出的数据集，得到 Accuracy、Precision、Recall、F1、分类维度指标、失败样本与完整调用明细——而不是一个会掩盖少数类表现的整体分数。
+- **实验** —— 批量跑 提示词版本 × 数据集 × 模型，可停止、恢复、跨轮对比并导出；因为所用版本已冻结，每次运行都可复现。
+- **自动优化** —— 分析失败样本、生成新的候选版本、逐轮重跑回归，可针对类别级目标（例如提升某高风险类别的 Recall），并在某轮退步时回退到历史最佳版本。
+- **灰度与正式发布** —— 把验证过的版本通过队列连接器做灰度发布，支持切流与双跑，再到 100% 晋升、配置变更、回滚与强制停止；webhook 入站可直接进入正式环境。
+- **运行结果** —— 以上每个阶段的每次调用都写入一条不可变记录：输入变量、渲染后的提示词、原始输出、结构化输出、判定、耗时、Token 与成本。人工标注写入独立表，绝不修改原记录。
 
-### 降低门槛，提高效率
+## 快速开始
 
-ProofHound 把 Prompt 调优过程产品化，让运营、业务、风控、金融分析等非技术角色也能参与到调优流程中。
-
-用户不需要手写复杂 JSON 来定义数据结构。平台会围绕数据集字段、提示词变量、输出字段和判定规则提供配置化流程，并基于真实数据集完成实验、优化和验证。一次接入后，后续 Prompt 上线可以通过平台完成，而不是每次都重新排开发。
-
-### 实验与线上管理
-
-很多团队的 Prompt 工作流割裂在两个地方：脚本或表格里的实验，线上靠业务代码和日志追效果。ProofHound 把实验和线上发布放到同一套事实表里。
-
-实验、优化、灰度候选和 production lane 产生的调用都会写入统一的运行结果。你可以从同一个入口追溯一次模型调用的输入变量、渲染后的 Prompt、模型原始输出、结构化输出、判定结果、耗时、Token 和成本。
-
-### 清晰的提示词版本管理
-
-提示词每次修改都会形成版本。被实验、优化、灰度或正式发布引用后，版本会被冻结，确保指标和线上表现永远能对应到当时的 Prompt 内容。
-
-发布侧支持队列连接器的灰度切流、双跑观察、100% 晋升、回滚和强制停止；Webhook 入口支持直接进入 production。上线链路清晰可追溯，可灰度、可切流、可回滚。
-
-### 选择你自己的大模型
-
-ProofHound 不做大模型转卖，也不在模型调用上增加使用溢价。你可以配置自己的模型供应商、endpoint、API Key、价格、上下文窗口、图片能力、RPM / TPM / 并发上限。
-
-当前模型配置支持 OpenAI、Azure OpenAI、Anthropic、DeepSeek、Kimi、MiniMax、Qwen、ERNIE 等供应商类型，并保留开放字符串以便扩展更多兼容接口。
-
-## 核心能力
-
-- 资产管理：模型、数据集、提示词、连接器集中管理。
-- 数据集回归：支持 CSV / TSV / JSONL / JSON 数组 / ZIP 上传，字段角色映射，样本浏览、过滤和导出。
-- 提示词版本：不可变版本、可移动 label、变量清单、输出字段、判定规则、版本 diff。
-- 实验：Prompt 版本 × 数据集 × 模型的批量回归测试，支持停止、恢复、对比和结果导出。
-- 自动优化：基于错误样本分析和目标指标，自动生成候选版本并逐轮实验。
-- 灰度与正式发布：统一发布线路，支持 split、dual_run、晋升、配置变更、回滚。
-- 运行结果：统一记录实验、优化、灰度和 production 的 LLM 调用事实，写入后不可变。
-- 标注：人工标注写入独立表，不修改原始运行结果。
-- MCP 支持：内置 MCP 调用通道，Agent 可以通过 tool 形式访问本地工作区能力，例如管理提示词版本、启动实验 / 优化、查询运行结果。
-- 调用通道：Web UI、Webhook + API Token、MCP + 全局 MCP Token。
-
-## 和同类工具相比
-
-### 更低的 Prompt 工程使用成本
-
-ProofHound 的核心假设是：数据事实应该是 Prompt 迭代的唯一依据。平台把样本、判定、指标、失败模式和版本演化串起来，尽量减少手写脚本、手写复杂结构定义、手工比对结果的工作。
-
-对于团队来说，这意味着 Prompt 调优不必只由少数工程师掌握。非技术成员也可以基于数据集事实提出目标、启动优化、查看结果和推进发布。
-
-### 更适合分类任务和样本不均衡场景
-
-开源版当前优先服务分类任务，尤其适合风控、金融、审核、客服意图识别等类别不均衡明显的业务。
-
-优化目标可以设置到具体类别维度，例如针对某个高风险类别提升 Recall，或针对某个误报严重类别控制 Precision。平台会在实验和优化中保留 per-class 指标，避免整体准确率掩盖少数类别的真实问题。
-
-### 从实验到生产是一条完整链路
-
-ProofHound 不是只做 Prompt 版本库，也不是只做评测。它把数据集、实验、优化、发布和运行结果放在同一条生命周期里。
-
-一个版本为什么上线、上线前跑过哪些实验、灰度时接了多少流量、线上产出了哪些结果、后来为什么回滚，都可以从平台内追溯。
-
-### 自托管，少绑定
-
-开源版面向 self-hosted 场景，数据库使用 PostgreSQL，限流使用 Redis，日志输出 stdout JSON。模型由你自己配置，调用成本、凭证和供应商选择都掌握在自己手里。
-
-## 即将上线
-
-- ProofHound Cloud Service：托管版服务即将上线，降低部署和运维成本。
-- 生成式问题优化：在当前分类任务优化之外，扩展面向生成式任务的评估、比较和优化策略。
-
-## 本地开发
-
-本地开发需要：
+你需要：
 
 - Node.js 24
 - pnpm
-- Docker 和 Docker Compose
-- PostgreSQL、Redis 等本地依赖服务由 Docker Compose 自动启动，无需手动安装
+- Docker 与 Docker Compose
+
+PostgreSQL、Redis 等本地依赖服务由 Docker Compose 自动启动，无需手动安装。
 
 ```bash
-git clone <your-proofhound-repo-url>
+git clone https://github.com/proofhound/proofhound.git
 cd proofhound
 pnpm install
 cp .env.example .env
 pnpm dev
 ```
 
-`pnpm dev` 会一键启动本地依赖服务、执行数据库迁移，并同时启动 server、webhook、worker 和 web。
+`pnpm dev` 会启动本地依赖服务、执行数据库迁移，并同时拉起 server、webhook、worker 和 web。
+
+首次运行前，在 `.env` 里设置两个由应用自管的密钥（缺失会导致启动或调用模型失败）：
+
+- `MODEL_API_KEY_ENCRYPTION_KEY` —— 加密你存储的模型 API Key
+- `MCP_TOKEN_SIGNING_SECRET` —— 为 MCP Token 签名
+
+`DATABASE_URL` 与 `REDIS_URL` 已指向 Docker Compose 启动的服务。
 
 默认本地服务：
 
-- Web UI：http://localhost:3000
-- Server API：http://localhost:4000
-- PostgreSQL：localhost:5432
-- Redis：localhost:6379
-- Kafka：localhost:9092
+| 服务 | 地址 |
+| --- | --- |
+| 本地管理端 | http://localhost:3000 |
+| 服务端 API | http://localhost:4000 |
+| PostgreSQL | localhost:5432 |
+| Redis | localhost:6379 |
+| Kafka | localhost:9092 |
+| Redpanda Console | http://localhost:8088 |
+| RedisInsight | http://localhost:5540 |
 
-可选检查命令：
+<!--
+  截图 —— 本地跑起来的样子
+  拍：执行 `pnpm dev` 后的 ProofHound 首页 / 管理端，让读者看到刚启动的东西长什么样。
+  存到：docs/assets/screenshots/home.png
+  然后把本注释替换为：
+  <p align="center"><img src="docs/assets/screenshots/home.png" alt="ProofHound running locally" width="100%" /></p>
+-->
+
+随时可跑完整检查：
 
 ```bash
 pnpm ci
 ```
 
-## 代码结构
+## 工作原理
+
+ProofHound 是一个按模块边界拆分的 TypeScript 单体，配一个负责 LLM 调用的 Node.js worker。三个入口驱动它——本地管理端、给 Agent 与自动化用的 HTTP API + MCP 通道、以及按连接器划分的 webhook 入站——它们共享同一套编排与存储。
+
+```mermaid
+flowchart TD
+    WEB[本地管理端 · apps/web]
+    AGENT[Agent 与自动化<br/>HTTP API · MCP]
+    HOOK[Webhook 入站 · apps/webhook]
+    WEB --> SRV
+    AGENT --> SRV[服务端 · NestJS · apps/server]
+    HOOK --> SRV
+    SRV --> ORCH[编排<br/>DBOS + BullMQ]
+    ORCH --> WORK[LLM worker · apps/worker]
+    WORK --> PROV[(你的模型供应商)]
+    SRV --> PG[(PostgreSQL · Drizzle)]
+    SRV --> REDIS[(Redis · 限流 + 队列)]
+    SRV --> OBJ[(对象存储<br/>数据集 · 导出)]
+    WORK --> PG
+    WORK --> REDIS
+```
+
+| 层 | 选型 |
+| --- | --- |
+| 前端 | Next.js + TypeScript + Refine + shadcn/ui + Tailwind |
+| 后端 | NestJS 单体，按模块边界拆分 |
+| 数据库 | PostgreSQL + Drizzle ORM（`ph_*` schema），不依赖专有 SQL 扩展 |
+| 编排 | DBOS + BullMQ + Node.js LLM worker |
+| 限流 | Redis 集中限流（RPM / TPM / 并发） |
+| 存储 | 可替换的 `StorageProvider`（数据集与导出） |
+| 日志 | Pino，stdout JSON；每次 LLM 调用在写入运行结果前都记录完整入参与响应 |
+
+## 模型与供应商
+
+ProofHound 不转卖模型调用，也不在用量上加价。你配置自己的供应商、endpoint、Key 与成本——花费只发生在你和你的供应商之间。
+
+| 你来配置 | 内置供应商类型 |
+| --- | --- |
+| endpoint、API Key、定价、上下文窗口、图片能力，以及 RPM / TPM / 并发上限 | OpenAI · Azure OpenAI · Anthropic · DeepSeek · Kimi · MiniMax · Qwen · ERNIE —— 以及任何通过开放字符串接入的 OpenAI 兼容 endpoint |
+
+## ProofHound 的不同之处
+
+**靠数据事实，而非直觉。** ProofHound 把样本、判定、指标、失败模式与版本演化串成一条闭环。团队少花时间写脚本、临时定义结构、手工比对结果——提示词调优也不再只由少数工程师掌握。
+
+**为分类与不均衡数据而建。** 开源版优先服务分类任务，尤其是风控、金融、审核、客服意图识别等类别不均衡明显的场景。per-class 指标贯穿始终，整体准确率绝不掩盖少数类的真实表现。
+
+**从实验到生产的完整链路。** ProofHound 不只是提示词版本库，也不只是评测工具。数据集、实验、优化、发布与运行结果在同一条生命周期里——你能追溯一个版本为何上线、上线前跑过什么、灰度与正式环境表现如何、以及后来为何回滚。
+
+**自托管，少绑定。** 存储用 PostgreSQL、集中限流用 Redis、日志走 stdout JSON——模型、凭证、供应商与用量成本都掌握在你自己手里。
+
+## 路线图
+
+- **生成式任务优化** —— 在当前以分类为先的流程之外，扩展面向生成式任务的评估、比较与优化策略。
+- **ProofHound Cloud** —— 托管版，降低部署与运维成本。_即将上线。_
+
+## 项目结构
 
 ```text
 proofhound/
-├── apps/        server / webhook / worker / web
-├── packages/    shared / db / api-client / providers / logger / limiter / llm-client / connector-client / ui
-├── dev/         本地开发依赖服务 docker-compose
-└── datasets/    示例与本地数据集
+├── apps/
+│   ├── server     # NestJS API、MCP 通道、SSE
+│   ├── webhook    # 连接器 webhook 入站
+│   ├── worker     # BullMQ LLM worker
+│   └── web        # Next.js 本地管理端
+├── packages/      # shared, db, crypto, providers, llm-client, judgment,
+│                  # optimization-strategy, limiter, metrics, logger,
+│                  # orchestration-shared, connector-client, api-client, ui
+├── dev/           # 本地依赖服务的 docker-compose
+├── docs/specs/    # 业务 SPEC —— 事实来源
+└── datasets/      # 示例与本地数据集
 ```
 
-## 欢迎贡献
+## 参与贡献
 
-ProofHound 正在早期建设中，非常欢迎社区一起参与。你可以通过以下方式贡献：
+ProofHound 还很早期，非常欢迎社区参与。你可以：
 
-- 提交 Issue：反馈 Bug、安装问题、模型接入问题或真实业务场景。
-- 提交 Pull Request：改进文档、修复问题、补充测试、优化交互体验。
-- 扩展能力：新增模型供应商适配、连接器、数据集解析能力、实验指标或优化策略。
-- 分享场景：尤其欢迎分类任务、样本不均衡、风控、金融、审核、客服意图识别等场景的使用反馈。
+- 提 **Issue**：反馈 Bug、安装问题、模型接入问题或真实工作流反馈。
+- 提 **Pull Request**：改进文档、修复问题、补充测试或优化交互体验。
+- **扩展能力**：新增模型供应商、连接器、数据集解析、实验指标或优化策略。
+- **分享场景**：尤其欢迎分类、不均衡数据集、风控、金融、审核、客服意图识别等场景。
 
-如果你不确定某个想法是否适合合并，建议先开 Issue 讨论背景和预期效果。
+如果不确定某个想法是否契合项目，建议先开 Issue 讨论背景与预期行为。
 
-## 社区
+## 社区与支持
 
-欢迎加入 Discord 社区：https://discord.gg/DGC6AzWrnt
+- **Discord** —— 最适合提问、求助安装、与其他用户交流：https://discord.gg/DGC6AzWrnt
+- **GitHub Issues** —— 最适合 Bug、安装问题、模型接入问题与功能请求。
+- **邮箱** —— 最适合私密或敏感话题：z@proofhound.org
 
-联系邮箱：z@proofhound.org
+## 许可证
 
-你也可以通过 Issue 讨论使用场景、反馈问题或提出功能建议。
+ProofHound 基于 [Apache License 2.0](LICENSE) 开源。
