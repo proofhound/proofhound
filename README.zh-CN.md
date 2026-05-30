@@ -182,8 +182,12 @@ ProofHound 还很早期，非常欢迎社区参与。你可以：
 ## 社区与支持
 
 - **Discord** —— 最适合提问、求助安装、与其他用户交流：https://discord.gg/DGC6AzWrnt
+- **微信群** —— 扫描下方二维码加入。
+- **QQ 群** —— 318412485。
 - **GitHub Issues** —— 最适合 Bug、安装问题、模型接入问题与功能请求。
 - **邮箱** —— 最适合私密或敏感话题：z@proofhound.org
+
+<p align="center"><img src="docs/assets/wechat-group-qr.png" alt="ProofHound 微信群二维码" width="280" /></p>
 
 ## 许可证
 
