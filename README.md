@@ -108,6 +108,25 @@ ProofHound reads the repo-root `.env` (used by server, webhook, worker, and the 
 
 More advanced / optional variables (deploy metadata, DB reset & seeding, tests, the `pnpm probe:model` script, connector demos) are documented inline in [`.env.example`](.env.example).
 
+## Walkthrough
+
+Once ProofHound is running, the manual end-to-end flow from a fresh dataset to a production release is:
+
+1. **Add a model** — register a provider/model with your endpoint, API key, pricing, and RPM / TPM / concurrency limits (start from a [quick preset](#models-and-providers)).
+2. **Upload a dataset** — a CSV / TSV / JSONL / JSON / ZIP file, and map the field roles (input text/image, the expected output, metadata).
+3. **Write a prompt** — create a prompt and its first version: the template, variables, output fields, and judgment rules.
+4. **Run an experiment** — pick a prompt version × dataset × model and run the batch regression; read accuracy / precision / recall / F1, per-class metrics, failed samples, and the full run results.
+5. **Inspect and iterate** — review the failed samples, edit the prompt into a new version, and re-run the experiment; repeat until the metrics hit your goal. (Each referenced version is frozen, so every comparison maps back to exact prompt content.)
+6. **Release** — bind the winning version to an upstream connector and ship it: a queue connector goes through a canary (traffic split + dual-run) → 100% → production, with rollback and forced stop available; a webhook's first release goes straight to production.
+
+Run results are written for every call along the way, and you can layer human annotations on top without mutating them.
+
+### Skip the manual loop with optimization
+
+Instead of doing step 5 by hand — reading failures, editing the prompt, and re-running round after round — create an **optimization** task: set a goal (e.g. a target accuracy, or recall on a specific class) and a round budget, and it automatically analyzes failed samples, generates new candidate versions, re-runs the regression each round, and keeps the best version.
+
+So with optimization you can **skip step 5** (it automates the loop), and via **Quick start** even **step 3** — the analysis model generates the first prompt version for you. You still do steps 1–2 (a model and a dataset; optimization also uses an analysis model) and step 6 (the release stays your call).
+
 ## How it works
 
 ProofHound is a TypeScript monolith split by module boundaries, with a Node.js worker for LLM calls. Three surfaces drive it — the Web UI, an HTTP API + MCP channel for agents and automation, and per-connector webhook ingress for online traffic — and they all share the same orchestration and storage.
