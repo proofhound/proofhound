@@ -42,40 +42,18 @@ ProofHound 把提示词工程变成一条数据驱动、可追溯的工作流。
 
 ## 能力清单
 
-- **提示词版本** —— 不可变版本、可移动标签、变量清单、输出字段、判定规则与版本 diff
-- **数据集回归** —— 支持 CSV / TSV / JSONL / JSON 数组 / ZIP 上传，字段角色映射，样本浏览、过滤与导出
-- **实验** —— 提示词版本 × 数据集 × 模型 的批量回归，支持停止、恢复、对比与导出
-- **自动优化** —— 分析失败样本与目标指标，生成候选版本，逐轮重跑
-- **灰度与正式发布** —— 统一发布线路，支持切流、双跑、晋升、配置变更与回滚
-- **运行结果** —— 实验、优化、灰度与正式发布的每一次 LLM 调用都写入同一份不可变记录
-- **人工标注** —— 写入独立表，绝不修改原始运行结果
-- **连接器** —— 把提示词接到队列连接器与 webhook 入站，承接线上流量
-- **MCP 通道** —— 内置，Agent 可管理提示词版本、启动实验 / 优化、查询结果
-- **自带模型** —— OpenAI、Azure OpenAI、Anthropic、DeepSeek 等，用你自己的 Key 与定价
+ProofHound 跑的是同一条生命周期，每个阶段都写入同一套事实表——所以一次模型调用从数据集样本一路到线上表现都可追溯，并能反查回来：
 
-## 功能导览
-
-ProofHound 跑的是同一条生命周期，每个阶段都写入同一套事实表——所以一次模型调用从数据集样本一路到线上表现都可追溯，并能反查回来。按顺序往下看：
-
-<p align="center"><img src="docs/assets/screenshots/dashboard-zh.png" alt="ProofHound 看板" width="100%" /></p>
-
-**提示词版本** —— 每次修改都生成一个不可变版本，连同变量、输出字段与判定规则；一旦被实验、优化或发布引用即被冻结，因此每个结果都能对应到当时确切的提示词内容。
-
-**数据集回归** —— 用一个版本跑带期望输出的数据集，得到 Accuracy、Precision、Recall、F1、分类维度指标、失败样本与完整调用明细——而不是一个会掩盖少数类表现的整体分数。
-
-**实验** —— 批量跑 提示词版本 × 数据集 × 模型，可停止、恢复、跨轮对比并导出；因为所用版本已冻结，每次运行都可复现。
-
-<p align="center"><img src="docs/assets/screenshots/experiments-zh.png" alt="实验" width="100%" /></p>
-
-**自动优化** —— 分析失败样本、生成新的候选版本、逐轮重跑回归，可针对类别级目标（例如提升某高风险类别的 Recall），并在某轮退步时回退到历史最佳版本。
-
-<p align="center"><img src="docs/assets/screenshots/optimization-zh.png" alt="自动优化" width="100%" /></p>
-
-**灰度与正式发布** —— 把验证过的版本通过队列连接器做灰度发布，支持切流与双跑，再到 100% 晋升、配置变更、回滚与强制停止；webhook 入站可直接进入正式环境。
-
-<p align="center"><img src="docs/assets/screenshots/release-zh.png" alt="灰度与正式发布" width="100%" /></p>
-
-**运行结果** —— 以上每个阶段的每次调用都写入一条不可变记录：输入变量、渲染后的提示词、原始输出、结构化输出、判定、耗时、Token 与成本。人工标注写入独立表，绝不修改原记录。
+- **提示词版本** —— 每次修改都生成一个不可变版本，连同变量、输出字段与判定规则；一旦被实验、优化或发布引用即被冻结，因此每个结果都能对应到当时确切的提示词内容。
+- **数据集回归** —— 用一个版本跑带期望输出的数据集（CSV / TSV / JSONL / JSON 数组 / ZIP），得到 Accuracy、Precision、Recall、F1、分类维度指标、失败样本与完整调用明细——而不是一个会掩盖少数类表现的整体分数。
+- **实验** —— 批量跑 提示词版本 × 数据集 × 模型，可停止、恢复、跨轮对比并导出；因为所用版本已冻结，每次运行都可复现。
+- **自动优化** —— 分析失败样本、生成新的候选版本、逐轮重跑回归，可针对类别级目标（例如提升某高风险类别的 Recall），并在某轮退步时回退到历史最佳版本。
+- **灰度与正式发布** —— 把验证过的版本通过队列连接器做灰度发布，支持切流与双跑，再到 100% 晋升、配置变更、回滚与强制停止；webhook 入站可直接进入正式环境。
+- **运行结果** —— 以上每个阶段的每次调用都写入一条不可变记录：输入变量、渲染后的提示词、原始输出、结构化输出、判定、耗时、Token 与成本。
+- **人工标注** —— 写入独立表，绝不修改原始运行结果。
+- **连接器** —— 把提示词接到队列连接器与 webhook 入站，承接线上流量。
+- **MCP 通道** —— 内置，Agent 可管理提示词版本、启动实验 / 优化、查询结果。
+- **自带模型** —— OpenAI、Azure OpenAI、Anthropic、DeepSeek 等，用你自己的 Key 与定价。
 
 ## 快速开始
 
@@ -116,20 +94,6 @@ pnpm dev
 | Redpanda Console | http://localhost:8088 |
 | RedisInsight | http://localhost:5540 |
 
-<!--
-  截图 —— 本地跑起来的样子
-  拍：执行 `pnpm dev` 后的 ProofHound 首页 / 管理端，让读者看到刚启动的东西长什么样。
-  存到：docs/assets/screenshots/home.png
-  然后把本注释替换为：
-  <p align="center"><img src="docs/assets/screenshots/home.png" alt="ProofHound running locally" width="100%" /></p>
--->
-
-随时可跑完整检查：
-
-```bash
-pnpm ci
-```
-
 ## 工作原理
 
 ProofHound 是一个按模块边界拆分的 TypeScript 单体，配一个负责 LLM 调用的 Node.js worker。三个入口驱动它——本地管理端、给 Agent 与自动化用的 HTTP API + MCP 通道、以及按连接器划分的 webhook 入站——它们共享同一套编排与存储。
@@ -164,11 +128,13 @@ flowchart TD
 
 ## 模型与供应商
 
-ProofHound 不转卖模型调用，也不在用量上加价。你配置自己的供应商、endpoint、Key 与成本——花费只发生在你和你的供应商之间。
+ProofHound 不转卖模型调用，也不在用量上加价——你自带供应商，花费只发生在你和你的供应商之间。
 
-| 你来配置 | 内置供应商类型 |
-| --- | --- |
-| endpoint、API Key、定价、上下文窗口、图片能力，以及 RPM / TPM / 并发上限 | OpenAI · Azure OpenAI · Anthropic · DeepSeek · Kimi · MiniMax · Qwen · ERNIE —— 以及任何通过开放字符串接入的 OpenAI 兼容 endpoint |
+- **快捷预设** —— 从主流供应商的预设开始，只需填入凭证、配额、单价与能力声明，无需逐项手动配置。
+- **充分可配置** —— 每个模型可设置 endpoint、API Key、单价（用于成本核算）、上下文窗口、图片能力，以及 RPM / TPM / 并发上限；限额由 Redis 集中计数、按模型统一执行。
+- **自动并发调整，默认开启** —— 不用你手算多大并发才能跑满 RPM / TPM，ProofHound 会基于实时延迟与 Token 用量（Little 定律）动态调整有效在途并发，并在供应商返回 429 时自动退避（AIMD），始终以你配置的并发上限作为安全帽。
+
+内置供应商类型：OpenAI · Azure OpenAI · Anthropic · DeepSeek · Kimi · MiniMax · Qwen · ERNIE —— 以及任何通过开放字符串接入的 OpenAI 兼容 endpoint。
 
 ## ProofHound 的不同之处
 

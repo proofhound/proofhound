@@ -43,46 +43,18 @@ It is built for developers first: clone, `pnpm dev`, connect a model, and start 
 
 ## What you get
 
-- **Prompt versions** — immutable versions, movable labels, variable lists, output fields, judgment rules, and version diffs
-- **Dataset regression** — CSV / TSV / JSONL / JSON array / ZIP upload, field-role mapping, sample browsing, filtering, and export
-- **Experiments** — prompt version × dataset × model batch regression with stop, resume, comparison, and export
-- **Automatic optimization** — analyze failed samples and target metrics, generate candidate versions, re-run round by round
-- **Canary & production releases** — unified release lanes with split, dual-run, promotion, config changes, and rollback
-- **Run results** — one immutable record for every LLM call across experiments, optimizations, canaries, and production
-- **Human annotations** — written to a separate table, never mutating the original run results
-- **Connectors** — wire prompts to queue connectors and webhook ingress for online traffic
-- **MCP channel** — built in, so agents can manage prompt versions, start experiments / optimizations, and query results
-- **Bring your own models** — OpenAI, Azure OpenAI, Anthropic, DeepSeek, and more, with your own keys and pricing
+ProofHound runs one lifecycle, and every stage writes to the same fact tables — so a model invocation stays traceable from a dataset sample all the way to production and back:
 
-## Feature tour
-
-ProofHound runs one lifecycle, and every stage writes to the same fact tables — so a model invocation stays traceable from a dataset sample all the way to production behavior and back. Follow it in order:
-
-<p align="center"><img src="docs/assets/screenshots/dashboard-en.png" alt="ProofHound dashboard" width="100%" /></p>
-
-**Prompt versions** — every edit creates an immutable version with its variables, output fields, and judgment rules; once an experiment, optimization, or release references it, the version is frozen, so every result maps back to the exact prompt used.
-
-**Dataset regression** — run a version against a dataset of expected outputs and get accuracy, precision, recall, F1, per-class metrics, failed samples, and full invocation details — not an aggregate score that hides minority-class behavior.
-
-**Experiments** — batch prompt version × dataset × model, then stop, resume, compare across runs, and export; every run is reproducible because the version it used is frozen.
-
-<p align="center"><img src="docs/assets/screenshots/experiments-en.png" alt="Experiments" width="100%" /></p>
-
-**Automatic optimization** — analyze failed samples, generate new candidate versions, and re-run regression round by round, targeting class-level goals (e.g. lift recall on a high-risk class) and falling back to the best version when a round regresses.
-
-<p align="center"><img src="docs/assets/screenshots/optimization-en.png" alt="Automatic optimization" width="100%" /></p>
-
-**Canary & production releases** — promote a proven version through queue-connector canaries with traffic split and dual-run, then 100% promotion, config updates, rollback, and forced stop; webhook ingress can go straight to production.
-
-<!--
-  SCREENSHOT — Canary / production release (English UI) pending.
-  The current local instance had no release lane configured, so an English release screenshot
-  could not be captured. Configure a release lane, capture the release topology view to
-  docs/assets/screenshots/release-en.png, then add:
-  <p align="center"><img src="docs/assets/screenshots/release-en.png" alt="Canary and production releases" width="100%" /></p>
--->
-
-**Run results** — every stage above writes one immutable record per call: input variables, rendered prompt, raw output, structured output, judgment, latency, tokens, and cost. Human annotations go to a separate table, never mutating the original.
+- **Prompt versions** — every edit creates an immutable version with its variables, output fields, and judgment rules; once an experiment, optimization, or release references it, the version is frozen, so every result maps back to the exact prompt used.
+- **Dataset regression** — run a version against a dataset of expected outputs (CSV / TSV / JSONL / JSON / ZIP) and get accuracy, precision, recall, F1, per-class metrics, failed samples, and full invocation details — not an aggregate score that hides minority-class behavior.
+- **Experiments** — batch prompt version × dataset × model, then stop, resume, compare across runs, and export; every run is reproducible because the version it used is frozen.
+- **Automatic optimization** — analyze failed samples, generate new candidate versions, and re-run regression round by round, targeting class-level goals (e.g. lift recall on a high-risk class) and falling back to the best version when a round regresses.
+- **Canary & production releases** — promote a proven version through queue-connector canaries with traffic split and dual-run, then 100% promotion, config updates, rollback, and forced stop; webhook ingress can go straight to production.
+- **Run results** — every stage writes one immutable record per call: input variables, rendered prompt, raw output, structured output, judgment, latency, tokens, and cost.
+- **Human annotations** — written to a separate table, never mutating the original run results.
+- **Connectors** — wire prompts to queue connectors and webhook ingress for online traffic.
+- **MCP channel** — built in, so agents can manage prompt versions, start experiments / optimizations, and query results.
+- **Bring your own models** — OpenAI, Azure OpenAI, Anthropic, DeepSeek, and more, with your own keys and pricing.
 
 ## Get started
 
@@ -123,20 +95,6 @@ Default local services:
 | Redpanda Console | http://localhost:8088 |
 | RedisInsight | http://localhost:5540 |
 
-<!--
-  SCREENSHOT — App running locally
-  Capture: the ProofHound home / dashboard right after `pnpm dev`, so readers see what they just launched.
-  Save to: docs/assets/screenshots/home.png
-  Then replace this comment with:
-  <p align="center"><img src="docs/assets/screenshots/home.png" alt="ProofHound running locally" width="100%" /></p>
--->
-
-Run the full check suite anytime:
-
-```bash
-pnpm ci
-```
-
 ## How it works
 
 ProofHound is a TypeScript monolith split by module boundaries, with a Node.js worker for LLM calls. Three surfaces drive it — the Web UI, an HTTP API + MCP channel for agents and automation, and per-connector webhook ingress for online traffic — and they all share the same orchestration and storage.
@@ -171,11 +129,13 @@ flowchart TD
 
 ## Models and providers
 
-ProofHound does not resell model calls or add a markup on usage. You configure your own providers, endpoints, keys, and costs — your spend stays between you and your provider.
+ProofHound does not resell model calls or add a markup on usage — you bring your own providers, and spend stays between you and your provider.
 
-| You configure | Built-in provider types |
-| --- | --- |
-| Endpoint, API key, pricing, context window, image capability, and RPM / TPM / concurrency limits | OpenAI · Azure OpenAI · Anthropic · DeepSeek · Kimi · MiniMax · Qwen · ERNIE — plus any OpenAI-compatible endpoint via an open provider string |
+- **Quick presets** — start from a preset for a mainstream provider, then just fill in your credentials, quotas, unit prices, and capability declarations instead of wiring everything by hand.
+- **Fully configurable** — per model you set the endpoint, API key, unit prices (for cost tracking), context window, image capability, and RPM / TPM / concurrency limits; limits are enforced centrally in Redis and counted per model.
+- **Auto concurrency, on by default** — instead of hand-computing how much concurrency saturates your RPM / TPM, ProofHound tunes the effective in-flight concurrency in real time (Little's Law over observed latency and token usage) and backs off automatically on provider 429s (AIMD), always staying within your configured limit as a safety cap.
+
+Built-in provider types: OpenAI · Azure OpenAI · Anthropic · DeepSeek · Kimi · MiniMax · Qwen · ERNIE — plus any OpenAI-compatible endpoint via an open provider string.
 
 ## How ProofHound is different
 
