@@ -76,24 +76,37 @@ pnpm dev
 
 `pnpm dev` starts the local dependency services, runs database migrations, and launches server, webhook, worker, and web together.
 
-Before your first run, set two app-managed secrets in `.env` (the app fails to start or call models without them):
-
-- `MODEL_API_KEY_ENCRYPTION_KEY` — encrypts the model API keys you store
-- `MCP_TOKEN_SIGNING_SECRET` — signs MCP tokens
-
-`DATABASE_URL` and `REDIS_URL` already point at the services Docker Compose brings up.
+`cp .env.example .env` ships working local defaults, but set the two required secrets before your first run — see [Configuration](#configuration).
 
 Default local services:
 
-| Service | URL |
+| Service | Address |
 | --- | --- |
-| Web UI | http://localhost:3000 |
-| Server API | http://localhost:4000 |
+| Web UI | localhost:3000 |
+| Server API | localhost:4000 |
 | PostgreSQL | localhost:5432 |
 | Redis | localhost:6379 |
 | Kafka | localhost:9092 |
-| Redpanda Console | http://localhost:8088 |
-| RedisInsight | http://localhost:5540 |
+| Redpanda Console | localhost:8088 |
+| RedisInsight | localhost:5540 |
+
+## Configuration
+
+ProofHound reads the repo-root `.env` (used by server, webhook, worker, and the DB scripts; `apps/web` reads `NEXT_PUBLIC_*` from `apps/web/.env.local`). `cp .env.example .env` gives working local defaults — the common variables you may want to set:
+
+| Variable | What it's for | Default |
+| --- | --- | --- |
+| `MODEL_API_KEY_ENCRYPTION_KEY` | **Required** — encrypts stored model API keys at rest. Generate a real one with `openssl rand -base64 32`. | dev placeholder |
+| `MCP_TOKEN_SIGNING_SECRET` | **Required** — signs MCP tokens; change it outside local dev. | dev placeholder |
+| `DATABASE_URL` | PostgreSQL connection string. | Docker Compose Postgres |
+| `REDIS_URL` | Redis connection (rate limits + queues). | Docker Compose Redis |
+| `SERVER_PORT` / `SERVER_PUBLIC_URL` | Server API port and public URL. | `4000` / `http://localhost:4000` |
+| `WEB_PUBLIC_URL` | Web origin allowed for CORS. | `http://localhost:3000` |
+| `NEXT_PUBLIC_SERVER_URL` | Server URL the web app calls. | `http://localhost:4000` |
+| `WORKER_QUEUES` / `WORKER_CONCURRENCY` | Worker queues and per-process concurrency. | `llm,probe` / `64` |
+| `LOG_LEVEL` | Pino log level. | `debug` |
+
+More advanced / optional variables (deploy metadata, DB reset & seeding, tests, the `pnpm probe:model` script, connector demos) are documented inline in [`.env.example`](.env.example).
 
 ## How it works
 
