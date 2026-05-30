@@ -57,7 +57,7 @@ Common commands (pnpm@10 + turbo orchestration):
 
 - Branch naming: `<type>/<kebab>` aligned with Conventional Commits (`feat/`, `fix/`, `docs/`, `refactor/`, `chore/`, …) — e.g. `refactor/contracts-forroot-override`.
 - `master` is PR-only: no direct push (branch protection + `enforce_admins`). Squash-merge with a Conventional-Commit PR title so release-please categorizes it.
-- Worktrees: create with `git worktree add .claude/worktrees/<name> -b <type>/<kebab>` (a fresh `<type>/<kebab>` branch). Do not rely on tooling that forces a `worktree-` prefix or rewrites `/` to `+`; rename the branch to conform if it does.
+- Worktrees: create with `mkdir -p .claude/worktrees && git worktree add .claude/worktrees/<name> -b <type>/<kebab> master` (a fresh `<type>/<kebab>` branch off `master`). Do not rely on tooling that forces a `worktree-` prefix or rewrites `/` to `+`; rename the branch to conform if it does.
 
 ## 3. What to Read Before Starting
 
