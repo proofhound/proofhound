@@ -28,8 +28,8 @@ import { usePrompts } from '@/hooks/prompt';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useReleaseLineList } from '@/hooks/release-line';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { formatDateTime } from '@/lib/format';
-import type { ReleaseLineView } from '@/lib/releases/release-line-model';
+import { formatDateTime } from '@proofhound/web-ui/lib';
+import type { ReleaseLineView } from '@proofhound/web-ui/lib';
 import { useProjectContext } from '@/providers/project-context-provider';
 
 const DEFAULT_VISIBLE_FEED_ITEMS = 10;

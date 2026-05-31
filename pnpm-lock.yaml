@@ -225,6 +225,9 @@ importers:
       '@proofhound/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@proofhound/web-ui':
+        specifier: workspace:*
+        version: link:../../packages/web-ui
       '@radix-ui/react-avatar':
         specifier: ^1.1.11
         version: 1.1.11(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

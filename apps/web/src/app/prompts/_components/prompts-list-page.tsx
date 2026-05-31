@@ -31,8 +31,7 @@ import { Main } from '@proofhound/ui/layout';
 import { useCreatePrompt, useDeletePrompt, usePromptDeleteImpact, usePrompts } from '@/hooks/prompt';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { getApiErrorMessage } from '@/lib/api-error';
-import { isProjectNameTaken } from '@/lib/project-name';
+import { getApiErrorMessage, isProjectNameTaken } from '@proofhound/web-ui/lib';
 import {
   getPromptSearchText,
   toProjectPromptListItem,

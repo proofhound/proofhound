@@ -24,12 +24,8 @@ import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refre
 import { useReleaseLineList } from '@/hooks/release-line';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type TranslationKey } from '@/i18n';
-import {
-  filterReleaseLines,
-  summarizeReleaseLines,
-  type ReleaseLineFilter,
-  type ReleaseLineView,
-} from '@/lib/releases/release-line-model';
+import { filterReleaseLines, summarizeReleaseLines } from '@proofhound/web-ui/lib';
+import type { ReleaseLineFilter, ReleaseLineView } from '@proofhound/web-ui/lib';
 import {
   ConnectorTypeBadge,
   ReleaseMetricCard,

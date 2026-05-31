@@ -31,8 +31,8 @@ import {
   cn,
 } from '@proofhound/ui';
 import { useI18n } from '@/i18n';
-import { getApiErrorMessage } from '@/lib/api-error';
-import type { ReleaseLineView } from '@/lib/releases/release-line-model';
+import { getApiErrorMessage } from '@proofhound/web-ui/lib';
+import type { ReleaseLineView } from '@proofhound/web-ui/lib';
 import { ReleasePill, formatDateTimeOrDash, formatPercent } from './release-line-ui';
 
 type ReleaseTopologyTone = 'neutral' | 'production' | 'canary' | 'muted';

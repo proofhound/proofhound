@@ -1,5 +1,5 @@
 import { deriveDatasetModalities, type DatasetFieldSchemaDto, type DatasetListItemDto } from '@proofhound/shared';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime } from '@proofhound/web-ui/lib';
 import type { DatasetFieldRole, ProjectDataset } from './dataset-types';
 
 function isIdLikeField(name: string) {

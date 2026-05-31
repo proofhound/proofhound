@@ -55,7 +55,7 @@ import {
 import type { ModalityKind, TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { getApiErrorMessage } from '@/lib/api-error';
+import { getApiErrorMessage } from '@proofhound/web-ui/lib';
 import { useDeleteProjectModel, useProbeProjectModel, useProjectModels, useUpdateProjectModel } from '@/hooks/model';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { dtoToProjectModel, formatProjectModelDateTime } from './project-model-adapter';

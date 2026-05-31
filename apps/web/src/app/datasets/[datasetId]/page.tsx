@@ -6,7 +6,7 @@ import { Main } from '@proofhound/ui/layout';
 import { Button, DetailPageSkeleton } from '@proofhound/ui';
 import { useDataset } from '@/hooks/dataset';
 import { useI18n } from '@/i18n';
-import { isCanonicalUuid } from '@/lib/uuid';
+import { isCanonicalUuid } from '@proofhound/web-ui/lib';
 import { DatasetDetailPage } from '../_components/dataset-detail-page';
 import { toProjectDataset } from '../_components/dataset-mappers';
 

@@ -80,12 +80,8 @@ import {
 import { useReleaseRunResults } from '@/hooks/run-result';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useI18n, type TranslationKey } from '@/i18n';
-import {
-  getReleaseLineId,
-  getReleaseStopConfirmationName,
-  type ReleaseLineLatestEvent,
-  type ReleaseLineView,
-} from '@/lib/releases/release-line-model';
+import { getReleaseLineId, getReleaseStopConfirmationName } from '@proofhound/web-ui/lib';
+import type { ReleaseLineLatestEvent, ReleaseLineView } from '@proofhound/web-ui/lib';
 import { BigChartCard, type DeltaTone } from '../../monitoring/_components/big-chart-card';
 import {
   ReleaseEventPill,

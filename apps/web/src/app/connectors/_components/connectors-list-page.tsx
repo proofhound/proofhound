@@ -34,8 +34,7 @@ import { useBulkDeleteConnectors, useConnectors, useDeleteConnector } from '@/ho
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { getApiErrorMessage } from '@/lib/api-error';
-import { formatDateTime } from '@/lib/format';
+import { getApiErrorMessage, formatDateTime } from '@proofhound/web-ui/lib';
 import {
   type ConnectorFilter,
   type ConnectorListItem,

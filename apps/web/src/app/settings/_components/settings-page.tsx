@@ -34,8 +34,7 @@ import {
   useUpdateToken,
 } from '@/hooks/token';
 import { useI18n } from '@/i18n';
-import { getApiErrorMessage } from '@/lib/api-error';
-import { formatDateTime } from '@/lib/format';
+import { getApiErrorMessage, formatDateTime } from '@proofhound/web-ui/lib';
 type TokenExpiryPreset = 'never' | '7d' | '30d' | '90d' | 'custom';
 
 interface TokenCreateState {

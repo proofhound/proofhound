@@ -14,7 +14,7 @@ import {
 } from '@proofhound/ui';
 import { usePeekConnector } from '@/hooks/connector';
 import { useI18n } from '@/i18n';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime } from '@proofhound/web-ui/lib';
 import type { PeekConnectorResponseDto } from '@proofhound/shared';
 import type { ConnectorListItem } from './connector-types';
 

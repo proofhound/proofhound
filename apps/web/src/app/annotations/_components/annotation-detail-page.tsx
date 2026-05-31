@@ -44,7 +44,7 @@ import {
 } from '@/hooks/annotation';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { getApiErrorMessage } from '@/lib/api-error';
+import { getApiErrorMessage } from '@proofhound/web-ui/lib';
 import { buildAnnotationTasks } from './annotation-task-model';
 import {
   AnnotationMetricCard,

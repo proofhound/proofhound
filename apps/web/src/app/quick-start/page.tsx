@@ -54,8 +54,7 @@ import {
 } from '@/hooks/quick-start';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { getApiErrorMessage } from '@/lib/api-error';
-import { buildProviderTypeOptions } from '@/lib/model-provider-type';
+import { getApiErrorMessage, buildProviderTypeOptions } from '@proofhound/web-ui/lib';
 import {
   FORMAT_CHIPS,
   PREVIEW_LIMIT,

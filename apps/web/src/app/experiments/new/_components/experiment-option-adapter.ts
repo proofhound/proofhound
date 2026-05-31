@@ -9,7 +9,7 @@ import {
   type PromptVariableTypeDto,
   type PromptVersionDto,
 } from '@proofhound/shared';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime } from '@proofhound/web-ui/lib';
 import type {
   ExperimentDatasetOption,
   ExperimentModelOption,

@@ -40,9 +40,7 @@ import {
 } from '@/hooks/connector';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type Language, type TranslationKey } from '@/i18n';
-import { getApiErrorMessage } from '@/lib/api-error';
-import { formatDateTime } from '@/lib/format';
-import { isCanonicalUuid } from '@/lib/uuid';
+import { getApiErrorMessage, formatDateTime, isCanonicalUuid } from '@proofhound/web-ui/lib';
 import type {
   ConnectorDetailDto,
   ConnectorDirection,

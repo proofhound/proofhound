@@ -3,9 +3,9 @@
 import type { ReactNode } from 'react';
 import type { ProductionReleaseEventTypeDto, ReleaseLineEventOperationDto } from '@proofhound/shared';
 import { cn } from '@proofhound/ui';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime } from '@proofhound/web-ui/lib';
+import type { ReleaseLineLatestEvent, ReleaseLineStatus, ReleaseLineView } from '@proofhound/web-ui/lib';
 import { useI18n, type TranslationKey } from '@/i18n';
-import type { ReleaseLineLatestEvent, ReleaseLineStatus, ReleaseLineView } from '@/lib/releases/release-line-model';
 
 const STATUS_TOKENS: Record<ReleaseLineStatus, { bg: string; fg: string; bd: string; dot: string; pulse: boolean }> = {
   production: {

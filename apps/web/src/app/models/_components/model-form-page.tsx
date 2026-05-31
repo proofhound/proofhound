@@ -56,10 +56,7 @@ import { ModelProbeStatus, type ModelProbeFeedback } from '@/components/model-pr
 import { ModelPresetQuickFill } from '@/features/model-quick-fill/model-preset-quick-fill';
 import type { ModelQuickFillDraft } from '@/features/model-quick-fill/model-preset-draft';
 import { useI18n } from '@/i18n';
-import { getApiErrorMessage } from '@/lib/api-error';
-import { toIntegerInputValue } from '@/lib/model-number';
-import { buildProviderTypeOptions } from '@/lib/model-provider-type';
-import { isProjectNameTaken } from '@/lib/project-name';
+import { getApiErrorMessage, toIntegerInputValue, buildProviderTypeOptions, isProjectNameTaken } from '@proofhound/web-ui/lib';
 import {
   useCreateProjectModel,
   useProbeProjectModel,

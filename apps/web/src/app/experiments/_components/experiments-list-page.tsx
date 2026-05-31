@@ -30,7 +30,7 @@ import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refre
 import { useControlExperiment, useDeleteExperiment, useExperiments } from '@/hooks/experiment';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { getApiErrorMessage } from '@/lib/api-error';
+import { getApiErrorMessage } from '@proofhound/web-ui/lib';
 import { type ExperimentStatus, type ExperimentSummary } from './experiment-view-model';
 import { ChipFilter } from './experiment-ui';
 import { ExperimentsComparisonView } from './experiments-comparison-view';

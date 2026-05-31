@@ -57,7 +57,7 @@ import {
 import type { ModalityKind, TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { formatDateTime, formatLatencySeconds } from '@/lib/format';
+import { formatDateTime, formatLatencySeconds } from '@proofhound/web-ui/lib';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useControlExperiment, useDownloadExperiment, useExperiment } from '@/hooks/experiment';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
