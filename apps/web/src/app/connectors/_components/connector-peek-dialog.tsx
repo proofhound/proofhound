@@ -1,17 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+  Input,
+  Label,
+} from '@proofhound/ui';
 import { usePeekConnector } from '@/hooks/connector';
 import { useI18n } from '@/i18n';
 import { formatDateTime } from '@/lib/format';

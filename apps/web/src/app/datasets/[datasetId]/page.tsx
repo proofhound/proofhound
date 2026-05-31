@@ -2,9 +2,8 @@
 
 import { useParams } from 'next/navigation';
 import { useProjectContext } from '@/providers/project-context-provider';
-import { Main } from '@/components/layout/main';
-import { Button } from '@/components/ui/button';
-import { DetailPageSkeleton } from '@/components/ui/detail-page-skeleton';
+import { Main } from '@proofhound/ui/layout';
+import { Button, DetailPageSkeleton } from '@proofhound/ui';
 import { useDataset } from '@/hooks/dataset';
 import { useI18n } from '@/i18n';
 import { isCanonicalUuid } from '@/lib/uuid';

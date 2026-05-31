@@ -33,21 +33,31 @@ import type {
   OptimizationDetailRoundStepStatusDto,
   OptimizationDetailRoundStreamDto,
 } from '@proofhound/shared';
-import { Button } from '@/components/ui/button';
-import { Main } from '@/components/layout/main';
-import { Progress, formatProgressLabel } from '@/components/ui/progress';
+import {
+  Button,
+  Progress,
+  formatProgressLabel,
+  Switch,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  TableActionIconButton,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  DetailPageSkeleton,
+  cn,
+} from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { PromptDiffSplitView } from '@/components/prompt-diff/prompt-diff-split-view';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TableActionIconButton } from '@/components/ui/table-action';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useOptimization, useControlOptimization } from '@/hooks/optimization';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { DetailPageSkeleton } from '@/components/ui/detail-page-skeleton';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
-import { cn } from '@/lib/utils';
 import { optimizationTone } from '../../_components/optimization-theme';
 import { OptimizationStatusBadge, OriginBadge } from '../../_components/optimization-ui';
 import { OPTIMIZATION_ORIGIN_LABEL_KEYS, STARTING_MODE_TO_ORIGIN } from '../../_components/optimization-mappers';

@@ -4,10 +4,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, Plus, Search } from 'lucide-react';
-import { Main } from '@/components/layout/main';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Main } from '@proofhound/ui/layout';
 import {
+  Button,
+  Input,
   Table,
   TableBody,
   TableCell,
@@ -16,14 +16,14 @@ import {
   TableHeader,
   TableRow,
   TableSkeletonRows,
-  type TableColumn,
-} from '@/components/ui/table';
-import { TableActionIconButton } from '@/components/ui/table-action';
+  TableActionIconButton,
+  cn,
+} from '@proofhound/ui';
+import type { TableColumn } from '@proofhound/ui';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useReleaseLineList } from '@/hooks/release-line';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
 import {
   filterReleaseLines,
   summarizeReleaseLines,

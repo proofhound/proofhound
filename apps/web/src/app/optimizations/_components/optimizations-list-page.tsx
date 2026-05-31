@@ -4,28 +4,23 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { Ban, Check, ChevronDown, Columns3, List, Play, Plus, Search, Sliders, Square, Trash2, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { KanbanScrollArea } from '@/components/ui/kanban-scroll-area';
-import { Main } from '@/components/layout/main';
-import { ListRowsSkeleton } from '@/components/ui/list-page-skeleton';
-import { ResourcePaginationFooter } from '@/components/ui/resource-pagination-footer';
-import { SlidingViewToggle } from '@/components/ui/sliding-view-toggle';
-import {
+  Input,
+  KanbanScrollArea,
+  ListRowsSkeleton,
+  ResourcePaginationFooter,
+  SlidingViewToggle,
   Table,
   TableBody,
   TableCell,
@@ -33,15 +28,16 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  type TableColumn,
-} from '@/components/ui/table';
-import { TableActionRow, type TableActionDescriptor } from '@/components/ui/table-action';
+  TableActionRow,
+  cn,
+} from '@proofhound/ui';
+import type { TableColumn, TableActionDescriptor } from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { useOptimizations, useControlOptimization, useDeleteOptimization } from '@/hooks/optimization';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
-import { cn } from '@/lib/utils';
 import {
   OPTIMIZATION_STATUS_TONE,
   getStatusCount,

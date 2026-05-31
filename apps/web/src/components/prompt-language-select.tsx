@@ -2,10 +2,15 @@
 
 import { Languages } from 'lucide-react';
 import type { PromptLanguageDto } from '@proofhound/shared';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  cn,
+} from '@proofhound/ui';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
-
 export type PromptLanguage = PromptLanguageDto;
 
 const PROMPT_LANGUAGE_OPTIONS: Array<{ value: PromptLanguage; labelKey: TranslationKey }> = [

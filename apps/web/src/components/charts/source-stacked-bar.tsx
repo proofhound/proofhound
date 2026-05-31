@@ -2,7 +2,7 @@
 
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { TooltipContentProps } from 'recharts';
-import { cn } from '@/lib/utils';
+import { cn } from '@proofhound/ui';
 
 export type SourceStackedBarSource = 'prod' | 'canary' | 'iter' | 'exp';
 

@@ -17,7 +17,7 @@ import {
   type DateRangeSegmentedLabels,
   type DateRangeValue,
   resolveDateRangePreset,
-} from '@/components/ui/date-range-segmented';
+} from '@proofhound/ui';
 import { useProjectModels } from '@/hooks/model';
 import {
   useProjectModelMonitoringRanking,

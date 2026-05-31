@@ -36,28 +36,21 @@ import type {
   ReleaseVariantDto,
   SourceBucket,
 } from '@proofhound/shared';
-import { Main } from '@/components/layout/main';
-import { Button } from '@/components/ui/button';
+import { Main } from '@proofhound/ui/layout';
 import {
+  Button,
   DateRangeSegmented,
-  type DateRangePresetOption,
-  type DateRangeSegmentedLabels,
-  type DateRangeValue,
   resolveDateRangePreset,
-} from '@/components/ui/date-range-segmented';
-import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { PlatformLoader } from '@/components/ui/platform-loader';
-import { DetailPageSkeleton } from '@/components/ui/detail-page-skeleton';
-import { ResourcePaginationFooter } from '@/components/ui/resource-pagination-footer';
-import {
+  Input,
+  PlatformLoader,
+  DetailPageSkeleton,
+  ResourcePaginationFooter,
   Table,
   TableBody,
   TableCell,
@@ -65,8 +58,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  type TableColumn,
-} from '@/components/ui/table';
+  cn,
+} from '@proofhound/ui';
+import type {
+  DateRangePresetOption,
+  DateRangeSegmentedLabels,
+  DateRangeValue,
+  TableColumn,
+} from '@proofhound/ui';
 import { useAnnotationTaskList } from '@/hooks/annotation';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useProjectModels } from '@/hooks/model';
@@ -81,7 +80,6 @@ import {
 import { useReleaseRunResults } from '@/hooks/run-result';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
 import {
   getReleaseLineId,
   getReleaseStopConfirmationName,

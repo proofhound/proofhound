@@ -11,13 +11,20 @@ import type {
 } from '@proofhound/shared';
 import { datasetImportClient } from '@proofhound/api-client';
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, FileText, Loader2, Upload } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Main } from '@/components/layout/main';
-import { Progress, formatProgressLabel } from '@/components/ui/progress';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Progress,
+  formatProgressLabel,
+  cn,
+} from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { useCreateDataset } from '@/hooks/dataset';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
 import { runDatasetImport } from './dataset-import-runner';
 import { DatasetTransferProgressPanel, useDatasetTransferProgress } from './dataset-transfer-progress';
 import { RoleArrowLabel, RolePill } from './dataset-ui';

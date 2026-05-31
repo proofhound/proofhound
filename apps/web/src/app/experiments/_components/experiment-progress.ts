@@ -1,4 +1,4 @@
-import { formatProgressLabel } from '@/components/ui/progress';
+import { formatProgressLabel } from '@proofhound/ui';
 import type { TranslationKey } from '@/i18n';
 
 import type { ExperimentSummary } from './experiment-view-model';

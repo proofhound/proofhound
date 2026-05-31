@@ -1,9 +1,8 @@
 'use client';
 
 import { Check } from 'lucide-react';
-import { Progress, formatProgressNumber } from '@/components/ui/progress';
+import { Progress, formatProgressNumber, cn } from '@proofhound/ui';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
 import { EXPERIMENT_STATUS_LABEL_KEYS, EXPERIMENT_STATUS_TONE, type ExperimentStatus } from './experiment-view-model';
 import { experimentTone } from './experiment-theme';
 

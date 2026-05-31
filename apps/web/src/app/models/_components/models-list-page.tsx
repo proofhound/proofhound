@@ -21,32 +21,41 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Main } from '@/components/layout/main';
-import { ListRowsSkeleton } from '@/components/ui/list-page-skeleton';
-import { PlatformLoaderOverlay } from '@/components/ui/platform-loader';
-import { ModalityIconGroup, type ModalityKind } from '@/components/ui/modality-icon';
-import { Progress, formatProgressLabel } from '@/components/ui/progress';
-import { ResourcePaginationFooter } from '@/components/ui/resource-pagination-footer';
-import { SlidingViewToggle } from '@/components/ui/sliding-view-toggle';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, type TableColumn } from '@/components/ui/table';
-import {
+  Input,
+  ListRowsSkeleton,
+  PlatformLoaderOverlay,
+  ModalityIconGroup,
+  Progress,
+  formatProgressLabel,
+  ResourcePaginationFooter,
+  SlidingViewToggle,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
   TABLE_ACTION_ICON_BUTTON_CLASS,
   TableActionIconButton,
   TableActionTooltip,
-} from '@/components/ui/table-action';
+  cn,
+} from '@proofhound/ui';
+import type { ModalityKind, TableColumn } from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
-import { cn } from '@/lib/utils';
 import { useDeleteProjectModel, useProbeProjectModel, useProjectModels, useUpdateProjectModel } from '@/hooks/model';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { dtoToProjectModel, formatProjectModelDateTime } from './project-model-adapter';

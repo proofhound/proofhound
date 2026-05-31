@@ -2,14 +2,21 @@
 
 import { useState, type ReactNode } from 'react';
 import { Copy, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { ImagePreviewDialog, ImageZoomHoverOverlay, isRenderableImage } from '@/components/ui/image-preview-dialog';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Button,
+  ImagePreviewDialog,
+  ImageZoomHoverOverlay,
+  isRenderableImage,
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  Skeleton,
+  cn,
+} from '@proofhound/ui';
 import { useI18n } from '@/i18n';
 import { useRunResult } from '@/hooks/run-result';
 import { formatDateTime } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import { experimentTone } from '../../_components/experiment-theme';
 import {
   formatRunResultFailureReason,

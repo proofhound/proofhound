@@ -12,10 +12,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  type TableColumn,
-} from '@/components/ui/table';
-import { TableActionRow, type TableActionDescriptor } from '@/components/ui/table-action';
-import { UnusedImagesBadge } from '@/components/ui/unused-images-badge';
+  TableActionRow,
+  UnusedImagesBadge,
+} from '@proofhound/ui';
+import type { TableColumn, TableActionDescriptor } from '@proofhound/ui';
 import { useI18n } from '@/i18n';
 
 import { progressLabel, progressTimingLabel } from './experiment-progress';

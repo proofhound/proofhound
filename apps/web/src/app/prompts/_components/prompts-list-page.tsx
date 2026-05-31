@@ -4,29 +4,35 @@ import type { PromptDeletionImpactDto, PromptDeletionImpactItemDto } from '@proo
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState, type FormEvent } from 'react';
 import { FlaskConical, History, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Main } from '@/components/layout/main';
-import { ListRowsSkeleton } from '@/components/ui/list-page-skeleton';
-import { PlatformLoaderOverlay } from '@/components/ui/platform-loader';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ResourcePaginationFooter } from '@/components/ui/resource-pagination-footer';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, type TableColumn } from '@/components/ui/table';
-import { TableActionIconButton } from '@/components/ui/table-action';
+  Input,
+  ListRowsSkeleton,
+  PlatformLoaderOverlay,
+  Skeleton,
+  ResourcePaginationFooter,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableActionIconButton,
+  cn,
+} from '@proofhound/ui';
+import type { TableColumn } from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { useCreatePrompt, useDeletePrompt, usePromptDeleteImpact, usePrompts } from '@/hooks/prompt';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
 import { isProjectNameTaken } from '@/lib/project-name';
-import { cn } from '@/lib/utils';
 import {
   getPromptSearchText,
   toProjectPromptListItem,

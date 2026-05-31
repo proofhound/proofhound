@@ -1,9 +1,8 @@
 'use client';
 
 import { ArrowDownToLine, ArrowUpFromLine, type LucideIcon, MessagesSquare, Plug, Webhook } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Badge, cn } from '@proofhound/ui';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
 import { CONNECTOR_LOCALE, type ConnectorDirection, type ConnectorHealthStatus, type ConnectorType } from './connector-types';
 
 const TYPE_ICON: Record<ConnectorType, LucideIcon> = {

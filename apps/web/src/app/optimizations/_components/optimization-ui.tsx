@@ -1,9 +1,13 @@
 'use client';
 
 import { Check, Database, FileText, FlaskConical } from 'lucide-react';
-import { Progress, formatProgressLabel, formatProgressNumber } from '@/components/ui/progress';
+import {
+  Progress,
+  formatProgressLabel,
+  formatProgressNumber,
+  cn,
+} from '@proofhound/ui';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
 import {
   OPTIMIZATION_ORIGIN_LABEL_KEYS,
   OPTIMIZATION_STATUS_LABEL_KEYS,

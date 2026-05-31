@@ -22,12 +22,16 @@ import {
   type PromptVersionDto,
 } from '@proofhound/shared';
 import { AlertCircle, Check, Filter, ImageIcon, Loader2, Plus, Search, X } from 'lucide-react';
-import { Main } from '@/components/layout/main';
-import { ModalityIconGroup, type ModalityKind } from '@/components/ui/modality-icon';
+import { Main } from '@proofhound/ui/layout';
+import {
+  ModalityIconGroup,
+  Button,
+  Input,
+  Label,
+  cn,
+} from '@proofhound/ui';
+import type { ModalityKind } from '@proofhound/ui';
 import { PromptVersionPickerRow, PromptVersionPickerTag } from '@/components/prompt-version-picker-row';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useConnector, useConnectors } from '@/hooks/connector';
 import { useCreateCanaryRelease, useStartCanaryRelease } from '@/hooks/canary-release';
 import { useProjectModels } from '@/hooks/model';
@@ -39,7 +43,6 @@ import { useI18n, type TranslationKey } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
 import { formatDateTime } from '@/lib/format';
 import { getReleaseLineId } from '@/lib/releases/release-line-model';
-import { cn } from '@/lib/utils';
 import { composePromptPreview } from '../../prompts/_components/prompt-preview';
 import { renderPromptPreviewParts } from '../../prompts/_components/prompt-preview-parts';
 import { VARIABLE_TONE_CLASSES } from '../../prompts/_components/prompt-ui';

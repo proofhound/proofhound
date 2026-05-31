@@ -2,11 +2,10 @@
 
 import type { ReactNode } from 'react';
 import type { PromptVersionStatusDto } from '@proofhound/shared';
-import { ModalityIcon, sortModalityKinds, type ModalityKind } from '@/components/ui/modality-icon';
+import { ModalityIcon, sortModalityKinds, cn } from '@proofhound/ui';
+import type { ModalityKind } from '@proofhound/ui';
 import { PromptVersionStatusBadge } from '@/components/prompt-version-status-badge';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
-
 type PickerVariable = {
   type: string;
 };

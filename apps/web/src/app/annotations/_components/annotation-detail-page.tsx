@@ -16,13 +16,14 @@ import {
   Save,
 } from 'lucide-react';
 import { AnnotationClaimDialog } from '@/components/annotations/annotation-claim-dialog';
-import { Main } from '@/components/layout/main';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { DetailPageSkeleton } from '@/components/ui/detail-page-skeleton';
-import { Progress, formatProgressLabel } from '@/components/ui/progress';
-import { Segmented } from '@/components/ui/segmented';
+import { Main } from '@proofhound/ui/layout';
 import {
+  Button,
+  Label,
+  DetailPageSkeleton,
+  Progress,
+  formatProgressLabel,
+  Segmented,
   Table,
   TableBody,
   TableCell,
@@ -31,8 +32,9 @@ import {
   TableHeader,
   TableRow,
   TableSkeletonRows,
-  type TableColumn,
-} from '@/components/ui/table';
+  cn,
+} from '@proofhound/ui';
+import type { TableColumn } from '@proofhound/ui';
 import {
   useAnnotationSamples,
   useAnnotationTask,
@@ -43,7 +45,6 @@ import {
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
-import { cn } from '@/lib/utils';
 import { buildAnnotationTasks } from './annotation-task-model';
 import {
   AnnotationMetricCard,

@@ -4,8 +4,8 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { BarChart3, ChevronDown, Database, GitBranch, ListPlus, MessageSquare, Plus, X } from 'lucide-react';
 import type { OptimizationListItemDto } from '@proofhound/shared';
 
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -14,8 +14,6 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Table,
   TableBody,
   TableCell,
@@ -23,10 +21,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  type TableColumn,
-} from '@/components/ui/table';
+  cn,
+} from '@proofhound/ui';
+import type { TableColumn } from '@proofhound/ui';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
 import { useOptimizations } from '@/hooks/optimization';
 
 import {

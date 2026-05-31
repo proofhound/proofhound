@@ -6,7 +6,7 @@ import type {
   PromptVariableTypeDto,
   PromptVersionStatusDto,
 } from '@proofhound/shared';
-import { MODALITY_KIND_ORDER, type ModalityKind } from '@/components/ui/modality-icon';
+import { MODALITY_KIND_ORDER, type ModalityKind } from '@proofhound/ui';
 import type { TranslationKey } from '@/i18n';
 import { experimentTone } from './experiment-theme';
 

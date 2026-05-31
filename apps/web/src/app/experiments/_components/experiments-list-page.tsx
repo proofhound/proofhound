@@ -6,28 +6,26 @@ import { useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ExperimentControlActionDto, ExperimentListItemDto, ExperimentListStatsDto } from '@proofhound/shared';
 import { BarChart3, List, Loader2, Play, Plus, Search, Sliders, Square, Trash2, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Main } from '@/components/layout/main';
-import { ListRowsSkeleton } from '@/components/ui/list-page-skeleton';
-import { PlatformLoaderOverlay } from '@/components/ui/platform-loader';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ResourcePaginationFooter } from '@/components/ui/resource-pagination-footer';
-import { SlidingViewToggle } from '@/components/ui/sliding-view-toggle';
+  Input,
+  ListRowsSkeleton,
+  PlatformLoaderOverlay,
+  Skeleton,
+  ResourcePaginationFooter,
+  SlidingViewToggle,
+} from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useControlExperiment, useDeleteExperiment, useExperiments } from '@/hooks/experiment';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';

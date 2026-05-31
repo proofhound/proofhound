@@ -19,13 +19,11 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Main } from '@/components/layout/main';
+import { Button, Input, cn } from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { PromptVersionPickerRow, PromptVersionPickerTag } from '@/components/prompt-version-picker-row';
 import { PromptLanguageSelect } from '@/components/prompt-language-select';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
 import { formatDateTime, formatLatencySeconds } from '@/lib/format';
 import { useOptimizations, useCreateOptimization } from '@/hooks/optimization';
 import { useDatasets } from '@/hooks/dataset';

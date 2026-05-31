@@ -4,8 +4,14 @@ import { useState } from 'react';
 import { MODEL_PRESET_GROUPS, MODEL_PRESETS, type ModelImageCapability, type ModelPreset } from '@proofhound/shared';
 import { Sparkles } from 'lucide-react';
 import { QuickFillPicker, type QuickFillPickerOption } from '@/components/quick-fill/quick-fill-picker';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@proofhound/ui';
 import { useI18n } from '@/i18n';
 import { modelPresetToQuickFillDraft, type ModelQuickFillDraft } from './model-preset-draft';
 

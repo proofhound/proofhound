@@ -2,10 +2,9 @@
 
 import type { ReactNode } from 'react';
 import { CheckCircle2, Clock3, PauseCircle, RadioTower } from 'lucide-react';
-import { Progress, formatProgressLabel } from '@/components/ui/progress';
+import { Progress, formatProgressLabel, cn } from '@proofhound/ui';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { formatDateTime } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import type { AnnotationTaskStatus, AnnotationTaskView } from './annotation-task-model';
 
 export function formatCount(value: number | null | undefined) {

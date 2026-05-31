@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
+import { cn } from '@proofhound/ui';
 import { PROMPT_VARIABLE_TYPE_LABEL_KEYS, type PromptVariable, type PromptVariableType } from './prompt-model';
 
 export { PromptVersionStatusBadge as StatusBadge } from '@/components/prompt-version-status-badge';

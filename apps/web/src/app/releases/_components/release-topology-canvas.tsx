@@ -20,12 +20,18 @@ import type {
   ReleaseLineLaneTypeDto,
   UpdateReleaseLineRunConfigInputDto,
 } from '@proofhound/shared';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  cn,
+} from '@proofhound/ui';
 import { useI18n } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
-import { cn } from '@/lib/utils';
 import type { ReleaseLineView } from '@/lib/releases/release-line-model';
 import { ReleasePill, formatDateTimeOrDash, formatPercent } from './release-line-ui';
 

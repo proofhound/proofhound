@@ -3,18 +3,16 @@
 import type { CreateUserTokenResponseDto, UserTokenSummaryDto } from '@proofhound/shared';
 import { Copy, Eye, EyeOff, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
+  Input,
+  Label,
   Table,
   TableBody,
   TableCell,
@@ -23,10 +21,11 @@ import {
   TableHeader,
   TableRow,
   TableSkeletonRows,
-  type TableColumn,
-} from '@/components/ui/table';
-import { TableActionIconButton } from '@/components/ui/table-action';
-import { Main } from '@/components/layout/main';
+  TableActionIconButton,
+  cn,
+} from '@proofhound/ui';
+import type { TableColumn } from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import {
   useCreateToken,
   useDeleteToken,
@@ -37,8 +36,6 @@ import {
 import { useI18n } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
 import { formatDateTime } from '@/lib/format';
-import { cn } from '@/lib/utils';
-
 type TokenExpiryPreset = 'never' | '7d' | '30d' | '90d' | 'custom';
 
 interface TokenCreateState {

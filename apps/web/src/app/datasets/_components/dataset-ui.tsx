@@ -13,20 +13,26 @@ import {
   Minus,
 } from 'lucide-react';
 import type { DatasetExportFormatDto } from '@proofhound/shared';
-import { Button } from '@/components/ui/button';
-import { ImagePreviewDialog, ImageZoomHoverOverlay, isRenderableImage } from '@/components/ui/image-preview-dialog';
 import {
+  Button,
+  ImagePreviewDialog,
+  ImageZoomHoverOverlay,
+  isRenderableImage,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { ModalityIconGroup, type ModalityKind } from '@/components/ui/modality-icon';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+  ModalityIconGroup,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  cn,
+} from '@proofhound/ui';
+import type { ModalityKind } from '@proofhound/ui';
 import { useI18n, type Language } from '@/i18n';
-import { cn } from '@/lib/utils';
 import {
   DATASET_MODALITY_LABEL_KEYS,
   DATASET_ROLE_LABEL_KEYS,

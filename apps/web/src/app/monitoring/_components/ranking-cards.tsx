@@ -2,8 +2,8 @@
 
 import { Boxes, FileText } from 'lucide-react';
 import type { ModelMonitoringRankingResponseDto, PromptMonitoringRankingResponseDto } from '@proofhound/shared';
-import { Segmented } from '@/components/ui/segmented';
 import {
+  Segmented,
   Table,
   TableBody,
   TableCell,
@@ -11,11 +11,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  type TableColumn as UiTableColumn,
-} from '@/components/ui/table';
+  cn,
+} from '@proofhound/ui';
+import type { TableColumn as UiTableColumn } from '@proofhound/ui';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
-
 type PromptSortBy = PromptMonitoringRankingResponseDto['sortBy'];
 type ModelSortBy = ModelMonitoringRankingResponseDto['sortBy'];
 

@@ -3,7 +3,7 @@
 import { useId, useState, type ChangeEvent, type FocusEvent } from 'react';
 import { applyEdits, format, parse, printParseErrorCode, type ParseError } from 'jsonc-parser';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
+import { cn } from '@proofhound/ui';
 
 type JsonObjectTextareaProps = {
   name: string;

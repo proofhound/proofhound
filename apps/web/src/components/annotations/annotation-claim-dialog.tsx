@@ -1,19 +1,18 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+  Input,
+  Label,
+  cn,
+} from '@proofhound/ui';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
-
 export const MAX_ANNOTATION_CLAIM_BATCH_SIZE = 100;
 
 const PRESETS = [5, 10, 20, 50];

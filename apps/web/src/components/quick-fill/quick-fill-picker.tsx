@@ -2,10 +2,13 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, Search, Sparkles } from 'lucide-react';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
-
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  Input,
+  cn,
+} from '@proofhound/ui';
 const FEATURED_SCOPE = '__featured';
 const ALL_SCOPE = '__all';
 

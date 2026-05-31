@@ -34,14 +34,18 @@ import {
   Sparkles,
   Upload,
 } from 'lucide-react';
-import { Main } from '@/components/layout/main';
+import { Main } from '@proofhound/ui/layout';
 import { ModelProbeStatus, type ModelProbeFeedback } from '@/components/model-probe-status';
 import { PromptLanguageSelect, type PromptLanguage } from '@/components/prompt-language-select';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { PlatformLoader } from '@/components/ui/platform-loader';
-import { Progress, formatProgressLabel } from '@/components/ui/progress';
+import {
+  Button,
+  Input,
+  Label,
+  PlatformLoader,
+  Progress,
+  formatProgressLabel,
+  cn,
+} from '@proofhound/ui';
 import {
   useCreateQuickStart,
   useProbeQuickStartDraftModel,
@@ -52,7 +56,6 @@ import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
 import { buildProviderTypeOptions } from '@/lib/model-provider-type';
-import { cn } from '@/lib/utils';
 import {
   FORMAT_CHIPS,
   PREVIEW_LIMIT,

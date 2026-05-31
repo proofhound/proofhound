@@ -5,17 +5,19 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { AnnotationReleaseVariantOptionDto, AnnotationTaskScopeDto } from '@proofhound/shared';
 import { ClipboardCheck, Database, GitBranch, RadioTower } from 'lucide-react';
-import { Main } from '@/components/layout/main';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { DetailPageSkeleton } from '@/components/ui/detail-page-skeleton';
-import { Segmented } from '@/components/ui/segmented';
+import { Main } from '@proofhound/ui/layout';
+import {
+  Button,
+  Input,
+  Label,
+  DetailPageSkeleton,
+  Segmented,
+  cn,
+} from '@proofhound/ui';
 import { useAnnotationTaskOptions, useCreateAnnotationTask } from '@/hooks/annotation';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
-import { cn } from '@/lib/utils';
 import { formatCount } from './annotation-ui';
 
 function buildDefaultTaskName() {

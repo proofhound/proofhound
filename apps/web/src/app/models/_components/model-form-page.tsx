@@ -30,15 +30,27 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  DetailPageSkeleton,
+  Progress,
+  formatProgressLabel,
+  cn,
+} from '@proofhound/ui';
 import { JsonObjectTextarea } from '@/components/json-object-textarea';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Main } from '@/components/layout/main';
-import { DetailPageSkeleton } from '@/components/ui/detail-page-skeleton';
-import { Progress, formatProgressLabel } from '@/components/ui/progress';
+import { Main } from '@proofhound/ui/layout';
 import { ModelContextWindowInput } from '@/components/model-context-window-input';
 import { ModelProbeStatus, type ModelProbeFeedback } from '@/components/model-probe-status';
 import { ModelPresetQuickFill } from '@/features/model-quick-fill/model-preset-quick-fill';
@@ -48,7 +60,6 @@ import { getApiErrorMessage } from '@/lib/api-error';
 import { toIntegerInputValue } from '@/lib/model-number';
 import { buildProviderTypeOptions } from '@/lib/model-provider-type';
 import { isProjectNameTaken } from '@/lib/project-name';
-import { cn } from '@/lib/utils';
 import {
   useCreateProjectModel,
   useProbeProjectModel,

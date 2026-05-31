@@ -5,31 +5,37 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Main } from '@/components/layout/main';
-import { ListRowsSkeleton } from '@/components/ui/list-page-skeleton';
-import { PlatformLoaderOverlay } from '@/components/ui/platform-loader';
-import { ResourcePaginationFooter } from '@/components/ui/resource-pagination-footer';
-import { SlidingViewToggle } from '@/components/ui/sliding-view-toggle';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, type TableColumn } from '@/components/ui/table';
-import { TableActionIconButton } from '@/components/ui/table-action';
+  Input,
+  Label,
+  ListRowsSkeleton,
+  PlatformLoaderOverlay,
+  ResourcePaginationFooter,
+  SlidingViewToggle,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableActionIconButton,
+  cn,
+} from '@proofhound/ui';
+import type { TableColumn } from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { useBulkDeleteConnectors, useConnectors, useDeleteConnector } from '@/hooks/connector';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
 import { formatDateTime } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import {
   type ConnectorFilter,
   type ConnectorListItem,

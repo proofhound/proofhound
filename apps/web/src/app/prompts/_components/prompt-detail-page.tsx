@@ -29,23 +29,31 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Main } from '@/components/layout/main';
-import { PlatformLoaderOverlay } from '@/components/ui/platform-loader';
-import { DetailPageSkeleton } from '@/components/ui/detail-page-skeleton';
-import { Skeleton } from '@/components/ui/skeleton';
-import { TableActionRow, type TableActionDescriptor } from '@/components/ui/table-action';
+  Input,
+  PlatformLoaderOverlay,
+  DetailPageSkeleton,
+  Skeleton,
+  TableActionRow,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  ModalityIcon,
+  ModalityIconGroup,
+  UnusedImagesBadge,
+  cn,
+} from '@proofhound/ui';
+import type { TableActionDescriptor, ModalityKind } from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { PromptDiffSplitView } from '@/components/prompt-diff/prompt-diff-split-view';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { PromptVariableModalityBadges } from '@/components/prompt-version-picker-row';
 import { useDatasets } from '@/hooks/dataset';
 import {
@@ -59,12 +67,9 @@ import {
   useUpdatePromptVersionLabel,
 } from '@/hooks/prompt';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { ModalityIcon, ModalityIconGroup, type ModalityKind } from '@/components/ui/modality-icon';
-import { UnusedImagesBadge } from '@/components/ui/unused-images-badge';
 import { PromptLanguageSelect, type PromptLanguage } from '@/components/prompt-language-select';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { formatDateTime } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import {
   DATASET_MODALITY_LABEL_KEYS,
   type DatasetModality,

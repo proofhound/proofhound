@@ -28,21 +28,21 @@ import type {
   RunResultListItemDto,
   RunResultStatusDto,
 } from '@proofhound/shared';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { ImagePreviewDialog, ImageZoomHoverOverlay } from '@/components/ui/image-preview-dialog';
-import { Input } from '@/components/ui/input';
-import { Main } from '@/components/layout/main';
-import { ModalityIcon, ModalityIconGroup, type ModalityKind } from '@/components/ui/modality-icon';
-import { DetailPageSkeleton } from '@/components/ui/detail-page-skeleton';
-import { Progress, formatProgressLabel } from '@/components/ui/progress';
-import { ResourcePaginationFooter } from '@/components/ui/resource-pagination-footer';
-import {
+  ImagePreviewDialog,
+  ImageZoomHoverOverlay,
+  Input,
+  ModalityIcon,
+  ModalityIconGroup,
+  DetailPageSkeleton,
+  Progress,
+  formatProgressLabel,
+  ResourcePaginationFooter,
   Table,
   TableBody,
   TableCell,
@@ -51,11 +51,12 @@ import {
   TableHeader,
   TableRow,
   TableSkeletonRows,
-  type TableColumn,
-} from '@/components/ui/table';
-import { TooltipProvider } from '@/components/ui/tooltip';
+  TooltipProvider,
+  cn,
+} from '@proofhound/ui';
+import type { ModalityKind, TableColumn } from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
 import { formatDateTime, formatLatencySeconds } from '@/lib/format';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
 import { useControlExperiment, useDownloadExperiment, useExperiment } from '@/hooks/experiment';

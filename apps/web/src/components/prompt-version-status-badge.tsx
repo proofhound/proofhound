@@ -3,10 +3,14 @@
 import { Lock, Pencil } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PromptVersionStatusDto } from '@proofhound/shared';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  cn,
+} from '@proofhound/ui';
 import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
-
 type PromptVersionStatus = PromptVersionStatusDto;
 
 const STATUS_LABEL_KEYS: Record<PromptVersionStatus, TranslationKey> = {

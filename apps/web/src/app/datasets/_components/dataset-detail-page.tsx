@@ -13,20 +13,26 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Main } from '@/components/layout/main';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  cn,
+} from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { useDatasetSamples, useDeleteDatasetSamples, useDownloadDataset } from '@/hooks/dataset';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
 import {
   getReferenceCount,
   type DatasetField,

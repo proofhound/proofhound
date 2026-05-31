@@ -4,21 +4,18 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, Copy, Eye, EyeOff, KeyRound, Plus, Save, Sparkles, Trash2, WandSparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Main } from '@/components/layout/main';
-import { DetailPageSkeleton } from '@/components/ui/detail-page-skeleton';
-import { SlidingViewToggle } from '@/components/ui/sliding-view-toggle';
-import {
+  Input,
+  Label,
+  DetailPageSkeleton,
+  SlidingViewToggle,
   Table,
   TableBody,
   TableCell,
@@ -26,8 +23,10 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  type TableColumn,
-} from '@/components/ui/table';
+  TableActionIconButton,
+} from '@proofhound/ui';
+import type { TableColumn } from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import {
   useConnector,
   useConnectorReferences,
@@ -40,7 +39,6 @@ import {
   useUpdateConnector,
 } from '@/hooks/connector';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { TableActionIconButton } from '@/components/ui/table-action';
 import { useI18n, type Language, type TranslationKey } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
 import { formatDateTime } from '@/lib/format';

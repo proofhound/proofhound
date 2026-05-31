@@ -17,38 +17,40 @@ import {
   X,
 } from 'lucide-react';
 import type { DatasetExportFormatDto } from '@proofhound/shared';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Main } from '@/components/layout/main';
-import { ListRowsSkeleton } from '@/components/ui/list-page-skeleton';
-import { PlatformLoaderOverlay } from '@/components/ui/platform-loader';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ResourcePaginationFooter } from '@/components/ui/resource-pagination-footer';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, type TableColumn } from '@/components/ui/table';
-import {
+  Input,
+  ListRowsSkeleton,
+  PlatformLoaderOverlay,
+  Skeleton,
+  ResourcePaginationFooter,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
   TABLE_ACTION_ICON_BUTTON_CLASS,
   TableActionIconButton,
   TableActionTooltip,
-} from '@/components/ui/table-action';
+  cn,
+} from '@proofhound/ui';
+import type { TableColumn } from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { useDatasets, useDeleteDataset, useDownloadDataset, useUpdateDataset } from '@/hooks/dataset';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
-import { cn } from '@/lib/utils';
 import { DatasetTransferProgressPanel, useDatasetTransferProgress } from './dataset-transfer-progress';
 import { getReferenceCount, type ProjectDataset, type DatasetModality } from './dataset-types';
 import { toProjectDataset } from './dataset-mappers';

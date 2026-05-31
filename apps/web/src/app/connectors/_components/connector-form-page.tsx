@@ -4,26 +4,26 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { ChevronLeft, Copy } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Main } from '@/components/layout/main';
-import { DetailPageSkeleton } from '@/components/ui/detail-page-skeleton';
-import { SlidingViewToggle } from '@/components/ui/sliding-view-toggle';
+  Input,
+  Label,
+  DetailPageSkeleton,
+  SlidingViewToggle,
+  cn,
+} from '@proofhound/ui';
+import { Main } from '@proofhound/ui/layout';
 import { useConnector, useCreateConnector, useUpdateConnector } from '@/hooks/connector';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useI18n } from '@/i18n';
 import { getApiErrorMessage } from '@/lib/api-error';
 import { isCanonicalUuid } from '@/lib/uuid';
-import { cn } from '@/lib/utils';
 import type { ConnectorDirection, ConnectorType, CreateConnectorDto } from '@proofhound/shared';
 
 type Mode = 'create' | 'edit';

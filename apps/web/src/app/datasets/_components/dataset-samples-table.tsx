@@ -3,8 +3,8 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Edit3, Trash2 } from 'lucide-react';
 
-import { ResourcePaginationFooter } from '@/components/ui/resource-pagination-footer';
 import {
+  ResourcePaginationFooter,
   Table,
   TableBody,
   TableCell,
@@ -12,12 +12,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  type TableColumn,
-} from '@/components/ui/table';
-import { TableActionIconButton } from '@/components/ui/table-action';
+  TableActionIconButton,
+  cn,
+} from '@proofhound/ui';
+import type { TableColumn } from '@proofhound/ui';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
-
 import type { DatasetField, DatasetSample } from './dataset-types';
 import { getImageReferences, getPrimaryImageReference } from './dataset-detail-helpers';
 import { ImageCell, ImagePreviewDialog, SelectionBox } from './dataset-ui';

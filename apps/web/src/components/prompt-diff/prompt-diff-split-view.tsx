@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useRef, type RefObject } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@proofhound/ui';
 
 export type PromptDiffLineKind = 'same' | 'added' | 'removed' | 'blank';
 

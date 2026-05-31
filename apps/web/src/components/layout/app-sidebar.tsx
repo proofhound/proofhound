@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ProofHoundLogo } from '@/components/brand/proofhound-logo';
+import { ProofHoundLogo } from '@proofhound/ui/brand';
 import {
   Sidebar,
   SidebarContent,
@@ -9,9 +9,9 @@ import {
   SidebarHeader,
   SidebarRail,
   useSidebar,
-} from '@/components/ui/sidebar';
+  cn,
+} from '@proofhound/ui';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
 import { getMainNavGroups } from './sidebar-data';
 import { NavGroup } from './nav-group';
 

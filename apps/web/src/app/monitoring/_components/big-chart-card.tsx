@@ -9,7 +9,7 @@ import {
   type SourceStackedBarDatum,
   type SourceStackedBarSource,
 } from '@/components/charts/source-stacked-bar';
-import { cn } from '@/lib/utils';
+import { cn } from '@proofhound/ui';
 
 export type DeltaTone = 'up' | 'down' | 'warn' | 'neutral';
 

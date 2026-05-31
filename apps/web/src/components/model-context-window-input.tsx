@@ -2,12 +2,9 @@
 
 import { useEffect, useState, type MouseEvent } from 'react';
 import { ClipboardList, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Button, Input, cn } from '@proofhound/ui';
 import { useLookupModelContextWindow } from '@/hooks/model';
 import { useI18n } from '@/i18n';
-import { cn } from '@/lib/utils';
-
 type LookupStatus = 'idle' | 'applied' | 'missing' | 'needsModelId' | 'failed';
 
 type ModelContextWindowInputProps = {

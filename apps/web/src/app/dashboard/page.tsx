@@ -17,9 +17,8 @@ import {
   RefreshCcw,
   Rocket,
 } from 'lucide-react';
-import { Main } from '@/components/layout/main';
-import { PlatformLoaderOverlay } from '@/components/ui/platform-loader';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Main } from '@proofhound/ui/layout';
+import { PlatformLoaderOverlay, Skeleton, cn } from '@proofhound/ui';
 import { useConnectors } from '@/hooks/connector';
 import { useDatasets } from '@/hooks/dataset';
 import { useExperiments } from '@/hooks/experiment';
@@ -31,7 +30,6 @@ import { useReleaseLineList } from '@/hooks/release-line';
 import { useI18n, type TranslationKey } from '@/i18n';
 import { formatDateTime } from '@/lib/format';
 import type { ReleaseLineView } from '@/lib/releases/release-line-model';
-import { cn } from '@/lib/utils';
 import { useProjectContext } from '@/providers/project-context-provider';
 
 const DEFAULT_VISIBLE_FEED_ITEMS = 10;

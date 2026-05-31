@@ -1,7 +1,7 @@
 'use client';
 
 import type { SourceBucket } from '@proofhound/shared';
-import { cn } from '@/lib/utils';
+import { cn } from '@proofhound/ui';
 
 const ORDER: ReadonlyArray<SourceBucket> = ['prod', 'canary', 'iter', 'exp'];
 
