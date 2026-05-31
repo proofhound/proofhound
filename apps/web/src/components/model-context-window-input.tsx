@@ -20,6 +20,7 @@ type ModelContextWindowInputProps = {
   inputClassName?: string;
   buttonClassName?: string;
   onValueChange?: (value: string) => void;
+  testId?: string;
 };
 
 function findProviderModelInput(form: HTMLFormElement | null, inputName: string) {
@@ -37,6 +38,7 @@ export function ModelContextWindowInput({
   inputClassName,
   buttonClassName,
   onValueChange,
+  testId,
 }: ModelContextWindowInputProps) {
   const { t } = useI18n();
   const [value, setValue] = useState(defaultValue ?? '');
@@ -98,6 +100,7 @@ export function ModelContextWindowInput({
             className={cn('pr-20', readOnly && 'bg-muted/50 text-muted-foreground', inputClassName)}
             placeholder={placeholder}
             readOnly={readOnly}
+            data-testid={testId}
           />
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
             tokens
