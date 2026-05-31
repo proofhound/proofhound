@@ -7,6 +7,7 @@ const config: Config = {
     './src/components/**/*.{ts,tsx}',
     './src/hooks/**/*.{ts,tsx}',
     '../../packages/ui/src/**/*.{ts,tsx}',
+    '../../packages/web-ui/src/**/*.{ts,tsx}',
   ],
   theme: {
     container: {

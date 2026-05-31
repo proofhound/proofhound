@@ -7,7 +7,7 @@ import { DEFAULT_LANGUAGE, resolveAcceptLanguageHeader, type Language } from '@p
 import { ProofHoundWebProvider } from '@proofhound/web-ui/providers';
 import { localWebContracts } from '@proofhound/web-ui/contracts';
 import '@xyflow/react/dist/style.css';
-import '../styles/globals.css';
+import '@proofhound/web-ui/styles/globals.css';
 
 export const metadata: Metadata = {
   title: 'ProofHound',
