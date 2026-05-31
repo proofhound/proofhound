@@ -1001,7 +1001,9 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
             <div className="min-w-0">
               <h1 className="flex flex-wrap items-center gap-2 text-[24px] font-semibold tracking-tight">
                 <span className="font-mono">{detail.name}</span>
-                <ExperimentStatusBadge status={detail.status} />
+                <span data-testid="experiment-detail-status-badge">
+                  <ExperimentStatusBadge status={detail.status} />
+                </span>
               </h1>
             </div>
             <div className="flex flex-wrap items-center gap-2">

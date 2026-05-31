@@ -204,10 +204,12 @@ function PromptNameRow({
   prompt,
   selected,
   onSelect,
+  testId,
 }: {
   prompt: PromptListItemDto;
   selected: boolean;
   onSelect: () => void;
+  testId?: string;
 }) {
   const { t } = useI18n();
   const latestVersion = `v${prompt.latestVersionNumber}`;
@@ -215,6 +217,7 @@ function PromptNameRow({
     <button
       type="button"
       onClick={onSelect}
+      data-testid={testId}
       className={cn(
         'flex w-full items-start gap-2.5 border-b px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-muted/40',
         selected && 'bg-primary/5',
@@ -328,17 +331,20 @@ function DatasetCard({
   selected,
   defaultLinkLabel,
   onSelect,
+  testId,
 }: {
   option: ExperimentDatasetOption;
   selected: boolean;
   defaultLinkLabel?: string;
   onSelect: () => void;
+  testId?: string;
 }) {
   const { t } = useI18n();
   return (
     <button
       type="button"
       onClick={onSelect}
+      data-testid={testId}
       className={cn(
         'flex w-full items-start gap-2.5 border-b px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-muted/40',
         selected && 'bg-primary/5',
@@ -382,16 +388,19 @@ function ModelRow({
   option,
   selected,
   onSelect,
+  testId,
 }: {
   option: ExperimentModelOption;
   selected: boolean;
   onSelect: () => void;
+  testId?: string;
 }) {
   const { t } = useI18n();
   return (
     <button
       type="button"
       onClick={onSelect}
+      data-testid={testId}
       className={cn(
         'grid w-full grid-cols-[20px_minmax(160px,1.5fr)_minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.9fr)] items-center gap-3 border-b px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/40',
         selected && 'bg-primary/5',
@@ -844,7 +853,14 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
             <Button asChild type="button" variant="ghost" size="sm" className="h-9">
               <Link href={`/experiments`}>{t('experiments.new.cancel')}</Link>
             </Button>
-            <Button type="button" size="sm" className="h-9 gap-1" disabled={!canSubmit} onClick={handleCreate}>
+            <Button
+              type="button"
+              size="sm"
+              className="h-9 gap-1"
+              disabled={!canSubmit}
+              onClick={handleCreate}
+              data-testid="experiment-new-submit"
+            >
               {createExperiment.isPending ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-4" />}
               {createExperiment.isPending
                 ? t('experiments.new.createAndStartLoading')
@@ -874,6 +890,7 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
                     aria-invalid={experimentNameTaken || undefined}
                     className="font-mono text-[13px]"
                     placeholder={t('experiments.new.basic.namePlaceholder')}
+                    data-testid="experiment-new-name"
                   />
                   {experimentNameTaken ? (
                     <div className="text-[11px] text-destructive">{t('common.formError.nameTaken')}</div>
@@ -927,6 +944,7 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
                           prompt={prompt}
                           selected={prompt.id === selectedPromptListId}
                           onSelect={() => handleSelectPrompt(prompt.id)}
+                          testId={`experiment-new-prompt-row-${prompt.id}`}
                         />
                       ))}
                     </div>
@@ -947,12 +965,13 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
                   ) : promptVersions.length > 0 ? (
                     <div className="max-h-[360px] overflow-y-auto overflow-x-hidden px-2 py-1">
                       {promptVersions.map((option) => (
-                        <PromptVersionRow
-                          key={option.id}
-                          option={option}
-                          selected={option.id === selectedPromptVersionId}
-                          onSelect={() => setSelectedPromptVersionId(option.id)}
-                        />
+                        <div key={option.id} data-testid={`experiment-new-prompt-version-row-${option.id}`}>
+                          <PromptVersionRow
+                            option={option}
+                            selected={option.id === selectedPromptVersionId}
+                            onSelect={() => setSelectedPromptVersionId(option.id)}
+                          />
+                        </div>
                       ))}
                     </div>
                   ) : (
@@ -1034,6 +1053,7 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
                       <DatasetCard
                         key={option.id}
                         option={option}
+                        testId={`experiment-new-dataset-row-${option.id}`}
                         selected={option.id === selectedDatasetId}
                         defaultLinkLabel={
                           option.id === selectedPrompt?.defaultDatasetId
@@ -1084,6 +1104,7 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
                         option={option}
                         selected={option.id === selectedModelId}
                         onSelect={() => setSelectedModelId(option.id)}
+                        testId={`experiment-new-model-row-${option.id}`}
                       />
                     ))}
                   </div>
