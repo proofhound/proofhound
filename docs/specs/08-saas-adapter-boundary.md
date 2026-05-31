@@ -569,17 +569,29 @@ export const localWebContracts: WebContracts = {
 };
 ```
 
-`ProofHoundWebProvider` usage in OSS `apps/web/src/app/layout.tsx`:
+`ProofHoundWebProvider` usage — RSC boundary rules (realized in OSS `apps/web`):
+
+`WebContracts.authSource` is a **class instance** (`LocalAuthSource`), which React Server Components cannot pass across the server→client prop boundary. The root `layout.tsx` is an async Server Component, so it must NOT pass `contracts` directly to the client `ProofHoundWebProvider`. Wrap it in a `'use client'` module that owns the contracts; the layout passes only serializable data (`defaultLanguage: string`) + `children`:
 
 ```tsx
+// apps/web/src/app/providers.tsx  ('use client')
+'use client';
 import { ProofHoundWebProvider } from '@proofhound/web-ui/providers';
 import { localWebContracts } from '@proofhound/web-ui/contracts';
+import { type Language } from '@proofhound/web-ui/i18n/language';
+export function Providers({ defaultLanguage, children }: { defaultLanguage: Language; children: ReactNode }) {
+  return <ProofHoundWebProvider contracts={localWebContracts} defaultLanguage={defaultLanguage}>{children}</ProofHoundWebProvider>;
+}
 
-// OSS layout — thin shell, all product UI comes from @proofhound/web-ui
-<ProofHoundWebProvider contracts={localWebContracts}>
-  {children}  {/* route wrappers import @proofhound/web-ui/screens */}
-</ProofHoundWebProvider>
+// apps/web/src/app/layout.tsx  (async Server Component)
+// server-safe language utils come from the non-'use client' subpath @proofhound/web-ui/i18n/language
+import { resolveAcceptLanguageHeader } from '@proofhound/web-ui/i18n/language';
+import { Providers } from './providers';
+const defaultLanguage = resolveAcceptLanguageHeader((await headers()).get('accept-language'));
+<Providers defaultLanguage={defaultLanguage}>{children}{/* route wrappers import @proofhound/web-ui/screens */}</Providers>
 ```
+
+Two boundary rules a consuming app (OSS or SaaS) must follow: (1) server code calls server-safe i18n utils (e.g. `resolveAcceptLanguageHeader`) from `@proofhound/web-ui/i18n/language` (NOT the `'use client'` `@proofhound/web-ui/i18n` barrel); (2) the class-instance `contracts` is constructed/held behind a `'use client'` boundary, never passed as a prop from a Server Component. Also: the consuming app must register the shared package sources for Tailwind (`@proofhound/web-ui/styles/globals.css` carries `@source` directives for `@proofhound/web-ui` + `@proofhound/ui`; the app's own chrome is auto-detected) so responsive utility classes in the shared components are not purged.
 
 SaaS passes `{ authSource: SupabaseAuthSource, projectContext: <reactive multi-tenant source>, i18nExtend: saasConsoleDict }`. The product UI screens and hooks in `@proofhound/web-ui` are identical in both cases—the contracts injection point is the single difference.
 
