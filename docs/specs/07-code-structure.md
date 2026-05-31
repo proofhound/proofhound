@@ -162,10 +162,12 @@ The three frontend layers:
 | Layer | Location | Responsibility |
 | -- | ---- | ---- |
 | C1 | `packages/api-client/src/<resource>.ts` | HTTP client |
-| C2 | `apps/web/src/hooks/<resource>.ts` | React Query hooks |
-| C3 | `apps/web/src/app/<resource>/` | Pages and components |
+| C2 | `@proofhound/web/hooks` | React Query hooks |
+| C3 | `@proofhound/web/screens` \| `@proofhound/web/components` | Product screens and domain components |
 
-When adding or renaming pages, update the Playwright smoke tests accordingly. User-facing strings go through `apps/web/src/i18n` and must provide both `zh-CN` / `en-US`.
+`apps/web` is the OSS thin shell: 5–18 line route wrappers that import screens from `@proofhound/web/screens`, chrome components (`components/layout/`: AppShell / sidebar / header), and the root `<ProofHoundWebProvider contracts={localWebContracts}>` wiring in `app/layout.tsx`. The chrome components are app-level and do not move into the shared package.
+
+When adding or renaming pages, update the Playwright smoke tests accordingly. User-facing strings go through `@proofhound/web/i18n` and must provide both `zh-CN` / `en-US`.
 
 ## 7. packages — Shared Packages
 
@@ -183,7 +185,8 @@ When adding or renaming pages, update the Playwright smoke tests accordingly. Us
 | `@proofhound/judgment` | Judgment strategies |
 | `@proofhound/metrics` | Offline experiment metric computation strategies |
 | `@proofhound/optimization-strategy` | Optimization strategies |
-| `@proofhound/ui` | Reusable React UI |
+| `@proofhound/ui` | Design system: shadcn atomic primitives + `cn()` + `Main` layout primitive + pure UI hooks + `UiStringsContext` |
+| `@proofhound/web` | Product UI: screens / hooks / i18n / providers / components / lib / contracts (see §4.2 of [08](08-saas-adapter-boundary.md) for subpath exports) |
 
 ## 8. Dependency Rules
 
@@ -194,6 +197,7 @@ packages/db -> packages/shared (share types only when necessary)
 packages/llm-client -> packages/logger
 packages/connector-client -> packages/logger
 packages/metrics / judgment / optimization-strategy -> packages/shared
+packages/web -> packages/ui, packages/api-client, packages/shared
 ```
 
 Forbidden:
@@ -210,7 +214,7 @@ Forbidden:
 | ---- | ---- |
 | New REST resource | `apps/server/src/modules/<resource>/` + `packages/shared/src/dto/` |
 | New MCP tool | `apps/server/src/channels/mcp/<resource>.tools.ts` |
-| New frontend page | `apps/web/src/app/<resource>/` |
+| New frontend screen (shared) | `packages/web/src/screens/<resource>/` + route wrapper in `apps/web/src/app/<resource>/page.tsx` |
 | New API client | `packages/api-client/src/<resource>.ts` |
 | New DB table / column | `packages/db/src/schema/` + migration |
 | New BullMQ payload | `packages/orchestration-shared/src/` |
