@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { Main } from '@proofhound/ui/layout';
 import { Button, DetailPageSkeleton } from '@proofhound/ui';
 import { useDataset } from '@proofhound/web-ui/hooks';

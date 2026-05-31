@@ -30,7 +30,7 @@ import { useReleaseLineList } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { formatDateTime } from '@proofhound/web-ui/lib';
 import type { ReleaseLineView } from '@proofhound/web-ui/lib';
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 
 const DEFAULT_VISIBLE_FEED_ITEMS = 10;
 const EMPTY_LIST: never[] = [];

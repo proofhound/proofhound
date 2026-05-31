@@ -1,6 +1,6 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { DatasetsListPage } from './_components/datasets-list-page';
 
 export default function ProjectDatasetsPage() {

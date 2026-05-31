@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { ModelFormPage } from '../_components/model-form-page';
 
 export default function NewProjectModelPage() {

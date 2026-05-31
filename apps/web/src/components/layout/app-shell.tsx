@@ -17,8 +17,8 @@ import {
 } from './layout-preferences';
 import { getMainNavGroups } from './sidebar-data';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
-import { useProjectContext } from '@/providers/project-context-provider';
-import type { ProjectContext } from '@/lib/project-context';
+import { useProjectContext } from '@proofhound/web-ui/providers';
+import type { ProjectContext } from '@proofhound/shared';
 import { useCanaryReleaseList } from '@proofhound/web-ui/hooks';
 import { useConnector } from '@proofhound/web-ui/hooks';
 import { useDataset } from '@proofhound/web-ui/hooks';

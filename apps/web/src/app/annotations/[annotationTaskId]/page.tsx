@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { AnnotationDetailPage } from '../_components/annotation-detail-page';
 
 function getParam(value: string | string[] | undefined) {

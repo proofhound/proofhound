@@ -1,6 +1,6 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { ModelsListPage } from './_components/models-list-page';
 
 export default function ProjectModelsPage() {

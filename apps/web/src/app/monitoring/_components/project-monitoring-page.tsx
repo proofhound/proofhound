@@ -27,7 +27,7 @@ import {
 } from '@proofhound/web-ui/hooks';
 import { usePrompts } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { BigChartCard, type DeltaTone } from './big-chart-card';
 import { MonitoringFilterStrip } from './monitoring-filter-strip';
 import { ProjectModelRankingCard, PromptRankingCard } from './ranking-cards';

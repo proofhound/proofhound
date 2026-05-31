@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { OptimizationNewPage } from './_components/optimization-new-page';
 
 export default function ProjectOptimizationNewPage() {

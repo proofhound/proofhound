@@ -3,10 +3,9 @@ import { headers } from 'next/headers';
 import Script from 'next/script';
 import { Suspense, type ReactNode } from 'react';
 import { AppShell } from '@/components/layout/app-shell';
-import { I18nProvider } from '@proofhound/web-ui/i18n';
 import { DEFAULT_LANGUAGE, resolveAcceptLanguageHeader, type Language } from '@proofhound/web-ui/i18n';
-import { ProjectContextProvider } from '@/providers/project-context-provider';
-import { RefineProvider } from '@/providers/refine-provider';
+import { ProofHoundWebProvider } from '@proofhound/web-ui/providers';
+import { localWebContracts } from '@proofhound/web-ui/contracts';
 import '@xyflow/react/dist/style.css';
 import '../styles/globals.css';
 
@@ -61,13 +60,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body>
         <Suspense fallback={null}>
-          <I18nProvider defaultLanguage={defaultLanguage}>
-            <ProjectContextProvider>
-              <RefineProvider>
-                <AppShell>{children}</AppShell>
-              </RefineProvider>
-            </ProjectContextProvider>
-          </I18nProvider>
+          <ProofHoundWebProvider contracts={localWebContracts} defaultLanguage={defaultLanguage}>
+            <AppShell>{children}</AppShell>
+          </ProofHoundWebProvider>
         </Suspense>
       </body>
     </html>

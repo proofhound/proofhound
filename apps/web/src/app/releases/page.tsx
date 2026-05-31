@@ -1,6 +1,6 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { ReleasesListPage } from './_components/releases-list-page';
 
 export default function ProjectReleasesPage() {

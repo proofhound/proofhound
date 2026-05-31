@@ -1,6 +1,6 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { ReleaseNewPage } from '../_components/release-new-page';
 
 export default function ProjectReleaseNewRoute() {

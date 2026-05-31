@@ -1,6 +1,6 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { ConnectorFormPage } from '../_components/connector-form-page';
 
 export default function ProjectConnectorNewPage() {

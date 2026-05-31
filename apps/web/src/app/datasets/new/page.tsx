@@ -1,6 +1,6 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 import { DatasetUploadPage } from '../_components/dataset-upload-page';
 
 export default function ProjectDatasetUploadRoute() {
