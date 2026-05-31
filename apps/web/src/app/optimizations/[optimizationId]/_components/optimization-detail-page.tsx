@@ -2597,7 +2597,9 @@ export function OptimizationDetailPage({
           <div className="min-w-0">
             <h1 className="flex flex-wrap items-baseline gap-2 text-[24px] font-semibold tracking-tight">
               <span className="font-mono">{detail.name}</span>
-              <OptimizationStatusBadge status={status} />
+              <span data-testid="optimization-detail-status-badge">
+                <OptimizationStatusBadge status={status} />
+              </span>
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
