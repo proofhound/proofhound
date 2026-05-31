@@ -448,7 +448,7 @@ The frontend reuse mechanism mirrors the backend `@proofhound/core` + `ProofHoun
 ```
 packages/
   ui/            # Pure design system (atomic primitives + cn() + Main layout primitive)
-  web/           # Shared product UI (screens / hooks / components / i18n / providers / lib / contracts)
+  web-ui/        # Shared product UI (screens / hooks / components / i18n / providers / lib / contracts)
 apps/web/        # OSS thin shell: route wrappers + chrome (AppShell / sidebar / header) + contracts wiring
 SaaS apps/web/   # SaaS thin shell: own chrome (org nav / billing / project switcher) + same @proofhound/web-ui/screens
 ```

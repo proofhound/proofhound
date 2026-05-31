@@ -197,7 +197,7 @@ packages/db -> packages/shared (share types only when necessary)
 packages/llm-client -> packages/logger
 packages/connector-client -> packages/logger
 packages/metrics / judgment / optimization-strategy -> packages/shared
-packages/web -> packages/ui, packages/api-client, packages/shared
+packages/web-ui -> packages/ui, packages/api-client, packages/shared
 ```
 
 Forbidden:
@@ -214,7 +214,7 @@ Forbidden:
 | ---- | ---- |
 | New REST resource | `apps/server/src/modules/<resource>/` + `packages/shared/src/dto/` |
 | New MCP tool | `apps/server/src/channels/mcp/<resource>.tools.ts` |
-| New frontend screen (shared) | `packages/web/src/screens/<resource>/` + route wrapper in `apps/web/src/app/<resource>/page.tsx` |
+| New frontend screen (shared) | `packages/web-ui/src/screens/<resource>/` + route wrapper in `apps/web/src/app/<resource>/page.tsx` |
 | New API client | `packages/api-client/src/<resource>.ts` |
 | New DB table / column | `packages/db/src/schema/` + migration |
 | New BullMQ payload | `packages/orchestration-shared/src/` |
