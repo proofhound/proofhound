@@ -1,5 +1,18 @@
 @import 'tailwindcss';
 
+/*
+ * Tailwind v4 reads no `@config`, so it ignores tailwind.config.ts's `content` array and
+ * auto-detects sources from the consuming app's build root only (e.g. apps/web/src). The shared
+ * product packages live outside that root, so their classes (e.g. the sidebar's `md:flex` /
+ * `md:block` desktop variants) would be purged. Register the shared package sources explicitly.
+ * Paths are relative to this file (packages/web-ui/src/styles/globals.css):
+ *   ../              → @proofhound/web-ui src (this package)
+ *   ../../../ui/src  → @proofhound/ui src (design system: primitives incl. sidebar)
+ * The consuming app's own code (route wrappers + chrome) is auto-detected from its build root.
+ */
+@source '../**/*.{ts,tsx}';
+@source '../../../ui/src/**/*.{ts,tsx}';
+
 /* Tailwind v4: map CSS variables → utility classes */
 @theme inline {
   --color-background: var(--background);

@@ -2,13 +2,13 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import Script from 'next/script';
 import { Suspense, type ReactNode } from 'react';
-import { AppShell } from '@/components/layout/app-shell';
 // Server-safe language utils MUST come from the non-'use client' subpath: the i18n barrel
 // (index.tsx) is 'use client', so importing resolveAcceptLanguageHeader from it and calling it
 // in this server component throws "called from the server but … is on the client".
 import { DEFAULT_LANGUAGE, resolveAcceptLanguageHeader, type Language } from '@proofhound/web-ui/i18n/language';
-import { ProofHoundWebProvider } from '@proofhound/web-ui/providers';
-import { localWebContracts } from '@proofhound/web-ui/contracts';
+// The provider tree (which owns the class-instance contracts) lives behind a 'use client'
+// boundary so this Server Component never passes a class instance across the RSC boundary.
+import { Providers } from './providers';
 import '@xyflow/react/dist/style.css';
 import '@proofhound/web-ui/styles/globals.css';
 
@@ -63,9 +63,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body>
         <Suspense fallback={null}>
-          <ProofHoundWebProvider contracts={localWebContracts} defaultLanguage={defaultLanguage}>
-            <AppShell>{children}</AppShell>
-          </ProofHoundWebProvider>
+          <Providers defaultLanguage={defaultLanguage}>{children}</Providers>
         </Suspense>
       </body>
     </html>
