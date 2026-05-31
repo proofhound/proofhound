@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 import { useProjectContext } from '@proofhound/web-ui/providers';
-import { ExperimentDetailPage } from './_components/experiment-detail-page';
+import { ExperimentDetailScreen } from '@proofhound/web-ui/screens';
 
 function getParam(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0] ?? '';
@@ -14,5 +14,5 @@ export default function ProjectExperimentDetailPage() {
   const { projectId } = useProjectContext();
   const experimentId = getParam(params.experimentId);
 
-  return <ExperimentDetailPage projectId={projectId} experimentId={experimentId} />;
+  return <ExperimentDetailScreen projectId={projectId} experimentId={experimentId} />;
 }

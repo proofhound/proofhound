@@ -1,9 +1,9 @@
 'use client';
 
 import { useProjectContext } from '@proofhound/web-ui/providers';
-import { ConnectorsListPage } from './_components/connectors-list-page';
+import { ConnectorsListScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectConnectorsPage() {
   const { projectId } = useProjectContext();
-  return <ConnectorsListPage projectId={projectId} />;
+  return <ConnectorsListScreen projectId={projectId} />;
 }

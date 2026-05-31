@@ -1,10 +1,10 @@
 'use client';
 
 import { useProjectContext } from '@proofhound/web-ui/providers';
-import { PromptsListPage } from '../_components/prompts-list-page';
+import { PromptsListScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectPromptNewRoute() {
   const { projectId } = useProjectContext();
 
-  return <PromptsListPage projectId={projectId} initialCreateDialogOpen />;
+  return <PromptsListScreen projectId={projectId} initialCreateDialogOpen />;
 }

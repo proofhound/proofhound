@@ -1,10 +1,10 @@
 'use client';
 
 import { useProjectContext } from '@proofhound/web-ui/providers';
-import { DatasetUploadPage } from '../_components/dataset-upload-page';
+import { DatasetUploadScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectDatasetUploadRoute() {
   const { projectId } = useProjectContext();
 
-  return <DatasetUploadPage projectId={projectId} />;
+  return <DatasetUploadScreen projectId={projectId} />;
 }

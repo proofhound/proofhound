@@ -2,7 +2,7 @@
 
 import { useSearchParams } from 'next/navigation';
 import { useProjectContext } from '@proofhound/web-ui/providers';
-import { ExperimentNewPage } from './_components/experiment-new-page';
+import { ExperimentNewScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectExperimentNewPage() {
   const searchParams = useSearchParams();
@@ -24,7 +24,7 @@ export default function ProjectExperimentNewPage() {
   const initialImageEncoding = searchParams.get('imageEncoding') ?? null;
 
   return (
-    <ExperimentNewPage
+    <ExperimentNewScreen
       projectId={projectId}
       initialPromptId={initialPromptId}
       initialPromptVersionId={initialPromptVersionId}

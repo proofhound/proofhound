@@ -2,7 +2,7 @@
 
 import { useSearchParams } from 'next/navigation';
 import { useProjectContext } from '@proofhound/web-ui/providers';
-import { OptimizationNewPage } from './_components/optimization-new-page';
+import { OptimizationNewScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectOptimizationNewPage() {
   const searchParams = useSearchParams();
@@ -13,7 +13,7 @@ export default function ProjectOptimizationNewPage() {
   const initialSourceExperimentId = searchParams.get('sourceExperimentId') ?? searchParams.get('experimentId') ?? null;
 
   return (
-    <OptimizationNewPage
+    <OptimizationNewScreen
       projectId={projectId}
       initialDatasetId={initialDatasetId}
       initialPromptId={initialPromptId}

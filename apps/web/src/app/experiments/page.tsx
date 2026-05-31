@@ -1,10 +1,10 @@
 'use client';
 
 import { useProjectContext } from '@proofhound/web-ui/providers';
-import { ExperimentsListPage } from './_components/experiments-list-page';
+import { ExperimentsListScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectExperimentsPage() {
   const { projectId } = useProjectContext();
 
-  return <ExperimentsListPage projectId={projectId} />;
+  return <ExperimentsListScreen projectId={projectId} />;
 }

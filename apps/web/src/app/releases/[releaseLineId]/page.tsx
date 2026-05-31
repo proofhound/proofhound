@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 import { useProjectContext } from '@proofhound/web-ui/providers';
-import { ReleaseLineDetailPage } from '../_components/release-line-detail-page';
+import { ReleaseLineDetailScreen } from '@proofhound/web-ui/screens';
 
 function getParam(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0] ?? '';
@@ -13,7 +13,7 @@ export default function ProjectReleaseLineDetailRoute() {
   const params = useParams<{ releaseLineId?: string | string[] }>();
   const { projectId } = useProjectContext();
   return (
-    <ReleaseLineDetailPage
+    <ReleaseLineDetailScreen
       projectId={projectId}
       releaseLineId={getParam(params.releaseLineId)}
     />

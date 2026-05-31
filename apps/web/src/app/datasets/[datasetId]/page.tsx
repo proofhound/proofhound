@@ -7,8 +7,7 @@ import { Button, DetailPageSkeleton } from '@proofhound/ui';
 import { useDataset } from '@proofhound/web-ui/hooks';
 import { useI18n } from '@proofhound/web-ui/i18n';
 import { isCanonicalUuid } from '@proofhound/web-ui/lib';
-import { DatasetDetailPage } from '../_components/dataset-detail-page';
-import { toProjectDataset } from '../_components/dataset-mappers';
+import { DatasetDetailScreen, toProjectDataset } from '@proofhound/web-ui/screens';
 
 function getParam(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0] ?? '';
@@ -21,7 +20,7 @@ export default function ProjectDatasetDetailRoute() {
   const { projectId } = useProjectContext();
   const datasetId = getParam(params.datasetId);
   const canUseApi = isCanonicalUuid(projectId) && isCanonicalUuid(datasetId);
-  // Samples are fetched inside DatasetDetailPage (server-paginated); the route only resolves dataset metadata.
+  // Samples are fetched inside DatasetDetailScreen (server-paginated); the route only resolves dataset metadata.
   const datasetQuery = useDataset(canUseApi ? projectId : '', canUseApi ? datasetId : '');
 
   const dataset = datasetQuery.data ? toProjectDataset(datasetQuery.data) : null;
@@ -55,5 +54,5 @@ export default function ProjectDatasetDetailRoute() {
     );
   }
 
-  return <DatasetDetailPage key={dataset.id} projectId={projectId} dataset={dataset} />;
+  return <DatasetDetailScreen key={dataset.id} projectId={projectId} dataset={dataset} />;
 }

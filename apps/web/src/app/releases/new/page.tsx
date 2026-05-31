@@ -1,9 +1,9 @@
 'use client';
 
 import { useProjectContext } from '@proofhound/web-ui/providers';
-import { ReleaseNewPage } from '../_components/release-new-page';
+import { ReleaseNewScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectReleaseNewRoute() {
   const { projectId } = useProjectContext();
-  return <ReleaseNewPage projectId={projectId} />;
+  return <ReleaseNewScreen projectId={projectId} />;
 }
