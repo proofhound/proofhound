@@ -13,7 +13,8 @@ export default defineConfig({
   use: {
     baseURL,
     locale: 'en-US',
-    trace: 'on-first-retry',
+    // Record a full trace for every test locally (view with `pnpm test:e2e:report`); keep CI lean.
+    trace: process.env.CI ? 'on-first-retry' : 'on',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
