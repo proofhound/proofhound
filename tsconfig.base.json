@@ -49,7 +49,15 @@
       "@proofhound/optimization-strategy": ["./packages/optimization-strategy/src/index.ts"],
       "@proofhound/optimization-strategy/*": ["./packages/optimization-strategy/src/*"],
       "@proofhound/ui": ["./packages/ui/src/index.ts"],
-      "@proofhound/ui/*": ["./packages/ui/src/*"]
+      "@proofhound/ui/*": ["./packages/ui/src/*"],
+      "@proofhound/web": ["./packages/web/src/index.ts"],
+      "@proofhound/web/screens": ["./packages/web/src/screens/index.ts"],
+      "@proofhound/web/hooks": ["./packages/web/src/hooks/index.ts"],
+      "@proofhound/web/providers": ["./packages/web/src/providers/index.ts"],
+      "@proofhound/web/i18n": ["./packages/web/src/i18n/index.ts"],
+      "@proofhound/web/components": ["./packages/web/src/components/index.ts"],
+      "@proofhound/web/lib": ["./packages/web/src/lib/index.ts"],
+      "@proofhound/web/contracts": ["./packages/web/src/contracts/index.ts"]
     }
   },
   "exclude": ["node_modules", "dist", ".next", ".turbo", "coverage"]

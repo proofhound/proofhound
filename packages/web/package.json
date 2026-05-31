@@ -1,0 +1,53 @@
+{
+  "name": "@proofhound/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ProofHound 可复用产品前端：screens / hooks / providers / i18n / components / contracts",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./screens": "./src/screens/index.ts",
+    "./hooks": "./src/hooks/index.ts",
+    "./providers": "./src/providers/index.ts",
+    "./i18n": "./src/i18n/index.ts",
+    "./components": "./src/components/index.ts",
+    "./lib": "./src/lib/index.ts",
+    "./contracts": "./src/contracts/index.ts",
+    "./styles/globals.css": "./src/styles/globals.css"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "test": "vitest run --passWithNoTests",
+    "test:unit": "vitest run --passWithNoTests",
+    "clean": "rm -rf dist .turbo tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "@proofhound/ui": "workspace:*",
+    "@proofhound/api-client": "workspace:*",
+    "@proofhound/shared": "workspace:*",
+    "@refinedev/core": "^5.0.12",
+    "@refinedev/nextjs-router": "^7.0.5",
+    "@tanstack/react-query": "^5.100.10",
+    "axios": "^1.16.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.14.0"
+  },
+  "peerDependencies": {
+    "next": "^16",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "jsdom": "^29.1.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  }
+}
