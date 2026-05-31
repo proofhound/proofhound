@@ -11,6 +11,12 @@ async function postJson<T>(request: APIRequestContext, path: string, data: unkno
   return (await res.json()) as T;
 }
 
+async function getJson<T>(request: APIRequestContext, path: string): Promise<T> {
+  const res = await request.get(`${SERVER_URL}${path}`);
+  if (!res.ok()) throw new Error(`GET ${path} -> ${res.status()}: ${await res.text()}`);
+  return (await res.json()) as T;
+}
+
 /** Ordered teardown: register resources, then delete in reverse-dependency order, never throwing. */
 export class ResourceLedger {
   private readonly items: Array<{ kind: string; path: string }> = [];
@@ -143,4 +149,119 @@ export async function seedOptimization(
     loopLimits: { maxRounds: 3, stopAfterNoImprovementRounds: 0 },
   });
   return out.id;
+}
+
+// ---- Webhook input connector ---------------------------------------------------------------
+// POST /connectors (webhook:input) returns the full connector detail PLUS `initialWebhookToken`
+// (only present at creation time). The plaintext token is used as `Authorization: Bearer <token>`
+// for inbound POST /webhooks/<slug>. The slug we sent lives under `config.webhookSlug`; the
+// top-level `webhookPath` is an internal UUID, NOT the slug, so we must read the slug we control.
+export async function seedWebhookConnector(request: APIRequestContext, name: string) {
+  const webhookSlug = `wh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const out = await postJson<{
+    id: string;
+    config: { webhookSlug?: string };
+    initialWebhookToken?: { plaintext: string };
+  }>(request, '/connectors', {
+    name,
+    type: 'webhook',
+    direction: 'input',
+    config: { webhookMode: 'async', webhookSlug },
+  });
+  let webhookToken = out.initialWebhookToken?.plaintext;
+  if (!webhookToken) {
+    // Fallback: mint a token explicitly if the create response did not include one.
+    const tok = await postJson<{ plaintext: string }>(request, `/connectors/${out.id}/webhook-tokens`, {
+      name: 'e2e',
+    });
+    webhookToken = tok.plaintext;
+  }
+  return { connectorId: out.id, webhookToken, webhookSlug: out.config.webhookSlug ?? webhookSlug };
+}
+
+// ---- Canary release ------------------------------------------------------------------------
+// POST /canary-releases creates the event AND auto-sets status='running' (no separate /start
+// call is needed — verified against the running stack). The response `.id` is the canary EVENT
+// id; `.releaseLineId` / `.releaseVariantId` identify the line+variant used by annotation options.
+// variableMapping MUST include a row with target='id' (DTO superRefine); externalIdField='id'
+// maps the inbound payload `id` to the run result's externalId.
+export async function seedCanaryRelease(
+  request: APIRequestContext,
+  args: { promptVersionId: string; modelId: string; connectorId: string; name: string },
+) {
+  const out = await postJson<{
+    id: string;
+    releaseLineId: string;
+    releaseVariantId: string | null;
+    status: string;
+  }>(request, '/canary-releases', {
+    name: args.name,
+    promptVersionId: args.promptVersionId,
+    modelId: args.modelId,
+    inputConnectorId: args.connectorId,
+    outputConnectorIds: [],
+    trafficRatio: 1,
+    trafficMode: 'split',
+    runMode: 'manual',
+    recordMode: 'all',
+    variableMapping: [
+      { source: 'text', target: 'text', required: true },
+      { source: 'id', target: 'id', required: true },
+    ],
+    externalIdField: 'id',
+    runConfig: { rpmLimit: 600, tpmLimit: 100000, concurrency: 5, temperature: 0 },
+  });
+  // Create auto-starts (status='running'); only call /start if some future build does not.
+  if (out.status !== 'running') {
+    await request.post(`${SERVER_URL}/canary-releases/${out.id}/start`, { data: {} });
+  }
+  return { eventId: out.id, releaseLineId: out.releaseLineId, releaseVariantId: out.releaseVariantId };
+}
+
+// ---- Inbound webhook traffic ---------------------------------------------------------------
+// POST {WEBHOOK_URL}/webhooks/<slug> with Bearer <plaintext webhook token>. Returns 201 with
+// { status:'accepted', run_result_id, external_id, ... }. The payload `text` is mapped to the
+// prompt var `text`; payload `id` becomes the externalId.
+export async function postWebhook(
+  request: APIRequestContext,
+  args: { slug: string; token: string; payload: Record<string, unknown> },
+) {
+  const res = await request.post(`${WEBHOOK_URL}/webhooks/${args.slug}`, {
+    headers: { Authorization: `Bearer ${args.token}` },
+    data: args.payload,
+  });
+  if (!res.ok()) throw new Error(`POST /webhooks/${args.slug} -> ${res.status()}: ${await res.text()}`);
+  return (await res.json()) as { status: string; run_result_id: string; external_id: string | null };
+}
+
+// ---- Wait for run results to be attributed to a release variant ----------------------------
+// GET /annotation-tasks/options exposes per-variant counts. Poll until the variant's count for
+// the requested scope ('canary'|'online') reaches `min`. Timeout 60s.
+type AnnotationOptionsResponse = {
+  data: Array<{
+    id: string;
+    variants: Array<{ id: string; canaryCount: number; onlineCount: number; categoryOptions: string[] }>;
+  }>;
+};
+export async function waitForReleaseRunResults(
+  request: APIRequestContext,
+  args: { releaseLineId: string; releaseVariantId: string; scope?: 'canary' | 'online'; min: number; timeoutMs?: number },
+) {
+  const scope = args.scope ?? 'canary';
+  const deadline = Date.now() + (args.timeoutMs ?? 60_000);
+  let count = 0;
+  for (;;) {
+    const opts = await getJson<AnnotationOptionsResponse>(request, '/annotation-tasks/options');
+    const variant = opts.data
+      .find((line) => line.id === args.releaseLineId)
+      ?.variants.find((v) => v.id === args.releaseVariantId);
+    count = variant ? (scope === 'canary' ? variant.canaryCount : variant.onlineCount) : 0;
+    if (count >= args.min) return count;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `waitForReleaseRunResults timed out: ${scope}Count=${count} < ${args.min} for variant ${args.releaseVariantId}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
 }
