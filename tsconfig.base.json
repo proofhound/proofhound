@@ -55,6 +55,7 @@
       "@proofhound/web-ui/hooks": ["./packages/web-ui/src/hooks/index.ts"],
       "@proofhound/web-ui/providers": ["./packages/web-ui/src/providers/index.ts"],
       "@proofhound/web-ui/i18n": ["./packages/web-ui/src/i18n/index.tsx"],
+      "@proofhound/web-ui/i18n/language": ["./packages/web-ui/src/i18n/language.ts"],
       "@proofhound/web-ui/components": ["./packages/web-ui/src/components/index.ts"],
       "@proofhound/web-ui/lib": ["./packages/web-ui/src/lib/index.ts"],
       "@proofhound/web-ui/contracts": ["./packages/web-ui/src/contracts/index.ts"]

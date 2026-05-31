@@ -3,7 +3,10 @@ import { headers } from 'next/headers';
 import Script from 'next/script';
 import { Suspense, type ReactNode } from 'react';
 import { AppShell } from '@/components/layout/app-shell';
-import { DEFAULT_LANGUAGE, resolveAcceptLanguageHeader, type Language } from '@proofhound/web-ui/i18n';
+// Server-safe language utils MUST come from the non-'use client' subpath: the i18n barrel
+// (index.tsx) is 'use client', so importing resolveAcceptLanguageHeader from it and calling it
+// in this server component throws "called from the server but … is on the client".
+import { DEFAULT_LANGUAGE, resolveAcceptLanguageHeader, type Language } from '@proofhound/web-ui/i18n/language';
 import { ProofHoundWebProvider } from '@proofhound/web-ui/providers';
 import { localWebContracts } from '@proofhound/web-ui/contracts';
 import '@xyflow/react/dist/style.css';
