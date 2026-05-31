@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { InternalAxiosRequestConfig } from 'axios';
 
 import { httpClient } from './http';
@@ -20,6 +20,12 @@ function installCapturingAdapter(): { captured: InternalAxiosRequestConfig | nul
     };
   };
   return state;
+}
+
+// Count live (non-ejected) request interceptors. Axios marks an ejected slot
+// as null but keeps the array length, so we filter out the holes.
+function liveRequestInterceptorCount(): number {
+  return (httpClient.interceptors.request.handlers ?? []).filter(Boolean).length;
 }
 
 const originalAdapter = httpClient.defaults.adapter;
@@ -66,8 +72,8 @@ describe('configureApiClient', () => {
 
     await httpClient.get('/x');
 
-    // When not set, AxiosHeaders.get() returns undefined at runtime
-    expect(state.captured?.headers.get('Authorization')).toBeFalsy();
+    // The Authorization header must be truly absent, not just falsy.
+    expect(state.captured?.headers.has('Authorization')).toBe(false);
     expect(state.captured?.headers.get('X-Project-Id')).toBe('proj-oss');
   });
 
@@ -100,13 +106,19 @@ describe('configureApiClient', () => {
     expect(state.captured).not.toBeNull();
   });
 
-  it('is idempotent: re-configuring does not double-add Authorization', async () => {
+  it('is idempotent: re-configuring ejects the previous interceptor (no accumulation)', async () => {
     const state = installCapturingAdapter();
     const tokenSource = {
       async getToken() {
         return 'tok-reconfig';
       },
     };
+
+    // Establish a known baseline: no live request interceptors before we start.
+    for (let i = 0; i < 20; i++) {
+      httpClient.interceptors.request.eject(i);
+    }
+    expect(liveRequestInterceptorCount()).toBe(0);
 
     // Call configureApiClient twice — simulates hot re-config
     configureApiClient({
@@ -117,6 +129,10 @@ describe('configureApiClient', () => {
       authSource: tokenSource as LocalAuthSource,
       getProjectId: () => 'proj-2',
     });
+
+    // PROOF of idempotency: exactly one live request interceptor remains —
+    // the second config ejected the first rather than stacking on top of it.
+    expect(liveRequestInterceptorCount()).toBe(1);
 
     await httpClient.get('/x');
 
