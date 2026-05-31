@@ -1,0 +1,13 @@
+sample_id,question,label
+case-000000,sample question 0,A
+case-000001,sample question 1,B
+case-000002,sample question 2,A
+case-000003,sample question 3,B
+case-000004,sample question 4,A
+case-000005,sample question 5,B
+case-000006,sample question 6,A
+case-000007,sample question 7,B
+case-000008,sample question 8,A
+case-000009,sample question 9,B
+case-000010,sample question 10,A
+case-000011,sample question 11,B

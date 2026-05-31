@@ -182,6 +182,7 @@ function FieldInput({
   readOnly = false,
   type = 'text',
   onChange,
+  testId,
 }: {
   name?: string;
   defaultValue?: string;
@@ -191,6 +192,7 @@ function FieldInput({
   readOnly?: boolean;
   type?: string;
   onChange?: (value: string) => void;
+  testId?: string;
 }) {
   return (
     <div className="relative">
@@ -202,6 +204,7 @@ function FieldInput({
         disabled={disabled}
         readOnly={readOnly}
         onChange={onChange ? (event) => onChange(event.target.value) : undefined}
+        data-testid={testId}
         className={cn('h-9 text-sm', suffix && 'pr-20', readOnly && 'bg-muted/50 text-muted-foreground')}
       />
       {suffix && (
@@ -358,6 +361,7 @@ function BasicSection({
             placeholder="openai-prod"
             readOnly={readOnly}
             onChange={onNameChange}
+            testId={isNew ? 'model-new-name' : undefined}
           />
         </Field>
         <Field
@@ -371,12 +375,20 @@ function BasicSection({
             disabled={!isNew}
             onValueChange={onDraftChange}
           >
-            <SelectTrigger className="h-9" aria-label={t('models.form.provider')}>
+            <SelectTrigger
+              className="h-9"
+              aria-label={t('models.form.provider')}
+              data-testid={isNew ? 'model-new-provider-type' : undefined}
+            >
               <SelectValue placeholder={t('models.form.providerPlaceholder')} />
             </SelectTrigger>
             <SelectContent>
               {buildProviderTypeOptions(useDefaults ? model.provider : undefined).map((option) => (
-                <SelectItem key={option.value} value={option.value}>
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  data-testid={isNew ? `model-new-provider-option-${option.value}` : undefined}
+                >
                   {option.label}
                 </SelectItem>
               ))}
@@ -391,6 +403,7 @@ function BasicSection({
             defaultValue={useDefaults ? model.providerModelId : undefined}
             placeholder="gpt-4o-2024-08-06"
             readOnly={readOnly}
+            testId={isNew ? 'model-new-provider-model-id' : undefined}
           />
         </Field>
         <Field label={t('models.form.endpoint')} required={isNew}>
@@ -399,6 +412,7 @@ function BasicSection({
             defaultValue={useDefaults ? model.endpoint : undefined}
             placeholder="https://api.openai.com/v1"
             readOnly={readOnly}
+            testId={isNew ? 'model-new-endpoint' : undefined}
           />
         </Field>
       </div>
@@ -412,6 +426,7 @@ function BasicSection({
             inputClassName="h-9 text-sm"
             buttonClassName="h-9"
             onValueChange={onDraftChange}
+            testId={isNew ? 'model-new-context-window' : undefined}
           />
         </Field>
       </div>
@@ -503,6 +518,7 @@ function CredentialSection({
             }}
             readOnly={readOnly}
             placeholder="sk-..."
+            data-testid={isNew ? 'model-new-api-key' : undefined}
             className={cn(
               'min-w-0 flex-1 bg-transparent font-mono outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed',
               readOnly && 'text-muted-foreground',
@@ -706,6 +722,7 @@ function QuotaSection({
 }) {
   const { t } = useI18n();
   const isEdit = mode === 'edit';
+  const isNew = mode === 'new';
   const [autoConcurrency, setAutoConcurrency] = useState(useDefaults ? model.autoConcurrency : true);
   const usageSummary = `${t('models.form.realtimeUsage')}: ${model.rpm.usage}% / ${model.tpm.usage}% / ${model.concurrency.usage}%`;
 
@@ -730,6 +747,7 @@ function QuotaSection({
             placeholder="2000"
             suffix="req/min"
             readOnly={readOnly}
+            testId={isNew ? 'model-new-rpm-limit' : undefined}
           />
           {isEdit && <QuotaLine usage={model.rpm.usage} current={model.rpm.current} limit={model.rpm.limit} />}
         </Field>
@@ -740,6 +758,7 @@ function QuotaSection({
             placeholder="800000"
             suffix="tok/min"
             readOnly={readOnly}
+            testId={isNew ? 'model-new-tpm-limit' : undefined}
           />
           {isEdit && <QuotaLine usage={model.tpm.usage} current={model.tpm.current} limit={model.tpm.limit} />}
         </Field>
@@ -1850,6 +1869,7 @@ export function ModelFormPage({
                     size="sm"
                     className="h-9"
                     data-model-submit-intent="enable"
+                    data-testid="model-new-submit"
                     disabled={createMutation.isPending || draftProbeMutation.isPending || newNameTaken}
                     aria-busy={pendingNewIntent === 'enable'}
                   >

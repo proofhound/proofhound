@@ -586,6 +586,9 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h1 className="truncate text-[22px] font-semibold leading-tight">{line.promptName}</h1>
+              <span data-testid="release-line-detail-status" className="sr-only">
+                {line.production?.currentEvent?.status ?? line.canary?.status ?? line.status}
+              </span>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -595,6 +598,7 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
                 onClick={openStopProductionDialog}
                 disabled={stopProductionMutation.isPending}
                 className="text-destructive hover:text-destructive"
+                data-testid="release-line-detail-stop"
               >
                 <Square className="size-4" />
                 {t('releases.detail.action.stopProduction')}

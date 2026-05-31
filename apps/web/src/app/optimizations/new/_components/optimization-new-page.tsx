@@ -426,18 +426,21 @@ function ModeTile({
   title,
   description,
   onClick,
+  testId,
 }: {
   active: boolean;
   icon: typeof FlaskConical;
   title: string;
   description: string;
   onClick: () => void;
+  testId?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      data-testid={testId}
       className={cn(
         'flex w-full flex-col gap-1.5 rounded-md border px-3.5 py-3 text-left transition-colors',
         active
@@ -1475,6 +1478,7 @@ export function OptimizationNewPage({
               className="h-9 gap-1"
               onClick={handleSubmit}
               disabled={isSubmitting || optimizationNameTaken}
+              data-testid="optimization-new-submit"
             >
               {isSubmitting ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
               {t('optimizations.new.start')}
@@ -1548,6 +1552,7 @@ export function OptimizationNewPage({
                         className="font-mono text-[13px]"
                         placeholder={t('optimizations.new.naming.namePlaceholder')}
                         aria-invalid={optimizationNameTaken || undefined}
+                        data-testid="optimization-new-name"
                       />
                       {optimizationNameTaken ? (
                         <div className="text-[11px] text-destructive">{t('common.formError.nameTaken')}</div>
@@ -1576,27 +1581,36 @@ export function OptimizationNewPage({
                     {t('optimizations.new.origin.label')} <span className="text-destructive">*</span>
                   </label>
                   <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                    <ModeTile
-                      active={originMode === 'experiment'}
-                      icon={FlaskConical}
-                      title={t('optimizations.new.origin.experimentTitle')}
-                      description={t('optimizations.new.origin.experimentDesc')}
-                      onClick={() => handleOriginModeChange('experiment')}
-                    />
-                    <ModeTile
-                      active={originMode === 'prompt'}
-                      icon={FileText}
-                      title={t('optimizations.new.origin.promptTitle')}
-                      description={t('optimizations.new.origin.promptDesc')}
-                      onClick={() => handleOriginModeChange('prompt')}
-                    />
-                    <ModeTile
-                      active={originMode === 'dataset'}
-                      icon={Database}
-                      title={t('optimizations.new.origin.datasetTitle')}
-                      description={t('optimizations.new.origin.datasetDesc')}
-                      onClick={() => handleOriginModeChange('dataset')}
-                    />
+                    <div className="contents">
+                      <ModeTile
+                        testId="optimization-new-origin-mode-experiment"
+                        active={originMode === 'experiment'}
+                        icon={FlaskConical}
+                        title={t('optimizations.new.origin.experimentTitle')}
+                        description={t('optimizations.new.origin.experimentDesc')}
+                        onClick={() => handleOriginModeChange('experiment')}
+                      />
+                    </div>
+                    <div className="contents">
+                      <ModeTile
+                        testId="optimization-new-origin-mode-prompt"
+                        active={originMode === 'prompt'}
+                        icon={FileText}
+                        title={t('optimizations.new.origin.promptTitle')}
+                        description={t('optimizations.new.origin.promptDesc')}
+                        onClick={() => handleOriginModeChange('prompt')}
+                      />
+                    </div>
+                    <div className="contents">
+                      <ModeTile
+                        testId="optimization-new-origin-mode-dataset"
+                        active={originMode === 'dataset'}
+                        icon={Database}
+                        title={t('optimizations.new.origin.datasetTitle')}
+                        description={t('optimizations.new.origin.datasetDesc')}
+                        onClick={() => handleOriginModeChange('dataset')}
+                      />
+                    </div>
                   </div>
 
                   <div className="mt-4 space-y-2" data-testid={`optimization-new-origin-picker-${originMode}`}>
@@ -1663,12 +1677,13 @@ export function OptimizationNewPage({
                                 <PickerEmpty>{t('optimizations.new.origin.promptEmpty')}</PickerEmpty>
                               ) : (
                                 filteredPrompts.map((prompt) => (
-                                  <PromptRow
-                                    key={prompt.id}
-                                    prompt={prompt}
-                                    selected={prompt.id === effectivePromptId}
-                                    onSelect={() => handlePromptSelect(prompt.id)}
-                                  />
+                                  <div key={prompt.id} data-testid={`optimization-new-prompt-row-${prompt.id}`}>
+                                    <PromptRow
+                                      prompt={prompt}
+                                      selected={prompt.id === effectivePromptId}
+                                      onSelect={() => handlePromptSelect(prompt.id)}
+                                    />
+                                  </div>
                                 ))
                               )}
                             </div>
@@ -1686,12 +1701,13 @@ export function OptimizationNewPage({
                                 <PickerEmpty>{t('optimizations.new.origin.promptVersionEmpty')}</PickerEmpty>
                               ) : (
                                 promptVersions.map((version) => (
-                                  <PromptVersionRow
-                                    key={version.id}
-                                    option={version}
-                                    selected={version.id === effectivePromptVersionId}
-                                    onSelect={() => setSelectedPromptVersionId(version.id)}
-                                  />
+                                  <div key={version.id} data-testid={`optimization-new-version-row-${version.id}`}>
+                                    <PromptVersionRow
+                                      option={version}
+                                      selected={version.id === effectivePromptVersionId}
+                                      onSelect={() => setSelectedPromptVersionId(version.id)}
+                                    />
+                                  </div>
                                 ))
                               )}
                             </div>
@@ -1714,12 +1730,13 @@ export function OptimizationNewPage({
                           <PickerEmpty>{t('optimizations.new.origin.datasetEmpty')}</PickerEmpty>
                         ) : (
                           filteredDatasets.map((dataset) => (
-                            <DatasetRow
-                              key={dataset.id}
-                              dataset={dataset}
-                              selected={dataset.id === effectiveDatasetId}
-                              onSelect={() => setSelectedDatasetId(dataset.id)}
-                            />
+                            <div key={dataset.id} data-testid={`optimization-new-dataset-row-${dataset.id}`}>
+                              <DatasetRow
+                                dataset={dataset}
+                                selected={dataset.id === effectiveDatasetId}
+                                onSelect={() => setSelectedDatasetId(dataset.id)}
+                              />
+                            </div>
                           ))
                         )}
                       </div>
@@ -1789,12 +1806,13 @@ export function OptimizationNewPage({
                           <PickerEmpty>{t('optimizations.new.origin.datasetEmpty')}</PickerEmpty>
                         ) : (
                           filteredDatasets.map((dataset) => (
-                            <DatasetRow
-                              key={dataset.id}
-                              dataset={dataset}
-                              selected={dataset.id === effectiveDatasetId}
-                              onSelect={() => setSelectedDatasetId(dataset.id)}
-                            />
+                            <div key={dataset.id} data-testid={`optimization-new-dataset-row-${dataset.id}`}>
+                              <DatasetRow
+                                dataset={dataset}
+                                selected={dataset.id === effectiveDatasetId}
+                                onSelect={() => setSelectedDatasetId(dataset.id)}
+                              />
+                            </div>
                           ))
                         )}
                       </div>
@@ -1832,12 +1850,13 @@ export function OptimizationNewPage({
                       <PickerEmpty>{t('optimizations.new.experiment.modelEmpty')}</PickerEmpty>
                     ) : (
                       filteredModels.map((model) => (
-                        <ModelOptionRow
-                          key={model.id}
-                          model={model}
-                          selected={model.id === effectiveModelId}
-                          onSelect={() => applyModelDefaults(model)}
-                        />
+                        <div key={model.id} data-testid={`optimization-new-model-row-${model.id}`}>
+                          <ModelOptionRow
+                            model={model}
+                            selected={model.id === effectiveModelId}
+                            onSelect={() => applyModelDefaults(model)}
+                          />
+                        </div>
                       ))
                     )}
                   </div>
@@ -2068,6 +2087,7 @@ export function OptimizationNewPage({
                             onChange={(event) => updateGoal(goal.id, { metric: event.target.value as GoalMetric })}
                             className="h-8 rounded-md border bg-background px-2.5 font-mono text-[12.5px] text-foreground"
                             aria-label={t('optimizations.new.optimization.metric.accuracy')}
+                            data-testid="optimization-new-goal-metric"
                           >
                             {(Object.keys(METRIC_LABEL_KEY) as GoalMetric[]).map((metric) => (
                               <option key={metric} value={metric}>
@@ -2082,6 +2102,7 @@ export function OptimizationNewPage({
                             }
                             className="h-8 rounded-md border bg-background px-2.5 font-mono text-[12.5px] text-foreground"
                             aria-label={t('optimizations.new.optimization.comparator.gte')}
+                            data-testid="optimization-new-goal-comparator"
                           >
                             {(Object.keys(COMPARATOR_LABEL_KEY) as GoalComparator[]).map((cmp) => (
                               <option key={cmp} value={cmp}>
@@ -2093,6 +2114,7 @@ export function OptimizationNewPage({
                             value={goal.target}
                             onChange={(event) => updateGoal(goal.id, { target: event.target.value })}
                             className="h-8 font-mono text-[12.5px]"
+                            data-testid="optimization-new-goal-target"
                           />
                           <select
                             value={goal.scope}
@@ -2125,6 +2147,7 @@ export function OptimizationNewPage({
                     size="sm"
                     onClick={addGoal}
                     className="mt-2 h-8 gap-1 self-start"
+                    data-testid="optimization-new-goal-add"
                   >
                     <Plus className="size-3.5" />
                     {t('optimizations.new.optimization.addGoal')}
@@ -2237,12 +2260,13 @@ export function OptimizationNewPage({
                         <PickerEmpty>{t('optimizations.new.experiment.modelEmpty')}</PickerEmpty>
                       ) : (
                         filteredAnalysisModels.map((model) => (
-                          <ModelOptionRow
-                            key={model.id}
-                            model={model}
-                            selected={model.id === effectiveAnalysisModelId}
-                            onSelect={() => setAnalysisModelId(model.id)}
-                          />
+                          <div key={model.id} data-testid={`optimization-new-analysis-model-row-${model.id}`}>
+                            <ModelOptionRow
+                              model={model}
+                              selected={model.id === effectiveAnalysisModelId}
+                              onSelect={() => setAnalysisModelId(model.id)}
+                            />
+                          </div>
                         ))
                       )}
                     </div>

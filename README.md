@@ -5,7 +5,9 @@
 <h1 align="center">ProofHound</h1>
 
 <p align="center">
-  A self-hosted Prompt lifecycle platform for prompt versions, dataset regression, experiments, automatic optimization, canary releases, production releases, run results, human annotations, and rollback.
+  <b>The self-hosted platform that makes prompt engineering far easier</b><br/>
+  Across the full lifecycle, with automatic, data-driven optimization built in.<br/>
+  Version, regression-test, experiment, optimize, release, and roll back — on data and models you own.
 </p>
 
 <p align="center">
@@ -14,6 +16,14 @@
 </p>
 
 <p align="center">
+  <a href="#get-started">Quick start</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="https://discord.gg/DGC6AzWrnt">Discord</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/proofhound/proofhound"><img alt="GitHub stars" src="https://img.shields.io/github/stars/proofhound/proofhound?style=flat&logo=github&label=Stars" /></a>
+  <a href="https://discord.gg/DGC6AzWrnt"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" /></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
   <img alt="Node.js 24.x" src="https://img.shields.io/badge/Node.js-24.x-339933?logo=nodedotjs&logoColor=white" />
   <img alt="pnpm 10.x" src="https://img.shields.io/badge/pnpm-10.x-F69220?logo=pnpm&logoColor=white" />
@@ -22,148 +32,191 @@
   <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-ready-0F766E" />
 </p>
 
-ProofHound brings prompt versions, dataset regression, experiments, automatic optimization, canary releases, production releases, run results, human annotations, and rollback into one traceable workflow.
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/8290f7f3-0fc8-4464-87b1-d351b3d54fb5" controls muted playsinline width="100%" title="ProofHound quick start demo"></video>
+</p>
 
-The goal is simple: replace the repeated loop of writing scripts, wiring experiments, inspecting samples, editing prompts, and rebuilding release logic with a platform that is traceable, regression-friendly, canary-ready, and rollback-ready. Once a prompt is connected, new versions can be experimented on, optimized, and released inside ProofHound, reducing custom engineering work and manual inspection.
 
-The open-source edition currently focuses on a single-workspace local admin console for self-hosted deployments. The data layer keeps a `project_id` boundary so the product can later connect to an external control plane without changing core resource semantics.
+ProofHound turns prompt engineering into a data-driven, traceable workflow. Instead of stitching together scripts, ad-hoc experiments, spreadsheets, and hand-rolled release logic, you run the whole loop — dataset regression, experiments, automatic optimization, canary and production releases, immutable run results, and rollback — in one place, self-hosted on infrastructure you control.
 
-## Quick Preview
+It is built for developers first: clone, `pnpm dev`, connect a model, and start experimenting in minutes. And because the tuning loop is productized around datasets, metrics, and prompt versions, non-engineering teammates can define goals, launch optimizations, and ship releases too. The open-source edition runs as a single-workspace local admin console and keeps a `project_id` data boundary, so it can later connect to an external control plane without changing core resource semantics.
 
-<video src="https://github.com/user-attachments/assets/e10a278c-1b86-4eb8-b0c8-1bd5e5d2a72f" controls muted playsinline width="100%" title="ProofHound quick start demo"></video>
+## What you get
 
-## What It Solves
+ProofHound runs one lifecycle, and every stage writes to the same fact tables — so a model invocation stays traceable from a dataset sample all the way to production and back:
 
-### Data-driven prompt iteration
+- **Prompt versions** — every edit creates an immutable version with its variables, output fields, and judgment rules; once an experiment, optimization, or release references it, the version is frozen, so every result maps back to the exact prompt used.
+- **Dataset regression** — run a version against a dataset of expected outputs (CSV / TSV / JSONL / JSON / ZIP) and get accuracy, precision, recall, F1, per-class metrics, failed samples, and full invocation details — not an aggregate score that hides minority-class behavior.
+- **Experiments** — batch prompt version × dataset × model, then stop, resume, compare across runs, and export; every run is reproducible because the version it used is frozen.
+- **Automatic optimization** — analyze failed samples, generate new candidate versions, and re-run regression round by round, targeting class-level goals (e.g. lift recall on a high-risk class) and falling back to the best version when a round regresses.
+- **Canary & production releases** — promote a proven version through queue-connector canaries with traffic split and dual-run, then 100% promotion, config updates, rollback, and forced stop; webhook ingress can go straight to production.
+- **Run results** — every stage writes one immutable record per call: input variables, rendered prompt, raw output, structured output, judgment, latency, tokens, and cost.
+- **Human annotations** — written to a separate table, never mutating the original run results.
+- **Connectors** — wire prompts to queue connectors and webhook ingress for online traffic.
+- **MCP channel** — built in, so agents can manage prompt versions, start experiments / optimizations, and query results.
+- **Bring your own models** — OpenAI, Azure OpenAI, Anthropic, DeepSeek, and more, with your own keys and pricing.
 
-ProofHound treats datasets and run results as the source of truth. You can upload a dataset with expected outputs, create experiments, and get accuracy, precision, recall, F1, per-class metrics, failed samples, and complete invocation details.
+## Get started
 
-On top of that, optimization jobs analyze failed samples, summarize failure patterns, generate new prompt versions, and run regression experiments again. ProofHound compares metrics across rounds, detects regressions, and can fall back to the best historical version when needed, so prompt changes are no longer driven only by manual sample review and intuition.
-
-### Lower barrier, higher throughput
-
-ProofHound productizes the prompt-tuning process so operations, business, risk, financial analysis, and other non-engineering roles can participate in prompt iteration.
-
-Users do not need to hand-write complex JSON structures. The platform provides configuration flows around dataset fields, prompt variables, output fields, and judgment rules, then runs experiments, optimization, and validation against real datasets. After the initial integration, prompt releases can move through the platform instead of requiring new engineering work every time.
-
-### Experiments and online management in one place
-
-Many teams split prompt work between scripts or spreadsheets and online behavior hidden inside application code and logs. ProofHound puts experiments and online releases into the same set of fact tables.
-
-Experiments, optimizations, canary candidates, and production lanes all write to unified run results. From one entry point, you can trace a model invocation's input variables, rendered prompt, raw model output, structured output, judgment result, latency, tokens, and cost.
-
-### Clear prompt version management
-
-Every prompt edit creates a version. Once a version is referenced by an experiment, optimization, canary release, or production release, it is frozen so metrics and online behavior always map back to the exact prompt content used at the time.
-
-Release flows support queue connector canaries, traffic splitting, dual-run observation, 100% promotion, configuration updates, rollback, and forced stop. Webhook ingress can go directly to production. The path from experiment to release stays traceable, canary-ready, and reversible.
-
-### Bring your own model provider
-
-ProofHound does not resell model calls or add a markup on usage. You configure your own model providers, endpoints, API keys, pricing, context windows, image capability, RPM limits, TPM limits, and concurrency limits.
-
-Current model configuration supports provider types such as OpenAI, Azure OpenAI, Anthropic, DeepSeek, Kimi, MiniMax, Qwen, and ERNIE, with open strings reserved for additional compatible providers.
-
-## Core Capabilities
-
-- Asset management: centralized models, datasets, prompts, and connectors.
-- Dataset regression: CSV / TSV / JSONL / JSON array / ZIP upload, field-role mapping, sample browsing, filtering, and export.
-- Prompt versions: immutable versions, movable labels, variable lists, output fields, judgment rules, and version diffs.
-- Experiments: prompt version x dataset x model batch regression with stop, resume, comparison, and export.
-- Automatic optimization: analyze failed samples and target metrics, generate candidate versions, and run experiments round by round.
-- Canary and production releases: unified release lanes with split, dual_run, promotion, configuration changes, and rollback.
-- Run results: unified immutable records for LLM calls from experiments, optimizations, canaries, and production.
-- Annotations: human annotations are written to a separate table without mutating original run results.
-- MCP support: built-in MCP channel so agents can access local workspace tools, such as managing prompt versions, starting experiments / optimizations, and querying run results.
-- Invocation channels: Web UI, Webhook + API Token, and MCP + global MCP Token.
-
-## How It Compares
-
-### Lower prompt engineering cost
-
-ProofHound is built around one assumption: data facts should be the basis for prompt iteration. The platform connects samples, judgments, metrics, failure patterns, and version evolution so teams spend less time writing scripts, defining ad hoc structures, and comparing results manually.
-
-For teams, this means prompt tuning does not have to be controlled only by a small group of engineers. Non-engineering members can define goals, start optimizations, inspect results, and move releases forward based on dataset facts.
-
-### Better fit for classification and imbalanced datasets
-
-The open-source edition currently prioritizes classification tasks, especially scenarios with obvious class imbalance such as risk control, finance, moderation, and support intent detection.
-
-Optimization goals can target class-level metrics, such as improving recall for a high-risk class or controlling precision for a class with too many false positives. ProofHound keeps per-class metrics in experiments and optimizations so aggregate accuracy does not hide minority-class behavior.
-
-### A complete path from experiment to production
-
-ProofHound is not only a prompt registry and not only an evaluation tool. It places datasets, experiments, optimizations, releases, and run results into one lifecycle.
-
-You can trace why a version went online, which experiments ran before release, how much traffic it received during canary, what happened in production, and why a rollback happened later.
-
-### Self-hosted and low lock-in
-
-The open-source edition is designed for self-hosted deployments. It uses PostgreSQL for storage, Redis for centralized rate limits, and stdout JSON for logs. You configure your own models, credentials, providers, and usage costs.
-
-## Coming Soon
-
-- ProofHound Cloud Service: hosted ProofHound to reduce deployment and operations work.
-- Generative task optimization: evaluation, comparison, and optimization strategies beyond the current classification-first workflow.
-
-## Local Development
-
-Local development requires:
+You need:
 
 - Node.js 24
 - pnpm
 - Docker and Docker Compose
-- PostgreSQL, Redis, and other local dependency services are started automatically by Docker Compose, so you do not need to install them manually
+
+PostgreSQL, Redis, and the other local dependency services are started for you by Docker Compose — you do not need to install them manually.
 
 ```bash
-git clone <your-proofhound-repo-url>
+git clone https://github.com/proofhound/proofhound.git
 cd proofhound
 pnpm install
 cp .env.example .env
 pnpm dev
 ```
 
-`pnpm dev` starts local dependency services, runs database migrations, and launches server, webhook, worker, and web together.
+`pnpm dev` starts the local dependency services, runs database migrations, and launches server, webhook, worker, and web together.
+
+`cp .env.example .env` ships working local defaults, but set the two required secrets before your first run — see [Configuration](#configuration).
 
 Default local services:
 
-- Web UI: http://localhost:3000
-- Server API: http://localhost:4000
-- PostgreSQL: localhost:5432
-- Redis: localhost:6379
-- Kafka: localhost:9092
+| Service | Address |
+| --- | --- |
+| Web UI | localhost:3000 |
+| Server API | localhost:4000 |
+| PostgreSQL | localhost:5432 |
+| Redis | localhost:6379 |
+| Kafka | localhost:9092 |
+| Redpanda Console | localhost:8088 |
+| RedisInsight | localhost:5540 |
 
-Optional check command:
+## Configuration
 
-```bash
-pnpm ci
+ProofHound reads the repo-root `.env` (used by server, webhook, worker, and the DB scripts; `apps/web` reads `NEXT_PUBLIC_*` from `apps/web/.env.local`). `cp .env.example .env` gives working local defaults — the common variables you may want to set:
+
+| Variable | What it's for | Default |
+| --- | --- | --- |
+| `MODEL_API_KEY_ENCRYPTION_KEY` | **Required** — encrypts stored model API keys at rest. Generate a real one with `openssl rand -base64 32`. | dev placeholder |
+| `MCP_TOKEN_SIGNING_SECRET` | **Required** — signs MCP tokens; change it outside local dev. | dev placeholder |
+| `DATABASE_URL` | PostgreSQL connection string. | Docker Compose Postgres |
+| `REDIS_URL` | Redis connection (rate limits + queues). | Docker Compose Redis |
+| `SERVER_PORT` / `SERVER_PUBLIC_URL` | Server API port and public URL. | `4000` / `http://localhost:4000` |
+| `WEB_PUBLIC_URL` | Web origin allowed for CORS. | `http://localhost:3000` |
+| `NEXT_PUBLIC_SERVER_URL` | Server URL the web app calls. | `http://localhost:4000` |
+| `WORKER_QUEUES` / `WORKER_CONCURRENCY` | Worker queues and per-process concurrency. | `llm,probe` / `64` |
+| `LOG_LEVEL` | Pino log level. | `debug` |
+
+More advanced / optional variables (deploy metadata, DB reset & seeding, tests, the `pnpm probe:model` script, connector demos) are documented inline in [`.env.example`](.env.example).
+
+## Walkthrough
+
+Once ProofHound is running, the manual end-to-end flow from a fresh dataset to a production release is:
+
+1. **Add a model** — register a provider/model with your endpoint, API key, pricing, and RPM / TPM / concurrency limits (start from a [quick preset](#models-and-providers)).
+2. **Upload a dataset** — a CSV / TSV / JSONL / JSON / ZIP file, and map the field roles (input text/image, the expected output, metadata).
+3. **Write a prompt** — create a prompt and its first version: the template, variables, output fields, and judgment rules.
+4. **Run an experiment** — pick a prompt version × dataset × model and run the batch regression; read accuracy / precision / recall / F1, per-class metrics, failed samples, and the full run results.
+5. **Inspect and iterate** — review the failed samples, edit the prompt into a new version, and re-run the experiment; repeat until the metrics hit your goal. (Each referenced version is frozen, so every comparison maps back to exact prompt content.)
+6. **Release** — bind the winning version to an upstream connector and ship it: a queue connector goes through a canary (traffic split + dual-run) → 100% → production, with rollback and forced stop available; a webhook's first release goes straight to production.
+
+Run results are written for every call along the way, and you can layer human annotations on top without mutating them.
+
+### Skip the manual loop with optimization
+
+Instead of doing step 5 by hand — reading failures, editing the prompt, and re-running round after round — create an **optimization** task: set a goal (e.g. a target accuracy, or recall on a specific class) and a round budget, and it automatically analyzes failed samples, generates new candidate versions, re-runs the regression each round, and keeps the best version.
+
+So with optimization you can **skip step 5** (it automates the loop), and via **Quick start** even **step 3** — the analysis model generates the first prompt version for you. You still do steps 1–2 (a model and a dataset; optimization also uses an analysis model) and step 6 (the release stays your call).
+
+## How it works
+
+ProofHound is a TypeScript monolith split by module boundaries, with a Node.js worker for LLM calls. Three surfaces drive it — the Web UI, an HTTP API + MCP channel for agents and automation, and per-connector webhook ingress for online traffic — and they all share the same orchestration and storage.
+
+```mermaid
+flowchart TD
+    WEB[Web UI · apps/web]
+    AGENT[Agents and automation<br/>HTTP API · MCP]
+    HOOK[Webhook ingress · apps/webhook]
+    WEB --> SRV
+    AGENT --> SRV[server · NestJS · apps/server]
+    HOOK --> SRV
+    SRV --> ORCH[Orchestration<br/>DBOS + BullMQ]
+    ORCH --> WORK[LLM worker · apps/worker]
+    WORK --> PROV[(Your model providers)]
+    SRV --> PG[(PostgreSQL · Drizzle)]
+    SRV --> REDIS[(Redis · limits + queues)]
+    WORK --> PG
+    WORK --> REDIS
 ```
 
-## Repository Structure
+| Layer | Choice |
+| --- | --- |
+| Frontend | Next.js + TypeScript + Refine + shadcn/ui + Tailwind |
+| Backend | NestJS monolith, split by module boundaries |
+| Database | PostgreSQL + Drizzle ORM (`ph_*` schema), no proprietary SQL extensions |
+| Orchestration | DBOS + BullMQ + Node.js LLM worker |
+| Rate limiting | Centralized in Redis (RPM / TPM / concurrency) |
+| Logging | Pino, stdout JSON; every LLM call is logged with full input and response before run results are written |
+
+## Models and providers
+
+ProofHound does not resell model calls or add a markup on usage — you bring your own providers, and spend stays between you and your provider.
+
+- **Quick presets** — start from a preset for a mainstream provider, then just fill in your credentials, quotas, unit prices, and capability declarations instead of wiring everything by hand.
+- **Fully configurable** — per model you set the endpoint, API key, unit prices (for cost tracking), context window, image capability, and RPM / TPM / concurrency limits; limits are enforced centrally in Redis and counted per model.
+- **Auto concurrency, on by default** — instead of hand-computing how much concurrency saturates your RPM / TPM, ProofHound tunes the effective in-flight concurrency in real time (Little's Law over observed latency and token usage) and backs off automatically on provider 429s (AIMD), always staying within your configured limit as a safety cap.
+
+Built-in provider types: OpenAI · Azure OpenAI · Anthropic · DeepSeek · Kimi · MiniMax · Qwen · ERNIE — plus any OpenAI-compatible endpoint via an open provider string.
+
+## How ProofHound is different
+
+**Data facts, not intuition.** ProofHound connects samples, judgments, metrics, failure patterns, and version evolution into one loop. Teams spend less time writing scripts, defining ad-hoc structures, and comparing results by hand — and prompt tuning is no longer controlled only by a small group of engineers.
+
+**Built for classification and imbalanced data.** The open-source edition prioritizes classification tasks, especially scenarios with obvious class imbalance such as risk control, finance, moderation, and support-intent detection. Per-class metrics are kept everywhere, so aggregate accuracy never hides minority-class behavior.
+
+**A complete path from experiment to production.** ProofHound is not only a prompt registry, and not only an evaluation tool. Datasets, experiments, optimizations, releases, and run results live in one lifecycle, so you can trace why a version went online, what ran before it, how it behaved in canary and production, and why it was later rolled back.
+
+**Self-hosted, low lock-in.** PostgreSQL for storage, Redis for centralized rate limits, stdout JSON for logs — and your own models, credentials, providers, and usage costs.
+
+## In development
+
+- **Generative-task optimization** — evaluation, comparison, and optimization strategies beyond the current classification-first workflow.
+- **ProofHound Cloud** — a hosted edition to cut deployment and operations work. _Coming soon._
+
+## Project structure
 
 ```text
 proofhound/
-├── apps/        server / webhook / worker / web
-├── packages/    shared / db / api-client / providers / logger / limiter / llm-client / connector-client / ui
-├── dev/         local dependency services through docker-compose
-└── datasets/    examples and local datasets
+├── apps/
+│   ├── server     # NestJS API, MCP channel, SSE
+│   ├── webhook    # connector webhook ingress
+│   ├── worker     # BullMQ LLM worker
+│   └── web        # Next.js admin console
+├── packages/      # shared, db, crypto, providers, llm-client, judgment,
+│                  # optimization-strategy, limiter, metrics, logger,
+│                  # orchestration-shared, connector-client, api-client, ui
+├── dev/           # docker-compose for local dependency services
+├── docs/specs/    # business specs — the source of truth
+└── datasets/      # example and local datasets
 ```
 
 ## Contributing
 
 ProofHound is still early, and community contributions are very welcome. You can help by:
 
-- Opening issues for bugs, installation problems, model integration problems, or real workflow feedback.
-- Opening pull requests for documentation, fixes, tests, or interaction improvements.
-- Extending capabilities with new model providers, connectors, dataset parsers, experiment metrics, or optimization strategies.
-- Sharing use cases, especially classification, imbalanced datasets, risk control, finance, moderation, and support intent detection.
+- Opening **issues** for bugs, installation problems, model-integration problems, or real workflow feedback.
+- Opening **pull requests** for documentation, fixes, tests, or interaction improvements.
+- **Extending capabilities** with new model providers, connectors, dataset parsers, experiment metrics, or optimization strategies.
+- **Sharing use cases**, especially classification, imbalanced datasets, risk control, finance, moderation, and support-intent detection.
 
 If you are unsure whether an idea fits the project, please open an issue first to discuss the context and expected behavior.
 
-## Community
+## Community and support
 
-Join the Discord community: https://discord.gg/DGC6AzWrnt
+- **Discord** — best for questions, setup help, and chatting with other users: https://discord.gg/DGC6AzWrnt
+- **QQ group** — 318412485.
+- **GitHub Issues** — best for bugs, installation problems, model-integration problems, and feature requests.
+- **Email** — best for private or sensitive topics: z@proofhound.org
 
-Email: z@proofhound.org
+## License
 
-You can also use GitHub Issues to discuss use cases, report problems, or propose features.
+ProofHound is licensed under the [Apache License 2.0](LICENSE).

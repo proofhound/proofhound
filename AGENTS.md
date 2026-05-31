@@ -53,6 +53,12 @@ Common commands (pnpm@10 + turbo orchestration):
 
 > First run: after `cp .env.example .env`, fill in `DATABASE_URL` / `REDIS_URL`; `MODEL_API_KEY_ENCRYPTION_KEY` (@proofhound/crypto encrypts/decrypts the API Key) and `MCP_TOKEN_SIGNING_SECRET` (MCP token signing) are application-managed secrets, and their absence will cause startup / invocation failures.
 
+### Git workflow
+
+- Branch naming: `<type>/<kebab>` aligned with Conventional Commits (`feat/`, `fix/`, `docs/`, `refactor/`, `chore/`, …) — e.g. `refactor/contracts-forroot-override`.
+- `master` is PR-only: no direct push (branch protection + `enforce_admins`). Squash-merge with a Conventional-Commit PR title so release-please categorizes it.
+- Worktrees: create with `mkdir -p .claude/worktrees && git worktree add .claude/worktrees/<name> -b <type>/<kebab> master` (a fresh `<type>/<kebab>` branch off `master`). Do not rely on tooling that forces a `worktree-` prefix or rewrites `/` to `+`; rename the branch to conform if it does.
+
 ## 3. What to Read Before Starting
 
 | What you want to do                      | Required SPEC                                                                                                                                                                  |

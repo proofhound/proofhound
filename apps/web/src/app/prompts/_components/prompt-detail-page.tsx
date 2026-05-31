@@ -754,6 +754,7 @@ function EditorTab({
                 className="h-8"
                 disabled={!dirty || isSaving}
                 onClick={() => void onSaveChanges()}
+                data-testid="prompt-version-save"
               >
                 <Save className="size-3.5" />
                 {isSaving ? t('common.savePending') : t('prompts.detail.saveChanges')}
@@ -762,7 +763,7 @@ function EditorTab({
           )}
         </div>
         <div className="grid lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="min-w-0">
+          <div className="min-w-0" data-testid="prompt-version-body">
             <div className="flex items-center gap-2 border-b px-4 py-2">
               <Pencil className="size-3.5 text-muted-foreground" />
               <span className="text-[12.5px] font-semibold">{t('prompts.detail.bodyTemplate')}</span>
@@ -2312,7 +2313,13 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
                         <>
                           <span className="font-mono text-sm font-semibold">v{activeVersion.version}</span>
                           <h2 className="truncate text-xl font-semibold leading-tight">{prompt.name}</h2>
-                          <StatusBadge status={activeVersion.status} compact />
+                          {activeVersion.frozen ? (
+                            <span data-testid="prompt-version-frozen-badge">
+                              <StatusBadge status={activeVersion.status} compact />
+                            </span>
+                          ) : (
+                            <StatusBadge status={activeVersion.status} compact />
+                          )}
                         </>
                       )}
                     </div>

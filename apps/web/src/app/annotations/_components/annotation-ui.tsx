@@ -26,11 +26,13 @@ export function AnnotationMetricCard({
   value,
   detail,
   tone = 'neutral',
+  testId,
 }: {
   label: ReactNode;
   value: ReactNode;
   detail?: ReactNode;
   tone?: 'neutral' | 'active' | 'success';
+  testId?: string;
 }) {
   const style =
     tone === 'active'
@@ -46,9 +48,14 @@ export function AnnotationMetricCard({
         : undefined;
 
   return (
-    <div className="rounded-lg border bg-card px-4 py-3" style={style}>
+    <div className="rounded-lg border bg-card px-4 py-3" style={style} data-testid={testId}>
       <div className="text-[11.5px] font-medium text-muted-foreground">{label}</div>
-      <div className="mt-1 font-mono text-[26px] font-semibold leading-none tabular-nums">{value}</div>
+      <div
+        className="mt-1 font-mono text-[26px] font-semibold leading-none tabular-nums"
+        data-testid={testId ? `${testId}-value` : undefined}
+      >
+        {value}
+      </div>
       {detail ? <div className="mt-1.5 text-[11.5px] text-muted-foreground">{detail}</div> : null}
     </div>
   );

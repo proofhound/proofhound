@@ -605,6 +605,7 @@ export function PromptsListPage({
                 className="h-9"
                 aria-invalid={createNameTaken || undefined}
                 autoFocus
+                data-testid="prompt-new-name"
               />
             </label>
             {createNameMessage && <p className="text-xs text-destructive">{createNameMessage}</p>}
@@ -615,7 +616,11 @@ export function PromptsListPage({
               <Button type="button" variant="outline" onClick={() => closeCreateDialog(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button type="submit" disabled={createPromptMutation.isPending || createNameTaken}>
+              <Button
+                type="submit"
+                disabled={createPromptMutation.isPending || createNameTaken}
+                data-testid="prompt-new-submit"
+              >
                 <Plus className="size-4" />
                 {t('prompts.new.createAndOpen')}
               </Button>
