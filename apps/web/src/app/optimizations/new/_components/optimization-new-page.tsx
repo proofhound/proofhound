@@ -23,7 +23,7 @@ import { Button, Input, cn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { PromptVersionPickerRow, PromptVersionPickerTag } from '@/components/prompt-version-picker-row';
 import { PromptLanguageSelect } from '@/components/prompt-language-select';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { formatDateTime, formatLatencySeconds, getApiErrorMessage, isProjectNameTaken } from '@proofhound/web-ui/lib';
 import { useOptimizations, useCreateOptimization } from '@/hooks/optimization';
 import { useDatasets } from '@/hooks/dataset';

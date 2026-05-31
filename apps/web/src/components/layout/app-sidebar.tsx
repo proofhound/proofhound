@@ -11,7 +11,7 @@ import {
   useSidebar,
   cn,
 } from '@proofhound/ui';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 import { getMainNavGroups } from './sidebar-data';
 import { NavGroup } from './nav-group';
 

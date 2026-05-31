@@ -14,7 +14,7 @@ import {
   cn,
 } from '@proofhound/ui';
 import type { TableColumn as UiTableColumn } from '@proofhound/ui';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 type PromptSortBy = PromptMonitoringRankingResponseDto['sortBy'];
 type ModelSortBy = ModelMonitoringRankingResponseDto['sortBy'];
 

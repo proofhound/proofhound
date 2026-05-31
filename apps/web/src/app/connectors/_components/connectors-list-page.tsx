@@ -33,7 +33,7 @@ import { Main } from '@proofhound/ui/layout';
 import { useBulkDeleteConnectors, useConnectors, useDeleteConnector } from '@/hooks/connector';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, formatDateTime } from '@proofhound/web-ui/lib';
 import {
   type ConnectorFilter,

@@ -14,7 +14,7 @@ import {
   Skeleton,
   cn,
 } from '@proofhound/ui';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 import { useRunResult } from '@/hooks/run-result';
 import { formatDateTime } from '@proofhound/web-ui/lib';
 import { experimentTone } from '../../_components/experiment-theme';

@@ -1,4 +1,4 @@
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 
 export type ModelSource = 'local';
 export type ModelStatus = 'enabled' | 'testing' | 'disabled';

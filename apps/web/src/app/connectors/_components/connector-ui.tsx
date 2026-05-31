@@ -2,7 +2,7 @@
 
 import { ArrowDownToLine, ArrowUpFromLine, type LucideIcon, MessagesSquare, Plug, Webhook } from 'lucide-react';
 import { Badge, cn } from '@proofhound/ui';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 import { CONNECTOR_LOCALE, type ConnectorDirection, type ConnectorHealthStatus, type ConnectorType } from './connector-types';
 
 const TYPE_ICON: Record<ConnectorType, LucideIcon> = {

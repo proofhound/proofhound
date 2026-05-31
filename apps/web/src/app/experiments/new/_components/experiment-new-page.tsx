@@ -13,7 +13,7 @@ import { useCreateExperiment, useExperiments } from '@/hooks/experiment';
 import { useProjectModels } from '@/hooks/model';
 import { usePrompt, usePrompts } from '@/hooks/prompt';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, isProjectNameTaken } from '@proofhound/web-ui/lib';
 import type { PromptVariableType } from '../../../prompts/_components/prompt-model';
 import { renderPromptPreviewParts } from '../../../prompts/_components/prompt-preview-parts';

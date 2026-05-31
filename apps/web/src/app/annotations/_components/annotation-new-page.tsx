@@ -16,7 +16,7 @@ import {
 } from '@proofhound/ui';
 import { useAnnotationTaskOptions, useCreateAnnotationTask } from '@/hooks/annotation';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage } from '@proofhound/web-ui/lib';
 import { formatCount } from './annotation-ui';
 

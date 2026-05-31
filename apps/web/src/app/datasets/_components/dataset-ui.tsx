@@ -32,7 +32,7 @@ import {
   cn,
 } from '@proofhound/ui';
 import type { ModalityKind } from '@proofhound/ui';
-import { useI18n, type Language } from '@/i18n';
+import { useI18n, type Language } from '@proofhound/web-ui/i18n';
 import {
   DATASET_MODALITY_LABEL_KEYS,
   DATASET_ROLE_LABEL_KEYS,

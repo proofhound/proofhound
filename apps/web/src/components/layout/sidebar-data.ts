@@ -11,7 +11,7 @@ import {
   Settings,
   Sparkles,
 } from 'lucide-react';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 import type { NavGroup } from './types';
 
 type TFunction = (key: TranslationKey) => string;

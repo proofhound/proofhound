@@ -53,7 +53,7 @@ import {
   useQuickStartModelOptions,
 } from '@/hooks/quick-start';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, buildProviderTypeOptions } from '@proofhound/web-ui/lib';
 import {
   FORMAT_CHIPS,

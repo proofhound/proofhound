@@ -4,7 +4,7 @@ import { Clock, Cpu, FileText } from 'lucide-react';
 import type { SourceBucket } from '@proofhound/shared';
 import { MultiSelect, cn } from '@proofhound/ui';
 import type { MultiSelectOption } from '@proofhound/ui';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 const SOURCES_ORDER: ReadonlyArray<SourceBucket> = ['prod', 'canary', 'iter', 'exp'];
 
 const SOURCE_I18N: Record<SourceBucket, TranslationKey> = {

@@ -1,5 +1,5 @@
 import type { DatasetModalityDto } from '@proofhound/shared';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 
 export type DatasetModality = DatasetModalityDto;
 export type DatasetStatus = 'active' | 'deleted';

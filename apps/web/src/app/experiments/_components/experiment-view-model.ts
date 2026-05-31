@@ -7,7 +7,7 @@ import type {
   PromptVersionStatusDto,
 } from '@proofhound/shared';
 import { MODALITY_KIND_ORDER, type ModalityKind } from '@proofhound/ui';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 import { experimentTone } from './experiment-theme';
 
 export type ExperimentStatus = 'running' | 'success' | 'failed' | 'stopped' | 'cancelled';

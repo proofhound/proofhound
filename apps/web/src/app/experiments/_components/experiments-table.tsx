@@ -16,7 +16,7 @@ import {
   UnusedImagesBadge,
 } from '@proofhound/ui';
 import type { TableColumn, TableActionDescriptor } from '@proofhound/ui';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 
 import { progressLabel, progressTimingLabel } from './experiment-progress';
 import { appendNumberSearchParam, appendSearchParam, buildRepeatExperimentHref } from './experiment-repeat-href';

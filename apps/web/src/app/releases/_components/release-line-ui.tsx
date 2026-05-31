@@ -5,7 +5,7 @@ import type { ProductionReleaseEventTypeDto, ReleaseLineEventOperationDto } from
 import { cn } from '@proofhound/ui';
 import { formatDateTime } from '@proofhound/web-ui/lib';
 import type { ReleaseLineLatestEvent, ReleaseLineStatus, ReleaseLineView } from '@proofhound/web-ui/lib';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 
 const STATUS_TOKENS: Record<ReleaseLineStatus, { bg: string; fg: string; bd: string; dot: string; pulse: boolean }> = {
   production: {

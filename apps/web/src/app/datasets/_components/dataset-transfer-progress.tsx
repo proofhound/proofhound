@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DatasetTransferProgress as ApiTransferProgress } from '@proofhound/api-client';
 import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 import { Progress, formatProgressLabel, cn } from '@proofhound/ui';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 type TransferStatus = 'running' | 'success' | 'error';
 
 interface DatasetTransferState {

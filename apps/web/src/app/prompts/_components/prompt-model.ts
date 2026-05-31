@@ -12,7 +12,7 @@ import {
   type PromptVersionDto,
   type PromptVersionStatusDto,
 } from '@proofhound/shared';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 import { formatDateTime } from '@proofhound/web-ui/lib';
 
 export type PromptVersionStatus = PromptVersionStatusDto;

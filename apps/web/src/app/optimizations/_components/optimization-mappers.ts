@@ -4,7 +4,7 @@ import type {
   OptimizationStartingModeDto,
   OptimizationStatusDto,
 } from '@proofhound/shared';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 import { optimizationTone } from './optimization-theme';
 
 export type OptimizationStatus = OptimizationStatusDto;

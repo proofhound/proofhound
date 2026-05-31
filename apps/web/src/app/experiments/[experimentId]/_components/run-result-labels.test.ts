@@ -4,7 +4,7 @@ import {
   getRunResultJudgmentLabelKey,
   type RunResultLabelSource,
 } from './run-result-labels';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 
 const t = (key: TranslationKey) => key;
 

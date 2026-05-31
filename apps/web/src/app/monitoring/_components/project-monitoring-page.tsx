@@ -26,7 +26,7 @@ import {
   usePromptMonitoringRanking,
 } from '@/hooks/project-monitoring';
 import { usePrompts } from '@/hooks/prompt';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { useProjectContext } from '@/providers/project-context-provider';
 import { BigChartCard, type DeltaTone } from './big-chart-card';
 import { MonitoringFilterStrip } from './monitoring-filter-strip';

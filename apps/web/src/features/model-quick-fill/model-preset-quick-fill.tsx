@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@proofhound/ui';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 import { modelPresetToQuickFillDraft, type ModelQuickFillDraft } from './model-preset-draft';
 
 export function ModelPresetQuickFill({

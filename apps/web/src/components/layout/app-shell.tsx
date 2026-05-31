@@ -16,7 +16,7 @@ import {
   type LayoutPreferences,
 } from './layout-preferences';
 import { getMainNavGroups } from './sidebar-data';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { useProjectContext } from '@/providers/project-context-provider';
 import type { ProjectContext } from '@/lib/project-context';
 import { useCanaryReleaseList } from '@/hooks/canary-release';

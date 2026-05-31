@@ -49,7 +49,7 @@ import type { TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useDatasets, useDeleteDataset, useDownloadDataset, useUpdateDataset } from '@/hooks/dataset';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage } from '@proofhound/web-ui/lib';
 import { DatasetTransferProgressPanel, useDatasetTransferProgress } from './dataset-transfer-progress';
 import { getReferenceCount, type ProjectDataset, type DatasetModality } from './dataset-types';

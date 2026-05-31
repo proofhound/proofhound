@@ -5856,7 +5856,7 @@ export type TranslationKey = keyof (typeof dictionaries)['zh-CN'];
 type I18nContextValue = {
   language: Language;
   setLanguage: (language: Language) => void;
-  t: (key: TranslationKey) => string;
+  t: (key: TranslationKey | (string & {})) => string;
 };
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -5872,9 +5872,11 @@ function getStoredLanguage(): Language {
 export function I18nProvider({
   children,
   defaultLanguage = DEFAULT_LANGUAGE,
+  extend,
 }: {
   children: ReactNode;
   defaultLanguage?: Language;
+  extend?: Partial<Record<Language, Record<string, string>>>;
 }) {
   // Initial value uses SSR default language; after mount, sync with user preference or browser language to avoid hydration mismatch
   const [language, setLanguageState] = useState<Language>(defaultLanguage);
@@ -5894,7 +5896,11 @@ export function I18nProvider({
     document.documentElement.lang = nextLanguage;
   }, []);
 
-  const t = useCallback((key: TranslationKey) => dictionaries[language][key], [language]);
+  const t = useCallback(
+    (key: TranslationKey | (string & {})) =>
+      extend?.[language]?.[key] ?? (dictionaries[language] as Record<string, string>)[key] ?? key,
+    [language, extend],
+  );
 
   const value = useMemo(() => ({ language, setLanguage, t }), [language, setLanguage, t]);
 

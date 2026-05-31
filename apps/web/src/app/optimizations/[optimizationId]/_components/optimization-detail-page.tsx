@@ -56,7 +56,7 @@ import { PromptDiffSplitView } from '@/components/prompt-diff/prompt-diff-split-
 import { useOptimization, useControlOptimization } from '@/hooks/optimization';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage } from '@proofhound/web-ui/lib';
 import { optimizationTone } from '../../_components/optimization-theme';
 import { OptimizationStatusBadge, OriginBadge } from '../../_components/optimization-ui';

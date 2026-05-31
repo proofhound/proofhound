@@ -24,7 +24,7 @@ import {
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useCreateDataset } from '@/hooks/dataset';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { runDatasetImport } from './dataset-import-runner';
 import { DatasetTransferProgressPanel, useDatasetTransferProgress } from './dataset-transfer-progress';
 import { RoleArrowLabel, RolePill } from './dataset-ui';

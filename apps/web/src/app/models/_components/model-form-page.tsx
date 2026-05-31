@@ -55,7 +55,7 @@ import { ModelContextWindowInput } from '@/components/model-context-window-input
 import { ModelProbeStatus, type ModelProbeFeedback } from '@/components/model-probe-status';
 import { ModelPresetQuickFill } from '@/features/model-quick-fill/model-preset-quick-fill';
 import type { ModelQuickFillDraft } from '@/features/model-quick-fill/model-preset-draft';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, toIntegerInputValue, buildProviderTypeOptions, isProjectNameTaken } from '@proofhound/web-ui/lib';
 import {
   useCreateProjectModel,
@@ -68,7 +68,7 @@ import {
   useRevealProjectModelApiKey,
   useUpdateProjectModel,
 } from '@/hooks/model';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 import { dtoToProjectModel } from './project-model-adapter';
 import {
   getProjectModelSource,

@@ -1,5 +1,5 @@
 import { formatProgressLabel } from '@proofhound/ui';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 
 import type { ExperimentSummary } from './experiment-view-model';
 

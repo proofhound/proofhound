@@ -27,7 +27,7 @@ import { useOptimizations } from '@/hooks/optimization';
 import { usePrompts } from '@/hooks/prompt';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useReleaseLineList } from '@/hooks/release-line';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { formatDateTime } from '@proofhound/web-ui/lib';
 import type { ReleaseLineView } from '@proofhound/web-ui/lib';
 import { useProjectContext } from '@/providers/project-context-provider';

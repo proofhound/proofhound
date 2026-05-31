@@ -39,7 +39,7 @@ import { useCreateProductionRelease } from '@/hooks/production-release';
 import { usePrompt, usePrompts } from '@/hooks/prompt';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { useReleaseLineList } from '@/hooks/release-line';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, formatDateTime, getReleaseLineId } from '@proofhound/web-ui/lib';
 import { composePromptPreview } from '../../prompts/_components/prompt-preview';
 import { renderPromptPreviewParts } from '../../prompts/_components/prompt-preview-parts';

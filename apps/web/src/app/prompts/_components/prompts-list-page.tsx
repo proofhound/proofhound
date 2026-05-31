@@ -30,7 +30,7 @@ import type { TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useCreatePrompt, useDeletePrompt, usePromptDeleteImpact, usePrompts } from '@/hooks/prompt';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, isProjectNameTaken } from '@proofhound/web-ui/lib';
 import {
   getPromptSearchText,

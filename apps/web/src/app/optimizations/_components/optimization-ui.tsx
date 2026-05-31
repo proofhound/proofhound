@@ -7,7 +7,7 @@ import {
   formatProgressNumber,
   cn,
 } from '@proofhound/ui';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 import {
   OPTIMIZATION_ORIGIN_LABEL_KEYS,
   OPTIMIZATION_STATUS_LABEL_KEYS,

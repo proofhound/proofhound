@@ -32,7 +32,7 @@ import {
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useDatasetSamples, useDeleteDatasetSamples, useDownloadDataset } from '@/hooks/dataset';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 import {
   getReferenceCount,
   type DatasetField,

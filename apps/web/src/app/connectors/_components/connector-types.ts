@@ -6,7 +6,7 @@ import type {
   ConnectorReferencesSummaryDto,
   ConnectorType,
 } from '@proofhound/shared';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 
 export type ConnectorListItem = ConnectorListItemDto;
 export type ConnectorDetail = ConnectorDetailDto;

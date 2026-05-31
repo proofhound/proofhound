@@ -68,7 +68,7 @@ import {
 } from '@/hooks/prompt';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
 import { PromptLanguageSelect, type PromptLanguage } from '@/components/prompt-language-select';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { formatDateTime } from '@proofhound/web-ui/lib';
 import {
   DATASET_MODALITY_LABEL_KEYS,

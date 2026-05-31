@@ -43,7 +43,7 @@ import {
   useSubmitAnnotationSample,
 } from '@/hooks/annotation';
 import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { useI18n, type TranslationKey } from '@/i18n';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage } from '@proofhound/web-ui/lib';
 import { buildAnnotationTasks } from './annotation-task-model';
 import {

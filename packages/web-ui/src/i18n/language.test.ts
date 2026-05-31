@@ -5,7 +5,7 @@ import {
   resolveAcceptLanguageHeader,
   resolveBrowserLanguage,
   resolveSupportedBrowserLanguage,
-} from '@/i18n/language';
+} from './language';
 
 describe('i18n browser language resolution', () => {
   it('maps supported Chinese browser locales to zh-CN', () => {

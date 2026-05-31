@@ -16,7 +16,7 @@ import {
   cn,
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 import type { DatasetField, DatasetSample } from './dataset-types';
 import { getImageReferences, getPrimaryImageReference } from './dataset-detail-helpers';
 import { ImageCell, ImagePreviewDialog, SelectionBox } from './dataset-ui';

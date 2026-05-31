@@ -1,5 +1,5 @@
 import type { RunResultJudgmentStatusDto, RunResultStatusDto } from '@proofhound/shared';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 
 export type BinaryRunResultJudgmentStatus = Extract<RunResultJudgmentStatusDto, 'correct' | 'incorrect'>;
 

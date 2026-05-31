@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { ArrowLeft, Home } from 'lucide-react';
 import { Button } from '@proofhound/ui';
 import { PreferenceControls, ThemeSettingsButton } from '@/components/layout/preference-controls';
-import { useI18n } from '@/i18n';
+import { useI18n } from '@proofhound/web-ui/i18n';
 
 export default function NotFoundPage() {
   const { t } = useI18n();
