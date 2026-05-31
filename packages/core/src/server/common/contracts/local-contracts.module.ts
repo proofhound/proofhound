@@ -10,7 +10,9 @@
 
 import { Global, Module } from '@nestjs/common';
 import { DatabaseModule } from '../../../shared/database/database.module';
+import { AccessControlService } from './access-control.service';
 import { ActorContextResolver } from './actor-context.resolver';
+import { LocalAccessControlService } from './local-access-control.service';
 import { LocalActorContextResolver } from './local-actor-context.resolver';
 import { LocalMcpAuthResolver } from './local-mcp-auth.resolver';
 import { LocalProjectContextResolver } from './local-project-context.resolver';
@@ -26,11 +28,13 @@ import { ProjectContextResolver } from './project-context.resolver';
     { provide: ProjectContextResolver, useClass: LocalProjectContextResolver },
     { provide: ActorContextResolver, useClass: LocalActorContextResolver },
     { provide: McpAuthResolver, useClass: LocalMcpAuthResolver },
+    { provide: AccessControlService, useClass: LocalAccessControlService },
   ],
   exports: [
     ProjectContextResolver,
     ActorContextResolver,
     McpAuthResolver,
+    AccessControlService,
     LocalUserTokenVerifier,
   ],
 })

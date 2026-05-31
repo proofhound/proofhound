@@ -8,20 +8,24 @@ import {
   type PromptMonitoringRankingResponseDto,
 } from '@proofhound/shared';
 import { z } from 'zod';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { MonitoringRepository } from './monitoring.repository';
 
 @Injectable()
 export class MonitoringService {
-  constructor(private readonly repo: MonitoringRepository) {}
+  constructor(
+    private readonly repo: MonitoringRepository,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   async getStats(
     projectId: string,
     filter: ProjectMonitoringFilterDto,
     actor: CurrentUserPayload,
   ): Promise<ProjectMonitoringStatsDto> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const normalized = this.normalizeFilter(filter);
     return this.repo.getStats(projectId, normalized);
   }
@@ -31,7 +35,7 @@ export class MonitoringService {
     filter: ProjectMonitoringFilterDto,
     actor: CurrentUserPayload,
   ): Promise<ProjectMonitoringTimeseriesDto> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const normalized = this.normalizeFilter(filter);
     return this.repo.getTimeseries(projectId, normalized);
   }
@@ -42,7 +46,7 @@ export class MonitoringService {
     sortBy: PromptMonitoringRankingResponseDto['sortBy'],
     actor: CurrentUserPayload,
   ): Promise<PromptMonitoringRankingResponseDto> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const normalized = this.normalizeFilter(filter);
     return this.repo.getPromptRanking(projectId, normalized, sortBy);
   }
@@ -53,7 +57,7 @@ export class MonitoringService {
     sortBy: ModelMonitoringRankingResponseDto['sortBy'],
     actor: CurrentUserPayload,
   ): Promise<ModelMonitoringRankingResponseDto> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const normalized = this.normalizeFilter(filter);
     return this.repo.getModelRanking(projectId, normalized, sortBy);
   }

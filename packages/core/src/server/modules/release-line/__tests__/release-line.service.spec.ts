@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { ReleaseLineService } from '../release-line.service';
 import type { ReleaseLineRepository } from '../release-line.repository';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const promptId = '22222222-2222-4222-8222-222222222222';
@@ -78,7 +79,7 @@ describe('ReleaseLineService.release name uniqueness', () => {
   it('rejects a duplicate release name for a new release identity', async () => {
     const repo = createRepoMock();
     repo.findByName.mockResolvedValue({ id: '99999999-9999-4999-8999-999999999999', name: 'risk-prod' });
-    const service = new ReleaseLineService(repo as unknown as ReleaseLineRepository);
+    const service = new ReleaseLineService(repo as unknown as ReleaseLineRepository, new LocalAccessControlService());
 
     await expect(service.recordLegacyProductionEvent(legacyProductionInput())).rejects.toThrow(
       new ConflictException('release_name_taken'),
@@ -89,7 +90,7 @@ describe('ReleaseLineService.release name uniqueness', () => {
   it('allows events for an existing release identity without treating the incoming event name as a rename', async () => {
     const repo = createRepoMock();
     repo.findByIdentity.mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777', name: 'risk-prod' });
-    const service = new ReleaseLineService(repo as unknown as ReleaseLineRepository);
+    const service = new ReleaseLineService(repo as unknown as ReleaseLineRepository, new LocalAccessControlService());
 
     await service.recordLegacyProductionEvent({
       ...legacyProductionInput(),
@@ -108,7 +109,7 @@ describe('ReleaseLineService.release name uniqueness', () => {
         constraint: 'uniq_release_lines_project_name',
       }),
     );
-    const service = new ReleaseLineService(repo as unknown as ReleaseLineRepository);
+    const service = new ReleaseLineService(repo as unknown as ReleaseLineRepository, new LocalAccessControlService());
 
     await expect(service.recordLegacyProductionEvent(legacyProductionInput())).rejects.toThrow(
       new ConflictException('release_name_taken'),
@@ -119,7 +120,7 @@ describe('ReleaseLineService.release name uniqueness', () => {
 describe('ReleaseLineService.updateRunConfig', () => {
   it('updates the selected active lane run config through the repository', async () => {
     const repo = createWritableRepoMock();
-    const service = new ReleaseLineService(repo as unknown as ReleaseLineRepository);
+    const service = new ReleaseLineService(repo as unknown as ReleaseLineRepository, new LocalAccessControlService());
     const input = {
       laneType: 'production' as const,
       modelId: nextModelId,
@@ -139,7 +140,7 @@ describe('ReleaseLineService.updateRunConfig', () => {
   it('rejects when the requested lane is not editable', async () => {
     const repo = createWritableRepoMock();
     repo.updateActiveLaneRunConfig.mockResolvedValue(null);
-    const service = new ReleaseLineService(repo as unknown as ReleaseLineRepository);
+    const service = new ReleaseLineService(repo as unknown as ReleaseLineRepository, new LocalAccessControlService());
 
     await expect(
       service.updateRunConfig(

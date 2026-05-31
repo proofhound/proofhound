@@ -6,6 +6,8 @@ import { RunResultService } from '../../run-result/run-result.service';
 import { ExperimentLauncher } from '../experiment.launcher';
 import { ExperimentRepository, type ExperimentProjectAccessRow, type ExperimentRow } from '../experiment.repository';
 import { ExperimentService } from '../experiment.service';
+import { AccessControlService } from '../../../common/contracts/access-control.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 import { vi, type Mocked, type Mock } from 'vitest';
 
 const actor = {
@@ -142,6 +144,7 @@ describe('ExperimentService', () => {
         { provide: ModelService, useValue: modelService },
         { provide: RunResultService, useValue: runResults },
         { provide: DATABASE_CLIENT, useValue: db },
+        { provide: AccessControlService, useClass: LocalAccessControlService },
         ExperimentService,
       ],
     }).compile();

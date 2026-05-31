@@ -18,7 +18,8 @@ import type {
   DatasetImportSourceFormat,
   DatasetImportStatus,
 } from '@proofhound/shared';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { buildDatasetFieldSchema } from './dataset-field-schema.util';
 import {
@@ -45,6 +46,7 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly repo: DatasetImportRepository,
     private readonly datasetService: DatasetService,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   onModuleInit(): void {
@@ -164,13 +166,13 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async getAccessibleProject(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const project = await this.repo.findProjectAccess(projectId);
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
   }
 
   private async getWritableProject(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    accessControl.assertCan(actor, 'project_write', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     await this.getAccessibleProject(projectId, actor);
   }
 

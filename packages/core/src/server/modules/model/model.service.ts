@@ -28,7 +28,8 @@ import type {
   UpsertModelContextWindowDto,
 } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { REDIS_LIMITER } from '../../../shared/redis/redis.constants';
@@ -63,6 +64,7 @@ export class ModelService {
     private readonly repo: ModelRepository,
     private readonly crypto: CryptoService,
     @Inject(REDIS_LIMITER) private readonly limiter: RateLimiter,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -363,14 +365,14 @@ export class ModelService {
   // Private helpers
   // =========================================================================
   private async getAccessibleProject(projectId: string, actor: CurrentUserPayload) {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const project = await this.repo.findProjectAccess(actor.sub, projectId, actor.isSuperAdmin);
     if (!project) throw new NotFoundException(`Local workspace ${projectId} not found`);
     return project;
   }
 
   private async getWritableProject(projectId: string, actor: CurrentUserPayload) {
-    accessControl.assertCan(actor, 'project_write', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     return this.getAccessibleProject(projectId, actor);
   }
 

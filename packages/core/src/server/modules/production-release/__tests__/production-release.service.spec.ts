@@ -4,6 +4,7 @@ import type { CurrentUserPayload } from '../../../common/decorators/current-user
 import type { ReleaseLineService } from '../../release-line/release-line.service';
 import type { ProductionReleaseEventRowWithJoins, ProductionReleaseRepository } from '../production-release.repository';
 import { ProductionReleaseService } from '../production-release.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const promptId = '22222222-2222-4222-8222-222222222222';
@@ -143,6 +144,7 @@ describe('ProductionReleaseService.create', () => {
     const releaseLines = releaseLineServiceMock();
     const service = new ProductionReleaseService(
       repo as unknown as ProductionReleaseRepository,
+      new LocalAccessControlService(),
       releaseLines as unknown as ReleaseLineService,
     );
 
@@ -172,6 +174,7 @@ describe('ProductionReleaseService.create', () => {
     const releaseLines = releaseLineServiceMock();
     const service = new ProductionReleaseService(
       repo as unknown as ProductionReleaseRepository,
+      new LocalAccessControlService(),
       releaseLines as unknown as ReleaseLineService,
     );
 
@@ -198,6 +201,7 @@ describe('ProductionReleaseService.stop', () => {
     const releaseLines = releaseLineServiceMock(stopped.id);
     const service = new ProductionReleaseService(
       repo as unknown as ProductionReleaseRepository,
+      new LocalAccessControlService(),
       releaseLines as unknown as ReleaseLineService,
     );
 

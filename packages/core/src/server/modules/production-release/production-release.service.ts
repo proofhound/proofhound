@@ -9,7 +9,8 @@ import type {
   ProductionReleaseListItemDto,
   StopProductionReleaseInputDto,
 } from '@proofhound/shared';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import {
   ProductionReleaseRepository,
@@ -23,6 +24,7 @@ import { ReleaseLineService } from '../release-line/release-line.service';
 export class ProductionReleaseService {
   constructor(
     private readonly repo: ProductionReleaseRepository,
+    private readonly accessControl: AccessControlService,
     private readonly releaseLineService?: ReleaseLineService,
   ) {}
 
@@ -274,13 +276,13 @@ export class ProductionReleaseService {
   // Internal helpers
   // -------------------------------------------------------------------------
   private async assertReadAccess(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const access = await this.repo.findProjectAccess(actor.sub, projectId, actor.isSuperAdmin);
     if (!access) throw new NotFoundException(`Project ${projectId} not found`);
   }
 
   private async assertWriteAccess(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    accessControl.assertCan(actor, 'release_manage', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'release_manage');
     return this.assertReadAccess(projectId, actor);
   }
 

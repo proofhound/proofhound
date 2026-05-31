@@ -17,7 +17,8 @@ import type {
   UpdateDatasetMetadataDto,
 } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import { buildDatasetFieldSchema } from './dataset-field-schema.util';
 import {
   DatasetRepository,
@@ -36,7 +37,10 @@ export interface DatasetExportFile {
 
 @Injectable()
 export class DatasetService {
-  constructor(private readonly repo: DatasetRepository) {}
+  constructor(
+    private readonly repo: DatasetRepository,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   async listDatasets(
     projectId: string,
@@ -227,7 +231,7 @@ export class DatasetService {
   }
 
   private async getAccessibleProject(projectId: string, actor: CurrentUserPayload): Promise<DatasetProjectAccessRow> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const project = await this.repo.findProjectAccess(actor.sub, projectId, actor.isSuperAdmin);
     if (!project) {
       throw new NotFoundException(`Project ${projectId} not found`);
@@ -236,7 +240,7 @@ export class DatasetService {
   }
 
   private async getWritableProject(projectId: string, actor: CurrentUserPayload): Promise<DatasetProjectAccessRow> {
-    accessControl.assertCan(actor, 'project_write', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     return this.getAccessibleProject(projectId, actor);
   }
 

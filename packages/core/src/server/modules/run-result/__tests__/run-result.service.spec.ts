@@ -3,6 +3,7 @@ import type { RunResultListQueryDto, RunResultReleaseListQueryDto } from '@proof
 import type { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import type { RunResultRepository } from '../run-result.repository';
 import { RunResultService } from '../run-result.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 import { vi, type Mocked } from 'vitest';
 
 const PROJECT_ID = '11111111-1111-1111-1111-111111111111';
@@ -46,7 +47,7 @@ describe('RunResultService', () => {
   describe('listExperimentRunResults', () => {
     it('throws NotFound when experiment / project pair has no access row', async () => {
       const repo = buildRepo({ findAccessibleExperiment: vi.fn().mockResolvedValue(null) });
-      const service = new RunResultService(repo);
+      const service = new RunResultService(repo, new LocalAccessControlService());
 
       await expect(
         service.listExperimentRunResults(PROJECT_ID, EXPERIMENT_ID, localActor, defaultQuery),
@@ -63,7 +64,7 @@ describe('RunResultService', () => {
         }),
         listByExperiment: vi.fn().mockResolvedValue(expected),
       });
-      const service = new RunResultService(repo);
+      const service = new RunResultService(repo, new LocalAccessControlService());
 
       const out = await service.listExperimentRunResults(PROJECT_ID, EXPERIMENT_ID, localActor, defaultQuery);
       expect(out).toBe(expected);
@@ -79,7 +80,7 @@ describe('RunResultService', () => {
         }),
         listByExperiment: vi.fn().mockResolvedValue(expected),
       });
-      const service = new RunResultService(repo);
+      const service = new RunResultService(repo, new LocalAccessControlService());
 
       const out = await service.listExperimentRunResults(PROJECT_ID, EXPERIMENT_ID, localActor, defaultQuery);
       expect(out).toBe(expected);
@@ -94,7 +95,7 @@ describe('RunResultService', () => {
         }),
         listByExperiment: vi.fn().mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 20 }),
       });
-      const service = new RunResultService(repo);
+      const service = new RunResultService(repo, new LocalAccessControlService());
 
       await expect(
         service.listExperimentRunResults(PROJECT_ID, EXPERIMENT_ID, superAdminActor, defaultQuery),
@@ -111,7 +112,7 @@ describe('RunResultService', () => {
         }),
         getDetailById: vi.fn().mockResolvedValue(null),
       });
-      const service = new RunResultService(repo);
+      const service = new RunResultService(repo, new LocalAccessControlService());
 
       await expect(
         service.getExperimentRunResult(PROJECT_ID, EXPERIMENT_ID, RUN_RESULT_ID, localActor),
@@ -127,7 +128,7 @@ describe('RunResultService', () => {
         }),
         getDetailById: vi.fn().mockResolvedValue(detail),
       });
-      const service = new RunResultService(repo);
+      const service = new RunResultService(repo, new LocalAccessControlService());
 
       const out = await service.getExperimentRunResult(PROJECT_ID, EXPERIMENT_ID, RUN_RESULT_ID, localActor);
       expect(out).toBe(detail);
@@ -141,7 +142,7 @@ describe('RunResultService', () => {
       const repo = buildRepo({
         listByRelease: vi.fn().mockResolvedValue(expected),
       });
-      const service = new RunResultService(repo);
+      const service = new RunResultService(repo, new LocalAccessControlService());
 
       const out = await service.listReleaseRunResults(PROJECT_ID, localActor, defaultReleaseQuery);
       expect(out).toBe(expected);

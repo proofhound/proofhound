@@ -2,6 +2,8 @@ import { ConflictException } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { DatasetRepository, type DatasetProjectAccessRow, type DatasetRow } from '../dataset.repository';
 import { DatasetService } from '../dataset.service';
+import { AccessControlService } from '../../../common/contracts/access-control.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 import { vi, type Mocked } from 'vitest';
 
 const actor = {
@@ -62,7 +64,11 @@ describe('DatasetService', () => {
     repo = makeRepo();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [{ provide: DatasetRepository, useValue: repo }, DatasetService],
+      providers: [
+        { provide: DatasetRepository, useValue: repo },
+        { provide: AccessControlService, useClass: LocalAccessControlService },
+        DatasetService,
+      ],
     }).compile();
 
     service = module.get(DatasetService);

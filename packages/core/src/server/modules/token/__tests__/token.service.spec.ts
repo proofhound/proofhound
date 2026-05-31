@@ -4,6 +4,8 @@ import { vi, type Mocked } from 'vitest';
 import { CryptoService } from '../../../../shared/crypto/crypto.service';
 import { TokenRepository, type UserTokenRow } from '../token.repository';
 import { TokenService } from '../token.service';
+import { AccessControlService } from '../../../common/contracts/access-control.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
 const PM = { sub: 'pm-1', email: 'p@p.com', isSuperAdmin: false, isActive: true };
 const TOKEN_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-000000000001';
@@ -57,6 +59,7 @@ describe('TokenService', () => {
         TokenService,
         { provide: TokenRepository, useValue: repo },
         { provide: CryptoService, useValue: crypto },
+        { provide: AccessControlService, useClass: LocalAccessControlService },
       ],
     }).compile();
     service = moduleRef.get(TokenService);

@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import type { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { MonitoringService } from '../monitoring.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
 const PROJECT_ID = '00000000-0000-4000-8000-000000000001';
 const ACTOR: CurrentUserPayload = {
@@ -31,7 +32,7 @@ describe('MonitoringService', () => {
     const repo = {
       getStats: vi.fn().mockResolvedValue(emptyStats),
     };
-    const service = new MonitoringService(repo as never);
+    const service = new MonitoringService(repo as never, new LocalAccessControlService());
 
     await expect(
       service.getStats(
@@ -61,7 +62,7 @@ describe('MonitoringService', () => {
     const repo = {
       getStats: vi.fn(),
     };
-    const service = new MonitoringService(repo as never);
+    const service = new MonitoringService(repo as never, new LocalAccessControlService());
 
     await expect(
       service.getStats(

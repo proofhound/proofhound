@@ -24,7 +24,8 @@ import {
   type PromptVariableDto,
   type PromptOutputSchemaDto,
 } from '@proofhound/shared';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
@@ -43,6 +44,7 @@ export class PromptTryRunService {
     private readonly crypto: CryptoService,
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
     @Inject(REDIS_LIMITER) private readonly limiter: RateLimiterLike,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   async tryRun(
@@ -133,7 +135,7 @@ export class PromptTryRunService {
   }
 
   private async assertAccessible(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    accessControl.assertCan(actor, 'project_write', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     const access = await this.promptRepo.findProjectAccess(actor.sub, projectId, actor.isSuperAdmin);
     if (!access) {
       throw new NotFoundException(`Project ${projectId} not found`);

@@ -7,6 +7,8 @@ import {
   type PromptVersionRow,
 } from '../prompt.repository';
 import { PromptService } from '../prompt.service';
+import { AccessControlService } from '../../../common/contracts/access-control.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 import { vi, type Mocked } from 'vitest';
 
 const projectId = '77777777-7777-4777-8777-777777777777';
@@ -100,7 +102,11 @@ describe('PromptService', () => {
     repo = makeRepo();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [{ provide: PromptRepository, useValue: repo }, PromptService],
+      providers: [
+        { provide: PromptRepository, useValue: repo },
+        { provide: AccessControlService, useClass: LocalAccessControlService },
+        PromptService,
+      ],
     }).compile();
 
     service = module.get(PromptService);

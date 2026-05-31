@@ -6,6 +6,7 @@ import type { CurrentUserPayload } from '../../../common/decorators/current-user
 import type { CryptoService } from '../../../../shared/crypto/crypto.service';
 import type { PromptRepository } from '../prompt.repository';
 import { PromptTryRunService } from '../prompt-try-run.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
 vi.mock('@proofhound/llm-client', async (importOriginal) => {
   const actual = await importOriginal<object>();
@@ -98,6 +99,7 @@ function buildService(overrides?: {
     crypto as CryptoService,
     dbStub as never,
     limiter as never,
+    new LocalAccessControlService(),
   );
 
   return { service, promptRepo, crypto };

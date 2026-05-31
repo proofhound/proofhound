@@ -13,6 +13,8 @@ import {
   type OptimizationRow,
 } from '../optimization.repository';
 import { OptimizationService } from '../optimization.service';
+import { AccessControlService } from '../../../common/contracts/access-control.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 import { vi, type Mocked } from 'vitest';
 
 const actor = {
@@ -241,6 +243,7 @@ describe('OptimizationService', () => {
         { provide: ExperimentService, useValue: experimentService },
         { provide: RunResultService, useValue: runResults },
         { provide: PromptRepository, useValue: promptRepo },
+        { provide: AccessControlService, useClass: LocalAccessControlService },
         OptimizationService,
       ],
     }).compile();

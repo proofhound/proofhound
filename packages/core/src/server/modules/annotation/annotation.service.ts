@@ -18,7 +18,8 @@ import type {
   ReleaseAnnotationSampleInputDto,
   SubmitAnnotationSampleInputDto,
 } from '@proofhound/shared';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { AnnotationRepository } from './annotation.repository';
 
@@ -26,7 +27,10 @@ import { AnnotationRepository } from './annotation.repository';
 export class AnnotationService {
   private readonly logger = createLogger('annotation.service', { service: 'server' });
 
-  constructor(private readonly repo: AnnotationRepository) {}
+  constructor(
+    private readonly repo: AnnotationRepository,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   async listTasks(projectId: string, actor: CurrentUserPayload): Promise<AnnotationTaskListResponseDto> {
     await this.assertReadAccess(projectId, actor);
@@ -165,13 +169,13 @@ export class AnnotationService {
   }
 
   private async assertReadAccess(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const project = await this.repo.findProject(projectId);
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
   }
 
   private async assertWriteAccess(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    accessControl.assertCan(actor, 'project_write', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     const project = await this.repo.findProject(projectId);
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
   }

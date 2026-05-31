@@ -37,7 +37,8 @@ import {
   promptLanguageSchema,
 } from '@proofhound/shared';
 import { createLogger } from '@proofhound/logger';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { aggregateExperimentMetrics } from '../experiment/experiment.aggregator';
@@ -93,6 +94,7 @@ export class OptimizationService {
     private readonly experimentService: ExperimentService,
     private readonly runResults: RunResultService,
     private readonly promptRepo: PromptRepository,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   async listOptimizations(
@@ -452,7 +454,7 @@ export class OptimizationService {
     projectId: string,
     actor: CurrentUserPayload,
   ): Promise<OptimizationProjectAccessRow> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const project = await this.repo.findProjectAccess(actor.sub, projectId, actor.isSuperAdmin);
     if (!project) {
       throw new NotFoundException(`Project ${projectId} not found`);
@@ -464,7 +466,7 @@ export class OptimizationService {
     projectId: string,
     actor: CurrentUserPayload,
   ): Promise<OptimizationProjectAccessRow> {
-    accessControl.assertCan(actor, 'project_write', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     return this.getAccessibleProject(projectId, actor);
   }
 

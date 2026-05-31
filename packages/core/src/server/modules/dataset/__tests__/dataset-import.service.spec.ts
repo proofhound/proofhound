@@ -9,6 +9,7 @@ import {
 } from '../dataset-import.repository';
 import { DatasetImportService } from '../dataset-import.service';
 import type { DatasetService } from '../dataset.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
 const ACTOR: CurrentUserPayload = {
   sub: '00000000-0000-4000-8000-000000000010',
@@ -59,7 +60,7 @@ function buildService() {
     getDataset: vi.fn(),
   } as unknown as Mocked<DatasetService>;
 
-  const service = new DatasetImportService(repo, datasetService);
+  const service = new DatasetImportService(repo, datasetService, new LocalAccessControlService());
   return { service, repo, datasetService };
 }
 

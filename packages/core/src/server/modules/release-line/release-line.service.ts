@@ -9,7 +9,8 @@ import type {
   UpdateReleaseLineRunConfigInputDto,
   UpdateReleaseLineTrafficRatioInputDto,
 } from '@proofhound/shared';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import {
@@ -22,7 +23,10 @@ import {
 export class ReleaseLineService {
   private readonly logger = createLogger('release-line.service', { service: 'server' });
 
-  constructor(private readonly repo: ReleaseLineRepository) {}
+  constructor(
+    private readonly repo: ReleaseLineRepository,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   async list(projectId: string, actor: CurrentUserPayload): Promise<{ data: ReleaseLineDto[]; total: number }> {
     await this.assertReadAccess(projectId, actor);
@@ -230,13 +234,13 @@ export class ReleaseLineService {
   }
 
   private async assertReadAccess(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const access = await this.repo.findProjectAccess(projectId);
     if (!access) throw new NotFoundException(`Project ${projectId} not found`);
   }
 
   private async assertWriteAccess(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    accessControl.assertCan(actor, 'release_manage', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'release_manage');
     await this.assertReadAccess(projectId, actor);
   }
 

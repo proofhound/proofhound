@@ -4,6 +4,7 @@ import type { CurrentUserPayload } from '../../../common/decorators/current-user
 import type { ReleaseLineService } from '../../release-line/release-line.service';
 import type { CanaryReleaseRepository, CanaryReleaseRowWithJoins } from '../canary-release.repository';
 import { CanaryReleaseService } from '../canary-release.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const promptId = '22222222-2222-4222-8222-222222222222';
@@ -168,6 +169,7 @@ describe('CanaryReleaseService.create', () => {
     const service = new CanaryReleaseService(
       repo as unknown as CanaryReleaseRepository,
       releaseLines as unknown as ReleaseLineService,
+      new LocalAccessControlService(),
     );
 
     const canary = await service.create(projectId, createInput, actor);
@@ -204,6 +206,7 @@ describe('CanaryReleaseService.updateTrafficRatio', () => {
     const service = new CanaryReleaseService(
       repo as unknown as CanaryReleaseRepository,
       releaseLines as unknown as ReleaseLineService,
+      new LocalAccessControlService(),
     );
 
     const canary = await service.updateTrafficRatio(projectId, canaryEventId, { trafficRatio: 0.25 }, actor);

@@ -21,7 +21,8 @@ import {
   type UpdatePromptVersionLabelDto,
 } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import {
   PromptRepository,
@@ -37,7 +38,10 @@ const DERIVED_LATEST_LABEL = 'latest';
 
 @Injectable()
 export class PromptService {
-  constructor(private readonly repo: PromptRepository) {}
+  constructor(
+    private readonly repo: PromptRepository,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   async listPrompts(
     projectId: string,
@@ -364,7 +368,7 @@ export class PromptService {
   }
 
   private async getAccessibleProject(projectId: string, actor: CurrentUserPayload): Promise<PromptProjectAccessRow> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const project = await this.repo.findProjectAccess(actor.sub, projectId, actor.isSuperAdmin);
     if (!project) {
       throw new NotFoundException(`Project ${projectId} not found`);
@@ -373,7 +377,7 @@ export class PromptService {
   }
 
   private async getWritableProject(projectId: string, actor: CurrentUserPayload): Promise<PromptProjectAccessRow> {
-    accessControl.assertCan(actor, 'project_write', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     return this.getAccessibleProject(projectId, actor);
   }
 

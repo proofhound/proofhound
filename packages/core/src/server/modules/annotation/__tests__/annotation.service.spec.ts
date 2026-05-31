@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AnnotationSampleDto, AnnotationTaskDto, CreateAnnotationTaskInputDto } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { AnnotationService } from '../annotation.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
@@ -105,7 +106,7 @@ function repoMock(overrides: Record<string, unknown> = {}) {
 describe('AnnotationService', () => {
   it('requires prompt-derived category options when creating a task', async () => {
     const repo = repoMock({ findVariantCategoryOptions: vi.fn().mockResolvedValue([]) });
-    const service = new AnnotationService(repo as never);
+    const service = new AnnotationService(repo as never, new LocalAccessControlService());
 
     await expect(service.createTask(projectId, createInput, actor)).rejects.toBeInstanceOf(BadRequestException);
     expect(repo.createTask).not.toHaveBeenCalled();
@@ -113,7 +114,7 @@ describe('AnnotationService', () => {
 
   it('freezes category options into newly created tasks', async () => {
     const repo = repoMock();
-    const service = new AnnotationService(repo as never);
+    const service = new AnnotationService(repo as never, new LocalAccessControlService());
 
     await service.createTask(projectId, createInput, actor);
 
@@ -122,7 +123,7 @@ describe('AnnotationService', () => {
 
   it('submits the selected category as the expected_output annotation value', async () => {
     const repo = repoMock();
-    const service = new AnnotationService(repo as never);
+    const service = new AnnotationService(repo as never, new LocalAccessControlService());
 
     await service.submitSample(projectId, taskId, { annotationId, expectedOutput: '退款', notes: null }, actor);
 
@@ -134,7 +135,7 @@ describe('AnnotationService', () => {
 
   it('rejects multiple categories for a single classification annotation', async () => {
     const repo = repoMock();
-    const service = new AnnotationService(repo as never);
+    const service = new AnnotationService(repo as never, new LocalAccessControlService());
 
     await expect(
       service.submitSample(projectId, taskId, { annotationId, expectedOutput: '退款 或 物流', notes: null }, actor),
@@ -144,7 +145,7 @@ describe('AnnotationService', () => {
 
   it('rejects categories that are not in the task options', async () => {
     const repo = repoMock();
-    const service = new AnnotationService(repo as never);
+    const service = new AnnotationService(repo as never, new LocalAccessControlService());
 
     await expect(
       service.submitSample(projectId, taskId, { annotationId, expectedOutput: '售后', notes: null }, actor),

@@ -10,7 +10,9 @@ import type {
   UpdateUserTokenResponseDto,
   UserTokenSummaryDto,
 } from '@proofhound/shared';
-import { accessControl } from '../../common/access-control';
+import { LOCAL_PROJECT_CONTEXT } from '@proofhound/shared';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { TokenRepository, type UserTokenRow, type UserTokenRowWithCreator } from './token.repository';
@@ -26,10 +28,15 @@ export class TokenService {
   constructor(
     private readonly repo: TokenRepository,
     private readonly crypto: CryptoService,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   async listUserTokens(actor: CurrentUserPayload): Promise<ListUserTokensResponseDto> {
-    accessControl.assertCan(actor, 'user_token_manage');
+    await this.accessControl.assertCan(
+      toActorContext(actor),
+      actor.projectId ? { projectId: actor.projectId, source: 'local' } : LOCAL_PROJECT_CONTEXT,
+      'user_token_manage',
+    );
     const rows = await this.repo.listUserTokens();
     return { data: rows.map((row) => this.toSummary(row)), total: rows.length };
   }
@@ -39,7 +46,11 @@ export class TokenService {
     actor: CurrentUserPayload,
     _source: ActionSource = 'api',
   ): Promise<CreateUserTokenResponseDto> {
-    accessControl.assertCan(actor, 'user_token_manage');
+    await this.accessControl.assertCan(
+      toActorContext(actor),
+      actor.projectId ? { projectId: actor.projectId, source: 'local' } : LOCAL_PROJECT_CONTEXT,
+      'user_token_manage',
+    );
     const existing = await this.repo.findUserTokenByName(dto.name);
     if (existing) throw new ConflictException(`user_token_name_in_use:${dto.name}`);
 
@@ -68,7 +79,11 @@ export class TokenService {
     actor: CurrentUserPayload,
     _source: ActionSource = 'api',
   ): Promise<UpdateUserTokenResponseDto> {
-    accessControl.assertCan(actor, 'user_token_manage');
+    await this.accessControl.assertCan(
+      toActorContext(actor),
+      actor.projectId ? { projectId: actor.projectId, source: 'local' } : LOCAL_PROJECT_CONTEXT,
+      'user_token_manage',
+    );
     const row = await this.repo.findUserTokenById(tokenId);
     if (!row) throw new NotFoundException(`user token ${tokenId} not found`);
 
@@ -90,7 +105,11 @@ export class TokenService {
     actor: CurrentUserPayload,
     _source: ActionSource = 'api',
   ): Promise<RevealUserTokenResponseDto> {
-    accessControl.assertCan(actor, 'user_token_manage');
+    await this.accessControl.assertCan(
+      toActorContext(actor),
+      actor.projectId ? { projectId: actor.projectId, source: 'local' } : LOCAL_PROJECT_CONTEXT,
+      'user_token_manage',
+    );
     const row = await this.repo.findUserTokenById(tokenId);
     if (!row) throw new NotFoundException(`user token ${tokenId} not found`);
 
@@ -103,7 +122,11 @@ export class TokenService {
     actor: CurrentUserPayload,
     _source: ActionSource = 'api',
   ): Promise<DeleteUserTokenResponseDto> {
-    accessControl.assertCan(actor, 'user_token_manage');
+    await this.accessControl.assertCan(
+      toActorContext(actor),
+      actor.projectId ? { projectId: actor.projectId, source: 'local' } : LOCAL_PROJECT_CONTEXT,
+      'user_token_manage',
+    );
     const row = await this.repo.findUserTokenById(tokenId);
     if (!row) throw new NotFoundException(`user token ${tokenId} not found`);
 

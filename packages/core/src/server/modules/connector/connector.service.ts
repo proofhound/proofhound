@@ -33,7 +33,8 @@ import type {
   RedisConnectionConfig,
   UpdateConnectorDto,
 } from '@proofhound/shared';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { ConnectorDriverFactory } from './connector.driver-factory';
@@ -80,6 +81,7 @@ export class ConnectorService {
     private readonly repo: ConnectorRepository,
     private readonly driverFactory: ConnectorDriverFactory,
     private readonly crypto: CryptoService,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -604,14 +606,14 @@ export class ConnectorService {
   }
 
   private async getAccessibleProject(projectId: string, actor: CurrentUserPayload): Promise<ConnectorProjectAccessRow> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const project = await this.repo.findProjectAccess(actor.sub, projectId, actor.isSuperAdmin);
     if (!project) throw new NotFoundException(`Workspace ${projectId} not found`);
     return project;
   }
 
   private async getWritableProject(projectId: string, actor: CurrentUserPayload): Promise<ConnectorProjectAccessRow> {
-    accessControl.assertCan(actor, 'project_write', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     return this.getAccessibleProject(projectId, actor);
   }
 

@@ -25,7 +25,8 @@ import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
@@ -57,6 +58,7 @@ export class ExperimentService {
     private readonly modelService: ModelService,
     private readonly runResults: RunResultService,
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
+    private readonly accessControl: AccessControlService,
   ) {}
 
   async createExperiment(
@@ -230,7 +232,7 @@ export class ExperimentService {
     projectId: string,
     actor: CurrentUserPayload,
   ): Promise<ExperimentProjectAccessRow> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const project = await this.repo.findProjectAccess(actor.sub, projectId, actor.isSuperAdmin);
     if (!project) {
       throw new NotFoundException(`Project ${projectId} not found`);
@@ -239,7 +241,7 @@ export class ExperimentService {
   }
 
   private async getWritableProject(projectId: string, actor: CurrentUserPayload): Promise<ExperimentProjectAccessRow> {
-    accessControl.assertCan(actor, 'project_write', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     return this.getAccessibleProject(projectId, actor);
   }
 

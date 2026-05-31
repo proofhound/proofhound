@@ -11,6 +11,8 @@ import {
   type ModelRowWithCreator,
 } from '../model.repository';
 import { ModelService } from '../model.service';
+import { AccessControlService } from '../../../common/contracts/access-control.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
 vi.mock('@proofhound/llm-client', () => ({
   __esModule: true,
@@ -131,6 +133,7 @@ describe('ModelService', () => {
         { provide: ModelRepository, useValue: repo },
         { provide: CryptoService, useValue: crypto },
         { provide: REDIS_LIMITER, useValue: limiter },
+        { provide: AccessControlService, useClass: LocalAccessControlService },
         ModelService,
       ],
     }).compile();

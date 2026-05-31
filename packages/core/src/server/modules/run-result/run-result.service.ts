@@ -7,13 +7,17 @@ import type {
   RunResultReleaseListQueryDto,
 } from '@proofhound/shared';
 import type { ClassificationAggregateRow } from '@proofhound/metrics';
-import { accessControl } from '../../common/access-control';
+import { toActorContext } from '../../common/access-control';
+import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { RunResultRepository, type BatchTerminalCounts } from './run-result.repository';
 
 @Injectable()
 export class RunResultService {
-  constructor(private readonly repo: RunResultRepository) {}
+  constructor(
+    private readonly repo: RunResultRepository,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   aggregateExperiment(experimentId: string): Promise<ClassificationAggregateRow[]> {
     return this.repo.aggregateExperiment(experimentId);
@@ -42,7 +46,7 @@ export class RunResultService {
     actor: CurrentUserPayload,
     query: RunResultReleaseListQueryDto,
   ): Promise<ReleaseRunResultListResponseDto> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     return this.repo.listByRelease(projectId, query);
   }
 
@@ -65,7 +69,7 @@ export class RunResultService {
     experimentId: string,
     actor: CurrentUserPayload,
   ): Promise<void> {
-    accessControl.assertCan(actor, 'project_read', { projectId });
+    await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
     const access = await this.repo.findAccessibleExperiment(projectId, experimentId, actor.sub, actor.isSuperAdmin);
     if (!access) {
       throw new NotFoundException(`Experiment ${experimentId} not found`);

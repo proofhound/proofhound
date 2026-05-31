@@ -10,6 +10,8 @@ import {
   type WebhookTokenRow,
 } from '../connector.repository';
 import { ConnectorService } from '../connector.service';
+import { AccessControlService } from '../../../common/contracts/access-control.service';
+import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
 const WORKSPACE_ID = '11111111-1111-4111-8111-000000000010';
 const CONNECTOR_ID = '22222222-2222-4222-8222-000000000010';
@@ -141,6 +143,7 @@ describe('ConnectorService', () => {
         { provide: ConnectorRepository, useValue: repo },
         { provide: ConnectorDriverFactory, useValue: driverFactory },
         { provide: CryptoService, useValue: crypto },
+        { provide: AccessControlService, useClass: LocalAccessControlService },
       ],
     }).compile();
     service = moduleRef.get(ConnectorService);
