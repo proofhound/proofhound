@@ -4,8 +4,8 @@ import type { ReactNode } from 'react';
 import type { PromptVersionStatusDto } from '@proofhound/shared';
 import { ModalityIcon, sortModalityKinds, cn } from '@proofhound/ui';
 import type { ModalityKind } from '@proofhound/ui';
-import { PromptVersionStatusBadge } from '@/components/prompt-version-status-badge';
-import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
+import { PromptVersionStatusBadge } from './prompt-version-status-badge';
+import { useI18n, type TranslationKey } from '../i18n';
 type PickerVariable = {
   type: string;
 };

@@ -53,8 +53,7 @@ import {
 } from '@proofhound/ui';
 import type { TableActionDescriptor, ModalityKind } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { PromptDiffSplitView } from '@/components/prompt-diff/prompt-diff-split-view';
-import { PromptVariableModalityBadges } from '@/components/prompt-version-picker-row';
+import { PromptDiffSplitView, PromptVariableModalityBadges } from '@proofhound/web-ui/components';
 import { useDatasets } from '@proofhound/web-ui/hooks';
 import {
   useCreatePromptDraftVersion,
@@ -67,7 +66,7 @@ import {
   useUpdatePromptVersionLabel,
 } from '@proofhound/web-ui/hooks';
 import { useDelayedLoading } from '@proofhound/web-ui/hooks';
-import { PromptLanguageSelect, type PromptLanguage } from '@/components/prompt-language-select';
+import { PromptLanguageSelect, type PromptLanguage } from '@proofhound/web-ui/components';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { formatDateTime } from '@proofhound/web-ui/lib';
 import {

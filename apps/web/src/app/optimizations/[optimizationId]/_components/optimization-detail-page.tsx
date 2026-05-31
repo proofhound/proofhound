@@ -52,7 +52,7 @@ import {
   cn,
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { PromptDiffSplitView } from '@/components/prompt-diff/prompt-diff-split-view';
+import { PromptDiffSplitView } from '@proofhound/web-ui/components';
 import { useOptimization, useControlOptimization } from '@proofhound/web-ui/hooks';
 import { useDelayedLoading } from '@proofhound/web-ui/hooks';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@proofhound/web-ui/hooks';

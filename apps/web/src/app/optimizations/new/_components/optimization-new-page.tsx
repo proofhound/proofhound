@@ -21,8 +21,7 @@ import {
 } from 'lucide-react';
 import { Button, Input, cn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { PromptVersionPickerRow, PromptVersionPickerTag } from '@/components/prompt-version-picker-row';
-import { PromptLanguageSelect } from '@/components/prompt-language-select';
+import { PromptVersionPickerRow, PromptVersionPickerTag, PromptLanguageSelect } from '@proofhound/web-ui/components';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { formatDateTime, formatLatencySeconds, getApiErrorMessage, isProjectNameTaken } from '@proofhound/web-ui/lib';
 import { useOptimizations, useCreateOptimization } from '@proofhound/web-ui/hooks';

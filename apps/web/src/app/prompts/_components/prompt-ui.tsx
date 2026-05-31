@@ -6,7 +6,7 @@ import { useI18n } from '@proofhound/web-ui/i18n';
 import { cn } from '@proofhound/ui';
 import { PROMPT_VARIABLE_TYPE_LABEL_KEYS, type PromptVariable, type PromptVariableType } from './prompt-model';
 
-export { PromptVersionStatusBadge as StatusBadge } from '@/components/prompt-version-status-badge';
+export { PromptVersionStatusBadge as StatusBadge } from '@proofhound/web-ui/components';
 
 const MODALITY_TOKEN_CLASSES = {
   text: 'border-[var(--modality-text-bd)] bg-[var(--modality-text-bg)] text-[var(--modality-text-fg)]',

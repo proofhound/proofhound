@@ -49,12 +49,8 @@ import {
   formatProgressLabel,
   cn,
 } from '@proofhound/ui';
-import { JsonObjectTextarea } from '@/components/json-object-textarea';
+import { JsonObjectTextarea, ModelContextWindowInput, ModelProbeStatus, type ModelProbeFeedback, ModelPresetQuickFill, type ModelQuickFillDraft } from '@proofhound/web-ui/components';
 import { Main } from '@proofhound/ui/layout';
-import { ModelContextWindowInput } from '@/components/model-context-window-input';
-import { ModelProbeStatus, type ModelProbeFeedback } from '@/components/model-probe-status';
-import { ModelPresetQuickFill } from '@/features/model-quick-fill/model-preset-quick-fill';
-import type { ModelQuickFillDraft } from '@/features/model-quick-fill/model-preset-draft';
 import { useI18n } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, toIntegerInputValue, buildProviderTypeOptions, isProjectNameTaken } from '@proofhound/web-ui/lib';
 import {

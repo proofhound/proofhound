@@ -35,8 +35,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { Main } from '@proofhound/ui/layout';
-import { ModelProbeStatus, type ModelProbeFeedback } from '@/components/model-probe-status';
-import { PromptLanguageSelect, type PromptLanguage } from '@/components/prompt-language-select';
+import { ModelProbeStatus, type ModelProbeFeedback, PromptLanguageSelect, type PromptLanguage } from '@proofhound/web-ui/components';
 import {
   Button,
   Input,

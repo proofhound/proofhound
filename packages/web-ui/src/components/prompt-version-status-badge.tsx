@@ -10,7 +10,7 @@ import {
   TooltipTrigger,
   cn,
 } from '@proofhound/ui';
-import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
+import { useI18n, type TranslationKey } from '../i18n';
 type PromptVersionStatus = PromptVersionStatusDto;
 
 const STATUS_LABEL_KEYS: Record<PromptVersionStatus, TranslationKey> = {

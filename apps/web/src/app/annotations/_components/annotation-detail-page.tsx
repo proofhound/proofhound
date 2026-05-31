@@ -15,7 +15,7 @@ import {
   RotateCcw,
   Save,
 } from 'lucide-react';
-import { AnnotationClaimDialog } from '@/components/annotations/annotation-claim-dialog';
+import { AnnotationClaimDialog } from '@proofhound/web-ui/components';
 import { Main } from '@proofhound/ui/layout';
 import {
   Button,

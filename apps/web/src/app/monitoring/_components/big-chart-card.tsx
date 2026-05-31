@@ -3,12 +3,7 @@
 import type { ReactNode } from 'react';
 import { TrendingDown, TrendingUp } from 'lucide-react';
 import type { SourceBucket } from '@proofhound/shared';
-import { SourceLegend } from '@/components/charts/source-legend';
-import {
-  SourceStackedBar,
-  type SourceStackedBarDatum,
-  type SourceStackedBarSource,
-} from '@/components/charts/source-stacked-bar';
+import { SourceLegend, SourceStackedBar, type SourceStackedBarDatum, type SourceStackedBarSource } from '@proofhound/web-ui/components';
 import { cn } from '@proofhound/ui';
 
 export type DeltaTone = 'up' | 'down' | 'warn' | 'neutral';

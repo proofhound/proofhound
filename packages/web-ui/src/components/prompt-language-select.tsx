@@ -10,7 +10,7 @@ import {
   SelectValue,
   cn,
 } from '@proofhound/ui';
-import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
+import { useI18n, type TranslationKey } from '../i18n';
 export type PromptLanguage = PromptLanguageDto;
 
 const PROMPT_LANGUAGE_OPTIONS: Array<{ value: PromptLanguage; labelKey: TranslationKey }> = [

@@ -7,7 +7,7 @@ import type { CreateExperimentDto, PromptListItemDto } from '@proofhound/shared'
 import { AlertTriangle, Calculator, Check, ChevronDown, Link2, Loader2, Play, Search, X } from 'lucide-react';
 import { Button, Input, cn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { PromptVersionPickerRow, PromptVersionPickerTag } from '@/components/prompt-version-picker-row';
+import { PromptVersionPickerRow, PromptVersionPickerTag } from '@proofhound/web-ui/components';
 import { useDatasets } from '@proofhound/web-ui/hooks';
 import { useCreateExperiment, useExperiments } from '@proofhound/web-ui/hooks';
 import { useProjectModels } from '@proofhound/web-ui/hooks';

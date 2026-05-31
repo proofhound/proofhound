@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, ListChecks, Plus, Search } from 'lucide-react';
-import { AnnotationClaimDialog } from '@/components/annotations/annotation-claim-dialog';
+import { AnnotationClaimDialog } from '@proofhound/web-ui/components';
 import { Main } from '@proofhound/ui/layout';
 import {
   Button,

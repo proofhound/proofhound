@@ -12,7 +12,7 @@ import {
   Label,
   cn,
 } from '@proofhound/ui';
-import { useI18n } from '@proofhound/web-ui/i18n';
+import { useI18n } from '../../i18n';
 export const MAX_ANNOTATION_CLAIM_BATCH_SIZE = 100;
 
 const PRESETS = [5, 10, 20, 50];

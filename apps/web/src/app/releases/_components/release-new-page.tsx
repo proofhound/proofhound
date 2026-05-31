@@ -31,7 +31,7 @@ import {
   cn,
 } from '@proofhound/ui';
 import type { ModalityKind } from '@proofhound/ui';
-import { PromptVersionPickerRow, PromptVersionPickerTag } from '@/components/prompt-version-picker-row';
+import { PromptVersionPickerRow, PromptVersionPickerTag } from '@proofhound/web-ui/components';
 import { useConnector, useConnectors } from '@proofhound/web-ui/hooks';
 import { useCreateCanaryRelease, useStartCanaryRelease } from '@proofhound/web-ui/hooks';
 import { useProjectModels } from '@proofhound/web-ui/hooks';
