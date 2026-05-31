@@ -162,12 +162,12 @@ The three frontend layers:
 | Layer | Location | Responsibility |
 | -- | ---- | ---- |
 | C1 | `packages/api-client/src/<resource>.ts` | HTTP client |
-| C2 | `@proofhound/web/hooks` | React Query hooks |
-| C3 | `@proofhound/web/screens` \| `@proofhound/web/components` | Product screens and domain components |
+| C2 | `@proofhound/web-ui/hooks` | React Query hooks |
+| C3 | `@proofhound/web-ui/screens` \| `@proofhound/web-ui/components` | Product screens and domain components |
 
-`apps/web` is the OSS thin shell: 5–18 line route wrappers that import screens from `@proofhound/web/screens`, chrome components (`components/layout/`: AppShell / sidebar / header), and the root `<ProofHoundWebProvider contracts={localWebContracts}>` wiring in `app/layout.tsx`. The chrome components are app-level and do not move into the shared package.
+`apps/web` is the OSS thin shell: 5–18 line route wrappers that import screens from `@proofhound/web-ui/screens`, chrome components (`components/layout/`: AppShell / sidebar / header), and the root `<ProofHoundWebProvider contracts={localWebContracts}>` wiring in `app/layout.tsx`. The chrome components are app-level and do not move into the shared package.
 
-When adding or renaming pages, update the Playwright smoke tests accordingly. User-facing strings go through `@proofhound/web/i18n` and must provide both `zh-CN` / `en-US`.
+When adding or renaming pages, update the Playwright smoke tests accordingly. User-facing strings go through `@proofhound/web-ui/i18n` and must provide both `zh-CN` / `en-US`.
 
 ## 7. packages — Shared Packages
 
@@ -186,7 +186,7 @@ When adding or renaming pages, update the Playwright smoke tests accordingly. Us
 | `@proofhound/metrics` | Offline experiment metric computation strategies |
 | `@proofhound/optimization-strategy` | Optimization strategies |
 | `@proofhound/ui` | Design system: shadcn atomic primitives + `cn()` + `Main` layout primitive + pure UI hooks + `UiStringsContext` |
-| `@proofhound/web` | Product UI: screens / hooks / i18n / providers / components / lib / contracts (see §4.2 of [08](08-saas-adapter-boundary.md) for subpath exports) |
+| `@proofhound/web-ui` | Product UI: screens / hooks / i18n / providers / components / lib / contracts (see §4.2 of [08](08-saas-adapter-boundary.md) for subpath exports) |
 
 ## 8. Dependency Rules
 

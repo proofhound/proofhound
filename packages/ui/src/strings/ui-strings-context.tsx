@@ -8,7 +8,7 @@ import { createContext, useContext, type ReactNode } from 'react';
  * (table, dialog, table-action, platform-loader, resource-pagination-footer,
  * image-preview-dialog). Later tasks (T5) will replace each t() call with
  * the corresponding field from useUiStrings(), eliminating the
- * @proofhound/ui → @proofhound/web dependency cycle.
+ * @proofhound/ui → @proofhound/web-ui dependency cycle.
  *
  * apps/web's ProofHoundWebProvider (T12) will fill these with localized t() values.
  */

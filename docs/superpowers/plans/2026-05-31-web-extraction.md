@@ -1,10 +1,10 @@
-# `@proofhound/web` 前端抽离 实现计划
+# `@proofhound/web-ui` 前端抽离 实现计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 OSS `apps/web/src` 的产品 UI 抽进单个共享包 `@proofhound/web`（+填实 `@proofhound/ui`），`apps/web` 退薄壳，使独立 SaaS 仓库能以薄壳复用同一份产品页面。
+**Goal:** 把 OSS `apps/web/src` 的产品 UI 抽进单个共享包 `@proofhound/web-ui`（+填实 `@proofhound/ui`），`apps/web` 退薄壳，使独立 SaaS 仓库能以薄壳复用同一份产品页面。
 
-**Architecture:** 镜像后端 `@proofhound/core` 的"抽单包 + subpath exports + `forRoot({contracts})`"范式。`@proofhound/ui`=零业务设计系统（原子件 + `cn` + `Main` + 纯 UI hooks + `UiStringsContext`）；`@proofhound/web`=产品 UI（screens/hooks/i18n/providers/components/lib/contracts）。OSS/SaaS 各自的 `apps/web` 用 `<ProofHoundWebProvider contracts={...}>` 注入差异（authSource / projectContext / i18nExtend / baseUrl）。chrome（AppShell/sidebar/nav）留各 app。
+**Architecture:** 镜像后端 `@proofhound/core` 的"抽单包 + subpath exports + `forRoot({contracts})`"范式。`@proofhound/ui`=零业务设计系统（原子件 + `cn` + `Main` + 纯 UI hooks + `UiStringsContext`）；`@proofhound/web-ui`=产品 UI（screens/hooks/i18n/providers/components/lib/contracts）。OSS/SaaS 各自的 `apps/web` 用 `<ProofHoundWebProvider contracts={...}>` 注入差异（authSource / projectContext / i18nExtend / baseUrl）。chrome（AppShell/sidebar/nav）留各 app。
 
 **Tech Stack:** pnpm@10 + turbo monorepo；TS-source 包消费（`main/types→src/index.ts`、`exports→./src/*.ts`、`tsconfig.base.json` paths、Next `transpilePackages`）；Next.js 15 App Router + Refine(routing-only) + React Query + shadcn/Tailwind v4 + Vitest。
 
@@ -32,15 +32,15 @@
 | `@/features/X` | 相对 `../features/X` |
 | `@proofhound/shared`、`@proofhound/api-client` | 不变 |
 
-`apps/web` 内**保留**的文件（路由瘦包装、chrome）只需把指向已搬走目标的 `@/...` 改成 `@proofhound/web/*` 或 `@proofhound/ui`；chrome 之间的 `@/components/layout/*` 互引不变。
+`apps/web` 内**保留**的文件（路由瘦包装、chrome）只需把指向已搬走目标的 `@/...` 改成 `@proofhound/web-ui/*` 或 `@proofhound/ui`；chrome 之间的 `@/components/layout/*` 互引不变。
 
-> 执行手法：每个搬迁任务后跑 `pnpm --filter @proofhound/web typecheck`（或 ui），按 `tsc` 报的"Cannot find module"逐条改 import 直到绿。可写一次性 `node` + `ts-morph` 脚本批量改写，或用编辑器多文件替换；改完务必 typecheck 兜底。
+> 执行手法：每个搬迁任务后跑 `pnpm --filter @proofhound/web-ui typecheck`（或 ui），按 `tsc` 报的"Cannot find module"逐条改 import 直到绿。可写一次性 `node` + `ts-morph` 脚本批量改写，或用编辑器多文件替换；改完务必 typecheck 兜底。
 
 ### G2. 闸门命令
 
-- 类型：`pnpm typecheck`（全量）/ `pnpm --filter @proofhound/web typecheck`（单包）
+- 类型：`pnpm typecheck`（全量）/ `pnpm --filter @proofhound/web-ui typecheck`（单包）
 - Lint：`pnpm lint`
-- 单测：`pnpm test`（=test:unit）/ `pnpm --filter @proofhound/web test`
+- 单测：`pnpm test`（=test:unit）/ `pnpm --filter @proofhound/web-ui test`
 - 环依赖：`pnpm deps:check`（madge）—— 必须无新增环
 - 术语：`pnpm spec:terms`
 - 全闸门：`pnpm run ci`（**注意：`pnpm ci` 会撞 pnpm 内建，必须 `pnpm run ci`**）
@@ -71,13 +71,13 @@ Run: 打开 `docs/specs/08-saas-adapter-boundary.md`，定位 §4.1（ProjectId 
 
 把"前端复用 = 纯适配器注入、无代码抽取"改写为下述主旨（中英以该文件既有语言为准，下面给中文意译，落笔时对齐原文风格）：
 
-> 前端复用 = **抽 `@proofhound/web` 共享包（产品 UI）+ `@proofhound/ui`（设计系统）+ 各 app 薄壳**。OSS/SaaS 各自的 `apps/web` 通过单一入口 `<ProofHoundWebProvider contracts={WebContracts}>` 注入差异。`WebContracts = { authSource, projectContext, baseUrl?, i18nExtend? }`。OSS 传 `localWebContracts`（`authSource=LocalAuthSource→null`、`projectContext=LOCAL_PROJECT_CONTEXT`）；SaaS 传 `{ authSource: SupabaseAuthSource, projectContext: <多租户响应式源>, i18nExtend: <控制台字典> }`。
+> 前端复用 = **抽 `@proofhound/web-ui` 共享包（产品 UI）+ `@proofhound/ui`（设计系统）+ 各 app 薄壳**。OSS/SaaS 各自的 `apps/web` 通过单一入口 `<ProofHoundWebProvider contracts={WebContracts}>` 注入差异。`WebContracts = { authSource, projectContext, baseUrl?, i18nExtend? }`。OSS 传 `localWebContracts`（`authSource=LocalAuthSource→null`、`projectContext=LOCAL_PROJECT_CONTEXT`）；SaaS 传 `{ authSource: SupabaseAuthSource, projectContext: <多租户响应式源>, i18nExtend: <控制台字典> }`。
 >
-> §4.1/§4.2 的 `X-Project-Id` 与 `AuthSource` **由 `@proofhound/web` 的 `ProofHoundWebProvider` 在启动时通过 `configureApiClient({authSource, baseUrl})` 注册 axios 拦截器落地**（在此之前 httpClient 无拦截器）。
+> §4.1/§4.2 的 `X-Project-Id` 与 `AuthSource` **由 `@proofhound/web-ui` 的 `ProofHoundWebProvider` 在启动时通过 `configureApiClient({authSource, baseUrl})` 注册 axios 拦截器落地**（在此之前 httpClient 无拦截器）。
 
 - [ ] **Step 3：保留并复述既有约束**
 
-在 §4/§8 明确这些**不变**：`AuthSource` 抽象、`X-Project-Id` header、**`@proofhound/web` 与 OSS `apps/web` 不建项目切换器**（切换器是 SaaS 私有 chrome，不在共享包）、无 `IS_PLATFORM` 版本旗标、user token 不入 localStorage/sessionStorage/cookie。
+在 §4/§8 明确这些**不变**：`AuthSource` 抽象、`X-Project-Id` header、**`@proofhound/web-ui` 与 OSS `apps/web` 不建项目切换器**（切换器是 SaaS 私有 chrome，不在共享包）、无 `IS_PLATFORM` 版本旗标、user token 不入 localStorage/sessionStorage/cookie。
 
 - [ ] **Step 4：术语校验**
 
@@ -88,7 +88,7 @@ Expected: PASS（无非法术语）。
 
 ```bash
 git add docs/specs/08-saas-adapter-boundary.md
-git commit -m "docs(specs): 08 §4 前端复用升级为 @proofhound/web 共享包 + ProofHoundWebProvider 接缝"
+git commit -m "docs(specs): 08 §4 前端复用升级为 @proofhound/web-ui 共享包 + ProofHoundWebProvider 接缝"
 ```
 
 ### Task 2：更新 07 §7/§8 + 修 ui 占位悬空引用
@@ -99,11 +99,11 @@ git commit -m "docs(specs): 08 §4 前端复用升级为 @proofhound/web 共享�
 
 - [ ] **Step 1：改 07 §7 三层归属**
 
-把 C2（hooks）/C3（页面组件）的归属由 `apps/web/src/hooks` `apps/web/src/app/*` 改为 `@proofhound/web/hooks` `@proofhound/web/screens|components`；`apps/web` 标注为薄壳（路由瘦包装 + chrome `components/layout` + `ProofHoundWebProvider` 接线）。C1 仍是 `@proofhound/api-client`。
+把 C2（hooks）/C3（页面组件）的归属由 `apps/web/src/hooks` `apps/web/src/app/*` 改为 `@proofhound/web-ui/hooks` `@proofhound/web-ui/screens|components`；`apps/web` 标注为薄壳（路由瘦包装 + chrome `components/layout` + `ProofHoundWebProvider` 接线）。C1 仍是 `@proofhound/api-client`。
 
 - [ ] **Step 2：补 07 §8 包清单**
 
-新增 `@proofhound/web`（产品 UI：screens/hooks/i18n/providers/components/lib/contracts）；把 `@proofhound/ui` 描述从"占位"改为"设计系统：shadcn 原子件 + `cn` + `Main` + 纯 UI hooks + `UiStringsContext`"。
+新增 `@proofhound/web-ui`（产品 UI：screens/hooks/i18n/providers/components/lib/contracts）；把 `@proofhound/ui` 描述从"占位"改为"设计系统：shadcn 原子件 + `cn` + `Main` + 纯 UI hooks + `UiStringsContext`"。
 
 - [ ] **Step 3：修 ui 占位注释**
 
@@ -115,7 +115,7 @@ Run: `pnpm spec:terms` → PASS
 
 ```bash
 git add docs/specs/07-code-structure.md packages/ui/src/index.ts
-git commit -m "docs(specs): 07 §7/§8 记 @proofhound/web 薄壳化前端三层; 修 ui 占位悬空引用"
+git commit -m "docs(specs): 07 §7/§8 记 @proofhound/web-ui 薄壳化前端三层; 修 ui 占位悬空引用"
 ```
 
 > PR-web-1 到此结束。开 PR 合并（或与 PR-web-2 串行）。**PR-web-2 以 spec 为准。**
@@ -126,7 +126,7 @@ git commit -m "docs(specs): 07 §7/§8 记 @proofhound/web 薄壳化前端三层
 
 > 内含多次按任务提交；全程 `pnpm --filter ... typecheck` 增量兜底，末尾 `pnpm run ci` + e2e。
 
-### Task 3：脚手架 `@proofhound/web` 包 + 接线
+### Task 3：脚手架 `@proofhound/web-ui` 包 + 接线
 
 **Files:**
 - Create: `packages/web/package.json`
@@ -135,14 +135,14 @@ git commit -m "docs(specs): 07 §7/§8 记 @proofhound/web 薄壳化前端三层
 - Create: `packages/web/src/index.ts`（临时空 `export {}`）
 - Create 占位空目录入口：`packages/web/src/{screens,hooks,providers,i18n,components,lib,contracts,features}/index.ts`（各 `export {}`）
 - Create: `packages/web/src/styles/.gitkeep`
-- Modify: `tsconfig.base.json`（paths 增 `@proofhound/web` 系列）
-- Modify: `apps/web/next.config.ts`（`transpilePackages` 增 `@proofhound/web`）
+- Modify: `tsconfig.base.json`（paths 增 `@proofhound/web-ui` 系列）
+- Modify: `apps/web/next.config.ts`（`transpilePackages` 增 `@proofhound/web-ui`）
 
 - [ ] **Step 1：写 `packages/web/package.json`**
 
 ```jsonc
 {
-  "name": "@proofhound/web",
+  "name": "@proofhound/web-ui",
   "version": "0.0.0",
   "private": true,
   "description": "ProofHound 可复用产品前端：screens / hooks / providers / i18n / components / contracts",
@@ -212,31 +212,31 @@ git commit -m "docs(specs): 07 §7/§8 记 @proofhound/web 薄壳化前端三层
 - [ ] **Step 5：接线 `tsconfig.base.json` paths**（紧随现有 `@proofhound/core/*` 之后）
 
 ```jsonc
-"@proofhound/web": ["./packages/web/src/index.ts"],
-"@proofhound/web/screens": ["./packages/web/src/screens/index.ts"],
-"@proofhound/web/hooks": ["./packages/web/src/hooks/index.ts"],
-"@proofhound/web/providers": ["./packages/web/src/providers/index.ts"],
-"@proofhound/web/i18n": ["./packages/web/src/i18n/index.ts"],
-"@proofhound/web/components": ["./packages/web/src/components/index.ts"],
-"@proofhound/web/lib": ["./packages/web/src/lib/index.ts"],
-"@proofhound/web/contracts": ["./packages/web/src/contracts/index.ts"]
+"@proofhound/web-ui": ["./packages/web/src/index.ts"],
+"@proofhound/web-ui/screens": ["./packages/web/src/screens/index.ts"],
+"@proofhound/web-ui/hooks": ["./packages/web/src/hooks/index.ts"],
+"@proofhound/web-ui/providers": ["./packages/web/src/providers/index.ts"],
+"@proofhound/web-ui/i18n": ["./packages/web/src/i18n/index.ts"],
+"@proofhound/web-ui/components": ["./packages/web/src/components/index.ts"],
+"@proofhound/web-ui/lib": ["./packages/web/src/lib/index.ts"],
+"@proofhound/web-ui/contracts": ["./packages/web/src/contracts/index.ts"]
 ```
 
 - [ ] **Step 6：接线 Next transpilePackages**
 
-`apps/web/next.config.ts` 的 `transpilePackages` 数组加 `'@proofhound/web'`（已含 `@proofhound/ui`）。
+`apps/web/next.config.ts` 的 `transpilePackages` 数组加 `'@proofhound/web-ui'`（已含 `@proofhound/ui`）。
 
 - [ ] **Step 7：装依赖 + 验证**
 
 Run: `pnpm install`
-Run: `pnpm --filter @proofhound/web typecheck`
+Run: `pnpm --filter @proofhound/web-ui typecheck`
 Expected: PASS（空包，绿）。
 
 - [ ] **Step 8：提交**
 
 ```bash
 git add packages/web tsconfig.base.json apps/web/next.config.ts pnpm-lock.yaml
-git commit -m "feat(web): 脚手架 @proofhound/web 包 + subpath exports + tsconfig/transpile 接线"
+git commit -m "feat(web): 脚手架 @proofhound/web-ui 包 + subpath exports + tsconfig/transpile 接线"
 ```
 
 ### Task 4：`@proofhound/ui` 防环地基（UiStringsContext + 纯 UI hooks）
@@ -352,7 +352,7 @@ apps/web 全量替换：`@/components/ui/<x>` → `@proofhound/ui`（具名）�
 - [ ] **Step 7：闸门**
 
 Run: `pnpm --filter @proofhound/ui typecheck && pnpm --filter @proofhound/ui test`
-Run: `pnpm --filter @proofhound/web... typecheck`（web 仍空，应绿）
+Run: `pnpm --filter @proofhound/web-ui... typecheck`（web 仍空，应绿）
 Run: `pnpm typecheck`（apps/web 应仍绿——所有 ui import 已重指向）
 Expected: 全 PASS。若 apps/web 报 ui 原子件里曾用的 i18n 串现在变默认英文——这些原子件已不在 app 内渲染产品文案；真实本地化在 Task 12 由 `ProofHoundWebProvider` 经 `UiStringsProvider` 注入（见 Task 12 Step）。
 
@@ -481,27 +481,27 @@ git add packages/api-client
 git commit -m "feat(api-client): AuthSource + configureApiClient（Authorization/X-Project-Id 拦截器，落地 08 §4.1/§4.2）"
 ```
 
-### Task 7：搬 `lib/` 域工具进 `@proofhound/web/lib`
+### Task 7：搬 `lib/` 域工具进 `@proofhound/web-ui/lib`
 
 **Files:**
 - Create: `packages/web/src/lib/*`（`git mv` `apps/web/src/lib/{api-error.ts,format.ts,releases/,project-name.ts,uuid.ts,uuid.test.ts,model-number.ts,model-number.test.ts,model-provider-type.ts,project-context.ts}`）
 - Create: `packages/web/src/lib/index.ts`（barrel）
-- Modify: 包内 import 改写（G1）；apps/web 残余 `@/lib/X` → `@proofhound/web/lib`
+- Modify: 包内 import 改写（G1）；apps/web 残余 `@/lib/X` → `@proofhound/web-ui/lib`
 
 - [ ] **Step 1：搬文件**（`utils.ts` 已在 Task 5 搬去 ui；其余全搬 web/lib）
 - [ ] **Step 2：包内改写**：`@/lib/utils`→`@proofhound/ui`；`@proofhound/shared` 不变；`lib/releases/release-line-model.test.ts` 等随搬。
 - [ ] **Step 3：barrel** 导出各工具。
-- [ ] **Step 4：repoint apps/web** 残余 `@/lib/<x>`（非 utils）→ `@proofhound/web/lib`。
+- [ ] **Step 4：repoint apps/web** 残余 `@/lib/<x>`（非 utils）→ `@proofhound/web-ui/lib`。
 - [ ] **Step 5：闸门**
 
-Run: `pnpm --filter @proofhound/web typecheck && pnpm --filter @proofhound/web test`
+Run: `pnpm --filter @proofhound/web-ui typecheck && pnpm --filter @proofhound/web-ui test`
 Run: `pnpm typecheck`
 Expected: PASS。
 
 - [ ] **Step 6：提交**
 
 ```bash
-git add packages/web apps/web && git commit -m "refactor(web): lib 域工具迁入 @proofhound/web/lib"
+git add packages/web apps/web && git commit -m "refactor(web): lib 域工具迁入 @proofhound/web-ui/lib"
 ```
 
 ### Task 8：搬 i18n + 让 provider 可扩展 —— TDD
@@ -510,7 +510,7 @@ git add packages/web apps/web && git commit -m "refactor(web): lib 域工具迁�
 - Create: `packages/web/src/i18n/*`（`git mv` `apps/web/src/i18n/{index.tsx,language.ts,language.test.ts}`）
 - Modify: `packages/web/src/i18n/index.tsx`（`I18nProvider` 增 `extend` 参数；`t` 合并查找）
 - Create: `packages/web/src/i18n/extend.test.tsx`
-- Modify: apps/web `@/i18n` → `@proofhound/web/i18n`
+- Modify: apps/web `@/i18n` → `@proofhound/web-ui/i18n`
 
 - [ ] **Step 1：搬文件**，包内改写（基本无 `@/` 依赖）。
 - [ ] **Step 2：写失败测试 `extend.test.tsx`**
@@ -537,7 +537,7 @@ it('extend 不破坏 base key', () => {
 
 - [ ] **Step 3：跑测试确认失败**（`extend` 未支持）
 
-Run: `pnpm --filter @proofhound/web test` → FAIL
+Run: `pnpm --filter @proofhound/web-ui test` → FAIL
 
 - [ ] **Step 4：实现 extend**
 
@@ -559,64 +559,64 @@ export function I18nProvider({ children, defaultLanguage = DEFAULT_LANGUAGE, ext
 
 - [ ] **Step 5：跑测试通过 + repoint apps/web**
 
-Run: `pnpm --filter @proofhound/web test` → PASS
-apps/web 残余 `@/i18n` → `@proofhound/web/i18n`（chrome 等也用 i18n，一并改）。
+Run: `pnpm --filter @proofhound/web-ui test` → PASS
+apps/web 残余 `@/i18n` → `@proofhound/web-ui/i18n`（chrome 等也用 i18n，一并改）。
 
 - [ ] **Step 6：闸门 + 提交**
 
 Run: `pnpm typecheck` → PASS
 ```bash
-git add packages/web apps/web && git commit -m "feat(web): i18n 字典+Provider 迁入 @proofhound/web/i18n; Provider 支持 extend"
+git add packages/web apps/web && git commit -m "feat(web): i18n 字典+Provider 迁入 @proofhound/web-ui/i18n; Provider 支持 extend"
 ```
 
-### Task 9：搬 hooks 进 `@proofhound/web/hooks`
+### Task 9：搬 hooks 进 `@proofhound/web-ui/hooks`
 
 **Files:**
 - Create: `packages/web/src/hooks/*`（`git mv` 17 域 hooks + `use-auto-refresh` + `use-delayed-loading` + 各 `.test.ts`；`use-mobile` 已去 ui）
 - Create: `packages/web/src/hooks/index.ts`（barrel）
-- Modify: 包内改写（G1：`@/i18n`→`../i18n`、`@/lib/X`→`../lib/X`、`@proofhound/api-client`/`shared` 不变）；apps/web `@/hooks` → `@proofhound/web/hooks`
+- Modify: 包内改写（G1：`@/i18n`→`../i18n`、`@/lib/X`→`../lib/X`、`@proofhound/api-client`/`shared` 不变）；apps/web `@/hooks` → `@proofhound/web-ui/hooks`
 
 - [ ] **Step 1：搬文件 + 包内改写。** `use-mobile` 的引用者改 `@proofhound/ui`。
 - [ ] **Step 2：barrel 导出全部 hooks。**
-- [ ] **Step 3：repoint apps/web** `@/hooks/<x>` → `@proofhound/web/hooks`。
+- [ ] **Step 3：repoint apps/web** `@/hooks/<x>` → `@proofhound/web-ui/hooks`。
 - [ ] **Step 4：闸门**
 
-Run: `pnpm --filter @proofhound/web typecheck && pnpm --filter @proofhound/web test`（含 `optimization.test.ts`、`use-auto-refresh.test.ts`、`use-delayed-loading.test.ts`）
+Run: `pnpm --filter @proofhound/web-ui typecheck && pnpm --filter @proofhound/web-ui test`（含 `optimization.test.ts`、`use-auto-refresh.test.ts`、`use-delayed-loading.test.ts`）
 Run: `pnpm typecheck`
 Expected: PASS。
 
 - [ ] **Step 5：提交**
 
 ```bash
-git add packages/web apps/web && git commit -m "refactor(web): 20 hooks 迁入 @proofhound/web/hooks"
+git add packages/web apps/web && git commit -m "refactor(web): 20 hooks 迁入 @proofhound/web-ui/hooks"
 ```
 
-### Task 10：搬产品域组件 + features 进 `@proofhound/web/components`
+### Task 10：搬产品域组件 + features 进 `@proofhound/web-ui/components`
 
 **Files:**
 - Create: `packages/web/src/components/*`（`git mv` `apps/web/src/components` 下除 `ui/`(已搬)、`layout/`(留app) 外的全部：`annotations/` `brand/` `charts/` `prompt-diff/` `quick-fill/` 及顶层 `json-object-textarea.tsx` `model-context-window-input.tsx` `model-probe-status.tsx` `prompt-language-select.tsx` `prompt-version-picker-row.tsx` `prompt-version-status-badge.tsx`，含 `prompt-diff-split-view.test.ts`）
 - Create: `packages/web/src/features/*`（`git mv` `apps/web/src/features/model-quick-fill/*` 含 `model-preset-draft.test.ts`）
 - Create: `packages/web/src/components/index.ts`、`packages/web/src/features/index.ts`（barrel）
-- Modify: 包内改写（G1）；apps/web `@/components/<x>`（产品域）、`@/features` → `@proofhound/web/components`|`@proofhound/web`
+- Modify: 包内改写（G1）；apps/web `@/components/<x>`（产品域）、`@/features` → `@proofhound/web-ui/components`|`@proofhound/web-ui`
 
 > 注：`brand/proofhound-logo.tsx` 是纯品牌 SVG——也可放 ui；但 OSS chrome（not-found/global-error）也用它。为避免 chrome→web 依赖，**把 `proofhound-logo` 放 `@proofhound/ui`**（纯展示，零业务），其余产品域组件放 web。执行时据实判断每个组件的耦合：纯展示→ui，含 i18n/shared/hooks→web。
 
 - [ ] **Step 1：分流搬迁**：`proofhound-logo` → `packages/ui/src/primitives/`（或 `brand/`）；其余 → `packages/web/src/components/`。features 全搬 web。
 - [ ] **Step 2：包内改写（G1）**：`@/components/ui`→`@proofhound/ui`、`@/i18n`→`../i18n`、`@/hooks`→`../hooks`、`@/lib/X`→`../lib/X`、`@proofhound/shared` 不变。
 - [ ] **Step 3：barrel。**
-- [ ] **Step 4：repoint apps/web**（chrome 若用了 `proofhound-logo` 改 `@proofhound/ui`；其余产品域组件引用改 `@proofhound/web/components`）。
+- [ ] **Step 4：repoint apps/web**（chrome 若用了 `proofhound-logo` 改 `@proofhound/ui`；其余产品域组件引用改 `@proofhound/web-ui/components`）。
 - [ ] **Step 5：闸门**
 
-Run: `pnpm --filter @proofhound/ui test && pnpm --filter @proofhound/web typecheck && pnpm --filter @proofhound/web test && pnpm typecheck`
+Run: `pnpm --filter @proofhound/ui test && pnpm --filter @proofhound/web-ui typecheck && pnpm --filter @proofhound/web-ui test && pnpm typecheck`
 Expected: PASS（含 `prompt-diff-split-view.test.ts`、`model-preset-draft.test.ts`）。
 
 - [ ] **Step 6：提交**
 
 ```bash
-git add packages/ui packages/web apps/web && git commit -m "refactor(web): 产品域组件+features 迁入 @proofhound/web; proofhound-logo 入 ui"
+git add packages/ui packages/web apps/web && git commit -m "refactor(web): 产品域组件+features 迁入 @proofhound/web-ui; proofhound-logo 入 ui"
 ```
 
-### Task 11：搬屏体进 `@proofhound/web/screens`
+### Task 11：搬屏体进 `@proofhound/web-ui/screens`
 
 > 24 个 `_components/*-page.tsx` + 胖 `dashboard/page.tsx`（903 行）。这是最大批次。
 
@@ -651,13 +651,13 @@ git add packages/ui packages/web apps/web && git commit -m "refactor(web): 产�
 - [ ] **Step 4：barrel** `screens/index.ts` 导出全部 `*Screen`。
 - [ ] **Step 5：闸门**
 
-Run: `pnpm --filter @proofhound/web typecheck`
-Expected: 仅剩对 `providers`（Task 12）的未决引用；其余 PASS。`pnpm --filter @proofhound/web test`（屏体级测试如 `prompt-preview.test.ts`、`dataset-mappers.test.ts`、`run-result-display.test.ts`、`optimization-mappers.spec.ts` 等）应 PASS。
+Run: `pnpm --filter @proofhound/web-ui typecheck`
+Expected: 仅剩对 `providers`（Task 12）的未决引用；其余 PASS。`pnpm --filter @proofhound/web-ui test`（屏体级测试如 `prompt-preview.test.ts`、`dataset-mappers.test.ts`、`run-result-display.test.ts`、`optimization-mappers.spec.ts` 等）应 PASS。
 
 - [ ] **Step 6：提交**
 
 ```bash
-git add packages/web apps/web && git commit -m "refactor(web): 24+ 屏体迁入 @proofhound/web/screens（*Screen）"
+git add packages/web apps/web && git commit -m "refactor(web): 24+ 屏体迁入 @proofhound/web-ui/screens（*Screen）"
 ```
 
 ### Task 12：providers + contracts + `ProofHoundWebProvider` —— TDD
@@ -723,7 +723,7 @@ it('注入 projectContext + i18n', () => {
 
 - [ ] **Step 4：跑测试确认失败**
 
-Run: `pnpm --filter @proofhound/web test` → FAIL（provider 不存在）。
+Run: `pnpm --filter @proofhound/web-ui test` → FAIL（provider 不存在）。
 
 - [ ] **Step 5：实现 `proofhound-web-provider.tsx`**
 
@@ -771,12 +771,12 @@ function UiStringsBridge({ children }: { children: ReactNode }) {
 
 - [ ] **Step 6：跑测试通过**
 
-Run: `pnpm --filter @proofhound/web test` → PASS
+Run: `pnpm --filter @proofhound/web-ui test` → PASS
 
 - [ ] **Step 7：barrel + 闸门**
 
 `providers/index.ts` 导出 `ProofHoundWebProvider`、`useProjectContext`（透传）、（如需）`RefineProvider`。
-Run: `pnpm --filter @proofhound/web typecheck && pnpm --filter @proofhound/web test`（Task 11 遗留的 providers 引用此刻应消解）
+Run: `pnpm --filter @proofhound/web-ui typecheck && pnpm --filter @proofhound/web-ui test`（Task 11 遗留的 providers 引用此刻应消解）
 Expected: PASS。
 
 - [ ] **Step 8：提交**
@@ -788,18 +788,18 @@ git add packages/web && git commit -m "feat(web): ProofHoundWebProvider + WebCon
 ### Task 13：`apps/web` 退薄壳（路由瘦包装 + layout + globals.css）
 
 **Files:**
-- Modify: `apps/web/src/app/**/page.tsx`（37 个瘦包装：import `@proofhound/web/screens`；胖 `dashboard`/`quick-start`/`comparisons` 退成瘦包装）
+- Modify: `apps/web/src/app/**/page.tsx`（37 个瘦包装：import `@proofhound/web-ui/screens`；胖 `dashboard`/`quick-start`/`comparisons` 退成瘦包装）
 - Modify: `apps/web/src/app/layout.tsx`（用 `<ProofHoundWebProvider contracts={localWebContracts}>` 替换 `I18nProvider`+`ProjectContextProvider`+`RefineProvider` 三层；保留 `AppShell` chrome）
-- Move: `apps/web/src/styles/globals.css` → `packages/web/src/styles/globals.css`；apps/web 全局 css `@import '@proofhound/web/styles/globals.css'`
+- Move: `apps/web/src/styles/globals.css` → `packages/web/src/styles/globals.css`；apps/web 全局 css `@import '@proofhound/web-ui/styles/globals.css'`
 - Modify: `apps/web/tailwind.config.ts`（content 增 `../../packages/web/src/**/*.{ts,tsx}`）
-- Modify: `apps/web/src/app/{loading,not-found,global-error}.tsx`、`api/sse`（若引已搬符号，重指向；chrome/品牌引用改 `@proofhound/ui`/`@proofhound/web`）
+- Modify: `apps/web/src/app/{loading,not-found,global-error}.tsx`、`api/sse`（若引已搬符号，重指向；chrome/品牌引用改 `@proofhound/ui`/`@proofhound/web-ui`）
 - Delete: 已空的 `apps/web/src/{hooks,i18n,providers,features}` 残余目录、`app/**/_components`（屏体已搬）
 
 - [ ] **Step 1：改 `layout.tsx`**
 
 ```tsx
-import { ProofHoundWebProvider } from '@proofhound/web/providers';
-import { localWebContracts } from '@proofhound/web/contracts';
+import { ProofHoundWebProvider } from '@proofhound/web-ui/providers';
+import { localWebContracts } from '@proofhound/web-ui/contracts';
 // ...保留 AppShell、字体、beforeInteractive theme 脚本、defaultLanguage 解析...
 <ProofHoundWebProvider contracts={localWebContracts}>
   <AppShell>{children}</AppShell>
@@ -813,15 +813,15 @@ import { localWebContracts } from '@proofhound/web/contracts';
 ```tsx
 // apps/web/src/app/datasets/page.tsx
 'use client';
-import { DatasetsListScreen } from '@proofhound/web/screens';
-import { useProjectContext } from '@proofhound/web/providers';
+import { DatasetsListScreen } from '@proofhound/web-ui/screens';
+import { useProjectContext } from '@proofhound/web-ui/providers';
 export default function Page() { const { projectId } = useProjectContext(); return <DatasetsListScreen projectId={projectId} />; }
 ```
 动态路由保留原 `useParams` 解析，把参数透传给 `*Screen`（保持各屏体原 props 契约）。`dashboard`/`quick-start`/`comparisons` 同法瘦化。
 
 - [ ] **Step 3：globals.css 搬迁 + tailwind glob**
 
-`git mv apps/web/src/styles/globals.css packages/web/src/styles/globals.css`；apps/web 入口 css（原 import globals 处）改 `@import '@proofhound/web/styles/globals.css';`；`apps/web/tailwind.config.ts` content 增 web 包 glob。
+`git mv apps/web/src/styles/globals.css packages/web/src/styles/globals.css`；apps/web 入口 css（原 import globals 处）改 `@import '@proofhound/web-ui/styles/globals.css';`；`apps/web/tailwind.config.ts` content 增 web 包 glob。
 
 - [ ] **Step 4：清理空目录**
 
@@ -830,7 +830,7 @@ export default function Page() { const { projectId } = useProjectContext(); retu
 - [ ] **Step 5：闸门（含构建）**
 
 Run: `pnpm typecheck`
-Run: `pnpm --filter @proofhound/web... build`（或 `pnpm --filter web build` 跑 Next 构建，确认 transpilePackages + CSS 解析）
+Run: `pnpm --filter @proofhound/web-ui... build`（或 `pnpm --filter web build` 跑 Next 构建，确认 transpilePackages + CSS 解析）
 Expected: PASS（Next 构建成功；无 `@/...` 残留指向已搬模块）。
 
 - [ ] **Step 6：提交**
@@ -846,7 +846,7 @@ git add apps/web packages/web && git commit -m "refactor(web): apps/web 退薄�
 - [ ] **Step 1：环依赖**
 
 Run: `pnpm deps:check`
-Expected: 无新增环。**特别确认无 `@proofhound/ui → @proofhound/web` 边**（UiStringsContext 设计即为此；若报环，回查是否有原子件残留 `@/i18n`/`@proofhound/web` 引用）。
+Expected: 无新增环。**特别确认无 `@proofhound/ui → @proofhound/web-ui` 边**（UiStringsContext 设计即为此；若报环，回查是否有原子件残留 `@/i18n`/`@proofhound/web-ui` 引用）。
 
 - [ ] **Step 2：全闸门**
 

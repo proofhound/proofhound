@@ -441,7 +441,7 @@ The Controller directly uses `@UseGuards(HttpActorGuard)`. `HttpActorGuard` is *
 
 ## 4. Frontend reuse strategy
 
-The frontend reuse mechanism mirrors the backend `@proofhound/core` + `ProofHoundServerModule.forRoot({ contracts })` pattern: the OSS product UI is extracted into a shared package `@proofhound/web`, and each app (OSS / SaaS) becomes a thin shell that wires the shared package through a single `<ProofHoundWebProvider contracts={WebContracts}>` entry point.
+The frontend reuse mechanism mirrors the backend `@proofhound/core` + `ProofHoundServerModule.forRoot({ contracts })` pattern: the OSS product UI is extracted into a shared package `@proofhound/web-ui`, and each app (OSS / SaaS) becomes a thin shell that wires the shared package through a single `<ProofHoundWebProvider contracts={WebContracts}>` entry point.
 
 ### 4.0 Package architecture
 
@@ -450,23 +450,23 @@ packages/
   ui/            # Pure design system (atomic primitives + cn() + Main layout primitive)
   web/           # Shared product UI (screens / hooks / components / i18n / providers / lib / contracts)
 apps/web/        # OSS thin shell: route wrappers + chrome (AppShell / sidebar / header) + contracts wiring
-SaaS apps/web/   # SaaS thin shell: own chrome (org nav / billing / project switcher) + same @proofhound/web/screens
+SaaS apps/web/   # SaaS thin shell: own chrome (org nav / billing / project switcher) + same @proofhound/web-ui/screens
 ```
 
-Dependency direction: `@proofhound/ui` (zero business) ← `@proofhound/web` (depends on ui + api-client + shared) ← `apps/web` (thin shell). `deps:check` (madge) must have no new circular dependencies.
+Dependency direction: `@proofhound/ui` (zero business) ← `@proofhound/web-ui` (depends on ui + api-client + shared) ← `apps/web` (thin shell). `deps:check` (madge) must have no new circular dependencies.
 
-`@proofhound/web` subpath exports:
+`@proofhound/web-ui` subpath exports:
 
 | Subpath | Contents |
 | ------- | -------- |
-| `@proofhound/web/screens` | Product resource screens (`DatasetsListScreen`, `PromptDetailScreen`, …) + dashboard page |
-| `@proofhound/web/hooks` | Domain hooks (signatures unchanged, still accept `projectId`) + utility hooks |
-| `@proofhound/web/providers` | `ProofHoundWebProvider`, underlying Refine / ProjectContext / I18n providers |
-| `@proofhound/web/i18n` | Full dictionary + `I18nProvider` / `useI18n` + language utilities |
-| `@proofhound/web/components` | 12 product-domain components + charts + annotation sub-components |
-| `@proofhound/web/lib` | `formatDateTime` / `getApiErrorMessage` / `releases` / `project-name` / `uuid` / `model-*` domain utilities |
-| `@proofhound/web/contracts` | `WebContracts` type + `localWebContracts` |
-| `@proofhound/web/styles/globals.css` | Theme CSS variables / semantic classes / animation keyframes |
+| `@proofhound/web-ui/screens` | Product resource screens (`DatasetsListScreen`, `PromptDetailScreen`, …) + dashboard page |
+| `@proofhound/web-ui/hooks` | Domain hooks (signatures unchanged, still accept `projectId`) + utility hooks |
+| `@proofhound/web-ui/providers` | `ProofHoundWebProvider`, underlying Refine / ProjectContext / I18n providers |
+| `@proofhound/web-ui/i18n` | Full dictionary + `I18nProvider` / `useI18n` + language utilities |
+| `@proofhound/web-ui/components` | 12 product-domain components + charts + annotation sub-components |
+| `@proofhound/web-ui/lib` | `formatDateTime` / `getApiErrorMessage` / `releases` / `project-name` / `uuid` / `model-*` domain utilities |
+| `@proofhound/web-ui/contracts` | `WebContracts` type + `localWebContracts` |
+| `@proofhound/web-ui/styles/globals.css` | Theme CSS variables / semantic classes / animation keyframes |
 
 ### 4.1 ProjectId transport
 
@@ -500,9 +500,9 @@ Not adopted:
 
 ### 4.2 Auth credential transport
 
-The OSS browser **does not actively carry any auth credential** (sends no `Authorization`, sends no session cookie); the SaaS browser carries a Supabase JWT in `Authorization: Bearer`. To allow the shared product UI in `@proofhound/web` to remain unchanged between OSS and SaaS, `packages/api-client` exposes an `AuthSource` abstraction; the OSS default implementation returns `null`, and the SaaS override returns the JWT.
+The OSS browser **does not actively carry any auth credential** (sends no `Authorization`, sends no session cookie); the SaaS browser carries a Supabase JWT in `Authorization: Bearer`. To allow the shared product UI in `@proofhound/web-ui` to remain unchanged between OSS and SaaS, `packages/api-client` exposes an `AuthSource` abstraction; the OSS default implementation returns `null`, and the SaaS override returns the JWT.
 
-`AuthSource` is part of `WebContracts` and is wired at the single `ProofHoundWebProvider` entry point—OSS passes `localWebContracts` (which carries `LocalAuthSource`); SaaS passes `SupabaseAuthSource`. The provider calls `configureApiClient({ authSource, baseUrl })` on mount, which registers the axios interceptors for both `Authorization` and `X-Project-Id`; screens and hooks in `@proofhound/web` never touch `AuthSource` directly.
+`AuthSource` is part of `WebContracts` and is wired at the single `ProofHoundWebProvider` entry point—OSS passes `localWebContracts` (which carries `LocalAuthSource`); SaaS passes `SupabaseAuthSource`. The provider calls `configureApiClient({ authSource, baseUrl })` on mount, which registers the axios interceptors for both `Authorization` and `X-Project-Id`; screens and hooks in `@proofhound/web-ui` never touch `AuthSource` directly.
 
 Contract draft:
 
@@ -546,7 +546,7 @@ export function configureApiClient({ authSource, baseUrl }: { authSource: AuthSo
 `WebContracts` type and OSS default:
 
 ```ts
-// @proofhound/web/contracts
+// @proofhound/web-ui/contracts
 export interface WebContracts {
   authSource: AuthSource;               // OSS: LocalAuthSource (getToken()→null)
   projectContext: ProjectContextSource; // OSS: constant LOCAL_PROJECT_CONTEXT
@@ -563,26 +563,26 @@ export const localWebContracts: WebContracts = {
 `ProofHoundWebProvider` usage in OSS `apps/web/src/app/layout.tsx`:
 
 ```tsx
-import { ProofHoundWebProvider } from '@proofhound/web/providers';
-import { localWebContracts } from '@proofhound/web/contracts';
+import { ProofHoundWebProvider } from '@proofhound/web-ui/providers';
+import { localWebContracts } from '@proofhound/web-ui/contracts';
 
-// OSS layout — thin shell, all product UI comes from @proofhound/web
+// OSS layout — thin shell, all product UI comes from @proofhound/web-ui
 <ProofHoundWebProvider contracts={localWebContracts}>
-  {children}  {/* route wrappers import @proofhound/web/screens */}
+  {children}  {/* route wrappers import @proofhound/web-ui/screens */}
 </ProofHoundWebProvider>
 ```
 
-SaaS passes `{ authSource: SupabaseAuthSource, projectContext: <reactive multi-tenant source>, i18nExtend: saasConsoleDict }`. The product UI screens and hooks in `@proofhound/web` are identical in both cases—the contracts injection point is the single difference.
+SaaS passes `{ authSource: SupabaseAuthSource, projectContext: <reactive multi-tenant source>, i18nExtend: saasConsoleDict }`. The product UI screens and hooks in `@proofhound/web-ui` are identical in both cases—the contracts injection point is the single difference.
 
 Implementation constraints:
 
-- `AuthSource` and `ProjectContextSource` are consumed only by `configureApiClient` inside `ProofHoundWebProvider`; screens / hooks / components in `@proofhound/web` never read them directly
+- `AuthSource` and `ProjectContextSource` are consumed only by `configureApiClient` inside `ProofHoundWebProvider`; screens / hooks / components in `@proofhound/web-ui` never read them directly
 - The OSS `LocalAuthSource` always returns `null`—the browser not carrying a credential is an OSS design requirement, not a bug
 - SaaS injects `SupabaseAuthSource`, with `@supabase/supabase-js` managing the access token and refresh
 - The browser side **does not** use the user token (`ph_*`) as a session—the user token is only for external scripts / CI / MCP clients to copy-paste, and never goes into localStorage / sessionStorage
 - When an external script calls the HTTP API, the caller sets `Authorization: Bearer ph_*` itself, without going through `AuthSource`
 - The MCP entry's credential does not go through this abstraction—the MCP client config directly holds the user token
-- The project switcher UI is **SaaS-only private chrome** and does not belong in `@proofhound/web`; the OSS thin shell and the shared package both do not build a project switcher (see §8)
+- The project switcher UI is **SaaS-only private chrome** and does not belong in `@proofhound/web-ui`; the OSS thin shell and the shared package both do not build a project switcher (see §8)
 
 Not adopted:
 
@@ -670,8 +670,8 @@ PR 2 is the schema precondition for the subsequent PRs 4a/4b/6 and must be merge
 - Do not introduce organizations / memberships / roles business implementations into the OSS trunk
 - Do not add an `organization_id` column or control plane tables to the OSS schema
 - Do not add SaaS-only fields such as `organization_id` / membership / role to `ph_core.tokens` for control plane alignment
-- Do not build a project switcher or organization switcher in the OSS frontend or in the shared `@proofhound/web` package—the project switcher is SaaS-only private chrome that belongs in the SaaS app shell, not in the shared product UI
-- Do not introduce an `IS_PLATFORM`-style edition flag anywhere in the OSS trunk or in `@proofhound/web` to distinguish self-hosted / SaaS forms within the same codebase (cf. the Supabase Studio cautionary tale: it caused long-term technical debt + community criticism, and the team itself could not pull off a refactor); in the shared package the single `WebContracts` injection at `ProofHoundWebProvider` is the only allowed variation point—screens / hooks / components must be form-neutral
+- Do not build a project switcher or organization switcher in the OSS frontend or in the shared `@proofhound/web-ui` package—the project switcher is SaaS-only private chrome that belongs in the SaaS app shell, not in the shared product UI
+- Do not introduce an `IS_PLATFORM`-style edition flag anywhere in the OSS trunk or in `@proofhound/web-ui` to distinguish self-hosted / SaaS forms within the same codebase (cf. the Supabase Studio cautionary tale: it caused long-term technical debt + community criticism, and the team itself could not pull off a refactor); in the shared package the single `WebContracts` injection at `ProofHoundWebProvider` is the only allowed variation point—screens / hooks / components must be form-neutral
 - Do not let OSS Controllers / Services directly import default implementation classes—import only the abstract class (i.e. the DI token)
 - Do not make foundational packages such as `packages/limiter` / `packages/llm-client` / `packages/connector-client` aware of actor / project
 - Do not write form branches in OSS code via env vars such as `process.env.DEPLOYMENT_MODE='saas'`—the form difference is borne by provider override
@@ -691,5 +691,5 @@ PR 2 is the schema precondition for the subsequent PRs 4a/4b/6 and must be merge
 - [02](02-tech-stack.md): this SPEC introduces no new tech stack, only specifying the use of existing NestJS DI and axios interceptors
 - [03](03-orchestration.md): §3.8 `WorkflowAuthorizationHook` of this SPEC is a new pre-step for the 03 orchestration entry; the complete `WorkflowKind` enum is governed by 03's workflow / queue list; the webhook entry paragraph at the end of 03 §3 aligns with §3.4 `ConnectorContextResolver` of this SPEC
 - [06](06-database-schema.md): §5 of this SPEC makes clear that the SaaS schema does not enter `ph_*`; the `scope='webhook'` + `connector_id` fields and the user / webhook scope binary introduced by this SPEC are reflected in the `ph_core.tokens` table structure in 06 §3.2
-- [07](07-code-structure.md): the abstract classes and default implementations of the extension points are located in `apps/server/src/common/contracts/` and `apps/server/src/common/`; the MCP / Controller entries go through the `@CurrentProject()` decorator; the frontend package layout (`@proofhound/ui` design system, `@proofhound/web` shared product UI, `apps/web` OSS thin shell) is governed by §7 of that SPEC
+- [07](07-code-structure.md): the abstract classes and default implementations of the extension points are located in `apps/server/src/common/contracts/` and `apps/server/src/common/`; the MCP / Controller entries go through the `@CurrentProject()` decorator; the frontend package layout (`@proofhound/ui` design system, `@proofhound/web-ui` shared product UI, `apps/web` OSS thin shell) is governed by §7 of that SPEC
 - [26](26-connectors.md): §3.4 `ConnectorContextResolver` of this SPEC is extracted from the existing connector authentication logic of `apps/webhook`, with the credential lifecycle managed by the connector resource

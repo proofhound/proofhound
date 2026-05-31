@@ -5,7 +5,7 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
-      '@proofhound/web': fileURLToPath(new URL('./src', import.meta.url)),
+      '@proofhound/web-ui': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
   test: {
