@@ -99,7 +99,7 @@ export interface TableActionRowProps {
   actions: TableActionDescriptor[];
   /** Max number of inline icon buttons before overflowing into ⋯ menu. */
   maxInline?: number;
-  /** Override aria-label / tooltip for the ⋯ trigger. Defaults to i18n `common.actions.more`. */
+  /** Override aria-label / tooltip for the ⋯ trigger. Defaults to `UiStrings.actionsMore`. */
   moreLabel?: string;
   className?: string;
 }
