@@ -126,7 +126,7 @@ export function AnnotationNewPage({ projectId }: { projectId: string }) {
             <Button variant="outline" asChild>
               <Link href="/annotations">{t('common.cancel')}</Link>
             </Button>
-            <Button onClick={submit} disabled={!canCreate}>
+            <Button data-testid="annotation-new-submit" onClick={submit} disabled={!canCreate}>
               <ClipboardCheck className="size-4" />
               {createMutation.isPending ? t('annotations.new.action.creating') : t('annotations.new.action.create')}
             </Button>
@@ -148,6 +148,7 @@ export function AnnotationNewPage({ projectId }: { projectId: string }) {
                   </div>
                 ) : (
                   <select
+                    data-testid="annotation-new-release-line-select"
                     value={selectedLineId}
                     onChange={(event) => {
                       setExplicitLineId(event.target.value);
@@ -182,12 +183,16 @@ export function AnnotationNewPage({ projectId }: { projectId: string }) {
                     {t('annotations.new.emptyVariant')}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  <div
+                    className="grid grid-cols-1 gap-3 lg:grid-cols-2"
+                    data-testid="annotation-new-release-variant-select"
+                  >
                     {selectedLine.variants.map((variant) => (
                       <VariantOption
                         key={variant.id}
                         variant={variant}
                         selected={variant.id === selectedVariantId}
+                        testId={`annotation-new-release-variant-option-${variant.id}`}
                         onSelect={() => {
                           setExplicitVariantId(variant.id);
                           setSampleSizeDraft(null);
@@ -206,23 +211,26 @@ export function AnnotationNewPage({ projectId }: { projectId: string }) {
                 detail={t('annotations.new.section.sampleDetail')}
               />
               <div className="space-y-5 p-5">
-                <Segmented
-                  value={scope}
-                  onChange={(next) => {
-                    setScope(next);
-                    setSampleSizeDraft(null);
-                  }}
-                  ariaLabel={t('annotations.new.scope.label')}
-                  options={[
-                    { value: 'canary', label: t('annotations.scope.canary') },
-                    { value: 'online', label: t('annotations.scope.online') },
-                  ]}
-                />
+                <div data-testid="annotation-new-scope">
+                  <Segmented
+                    value={scope}
+                    onChange={(next) => {
+                      setScope(next);
+                      setSampleSizeDraft(null);
+                    }}
+                    ariaLabel={t('annotations.new.scope.label')}
+                    options={[
+                      { value: 'canary', label: t('annotations.scope.canary') },
+                      { value: 'online', label: t('annotations.scope.online') },
+                    ]}
+                  />
+                </div>
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label className="text-[12.5px]">{t('annotations.new.field.name')}</Label>
                     <Input
+                      data-testid="annotation-new-task-name"
                       value={taskName}
                       onChange={(event) => setTaskName(event.target.value)}
                       placeholder={t('annotations.new.field.namePlaceholder')}
@@ -232,6 +240,7 @@ export function AnnotationNewPage({ projectId }: { projectId: string }) {
                   <div className="space-y-1.5">
                     <Label className="text-[12.5px]">{t('annotations.new.field.sampleLimit')}</Label>
                     <Input
+                      data-testid="annotation-new-sample-size"
                       type="number"
                       min={1}
                       max={Math.max(1, maxSamples)}
@@ -308,15 +317,18 @@ function VariantOption({
   variant,
   selected,
   onSelect,
+  testId,
 }: {
   variant: AnnotationReleaseVariantOptionDto;
   selected: boolean;
   onSelect: () => void;
+  testId?: string;
 }) {
   const { t } = useI18n();
   return (
     <button
       type="button"
+      data-testid={testId}
       onClick={onSelect}
       className={cn(
         'min-w-0 rounded-md border bg-background p-3 text-left transition-colors hover:bg-accent',
