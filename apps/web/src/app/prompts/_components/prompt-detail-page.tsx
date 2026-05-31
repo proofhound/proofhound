@@ -2313,15 +2313,12 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
                         <>
                           <span className="font-mono text-sm font-semibold">v{activeVersion.version}</span>
                           <h2 className="truncate text-xl font-semibold leading-tight">{prompt.name}</h2>
-                          <StatusBadge status={activeVersion.status} compact />
-                          {activeVersion.frozen && (
-                            <span
-                              data-testid="prompt-version-frozen-badge"
-                              className="inline-flex items-center gap-1 rounded border border-[var(--prompt-frozen-bd)] bg-[var(--prompt-frozen-bg)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--prompt-frozen-fg)]"
-                            >
-                              <Lock className="size-3" />
-                              {t('prompts.status.frozen')}
+                          {activeVersion.frozen ? (
+                            <span data-testid="prompt-version-frozen-badge">
+                              <StatusBadge status={activeVersion.status} compact />
                             </span>
+                          ) : (
+                            <StatusBadge status={activeVersion.status} compact />
                           )}
                         </>
                       )}

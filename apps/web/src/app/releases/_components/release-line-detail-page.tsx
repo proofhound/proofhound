@@ -586,10 +586,7 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h1 className="truncate text-[22px] font-semibold leading-tight">{line.promptName}</h1>
-              <span
-                data-testid="release-line-detail-status"
-                className="inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground"
-              >
+              <span data-testid="release-line-detail-status" className="sr-only">
                 {line.production?.currentEvent?.status ?? line.canary?.status ?? line.status}
               </span>
             </div>

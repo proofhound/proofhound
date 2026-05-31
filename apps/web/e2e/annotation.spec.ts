@@ -74,7 +74,7 @@ test('creates an annotation task from a canary release and labels a sample via t
     await save.click();
 
     // Persistence: the submitted-sample metric increments from 0 to >=1 after the write lands.
-    await expect(page.getByTestId('annotation-detail-metric-submitted')).toContainText(/\b[1-9]\d*\b/, {
+    await expect(page.getByTestId('annotation-detail-metric-submitted-value')).toContainText(/\b[1-9]\d*\b/, {
       timeout: 30_000,
     });
   } finally {

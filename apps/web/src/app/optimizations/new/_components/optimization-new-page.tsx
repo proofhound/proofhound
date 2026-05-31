@@ -426,18 +426,21 @@ function ModeTile({
   title,
   description,
   onClick,
+  testId,
 }: {
   active: boolean;
   icon: typeof FlaskConical;
   title: string;
   description: string;
   onClick: () => void;
+  testId?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      data-testid={testId}
       className={cn(
         'flex w-full flex-col gap-1.5 rounded-md border px-3.5 py-3 text-left transition-colors',
         active
@@ -1578,8 +1581,9 @@ export function OptimizationNewPage({
                     {t('optimizations.new.origin.label')} <span className="text-destructive">*</span>
                   </label>
                   <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                    <div data-testid="optimization-new-origin-mode-experiment" className="contents">
+                    <div className="contents">
                       <ModeTile
+                        testId="optimization-new-origin-mode-experiment"
                         active={originMode === 'experiment'}
                         icon={FlaskConical}
                         title={t('optimizations.new.origin.experimentTitle')}
@@ -1587,8 +1591,9 @@ export function OptimizationNewPage({
                         onClick={() => handleOriginModeChange('experiment')}
                       />
                     </div>
-                    <div data-testid="optimization-new-origin-mode-prompt" className="contents">
+                    <div className="contents">
                       <ModeTile
+                        testId="optimization-new-origin-mode-prompt"
                         active={originMode === 'prompt'}
                         icon={FileText}
                         title={t('optimizations.new.origin.promptTitle')}
@@ -1596,8 +1601,9 @@ export function OptimizationNewPage({
                         onClick={() => handleOriginModeChange('prompt')}
                       />
                     </div>
-                    <div data-testid="optimization-new-origin-mode-dataset" className="contents">
+                    <div className="contents">
                       <ModeTile
+                        testId="optimization-new-origin-mode-dataset"
                         active={originMode === 'dataset'}
                         icon={Database}
                         title={t('optimizations.new.origin.datasetTitle')}
