@@ -97,8 +97,10 @@ export async function seedModel(request: APIRequestContext, name: string) {
     providerModelId: 'fake-model',
     endpoint: FAKE_LLM_ENDPOINT,
     apiKey: 'sk-fake-e2e',
-    rpm: { limit: -1 },
-    tpm: { limit: -1 },
+    // Positive limits (NOT -1/unlimited): the experiment-new UI gates submit on rpm/tpm being
+    // positive numbers (isExperimentRunParamsComplete). High enough to never throttle the tiny e2e runs.
+    rpm: { limit: 600 },
+    tpm: { limit: 100000 },
   });
   return out.id;
 }
