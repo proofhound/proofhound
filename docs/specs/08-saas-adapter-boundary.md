@@ -502,19 +502,20 @@ Not adopted:
 
 The OSS browser **does not actively carry any auth credential** (sends no `Authorization`, sends no session cookie); the SaaS browser carries a Supabase JWT in `Authorization: Bearer`. To allow the shared product UI in `@proofhound/web-ui` to remain unchanged between OSS and SaaS, `packages/api-client` exposes an `AuthSource` abstraction; the OSS default implementation returns `null`, and the SaaS override returns the JWT.
 
-`AuthSource` is part of `WebContracts` and is wired at the single `ProofHoundWebProvider` entry point—OSS passes `localWebContracts` (which carries `LocalAuthSource`); SaaS passes `SupabaseAuthSource`. The provider calls `configureApiClient({ authSource, baseUrl })` on mount, which registers the axios interceptors for both `Authorization` and `X-Project-Id`; screens and hooks in `@proofhound/web-ui` never touch `AuthSource` directly.
+`AuthSource` is part of `WebContracts` and is wired at the single `ProofHoundWebProvider` entry point—OSS passes `localWebContracts` (which carries `LocalAuthSource`); SaaS passes `SupabaseAuthSource`. The provider calls `configureApiClient({ authSource, getProjectId, baseUrl })` on mount (in a client effect), which registers the axios request interceptor for both `Authorization` and `X-Project-Id`; screens and hooks in `@proofhound/web-ui` never touch `AuthSource` directly.
 
-Contract draft:
+Realized contract (`packages/api-client`):
 
 ```ts
-// packages/api-client/auth-source.ts
+// packages/api-client/src/auth-source.ts
 export abstract class AuthSource {
-  abstract getAuthToken(): string | null;
+  /** Returns a Bearer token, or null. OSS returns null (browser carries no credential). */
+  abstract getToken(): Promise<string | null>;
 }
 
 // OSS default
 export class LocalAuthSource extends AuthSource {
-  getAuthToken(): string | null {
+  async getToken(): Promise<string | null> {
     return null; // OSS browser does not send Authorization
   }
 }
@@ -522,22 +523,30 @@ export class LocalAuthSource extends AuthSource {
 // Injected by the SaaS repository
 export class SupabaseAuthSource extends AuthSource {
   constructor(private supabase: SupabaseClient) { super(); }
-  getAuthToken(): string | null {
-    return this.supabase.auth.session()?.access_token ?? null;
+  async getToken(): Promise<string | null> {
+    const { data } = await this.supabase.auth.getSession();
+    return data.session?.access_token ?? null;
   }
 }
 ```
 
-The `configureApiClient` call inside `ProofHoundWebProvider` registers two interceptors:
+The `configureApiClient` call inside `ProofHoundWebProvider` registers one request interceptor (idempotent—a re-config ejects the prior one):
 
 ```ts
-// packages/api-client/configure.ts  (called once by ProofHoundWebProvider on mount)
-export function configureApiClient({ authSource, baseUrl }: { authSource: AuthSource; baseUrl?: string }) {
-  if (baseUrl) httpClient.defaults.baseURL = baseUrl;
-  httpClient.interceptors.request.use((req) => {
-    const token = authSource.getAuthToken();
-    if (token) req.headers.Authorization = `Bearer ${token}`;
-    // X-Project-Id is injected from the active ProjectContextSource (OSS=LOCAL_PROJECT_ID; SaaS=current project)
+// packages/api-client/src/configure.ts  (called once by ProofHoundWebProvider in a client effect)
+export interface ApiClientConfig {
+  authSource: AuthSource;
+  getProjectId: () => string;   // OSS: () => LOCAL_PROJECT_CONTEXT.projectId; SaaS: () => current project id
+  baseUrl?: string;
+}
+export function configureApiClient(config: ApiClientConfig): void {
+  if (config.baseUrl) httpClient.defaults.baseURL = config.baseUrl;
+  // (ejects any previously-registered interceptor first, so re-config does not stack)
+  httpClient.interceptors.request.use(async (req) => {
+    const token = await config.authSource.getToken();
+    if (token) req.headers.set('Authorization', `Bearer ${token}`);
+    const pid = config.getProjectId();
+    if (pid) req.headers.set('X-Project-Id', pid);
     return req;
   });
 }
@@ -548,9 +557,9 @@ export function configureApiClient({ authSource, baseUrl }: { authSource: AuthSo
 ```ts
 // @proofhound/web-ui/contracts
 export interface WebContracts {
-  authSource: AuthSource;               // OSS: LocalAuthSource (getToken()→null)
-  projectContext: ProjectContextSource; // OSS: constant LOCAL_PROJECT_CONTEXT
-  baseUrl?: string;                     // default: NEXT_PUBLIC_SERVER_URL → localhost:4000
+  authSource: AuthSource;          // OSS: LocalAuthSource (getToken()→null)
+  projectContext: ProjectContext;  // OSS: constant LOCAL_PROJECT_CONTEXT. SaaS: a reactive multi-tenant source is a future extension.
+  baseUrl?: string;                // default: NEXT_PUBLIC_SERVER_URL → localhost:4000
   i18nExtend?: Partial<Record<Language, Record<string, string>>>; // SaaS console keys
 }
 
@@ -657,7 +666,7 @@ The OSS trunk migrates from its current state to an adapter-ready state, with PR
 | 8 | `AccessControl` signature refactor | Change 45 call sites of `accessControl.assertCan(action)` to the three-parameter signature, injected into 15 Services |
 | 9 | `LimiterKeyStrategy` integration | `apps/server` / `apps/worker` go through the strategy before calling the limiter; `packages/limiter` stays unchanged |
 | 10 | `WorkflowAuthorizationHook` integration | Call the hook before starting a workflow / enqueuing a job, OSS no-op; `apps/webhook` integrated in sync |
-| 11 | API client transport | `httpClient` adds the `X-Project-Id` header interceptor (§4.1) + the `AuthSource` abstraction (§4.2): `packages/api-client` exposes the `AuthSource` abstract class, OSS `apps/web` injects `LocalAuthSource` (always returns null), SaaS injects `SupabaseAuthSource`; the interceptor attaches the `Authorization` header only when the token is non-null |
+| 11 | API client transport | `packages/api-client` exposes `AuthSource` + `configureApiClient`; `ProofHoundWebProvider` calls `configureApiClient({ authSource, getProjectId, baseUrl })` on mount to register a single request interceptor that adds `X-Project-Id` (§4.1) from the active `ProjectContext` and `Authorization` (§4.2) only when the token is non-null. OSS injects `LocalAuthSource` (returns null); SaaS injects `SupabaseAuthSource` |
 
 After PRs 1-6 are complete, the OSS authentication layer is upgraded from a stub to a production-usable form (all three entries—HTTP / MCP / Webhook—have real token validation, and the HTTP entry's dual channels are channel-aware). After PRs 7-11 are complete, all 8 extension points are DI-ified. The SaaS repository can begin independent development after PR 1 lands, and can fully integrate against stable interfaces once PR 6 is complete.
 
