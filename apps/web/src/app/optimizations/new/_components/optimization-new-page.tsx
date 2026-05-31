@@ -25,12 +25,12 @@ import { PromptVersionPickerRow, PromptVersionPickerTag } from '@/components/pro
 import { PromptLanguageSelect } from '@/components/prompt-language-select';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { formatDateTime, formatLatencySeconds, getApiErrorMessage, isProjectNameTaken } from '@proofhound/web-ui/lib';
-import { useOptimizations, useCreateOptimization } from '@/hooks/optimization';
-import { useDatasets } from '@/hooks/dataset';
-import { useExperiments } from '@/hooks/experiment';
-import { useProjectModels } from '@/hooks/model';
-import { usePrompt, usePrompts } from '@/hooks/prompt';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
+import { useOptimizations, useCreateOptimization } from '@proofhound/web-ui/hooks';
+import { useDatasets } from '@proofhound/web-ui/hooks';
+import { useExperiments } from '@proofhound/web-ui/hooks';
+import { useProjectModels } from '@proofhound/web-ui/hooks';
+import { usePrompt, usePrompts } from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
 import { composePromptPreview } from '../../../prompts/_components/prompt-preview';
 import { renderPromptPreviewParts } from '../../../prompts/_components/prompt-preview-parts';
 import { VARIABLE_TONE_CLASSES } from '../../../prompts/_components/prompt-ui';

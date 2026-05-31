@@ -67,7 +67,7 @@ import {
   useProjectModelReferences,
   useRevealProjectModelApiKey,
   useUpdateProjectModel,
-} from '@/hooks/model';
+} from '@proofhound/web-ui/hooks';
 import type { TranslationKey } from '@proofhound/web-ui/i18n';
 import { dtoToProjectModel } from './project-model-adapter';
 import {

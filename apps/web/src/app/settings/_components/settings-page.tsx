@@ -32,7 +32,7 @@ import {
   useRevealToken,
   useTokens,
   useUpdateToken,
-} from '@/hooks/token';
+} from '@proofhound/web-ui/hooks';
 import { useI18n } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, formatDateTime } from '@proofhound/web-ui/lib';
 type TokenExpiryPreset = 'never' | '7d' | '30d' | '90d' | 'custom';

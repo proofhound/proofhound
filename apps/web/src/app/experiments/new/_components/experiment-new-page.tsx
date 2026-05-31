@@ -8,11 +8,11 @@ import { AlertTriangle, Calculator, Check, ChevronDown, Link2, Loader2, Play, Se
 import { Button, Input, cn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { PromptVersionPickerRow, PromptVersionPickerTag } from '@/components/prompt-version-picker-row';
-import { useDatasets } from '@/hooks/dataset';
-import { useCreateExperiment, useExperiments } from '@/hooks/experiment';
-import { useProjectModels } from '@/hooks/model';
-import { usePrompt, usePrompts } from '@/hooks/prompt';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
+import { useDatasets } from '@proofhound/web-ui/hooks';
+import { useCreateExperiment, useExperiments } from '@proofhound/web-ui/hooks';
+import { useProjectModels } from '@proofhound/web-ui/hooks';
+import { usePrompt, usePrompts } from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, isProjectNameTaken } from '@proofhound/web-ui/lib';
 import type { PromptVariableType } from '../../../prompts/_components/prompt-model';

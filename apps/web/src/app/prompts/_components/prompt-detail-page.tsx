@@ -55,7 +55,7 @@ import type { TableActionDescriptor, ModalityKind } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { PromptDiffSplitView } from '@/components/prompt-diff/prompt-diff-split-view';
 import { PromptVariableModalityBadges } from '@/components/prompt-version-picker-row';
-import { useDatasets } from '@/hooks/dataset';
+import { useDatasets } from '@proofhound/web-ui/hooks';
 import {
   useCreatePromptDraftVersion,
   useDeletePromptDraftVersion,
@@ -65,8 +65,8 @@ import {
   useUpdatePrompt,
   useUpdatePromptDraftVersion,
   useUpdatePromptVersionLabel,
-} from '@/hooks/prompt';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
+} from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
 import { PromptLanguageSelect, type PromptLanguage } from '@/components/prompt-language-select';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { formatDateTime } from '@proofhound/web-ui/lib';

@@ -12,7 +12,7 @@ import {
   Input,
   Label,
 } from '@proofhound/ui';
-import { usePeekConnector } from '@/hooks/connector';
+import { usePeekConnector } from '@proofhound/web-ui/hooks';
 import { useI18n } from '@proofhound/web-ui/i18n';
 import { formatDateTime } from '@proofhound/web-ui/lib';
 import type { PeekConnectorResponseDto } from '@proofhound/shared';

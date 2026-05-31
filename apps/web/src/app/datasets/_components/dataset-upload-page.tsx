@@ -23,7 +23,7 @@ import {
   cn,
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { useCreateDataset } from '@/hooks/dataset';
+import { useCreateDataset } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { runDatasetImport } from './dataset-import-runner';
 import { DatasetTransferProgressPanel, useDatasetTransferProgress } from './dataset-transfer-progress';

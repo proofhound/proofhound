@@ -3,7 +3,7 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { ClipboardList, Loader2 } from 'lucide-react';
 import { Button, Input, cn } from '@proofhound/ui';
-import { useLookupModelContextWindow } from '@/hooks/model';
+import { useLookupModelContextWindow } from '@proofhound/web-ui/hooks';
 import { useI18n } from '@proofhound/web-ui/i18n';
 type LookupStatus = 'idle' | 'applied' | 'missing' | 'needsModelId' | 'failed';
 

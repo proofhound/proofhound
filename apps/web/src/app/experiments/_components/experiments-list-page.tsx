@@ -26,9 +26,9 @@ import {
   SlidingViewToggle,
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { useControlExperiment, useDeleteExperiment, useExperiments } from '@/hooks/experiment';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
+import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@proofhound/web-ui/hooks';
+import { useControlExperiment, useDeleteExperiment, useExperiments } from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage } from '@proofhound/web-ui/lib';
 import { type ExperimentStatus, type ExperimentSummary } from './experiment-view-model';

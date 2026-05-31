@@ -20,9 +20,9 @@ import {
   cn,
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
-import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
-import { useReleaseLineList } from '@/hooks/release-line';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
+import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@proofhound/web-ui/hooks';
+import { useReleaseLineList } from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { filterReleaseLines, summarizeReleaseLines } from '@proofhound/web-ui/lib';
 import type { ReleaseLineFilter, ReleaseLineView } from '@proofhound/web-ui/lib';

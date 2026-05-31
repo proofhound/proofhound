@@ -22,9 +22,9 @@ import {
   cn,
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
-import { useAnnotationTaskList, useClaimAnnotationSamples } from '@/hooks/annotation';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { useAnnotationTaskList, useClaimAnnotationSamples } from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
+import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import {
   buildAnnotationTasks,

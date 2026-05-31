@@ -19,8 +19,8 @@ import {
   cn,
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { useConnector, useCreateConnector, useUpdateConnector } from '@/hooks/connector';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
+import { useConnector, useCreateConnector, useUpdateConnector } from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
 import { useI18n } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, isCanonicalUuid } from '@proofhound/web-ui/lib';
 import type { ConnectorDirection, ConnectorType, CreateConnectorDto } from '@proofhound/shared';

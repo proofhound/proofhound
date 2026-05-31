@@ -51,8 +51,8 @@ import {
   useProbeQuickStartDraftModel,
   useProbeQuickStartExistingModel,
   useQuickStartModelOptions,
-} from '@/hooks/quick-start';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
+} from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, buildProviderTypeOptions } from '@proofhound/web-ui/lib';
 import {

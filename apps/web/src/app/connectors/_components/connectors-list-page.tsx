@@ -30,9 +30,9 @@ import {
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { useBulkDeleteConnectors, useConnectors, useDeleteConnector } from '@/hooks/connector';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { useBulkDeleteConnectors, useConnectors, useDeleteConnector } from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
+import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, formatDateTime } from '@proofhound/web-ui/lib';
 import {

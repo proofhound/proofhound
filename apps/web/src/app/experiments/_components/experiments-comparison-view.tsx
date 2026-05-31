@@ -25,7 +25,7 @@ import {
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
-import { useOptimizations } from '@/hooks/optimization';
+import { useOptimizations } from '@proofhound/web-ui/hooks';
 
 import {
   EXPERIMENT_ENGINEERING_METRIC_KEYS,

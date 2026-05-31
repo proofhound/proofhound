@@ -15,7 +15,7 @@ import {
   cn,
 } from '@proofhound/ui';
 import { useI18n } from '@proofhound/web-ui/i18n';
-import { useRunResult } from '@/hooks/run-result';
+import { useRunResult } from '@proofhound/web-ui/hooks';
 import { formatDateTime } from '@proofhound/web-ui/lib';
 import { experimentTone } from '../../_components/experiment-theme';
 import {

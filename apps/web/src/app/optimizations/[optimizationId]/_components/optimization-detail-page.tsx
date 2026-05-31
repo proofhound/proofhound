@@ -53,9 +53,9 @@ import {
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { PromptDiffSplitView } from '@/components/prompt-diff/prompt-diff-split-view';
-import { useOptimization, useControlOptimization } from '@/hooks/optimization';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
+import { useOptimization, useControlOptimization } from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
+import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage } from '@proofhound/web-ui/lib';
 import { optimizationTone } from '../../_components/optimization-theme';

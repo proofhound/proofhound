@@ -18,14 +18,14 @@ import {
   type DateRangeValue,
   resolveDateRangePreset,
 } from '@proofhound/ui';
-import { useProjectModels } from '@/hooks/model';
+import { useProjectModels } from '@proofhound/web-ui/hooks';
 import {
   useProjectModelMonitoringRanking,
   useProjectMonitoringStats,
   useProjectMonitoringTimeseries,
   usePromptMonitoringRanking,
-} from '@/hooks/project-monitoring';
-import { usePrompts } from '@/hooks/prompt';
+} from '@proofhound/web-ui/hooks';
+import { usePrompts } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { useProjectContext } from '@/providers/project-context-provider';
 import { BigChartCard, type DeltaTone } from './big-chart-card';

@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { useProjectContext } from '@/providers/project-context-provider';
 import { Main } from '@proofhound/ui/layout';
 import { Button, DetailPageSkeleton } from '@proofhound/ui';
-import { useDataset } from '@/hooks/dataset';
+import { useDataset } from '@proofhound/web-ui/hooks';
 import { useI18n } from '@proofhound/web-ui/i18n';
 import { isCanonicalUuid } from '@proofhound/web-ui/lib';
 import { DatasetDetailPage } from '../_components/dataset-detail-page';

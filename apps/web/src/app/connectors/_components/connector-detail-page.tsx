@@ -37,8 +37,8 @@ import {
   useRevealConnectorWebhookToken,
   useRevokeConnectorWebhookToken,
   useUpdateConnector,
-} from '@/hooks/connector';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
+} from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
 import { useI18n, type Language, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getApiErrorMessage, formatDateTime, isCanonicalUuid } from '@proofhound/web-ui/lib';
 import type {

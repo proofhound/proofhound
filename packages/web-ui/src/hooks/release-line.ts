@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { releaseLineClient } from '@proofhound/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UpdateReleaseLineRunConfigInputDto, UpdateReleaseLineTrafficRatioInputDto } from '@proofhound/shared';
-import { mapReleaseLineDtos } from '@proofhound/web-ui/lib';
+import { mapReleaseLineDtos } from '../lib';
 
 export function useReleaseLineList(projectId: string, enabled = true) {
   const releaseLineQuery = useQuery({

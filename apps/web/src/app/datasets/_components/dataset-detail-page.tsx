@@ -31,7 +31,7 @@ import {
   cn,
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { useDatasetSamples, useDeleteDatasetSamples, useDownloadDataset } from '@/hooks/dataset';
+import { useDatasetSamples, useDeleteDatasetSamples, useDownloadDataset } from '@proofhound/web-ui/hooks';
 import { useI18n } from '@proofhound/web-ui/i18n';
 import {
   getReferenceCount,

@@ -66,19 +66,19 @@ import type {
   DateRangeValue,
   TableColumn,
 } from '@proofhound/ui';
-import { useAnnotationTaskList } from '@/hooks/annotation';
-import { useDelayedLoading } from '@/hooks/use-delayed-loading';
-import { useProjectModels } from '@/hooks/model';
-import { useProductionReleaseHistory, useStopProductionRelease } from '@/hooks/production-release';
-import { useProjectMonitoringStats, useProjectMonitoringTimeseries } from '@/hooks/project-monitoring';
+import { useAnnotationTaskList } from '@proofhound/web-ui/hooks';
+import { useDelayedLoading } from '@proofhound/web-ui/hooks';
+import { useProjectModels } from '@proofhound/web-ui/hooks';
+import { useProductionReleaseHistory, useStopProductionRelease } from '@proofhound/web-ui/hooks';
+import { useProjectMonitoringStats, useProjectMonitoringTimeseries } from '@proofhound/web-ui/hooks';
 import {
   useReleaseLineEvents,
   useReleaseLineList,
   useUpdateReleaseLineRunConfig,
   useUpdateReleaseLineTrafficRatio,
-} from '@/hooks/release-line';
-import { useReleaseRunResults } from '@/hooks/run-result';
-import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@/hooks/use-auto-refresh';
+} from '@proofhound/web-ui/hooks';
+import { useReleaseRunResults } from '@proofhound/web-ui/hooks';
+import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '@proofhound/web-ui/hooks';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { getReleaseLineId, getReleaseStopConfirmationName } from '@proofhound/web-ui/lib';
 import type { ReleaseLineLatestEvent, ReleaseLineView } from '@proofhound/web-ui/lib';
