@@ -15,8 +15,6 @@ import { createContext, useContext, type ReactNode } from 'react';
 export interface UiStrings {
   /** table.tsx: TableEmpty fallback — t('common.table.empty') */
   tableEmpty: string;
-  /** table.tsx: TableSkeletonRows aria — not yet wired but reserved for consistency */
-  tableLoading: string;
   /** dialog.tsx: DialogContent close button sr-only label — t('common.close') */
   dialogClose: string;
   /** table-action.tsx: ⋯ overflow trigger label — t('common.actions.more') */
@@ -31,7 +29,6 @@ export interface UiStrings {
 
 export const DEFAULT_UI_STRINGS: UiStrings = {
   tableEmpty: 'No data',
-  tableLoading: 'Loading…',
   dialogClose: 'Close',
   actionsMore: 'More actions',
   loaderLabel: 'Loading…',
