@@ -324,33 +324,30 @@ Decides whether `actor + project + action` is allowed.
 
 | Item | OSS default | SaaS expectation |
 | -- | -------- | --------- |
-| Implementation class | Currently a concrete singleton `SelfHostedAccessControl` (`packages/core/src/server/common/access-control.ts`, exports `const accessControl`); PR8 extracts an abstract `AccessControlService` + default implementation | `RbacAccessControl` |
+| Implementation class | Abstract `AccessControlService` + OSS default `LocalAccessControlService` (`packages/core/src/server/common/contracts/`), DI-bound in `LocalContractsModule` (landed PR8) | `RbacAccessControl` |
 | Behavior | `system_*` + `local_user` all pass; `script` passes but is forbidden `platform_manage` (to prevent token privilege escalation); everything else forbidden | Checks based on the actor's org membership + role |
 
 Contract draft:
 
 ```ts
-// Current state (concrete singleton, sync; packages/core/src/server/common/access-control.ts):
+// Landed (PR8). AccessAction + the toActorContext() normalizer live in
+// packages/core/src/server/common/access-control.ts; the seam lives in common/contracts/.
 export type AccessAction =
   | 'project_read' | 'project_write' | 'release_manage'
   | 'platform_manage' | 'user_token_manage' | 'mcp_tool';
 
-class SelfHostedAccessControl {
-  assertCan(actor: ActorContext | CurrentUserPayload, action: AccessAction, context?: Partial<ProjectContext>): void;
-}
-export const accessControl = new SelfHostedAccessControl();
-
-// PR8 (§7) target abstract seam — SaaS RBAC needs project + action, so the signature is upgraded to three params + async + DI:
 export abstract class AccessControlService {
   abstract assertCan(actor: ActorContext, project: ProjectContext, action: AccessAction): Promise<void>;
 }
+// OSS default LocalAccessControlService applies the actorKind rules below and ignores `project`;
+// SaaS binds RbacAccessControl to the same token in its SaasContractsModule.
 ```
 
-Signature change constraints:
+Signature constraints (landed PR8):
 
-- The current `accessControl.assertCan(actor, action, context?)` is a sync concrete singleton (directly imported, not DI)
-- PR8 changes it to abstract + DI injection + three parameters `assertCan(actor, project, action)` (async); the OSS implementation may ignore the first two params, but SaaS must read them
-- `AccessAction` is currently a 6-value coarse-grained enum; PR8 may refine it if SaaS RBAC needs it, but without coupling to roles or resource ids
+- Services inject `AccessControlService` and call `await this.accessControl.assertCan(toActorContext(actor), project, action)`; the old directly-imported `accessControl` singleton is removed.
+- Three parameters `(actor, project, action)`, async; the OSS implementation ignores actor/project beyond `actorKind`, but SaaS must read them. Platform-level actions (e.g. `user_token_manage`) that are not project-scoped pass the actor-derived local project (`actor.projectId ? { projectId, source: 'local' } : LOCAL_PROJECT_CONTEXT`).
+- `AccessAction` is a 6-value coarse-grained enum; it may be refined later if SaaS RBAC needs it, but without coupling to roles or resource ids.
 - An actor with `actorKind='system_webhook'` passes everything by default under OSS; SaaS may define in the RBAC implementation "which actions a connector inbound may perform" (generally limited to channel actions, such as writing run results)
 
 ### 3.7 LimiterKeyStrategy
@@ -604,7 +601,7 @@ The OSS trunk migrates from its current state to an adapter-ready state, with PR
 | 5 | `LocalMcpAuthResolver` completes real validation | Implement token extraction from the MCP metadata, sha256 hash comparison against `ph_core.tokens where scope='user'`, expiry validation; the MCP entry (`mcp-context.ts`) is changed to call the resolver first and then dispatch the tool |
 | 6 | `LocalConnectorContextResolver` extraction + going through the unified token model | Extract the inline webhook authorization logic (now in `packages/core/src/webhook/channels/webhook/webhook.service.ts`) into a resolver that queries `ph_core.tokens where scope='webhook' AND connector_id=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())` and returns `{ connector, projectContext, actorContext }`; **the resolver produces the projectContext in one shot and does not call `ProjectContextResolver`**; the error code uses `invalid_webhook_token` (distinguished from the user token's `invalid_user_token`); the actor is `actorKind='system_webhook'` (the flat enum lives in the core actor context, connectorId placed in `actorId`, no new kind variant added); the webhook entry's BullMQ job payload carries `webhookTokenId`, and the worker fills the `webhook_token_id` column when writing the run_result; add `webhook.service.spec.ts` asserting that the context and tokenId returned by the resolver propagate to the downstream LLM job |
 | 7 | `TokenService` abstraction | Change the existing token Service into an abstract class + `LocalTokenService` implementation, handling only `scope='user'` rows |
-| 8 | `AccessControl` signature refactor | Change 45 call sites of `accessControl.assertCan(action)` to the three-parameter signature, injected into 15 Services |
+| 8 | `AccessControl` DI seam **(landed)** | Extracted abstract `AccessControlService` + OSS `LocalAccessControlService` (`common/contracts/`), bound `@Global` in `LocalContractsModule`; converted 34 call sites across 15 Services to `await this.accessControl.assertCan(toActorContext(actor), project, action)` (async, three-param) |
 | 9 | `LimiterKeyStrategy` integration | Core server / worker runtimes go through the strategy before calling the limiter; `packages/limiter` stays unchanged |
 | 10 | `WorkflowAuthorizationHook` integration | Call the hook before starting a workflow / enqueuing a job, OSS no-op; core webhook runtime integrated in sync |
 | 11 | API client transport | `httpClient` adds the `X-Project-Id` header interceptor (§4.1) + the `AuthSource` abstraction (§4.2): `packages/api-client` exposes the `AuthSource` abstract class, OSS `apps/web` injects `LocalAuthSource` (always returns null), SaaS injects `SupabaseAuthSource`; the interceptor attaches the `Authorization` header only when the token is non-null |
