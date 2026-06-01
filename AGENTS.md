@@ -58,6 +58,7 @@ Common commands (pnpm@10 + turbo orchestration):
 - Branch naming: `<type>/<kebab>` aligned with Conventional Commits (`feat/`, `fix/`, `docs/`, `refactor/`, `chore/`, …) — e.g. `refactor/contracts-forroot-override`.
 - `master` is PR-only: no direct push (branch protection + `enforce_admins`). Squash-merge with a Conventional-Commit PR title so release-please categorizes it.
 - Worktrees: create with `mkdir -p .claude/worktrees && git worktree add .claude/worktrees/<name> -b <type>/<kebab> master` (a fresh `<type>/<kebab>` branch off `master`). Do not rely on tooling that forces a `worktree-` prefix or rewrites `/` to `+`; rename the branch to conform if it does.
+- After creating a worktree, before working in it: (1) copy the local secrets from the primary worktree so the new tree can boot — `cp .env .claude/worktrees/<name>/.env` (`.env` is gitignored, so a fresh worktree starts without it); (2) build its own CodeGraph index with `cd .claude/worktrees/<name> && codegraph init -i` (`.codegraph` state is gitignored and per-worktree, so the index does not carry over).
 
 ## 3. What to Read Before Starting
 
