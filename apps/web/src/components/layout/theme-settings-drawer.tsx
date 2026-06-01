@@ -9,11 +9,21 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useI18n, type TranslationKey } from '@/i18n';
-import { cn } from '@/lib/utils';
+import {
+  Button,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  cn,
+} from '@proofhound/ui';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import type { LayoutMode, LayoutPreferences } from './layout-preferences';
 import { THEME_OPTIONS, type ThemeName, type ThemeOption } from './theme-options';
 

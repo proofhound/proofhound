@@ -1,8 +1,8 @@
 'use client';
 
 import { Languages } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
@@ -10,9 +10,12 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { LANGUAGE_OPTIONS, isLanguage, useI18n } from '@/i18n';
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@proofhound/ui';
+import { LANGUAGE_OPTIONS, isLanguage, useI18n } from '@proofhound/web-ui/i18n';
 import { type LayoutPreferences } from './layout-preferences';
 import { useThemePreference } from './theme-preference';
 import { ThemeSettingsDrawer, ThemeSwatch } from './theme-settings-drawer';

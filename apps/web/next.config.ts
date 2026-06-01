@@ -2,7 +2,7 @@ import type { NextConfig } from 'next';
 
 const config: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@proofhound/api-client', '@proofhound/logger', '@proofhound/shared', '@proofhound/ui'],
+  transpilePackages: ['@proofhound/api-client', '@proofhound/logger', '@proofhound/shared', '@proofhound/ui', '@proofhound/web-ui'],
   typedRoutes: true,
   poweredByHeader: false,
   async headers() {

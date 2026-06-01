@@ -1,9 +1,9 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
-import { ReleasesListPage } from './_components/releases-list-page';
+import { useProjectContext } from '@proofhound/web-ui/providers';
+import { ReleasesListScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectReleasesPage() {
   const { projectId } = useProjectContext();
-  return <ReleasesListPage projectId={projectId} />;
+  return <ReleasesListScreen projectId={projectId} />;
 }

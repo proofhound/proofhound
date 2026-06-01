@@ -1,5 +1,5 @@
 import { Monitor, Moon, Palette, Sun, type LucideIcon } from 'lucide-react';
-import type { TranslationKey } from '@/i18n';
+import type { TranslationKey } from '@proofhound/web-ui/i18n';
 
 export type ThemeName = 'system' | 'light' | 'dark' | 'twilight' | 'electric';
 

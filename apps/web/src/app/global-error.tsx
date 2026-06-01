@@ -1,7 +1,7 @@
 'use client';
 
-import { ProofHoundLogo } from '@/components/brand/proofhound-logo';
-import '../styles/globals.css';
+import { ProofHoundLogo } from '@proofhound/ui/brand';
+import '@proofhound/web-ui/styles/globals.css';
 
 type GlobalErrorProps = {
   error: Error & { digest?: string };

@@ -1,7 +1,5 @@
 import { type ReactNode } from 'react';
-import { cn } from '@/lib/utils';
-import { Separator } from '@/components/ui/separator';
-import { SidebarTrigger } from '@/components/ui/sidebar';
+import { cn, Separator, SidebarTrigger } from '@proofhound/ui';
 import type { SidebarSide } from './app-sidebar';
 
 interface HeaderProps {

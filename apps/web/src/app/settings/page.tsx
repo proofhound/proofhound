@@ -1,5 +1,5 @@
-import { SettingsPage } from './_components/settings-page';
+import { SettingsScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectSettingsPage() {
-  return <SettingsPage />;
+  return <SettingsScreen />;
 }

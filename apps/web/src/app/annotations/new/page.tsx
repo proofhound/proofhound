@@ -1,9 +1,9 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
-import { AnnotationNewPage } from '../_components/annotation-new-page';
+import { useProjectContext } from '@proofhound/web-ui/providers';
+import { AnnotationNewScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectAnnotationNewRoute() {
   const { projectId } = useProjectContext();
-  return <AnnotationNewPage projectId={projectId} />;
+  return <AnnotationNewScreen projectId={projectId} />;
 }

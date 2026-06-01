@@ -7,16 +7,12 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
@@ -26,8 +22,8 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   useSidebar,
-} from '@/components/ui/sidebar';
-import { Badge } from '@/components/ui/badge';
+  Badge,
+} from '@proofhound/ui';
 import type { NavCollapsible, NavGroup as NavGroupProps, NavItem, NavLink } from './types';
 
 function checkIsActive(pathname: string, url: string): boolean {

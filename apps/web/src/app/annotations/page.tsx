@@ -1,9 +1,9 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
-import { AnnotationsListPage } from './_components/annotations-list-page';
+import { useProjectContext } from '@proofhound/web-ui/providers';
+import { AnnotationsListScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectAnnotationsPage() {
   const { projectId } = useProjectContext();
-  return <AnnotationsListPage projectId={projectId} />;
+  return <AnnotationsListScreen projectId={projectId} />;
 }

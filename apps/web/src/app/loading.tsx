@@ -1,4 +1,4 @@
-import { PlatformLoadingScreen } from '@/components/ui/platform-loader';
+import { PlatformLoadingScreen } from '@proofhound/ui';
 
 export default function Loading() {
   return <PlatformLoadingScreen />;

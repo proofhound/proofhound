@@ -4,8 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Sparkles } from 'lucide-react';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { Button } from '@/components/ui/button';
+import { SidebarInset, SidebarProvider, Button } from '@proofhound/ui';
 import { AppSidebar, type SidebarCollapsible, type SidebarSide, type SidebarVariant } from './app-sidebar';
 import { Header } from './header';
 import { PreferenceControls, ThemeSettingsButton } from './preference-controls';
@@ -17,17 +16,17 @@ import {
   type LayoutPreferences,
 } from './layout-preferences';
 import { getMainNavGroups } from './sidebar-data';
-import { useI18n, type TranslationKey } from '@/i18n';
-import { useProjectContext } from '@/providers/project-context-provider';
-import type { ProjectContext } from '@/lib/project-context';
-import { useCanaryReleaseList } from '@/hooks/canary-release';
-import { useConnector } from '@/hooks/connector';
-import { useDataset } from '@/hooks/dataset';
-import { useExperiment } from '@/hooks/experiment';
-import { useProjectModel } from '@/hooks/model';
-import { useOptimization } from '@/hooks/optimization';
-import { usePrompt } from '@/hooks/prompt';
-import { useReleaseLineList } from '@/hooks/release-line';
+import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
+import { useProjectContext } from '@proofhound/web-ui/providers';
+import type { ProjectContext } from '@proofhound/shared';
+import { useCanaryReleaseList } from '@proofhound/web-ui/hooks';
+import { useConnector } from '@proofhound/web-ui/hooks';
+import { useDataset } from '@proofhound/web-ui/hooks';
+import { useExperiment } from '@proofhound/web-ui/hooks';
+import { useProjectModel } from '@proofhound/web-ui/hooks';
+import { useOptimization } from '@proofhound/web-ui/hooks';
+import { usePrompt } from '@proofhound/web-ui/hooks';
+import { useReleaseLineList } from '@proofhound/web-ui/hooks';
 
 interface AppShellProps {
   children: ReactNode;

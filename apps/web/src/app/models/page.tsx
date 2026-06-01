@@ -1,10 +1,10 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
-import { ModelsListPage } from './_components/models-list-page';
+import { useProjectContext } from '@proofhound/web-ui/providers';
+import { ModelsListScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectModelsPage() {
   const { projectId } = useProjectContext();
 
-  return <ModelsListPage projectId={projectId} />;
+  return <ModelsListScreen projectId={projectId} />;
 }

@@ -1,10 +1,10 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
-import { DatasetsListPage } from './_components/datasets-list-page';
+import { useProjectContext } from '@proofhound/web-ui/providers';
+import { DatasetsListScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectDatasetsPage() {
   const { projectId } = useProjectContext();
 
-  return <DatasetsListPage projectId={projectId} />;
+  return <DatasetsListScreen projectId={projectId} />;
 }

@@ -1,9 +1,9 @@
 'use client';
 
-import { useProjectContext } from '@/providers/project-context-provider';
-import { ConnectorFormPage } from '../_components/connector-form-page';
+import { useProjectContext } from '@proofhound/web-ui/providers';
+import { ConnectorFormScreen } from '@proofhound/web-ui/screens';
 
 export default function ProjectConnectorNewPage() {
   const { projectId } = useProjectContext();
-  return <ConnectorFormPage mode="create" projectId={projectId} />;
+  return <ConnectorFormScreen mode="create" projectId={projectId} />;
 }
