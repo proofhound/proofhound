@@ -248,6 +248,7 @@ async function runAnalysisBatch(
   const result = await invokeLLM(
     {
       model: args.analysisModel,
+      limiterKey: `model:${args.analysisModel.id}`,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -575,6 +576,7 @@ async function runSummarize(
   const result = await invokeLLM(
     {
       model: args.analysisModel,
+      limiterKey: `model:${args.analysisModel.id}`,
       messages,
       params: {
         temperature: args.strategyConfig.temperature,

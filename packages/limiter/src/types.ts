@@ -5,7 +5,9 @@ export interface RateLimitConfig {
 }
 
 export interface AcquireArgs {
-  modelId: string;
+  // Opaque rate-limit key composed by the caller via LimiterKeyStrategy (e.g. `model:<modelId>`).
+  // The limiter is unaware of project/actor — it only counts against this key. See SPEC 08 §3.7.
+  key: string;
   estimatedTokens: number;
   limits: RateLimitConfig;
   // When true, concurrencyLimit is treated as a ceiling and the effective concurrency
@@ -23,19 +25,19 @@ export interface AcquireResult {
 }
 
 export interface ReleaseArgs {
-  modelId: string;
+  key: string;
 }
 
 // Feedback signal used to adapt the auto-concurrency state for a model.
 export interface ReportOutcomeArgs {
-  modelId: string;
+  key: string;
   kind: 'success' | 'upstream_throttle';
   latencyMs?: number; // success only
   tokens?: number; // success only: input + output
 }
 
 export interface UsageSnapshot {
-  modelId: string;
+  key: string;
   rpmUsed: number;
   tpmUsed: number;
   concurrencyInUse: number;
@@ -50,7 +52,7 @@ export interface UsageSnapshot {
 export interface RateLimiter {
   acquire(args: AcquireArgs): Promise<AcquireResult | void>;
   release(args: ReleaseArgs): Promise<void>;
-  getUsage?(modelId: string): Promise<UsageSnapshot>;
+  getUsage?(key: string): Promise<UsageSnapshot>;
   reportOutcome?(args: ReportOutcomeArgs): Promise<void>;
 }
 

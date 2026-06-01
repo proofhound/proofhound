@@ -13,6 +13,7 @@ import {
 import { ModelService } from '../model.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import { LimiterKeyStrategy, LocalLimiterKeyStrategy } from '../../../common/contracts/limiter-key.strategy';
 
 vi.mock('@proofhound/llm-client', () => ({
   __esModule: true,
@@ -134,6 +135,7 @@ describe('ModelService', () => {
         { provide: CryptoService, useValue: crypto },
         { provide: REDIS_LIMITER, useValue: limiter },
         { provide: AccessControlService, useClass: LocalAccessControlService },
+        { provide: LimiterKeyStrategy, useClass: LocalLimiterKeyStrategy },
         ModelService,
       ],
     }).compile();

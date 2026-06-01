@@ -305,6 +305,7 @@ export async function generateInitialVersion(
   const result = await invokeLLM(
     {
       model: args.analysisModel,
+      limiterKey: `model:${args.analysisModel.id}`,
       messages,
       params: {
         temperature: args.strategyConfig.temperature,

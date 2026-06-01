@@ -55,6 +55,7 @@ async function main(): Promise<void> {
   const result = await testModelConnectivity(
     {
       model,
+      limiterKey: `model:${model.id}`,
       requestId: `env-probe-${Date.now()}`,
       timeoutMs: env.MODEL_PROBE_TIMEOUT_MS,
     },

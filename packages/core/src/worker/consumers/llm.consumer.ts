@@ -16,6 +16,7 @@ import {
 } from '@proofhound/orchestration-shared';
 import { DelayedError, type Job } from 'bullmq';
 import type Redis from 'ioredis';
+import { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
 import { DATABASE_CLIENT } from '../../shared/database/database.constants';
 import {
   MODEL_SECRET_RESOLVER,
@@ -41,9 +42,10 @@ export class LlmConsumer extends WorkerHost {
     @Inject(REDIS_LIMITER) limiter: RateLimiter,
     @Inject(MODEL_SECRET_RESOLVER) modelSecretResolver: ModelSecretResolver,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    limiterKeyStrategy: LimiterKeyStrategy,
   ) {
     super();
-    this.runLlmJob = createLlmRunner({ db, limiter, logger: this.logger, modelSecretResolver });
+    this.runLlmJob = createLlmRunner({ db, limiter, limiterKeyStrategy, logger: this.logger, modelSecretResolver });
     this.runResultWriter = new DrizzleRunResultWriter(db);
   }
 

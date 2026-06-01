@@ -359,22 +359,21 @@ Generates rate limit keys.
 | Implementation class | `LocalLimiterKeyStrategy` | `OrgScopedLimiterKeyStrategy` |
 | Key composition | `model:<modelId>` | `org:<orgId>:model:<modelId>` or finer-grained |
 
-Contract draft:
+Realized contract:
 
 ```ts
 export abstract class LimiterKeyStrategy {
-  abstract buildModelKey(
-    actor: ActorContext,
-    project: ProjectContext,
-    modelId: string,
-  ): string;
+  // Keyed by (project, modelId). The limiter is invoked only from the worker / runner, which per §3.8
+  // holds no actor, so the actor is intentionally NOT part of the key — rate limits are per-project
+  // (org) + model, never per-actor.
+  abstract buildModelKey(project: ProjectContext, modelId: string): string;
 }
 ```
 
 Caller constraints:
 
-- The internals of `packages/limiter` are unaware of actor / project, remaining a pure key/value counter
-- The core server / worker runtimes assemble the key using the strategy before calling the limiter
+- The internals of `packages/limiter` are unaware of project, remaining a pure key/value counter; its public arg is renamed `modelId`→`key` so the caller supplies the composed key
+- The worker runtime (the only limiter caller) assembles the key via the strategy from `payload.projectId` + `modelId` and threads it as an OPAQUE `limiterKey` string through `@proofhound/llm-client` to the limiter (`@proofhound/llm-client` stays project-unaware, §8)
 - The source of the rate limit quota configuration (RPM / TPM / concurrency cap) is also indirectly determined by the strategy in the SaaS form (the key prefix determines the counting space)
 - The autostate of auto-concurrency (latency / token EWMA + backoff multiplier) is also per-key state, reusing the same key counting space (`model:<modelId>:autostate` under OSS); changing the key prefix in the strategy naturally isolates it, and the `LimiterKeyStrategy` contract stays unchanged
 

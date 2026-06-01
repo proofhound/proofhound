@@ -40,6 +40,7 @@ const runResult = {
 function baseArgs(): InvokeLLMArgs {
   return {
     model,
+    limiterKey: `model:${model.id}`,
     messages: [{ role: 'user', content: 'hello' }],
     params: { maxTokens: 8, temperature: 0 },
     context: { requestId: 'req-1', dbosWorkflowId: 'wf-1', bullmqJobId: 'job-1', bullmqQueue: 'llm' },
@@ -578,7 +579,7 @@ describe('testModelConnectivity', () => {
     const logger = { debug: vi.fn(), info: vi.fn(), error: vi.fn() };
 
     const result = await testModelConnectivity(
-      { model, requestId: 'probe-1' },
+      { model, limiterKey: `model:${model.id}`, requestId: 'probe-1' },
       { limiter, logger, adapters: [adapter] },
     );
 
@@ -643,7 +644,7 @@ describe('testModelConnectivity', () => {
     const logger = { debug: vi.fn(), info: vi.fn(), error: vi.fn() };
 
     const result = await testModelConnectivity(
-      { model, requestId: 'probe-failed-1' },
+      { model, limiterKey: `model:${model.id}`, requestId: 'probe-failed-1' },
       { limiter, logger, adapters: [adapter] },
     );
 
@@ -703,7 +704,7 @@ describe('testModelConnectivity', () => {
     const logger = { debug: vi.fn(), info: vi.fn(), error: vi.fn() };
 
     const result = await testModelConnectivity(
-      { model, requestId: 'probe-provider-error-1' },
+      { model, limiterKey: `model:${model.id}`, requestId: 'probe-provider-error-1' },
       { limiter, logger, adapters: [adapter] },
     );
 
@@ -759,7 +760,7 @@ describe('testModelConnectivity', () => {
     const logger = { info: vi.fn(), error: vi.fn() };
 
     const result = await testModelConnectivity(
-      { model: { ...model, capabilities: { image: 'both' } }, requestId: 'probe-image-1' },
+      { model: { ...model, capabilities: { image: 'both' } }, limiterKey: `model:${model.id}`, requestId: 'probe-image-1' },
       { limiter, logger, adapters: [adapter] },
     );
 
@@ -909,7 +910,7 @@ describe('invokeLLM — auto-concurrency feedback', () => {
   function autoArgs(): InvokeLLMArgs {
     return { ...baseArgs(), model: autoModel };
   }
-  type ReportArgs = { modelId: string; kind: 'success' | 'upstream_throttle'; latencyMs?: number; tokens?: number };
+  type ReportArgs = { key: string; kind: 'success' | 'upstream_throttle'; latencyMs?: number; tokens?: number };
   function autoLimiter() {
     return {
       acquire: vi.fn(async () => ({ effectiveConcurrency: 5, backoffFactor: 1, latencyEwmaMs: 2000 })),
@@ -933,7 +934,7 @@ describe('invokeLLM — auto-concurrency feedback', () => {
     expect(limiter.acquire).toHaveBeenCalledWith(expect.objectContaining({ autoConcurrency: true }));
     expect(limiter.reportOutcome).toHaveBeenCalledTimes(1);
     expect(limiter.reportOutcome).toHaveBeenCalledWith(
-      expect.objectContaining({ modelId: autoModel.id, kind: 'success', tokens: 10 }),
+      expect.objectContaining({ key: `model:${autoModel.id}`, kind: 'success', tokens: 10 }),
     );
     expect(limiter.reportOutcome.mock.calls[0]![0].latencyMs).toBeGreaterThanOrEqual(0);
   });
@@ -952,7 +953,7 @@ describe('invokeLLM — auto-concurrency feedback', () => {
     );
     expect(limiter.reportOutcome).toHaveBeenCalledTimes(1);
     expect(limiter.reportOutcome).toHaveBeenCalledWith(
-      expect.objectContaining({ modelId: autoModel.id, kind: 'upstream_throttle' }),
+      expect.objectContaining({ key: `model:${autoModel.id}`, kind: 'upstream_throttle' }),
     );
   });
 

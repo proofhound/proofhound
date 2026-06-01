@@ -81,20 +81,20 @@ async function main(): Promise<void> {
 
     // 1) feed the outcome (the feedback signal)
     if (step.kind === 'success') {
-      await limiter.reportOutcome({ modelId: MODEL_ID, kind: 'success', latencyMs: step.latencyMs, tokens: TOKENS });
+      await limiter.reportOutcome({ key: MODEL_ID, kind: 'success', latencyMs: step.latencyMs, tokens: TOKENS });
     } else if (step.kind === 'throttle') {
-      await limiter.reportOutcome({ modelId: MODEL_ID, kind: 'upstream_throttle' });
+      await limiter.reportOutcome({ key: MODEL_ID, kind: 'upstream_throttle' });
     }
 
     // 2) read the authoritative effective the limiter would gate at right now
     const result = await limiter.acquire({
-      modelId: MODEL_ID,
+      key: MODEL_ID,
       estimatedTokens: TOKENS,
       autoConcurrency: true,
       limits: LIMITS,
       timeoutMs: 0,
     });
-    await limiter.release({ modelId: MODEL_ID });
+    await limiter.release({ key: MODEL_ID });
     const { effectiveConcurrency: eff, backoffFactor: bf, latencyEwmaMs: lat } = result ?? {
       effectiveConcurrency: 0,
       backoffFactor: 0,

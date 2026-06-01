@@ -11,6 +11,7 @@ import {
   resolveWorkerConcurrency,
 } from '../../config/worker-concurrency';
 import type { LlmRunnerResult } from '../../runners/llm-runner';
+import { LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
 import { LLM_WORKER_CONCURRENCY, LlmConsumer } from '../llm.consumer';
 
 const validUuid = (suffix: string) => `a1b2c3d4-e5f6-4789-a012-3456789${suffix}`;
@@ -80,7 +81,7 @@ describe('LlmConsumer webhook async receipts', () => {
       ttl: vi.fn().mockResolvedValue(1200),
       set: vi.fn().mockResolvedValue('OK'),
     };
-    const consumer = new LlmConsumer({} as never, {} as never, {} as never, redis as never);
+    const consumer = new LlmConsumer({} as never, {} as never, {} as never, redis as never, new LocalLimiterKeyStrategy());
     const result: LlmRunnerResult = {
       runResultId: validUuid('05555'),
       content: '{"label":"low"}',
@@ -119,7 +120,7 @@ describe('LlmConsumer webhook async receipts', () => {
       ttl: vi.fn().mockResolvedValue(900),
       set: vi.fn().mockResolvedValue('OK'),
     };
-    const consumer = new LlmConsumer({} as never, {} as never, {} as never, redis as never);
+    const consumer = new LlmConsumer({} as never, {} as never, {} as never, redis as never, new LocalLimiterKeyStrategy());
     const writeRunResult = vi.fn().mockResolvedValue(undefined);
     (consumer as unknown as { runResultWriter: { writeRunResult: typeof writeRunResult } }).runResultWriter = {
       writeRunResult,

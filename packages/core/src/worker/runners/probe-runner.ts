@@ -7,13 +7,16 @@ import {
   type LLMCallLogger,
   type ModelConnectivityProbeResult,
 } from '@proofhound/llm-client';
+import { LOCAL_PROJECT_CONTEXT } from '@proofhound/shared';
 import type { ProbeJobPayload } from '@proofhound/orchestration-shared';
+import { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
 import { loadModelInvocationConfig } from './llm-runner';
 import type { ModelSecretResolver } from './model-secret';
 
 export interface ProbeRunnerDependencies {
   db: DbClient;
   limiter: RateLimiter;
+  limiterKeyStrategy: LimiterKeyStrategy;
   logger: LLMCallLogger;
   modelSecretResolver: ModelSecretResolver;
 }
@@ -21,8 +24,10 @@ export interface ProbeRunnerDependencies {
 export function createProbeRunner(deps: ProbeRunnerDependencies) {
   return async function runProbeJob(input: ProbeJobPayload): Promise<ModelConnectivityProbeResult> {
     const model = await loadModelInvocationConfig(deps, input.modelId);
+    // Same key as the LLM runner so a probe shares the model's rate-limit counting space (§3.7).
+    const limiterKey = deps.limiterKeyStrategy.buildModelKey(LOCAL_PROJECT_CONTEXT, input.modelId);
     const result = await testModelConnectivity(
-      { model, requestId: input.requestId, timeoutMs: input.timeoutMs },
+      { model, limiterKey, requestId: input.requestId, timeoutMs: input.timeoutMs },
       { limiter: deps.limiter, logger: deps.logger },
     );
 

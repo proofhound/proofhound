@@ -11,11 +11,11 @@ describe('RedisLimiter', () => {
     const limiter = new RedisLimiter(redis);
 
     await limiter.acquire({
-      modelId: 'model-1',
+      key: 'model-1',
       estimatedTokens: 12,
       limits: { rpmLimit: 60, tpmLimit: 1000, concurrencyLimit: 2 },
     });
-    await limiter.release({ modelId: 'model-1' });
+    await limiter.release({ key: 'model-1' });
 
     expect(evalMock).toHaveBeenCalledTimes(2);
     // ACQUIRE now takes 5 KEYS (rpm/tpm/tpm:total/concurrency/autostate); RELEASE takes 1
@@ -40,7 +40,7 @@ describe('RedisLimiter', () => {
     const limiter = new RedisLimiter(redis);
 
     await limiter.acquire({
-      modelId: 'model-1',
+      key: 'model-1',
       estimatedTokens: 12,
       limits: { rpmLimit: 60, tpmLimit: 1000, concurrencyLimit: 2 },
     });
@@ -58,7 +58,7 @@ describe('RedisLimiter', () => {
 
     await expect(
       limiter.acquire({
-        modelId: 'm',
+        key: 'm',
         estimatedTokens: 12,
         timeoutMs: 0,
         pollIntervalMs: 0,
@@ -76,7 +76,7 @@ describe('RedisLimiter', () => {
 
     await expect(
       limiter.acquire({
-        modelId: 'm',
+        key: 'm',
         estimatedTokens: 5000,
         timeoutMs: 0,
         pollIntervalMs: 0,
@@ -91,7 +91,7 @@ describe('RedisLimiter', () => {
 
     await expect(
       limiter.acquire({
-        modelId: 'm',
+        key: 'm',
         estimatedTokens: 10,
         timeoutMs: 0,
         pollIntervalMs: 0,
@@ -107,7 +107,7 @@ describe('RedisLimiter', () => {
 
     await expect(
       limiter.acquire({
-        modelId: 'm',
+        key: 'm',
         estimatedTokens: 10,
         timeoutMs: 0,
         pollIntervalMs: 0,
@@ -125,7 +125,7 @@ describe('RedisLimiter', () => {
     const redis = { eval: evalMock };
     const limiter = new RedisLimiter(redis);
 
-    await limiter.release({ modelId: 'm' });
+    await limiter.release({ key: 'm' });
     const releaseScript = evalMock.mock.calls[0]?.[0] as string;
     expect(releaseScript).toMatch(/if concurrency <= 0 then/);
     expect(releaseScript).toMatch(/redis\.call\('DEL', KEYS\[1\]\)/);
@@ -142,7 +142,7 @@ describe('RedisLimiter', () => {
     const usage = await limiter.getUsage('model-9');
 
     expect(usage).toMatchObject({
-      modelId: 'model-9',
+      key: 'model-9',
       rpmUsed: 3,
       tpmUsed: 450,
       concurrencyInUse: 2,
@@ -159,7 +159,7 @@ describe('RedisLimiter', () => {
 
     const usage = await limiter.getUsage('cold-model');
     expect(usage).toMatchObject({
-      modelId: 'cold-model',
+      key: 'cold-model',
       rpmUsed: 0,
       tpmUsed: 0,
       concurrencyInUse: 0,
@@ -174,7 +174,7 @@ describe('RedisLimiter', () => {
     const limiter = new RedisLimiter({ eval: evalMock });
 
     const result = await limiter.acquire({
-      modelId: 'm',
+      key: 'm',
       estimatedTokens: 100,
       autoConcurrency: true,
       limits: { rpmLimit: 60, tpmLimit: 1000, concurrencyLimit: 20 },
@@ -198,7 +198,7 @@ describe('RedisLimiter', () => {
     const evalMock = vi.fn(async (_script: string, _keyCount: number, ..._args: Array<string | number>) => 1000);
     const limiter = new RedisLimiter({ eval: evalMock });
 
-    await limiter.reportOutcome({ modelId: 'm', kind: 'success', latencyMs: 1234, tokens: 42 });
+    await limiter.reportOutcome({ key: 'm', kind: 'success', latencyMs: 1234, tokens: 42 });
 
     const call = evalMock.mock.calls[0]!;
     expect(call[0]).toMatch(/HSET/);
@@ -212,7 +212,7 @@ describe('RedisLimiter', () => {
     const evalMock = vi.fn(async (_script: string, _keyCount: number, ..._args: Array<string | number>) => 500);
     const limiter = new RedisLimiter({ eval: evalMock });
 
-    await limiter.reportOutcome({ modelId: 'm', kind: 'upstream_throttle' });
+    await limiter.reportOutcome({ key: 'm', kind: 'upstream_throttle' });
 
     const call = evalMock.mock.calls[0]!;
     expect(call).toContain('upstream_throttle');

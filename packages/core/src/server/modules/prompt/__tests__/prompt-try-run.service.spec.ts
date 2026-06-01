@@ -7,6 +7,7 @@ import type { CryptoService } from '../../../../shared/crypto/crypto.service';
 import type { PromptRepository } from '../prompt.repository';
 import { PromptTryRunService } from '../prompt-try-run.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import { LocalLimiterKeyStrategy } from '../../../common/contracts/limiter-key.strategy';
 
 vi.mock('@proofhound/llm-client', async (importOriginal) => {
   const actual = await importOriginal<object>();
@@ -100,6 +101,7 @@ function buildService(overrides?: {
     dbStub as never,
     limiter as never,
     new LocalAccessControlService(),
+    new LocalLimiterKeyStrategy(),
   );
 
   return { service, promptRepo, crypto };

@@ -102,6 +102,11 @@ export interface LLMJudgmentOutcome {
 
 export interface InvokeLLMArgs {
   model: ModelInvocationConfig;
+  /**
+   * Opaque rate-limit key, built by the caller via LimiterKeyStrategy (SPEC 08 §3.7).
+   * llm-client forwards it to the limiter and never inspects project/actor.
+   */
+  limiterKey: string;
   messages?: LLMMessage[];
   prompt?: string;
   params?: LLMInferenceParams;
@@ -196,8 +201,10 @@ export interface RateLimiterAcquireResult {
 }
 
 export interface RateLimiterLike {
+  // `key` is the opaque rate-limit key built by the runtime via LimiterKeyStrategy. llm-client never
+  // builds it and stays project/actor-unaware (SPEC 08 §3.7 / §8); it just forwards the key.
   acquire(args: {
-    modelId: string;
+    key: string;
     estimatedTokens: number;
     limits: {
       rpmLimit: number;
@@ -206,9 +213,9 @@ export interface RateLimiterLike {
     };
     autoConcurrency?: boolean;
   }): Promise<RateLimiterAcquireResult | void>;
-  release(args: { modelId: string }): Promise<void>;
+  release(args: { key: string }): Promise<void>;
   reportOutcome?(args: {
-    modelId: string;
+    key: string;
     kind: 'success' | 'upstream_throttle';
     latencyMs?: number;
     tokens?: number;
@@ -248,6 +255,8 @@ export interface InvokeLLMResult {
 
 export interface ModelConnectivityProbeArgs {
   model: ModelInvocationConfig;
+  /** Opaque rate-limit key built by the caller via LimiterKeyStrategy (SPEC 08 §3.7). */
+  limiterKey: string;
   requestId?: string;
   timeoutMs?: number;
 }

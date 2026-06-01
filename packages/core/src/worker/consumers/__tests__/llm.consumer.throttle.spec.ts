@@ -2,6 +2,7 @@ import { RateLimitExceededError } from '@proofhound/limiter';
 import { DelayedError } from 'bullmq';
 import { vi } from 'vitest';
 import { LlmConsumer } from '../llm.consumer';
+import { LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
 import * as llmRunnerModule from '../../runners/llm-runner';
 import * as runResultWriterModule from '../../runners/run-result-writer';
 
@@ -39,7 +40,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
     });
     vi.spyOn(llmRunnerModule, 'createLlmRunner').mockReturnValue(runMock);
 
-    const consumer = new LlmConsumer({} as never, {} as never, {} as never, fakeRedis() as never);
+    const consumer = new LlmConsumer({} as never, {} as never, {} as never, fakeRedis() as never, new LocalLimiterKeyStrategy());
     const job = buildJob();
 
     await expect(consumer.process(job as never, 'tok-1')).rejects.toBeInstanceOf(DelayedError);
@@ -61,7 +62,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
         throw new RateLimitExceededError('concurrency', 100);
       });
 
-    const consumer = new LlmConsumer({} as never, {} as never, {} as never, fakeRedis() as never);
+    const consumer = new LlmConsumer({} as never, {} as never, {} as never, fakeRedis() as never, new LocalLimiterKeyStrategy());
     const job = buildJob();
     const before = Date.now();
 
@@ -76,7 +77,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       throw new Error('provider 500');
     });
 
-    const consumer = new LlmConsumer({} as never, {} as never, {} as never, fakeRedis() as never);
+    const consumer = new LlmConsumer({} as never, {} as never, {} as never, fakeRedis() as never, new LocalLimiterKeyStrategy());
     const job = buildJob();
 
     await expect(consumer.process(job as never)).rejects.toThrow('provider 500');
@@ -92,7 +93,7 @@ describe('LlmConsumer.onFailed — final-error run_result write on attempts exha
       .spyOn(runResultWriterModule.DrizzleRunResultWriter.prototype, 'writeRunResult')
       .mockImplementation(writeRunResult);
 
-    const consumer = new LlmConsumer({} as never, {} as never, {} as never, fakeRedis() as never);
+    const consumer = new LlmConsumer({} as never, {} as never, {} as never, fakeRedis() as never, new LocalLimiterKeyStrategy());
 
     const job = {
       id: 'job-final-1',
@@ -133,7 +134,7 @@ describe('LlmConsumer.onFailed — final-error run_result write on attempts exha
       .spyOn(runResultWriterModule.DrizzleRunResultWriter.prototype, 'writeRunResult')
       .mockImplementation(writeRunResult);
 
-    const consumer = new LlmConsumer({} as never, {} as never, {} as never, fakeRedis() as never);
+    const consumer = new LlmConsumer({} as never, {} as never, {} as never, fakeRedis() as never, new LocalLimiterKeyStrategy());
 
     const job = {
       id: 'job-mid-1',

@@ -4,6 +4,7 @@ import type { DbClient } from '@proofhound/db';
 import type { ModelInvocationConfig } from '@proofhound/llm-client';
 import { describe, expect, it, vi } from 'vitest';
 import { applyExperimentLimits, createLlmRunner, loadModelInvocationConfig } from '../llm-runner';
+import { LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
 import { createModelSecretResolver } from '../model-secret';
 
 const invokeLLMMock = vi.hoisted(() => vi.fn());
@@ -90,6 +91,7 @@ describe('runLlmJob — webhook 入口归因透传', () => {
     const runLlmJob = createLlmRunner({
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new LocalLimiterKeyStrategy(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
     });

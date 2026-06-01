@@ -378,7 +378,7 @@ export class RedisLimiter implements RateLimiter {
     const requestMember = randomUUID();
 
     while (true) {
-      const [rpmKey, tpmKey, tpmTotalKey, concurrencyKey, autostateKey] = this.keys(args.modelId);
+      const [rpmKey, tpmKey, tpmTotalKey, concurrencyKey, autostateKey] = this.keys(args.key);
       const result = await this.redis.eval(
         ACQUIRE_SCRIPT,
         5,
@@ -419,12 +419,12 @@ export class RedisLimiter implements RateLimiter {
   }
 
   async release(args: ReleaseArgs): Promise<void> {
-    const concurrencyKey = this.concurrencyKey(args.modelId);
+    const concurrencyKey = this.concurrencyKey(args.key);
     await this.redis.eval(RELEASE_SCRIPT, 1, concurrencyKey, this.concurrencyTtlMs);
   }
 
   async reportOutcome(args: ReportOutcomeArgs): Promise<void> {
-    const autostateKey = this.autostateKey(args.modelId);
+    const autostateKey = this.autostateKey(args.key);
     await this.redis.eval(
       REPORT_SCRIPT,
       1,
@@ -441,8 +441,8 @@ export class RedisLimiter implements RateLimiter {
     );
   }
 
-  async getUsage(modelId: string): Promise<UsageSnapshot> {
-    const [rpmKey, tpmKey, tpmTotalKey, concurrencyKey, autostateKey] = this.keys(modelId);
+  async getUsage(key: string): Promise<UsageSnapshot> {
+    const [rpmKey, tpmKey, tpmTotalKey, concurrencyKey, autostateKey] = this.keys(key);
     const result = await this.redis.eval(
       USAGE_SCRIPT,
       5,
@@ -456,7 +456,7 @@ export class RedisLimiter implements RateLimiter {
     const [rpmUsed, tpmUsed, concurrencyInUse, sampledAtMs, latOut, tokOut, bfOut] = normalizeUsageResult(result);
 
     return {
-      modelId,
+      key,
       rpmUsed,
       tpmUsed,
       concurrencyInUse,
@@ -468,22 +468,22 @@ export class RedisLimiter implements RateLimiter {
     };
   }
 
-  private keys(modelId: string): [string, string, string, string, string] {
+  private keys(key: string): [string, string, string, string, string] {
     return [
-      `${this.keyPrefix}:${modelId}:rpm`,
-      `${this.keyPrefix}:${modelId}:tpm`,
-      `${this.keyPrefix}:${modelId}:tpm:total`,
-      this.concurrencyKey(modelId),
-      this.autostateKey(modelId),
+      `${this.keyPrefix}:${key}:rpm`,
+      `${this.keyPrefix}:${key}:tpm`,
+      `${this.keyPrefix}:${key}:tpm:total`,
+      this.concurrencyKey(key),
+      this.autostateKey(key),
     ];
   }
 
-  private concurrencyKey(modelId: string): string {
-    return `${this.keyPrefix}:${modelId}:concurrency`;
+  private concurrencyKey(key: string): string {
+    return `${this.keyPrefix}:${key}:concurrency`;
   }
 
-  private autostateKey(modelId: string): string {
-    return `${this.keyPrefix}:${modelId}:autostate`;
+  private autostateKey(key: string): string {
+    return `${this.keyPrefix}:${key}:autostate`;
   }
 }
 

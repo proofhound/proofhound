@@ -87,7 +87,7 @@ export async function invokeLLM(args: InvokeLLMArgs, deps: InvokeLLMDependencies
     const provider = resolveLLMAdapter(invocationArgs.model.providerType, deps.adapters);
 
     const acquireResult = await deps.limiter.acquire({
-      modelId: invocationArgs.model.id,
+      key: invocationArgs.limiterKey,
       estimatedTokens: estimated.totalTokens,
       limits: {
         rpmLimit: invocationArgs.model.rpmLimit,
@@ -151,7 +151,7 @@ export async function invokeLLM(args: InvokeLLMArgs, deps: InvokeLLMDependencies
     if (invocationArgs.model.autoConcurrency) {
       try {
         await deps.limiter.reportOutcome?.({
-          modelId: invocationArgs.model.id,
+          key: invocationArgs.limiterKey,
           kind: 'success',
           latencyMs: durationMs,
           tokens: usage.inputTokens + usage.outputTokens,
@@ -207,7 +207,7 @@ export async function invokeLLM(args: InvokeLLMArgs, deps: InvokeLLMDependencies
     // converges to what the provider actually sustains. Best-effort; the original error is still rethrown.
     if (invocationArgs.model.autoConcurrency && error instanceof LLMAdapterHttpError && error.httpStatus === 429) {
       try {
-        await deps.limiter.reportOutcome?.({ modelId: invocationArgs.model.id, kind: 'upstream_throttle' });
+        await deps.limiter.reportOutcome?.({ key: invocationArgs.limiterKey, kind: 'upstream_throttle' });
         deps.logger.debug?.({ modelId: invocationArgs.model.id }, 'limiter_backoff_applied');
       } catch {
         // best-effort
@@ -224,7 +224,7 @@ export async function invokeLLM(args: InvokeLLMArgs, deps: InvokeLLMDependencies
   } finally {
     clearTimeout(timeout);
     if (acquired) {
-      await deps.limiter.release({ modelId: invocationArgs.model.id });
+      await deps.limiter.release({ key: invocationArgs.limiterKey });
     }
   }
 }
@@ -253,7 +253,7 @@ export async function testModelConnectivity(
     // Connectivity probe goes through the limiter but never reports outcomes — a single health check
     // must not pollute the model's auto-concurrency EWMA / backoff state.
     await deps.limiter.acquire({
-      modelId: args.model.id,
+      key: args.limiterKey,
       estimatedTokens: estimated.totalTokens,
       limits: {
         rpmLimit: args.model.rpmLimit,
@@ -350,7 +350,7 @@ export async function testModelConnectivity(
   } finally {
     clearTimeout(timeout);
     if (acquired) {
-      await deps.limiter.release({ modelId: args.model.id });
+      await deps.limiter.release({ key: args.limiterKey });
     }
   }
 }

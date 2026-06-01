@@ -39,12 +39,12 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
   it('enforces RPM and recovers after requests slide out of the window', async () => {
     const limits = { rpmLimit: 2, tpmLimit: 1_000_000, concurrencyLimit: 10 };
 
-    await limiter.acquire({ modelId: 'm1', estimatedTokens: 10, limits, timeoutMs: 0 });
-    await limiter.acquire({ modelId: 'm1', estimatedTokens: 10, limits, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm1', estimatedTokens: 10, limits, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm1', estimatedTokens: 10, limits, timeoutMs: 0 });
 
     await expect(
       limiter.acquire({
-        modelId: 'm1',
+        key: 'm1',
         estimatedTokens: 10,
         limits,
         timeoutMs: 0,
@@ -54,16 +54,16 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
 
     // wait until accepted requests are outside the sliding window
     await sleep(1_200);
-    await limiter.acquire({ modelId: 'm1', estimatedTokens: 10, limits, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm1', estimatedTokens: 10, limits, timeoutMs: 0 });
   }, 10_000);
 
   it('enforces TPM by summing estimatedTokens within the sliding window', async () => {
     const limits = { rpmLimit: 100, tpmLimit: 100, concurrencyLimit: 10 };
 
-    await limiter.acquire({ modelId: 'm2', estimatedTokens: 60, limits, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm2', estimatedTokens: 60, limits, timeoutMs: 0 });
     await expect(
       limiter.acquire({
-        modelId: 'm2',
+        key: 'm2',
         estimatedTokens: 60,
         limits,
         timeoutMs: 0,
@@ -78,7 +78,7 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
     const attempts = await Promise.allSettled(
       Array.from({ length: 5 }).map(() =>
         limiter.acquire({
-          modelId: 'm3',
+          key: 'm3',
           estimatedTokens: 10,
           limits,
           timeoutMs: 0,
@@ -95,25 +95,25 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
 
   it('release floors at zero (does not produce negative concurrency)', async () => {
     // First release three times without any acquire
-    await limiter.release({ modelId: 'm4' });
-    await limiter.release({ modelId: 'm4' });
-    await limiter.release({ modelId: 'm4' });
+    await limiter.release({ key: 'm4' });
+    await limiter.release({ key: 'm4' });
+    await limiter.release({ key: 'm4' });
 
     const usage = await limiter.getUsage('m4');
     expect(usage.concurrencyInUse).toBe(0);
 
     // Subsequent acquire/release works fine; no residual negative value
     const limits = { rpmLimit: 100, tpmLimit: 1_000_000, concurrencyLimit: 1 };
-    await limiter.acquire({ modelId: 'm4', estimatedTokens: 1, limits, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm4', estimatedTokens: 1, limits, timeoutMs: 0 });
     expect((await limiter.getUsage('m4')).concurrencyInUse).toBe(1);
-    await limiter.release({ modelId: 'm4' });
+    await limiter.release({ key: 'm4' });
     expect((await limiter.getUsage('m4')).concurrencyInUse).toBe(0);
   });
 
   it('concurrency key self-heals via TTL after process crash (no release)', async () => {
     const limits = { rpmLimit: 1000, tpmLimit: 1_000_000, concurrencyLimit: 1 };
 
-    await limiter.acquire({ modelId: 'm5', estimatedTokens: 1, limits, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm5', estimatedTokens: 1, limits, timeoutMs: 0 });
     expect((await limiter.getUsage('m5')).concurrencyInUse).toBe(1);
 
     // Simulate "process crashed without releasing" — wait concurrencyTtlMs (200ms) to expire
@@ -121,14 +121,14 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
 
     expect((await limiter.getUsage('m5')).concurrencyInUse).toBe(0);
     // Now acquire can proceed again
-    await limiter.acquire({ modelId: 'm5', estimatedTokens: 1, limits, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm5', estimatedTokens: 1, limits, timeoutMs: 0 });
     expect((await limiter.getUsage('m5')).concurrencyInUse).toBe(1);
   }, 5_000);
 
   it('getUsage returns current sliding-window rpm/tpm/concurrency snapshot', async () => {
     const limits = { rpmLimit: 100, tpmLimit: 1_000_000, concurrencyLimit: 10 };
-    await limiter.acquire({ modelId: 'm6', estimatedTokens: 25, limits, timeoutMs: 0 });
-    await limiter.acquire({ modelId: 'm6', estimatedTokens: 25, limits, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm6', estimatedTokens: 25, limits, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm6', estimatedTokens: 25, limits, timeoutMs: 0 });
 
     const usage = await limiter.getUsage('m6');
     expect(usage.rpmUsed).toBe(2);
@@ -139,7 +139,7 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
 
   it('getUsage prunes expired RPM and TPM entries', async () => {
     const limits = { rpmLimit: 100, tpmLimit: 1_000_000, concurrencyLimit: 10 };
-    await limiter.acquire({ modelId: 'm7', estimatedTokens: 25, limits, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm7', estimatedTokens: 25, limits, timeoutMs: 0 });
     expect((await limiter.getUsage('m7')).rpmUsed).toBe(1);
 
     await sleep(1_200);
@@ -158,11 +158,11 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
     const limits = { rpmLimit: 60, tpmLimit: -1, concurrencyLimit: 50 };
 
     for (let i = 0; i < 5; i += 1) {
-      await limiter.acquire({ modelId: 'a1', estimatedTokens: 100, limits, autoConcurrency: true, timeoutMs: 0 });
+      await limiter.acquire({ key: 'a1', estimatedTokens: 100, limits, autoConcurrency: true, timeoutMs: 0 });
     }
     await expect(
       limiter.acquire({
-        modelId: 'a1',
+        key: 'a1',
         estimatedTokens: 100,
         limits,
         autoConcurrency: true,
@@ -179,10 +179,10 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
 
     // Without autoConcurrency, 8 (the ceiling) in-flight all succeed
     for (let i = 0; i < 8; i += 1) {
-      await limiter.acquire({ modelId: 'a2', estimatedTokens: 10, limits, timeoutMs: 0 });
+      await limiter.acquire({ key: 'a2', estimatedTokens: 10, limits, timeoutMs: 0 });
     }
     await expect(
-      limiter.acquire({ modelId: 'a2', estimatedTokens: 10, limits, timeoutMs: 0, pollIntervalMs: 0 }),
+      limiter.acquire({ key: 'a2', estimatedTokens: 10, limits, timeoutMs: 0, pollIntervalMs: 0 }),
     ).rejects.toMatchObject({ reason: 'concurrency' });
   });
 
@@ -194,7 +194,7 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
       backoffFloor: 0.1,
     });
     for (let i = 0; i < 10; i += 1) {
-      await tuned.reportOutcome({ modelId: 'a3', kind: 'upstream_throttle' });
+      await tuned.reportOutcome({ key: 'a3', kind: 'upstream_throttle' });
     }
     const usage = await tuned.getUsage('a3');
     expect(usage.backoffFactor).toBeCloseTo(0.1, 5);
@@ -210,9 +210,9 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
       backoffFloor: 0.1,
     });
     // Drive backoff down first, then recover with successes
-    await tuned.reportOutcome({ modelId: 'a4', kind: 'upstream_throttle' }); // bf: 1 → 0.5
-    await tuned.reportOutcome({ modelId: 'a4', kind: 'success', latencyMs: 2000, tokens: 500 }); // bf: 0.55
-    await tuned.reportOutcome({ modelId: 'a4', kind: 'success', latencyMs: 2000, tokens: 500 }); // bf: 0.60
+    await tuned.reportOutcome({ key: 'a4', kind: 'upstream_throttle' }); // bf: 1 → 0.5
+    await tuned.reportOutcome({ key: 'a4', kind: 'success', latencyMs: 2000, tokens: 500 }); // bf: 0.55
+    await tuned.reportOutcome({ key: 'a4', kind: 'success', latencyMs: 2000, tokens: 500 }); // bf: 0.60
 
     const usage = await tuned.getUsage('a4');
     expect(usage.backoffFactor).toBeCloseTo(0.6, 5);
@@ -223,8 +223,8 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
 
   it('throttle never touches latency/token EWMA', async () => {
     const tuned = new RedisLimiter(redis, { keyPrefix, windowMs: 1_000 });
-    await tuned.reportOutcome({ modelId: 'a5', kind: 'success', latencyMs: 3000, tokens: 800 });
-    await tuned.reportOutcome({ modelId: 'a5', kind: 'upstream_throttle' });
+    await tuned.reportOutcome({ key: 'a5', kind: 'success', latencyMs: 3000, tokens: 800 });
+    await tuned.reportOutcome({ key: 'a5', kind: 'upstream_throttle' });
     const usage = await tuned.getUsage('a5');
     expect(usage.latencyEwmaMs).toBe(3000);
     expect(usage.tokensEwma).toBe(800);

@@ -27,9 +27,11 @@ import type {
   UpdateProjectModelDto,
   UpsertModelContextWindowDto,
 } from '@proofhound/shared';
+import { LOCAL_PROJECT_CONTEXT } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { REDIS_LIMITER } from '../../../shared/redis/redis.constants';
@@ -65,6 +67,7 @@ export class ModelService {
     private readonly crypto: CryptoService,
     @Inject(REDIS_LIMITER) private readonly limiter: RateLimiter,
     private readonly accessControl: AccessControlService,
+    private readonly limiterKeyStrategy: LimiterKeyStrategy,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -507,7 +510,12 @@ export class ModelService {
 
   private runConnectivityProbe(model: ModelInvocationConfig, requestId: string) {
     return testModelConnectivity(
-      { model, requestId, timeoutMs: 30_000 },
+      {
+        model,
+        limiterKey: this.limiterKeyStrategy.buildModelKey(LOCAL_PROJECT_CONTEXT, model.id),
+        requestId,
+        timeoutMs: 30_000,
+      },
       {
         limiter: this.limiter,
         logger: this.logger,
@@ -553,8 +561,10 @@ export class ModelService {
   private async fetchUsageSnapshot(modelId: string): Promise<UsageSnapshot | null> {
     if (!this.limiter.getUsage) return null;
     try {
+      // Query the same key the worker counts against (§3.7) so usage reflects real rate-limit state.
+      const key = this.limiterKeyStrategy.buildModelKey(LOCAL_PROJECT_CONTEXT, modelId);
       return await withTimeout(
-        this.limiter.getUsage(modelId),
+        this.limiter.getUsage(key),
         MODEL_USAGE_SNAPSHOT_TIMEOUT_MS,
         `limiter_getUsage_timeout:${modelId}`,
       );

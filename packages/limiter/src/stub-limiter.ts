@@ -14,9 +14,9 @@ export class StubLimiter implements RateLimiter {
     return;
   }
 
-  async getUsage(modelId: string): Promise<UsageSnapshot> {
+  async getUsage(key: string): Promise<UsageSnapshot> {
     return {
-      modelId,
+      key,
       rpmUsed: 0,
       tpmUsed: 0,
       concurrencyInUse: 0,
