@@ -6,7 +6,6 @@ import {
   Inject,
   Injectable,
   RequestTimeoutException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { createLogger } from '@proofhound/logger';
 import {
@@ -27,15 +26,16 @@ import type {
   PromptVariableDto,
 } from '@proofhound/shared';
 import type Redis from 'ioredis';
+import { ConnectorContextResolver } from '../../../server/common/contracts/connector-context.resolver';
 import { BullmqService } from '../../infrastructure/orchestration/bullmq.service';
 import { REDIS_CLIENT } from '../../../shared/redis/redis.constants';
 import {
   WebhookRepository,
-  type WebhookConnectorRow,
   type WebhookReleaseRuntimeLineRow,
   type WebhookReleaseRuntimeRow,
   type WebhookRunResultRow,
 } from './webhook.repository';
+import { parseBearerToken } from './webhook-token.util';
 
 const DEFAULT_SYNC_TIMEOUT_MS = 30_000;
 const POLL_INTERVAL_MS = 500;
@@ -66,10 +66,15 @@ export class WebhookService {
     @Inject(WebhookRepository) private readonly repo: WebhookRepository,
     @Inject(BullmqService) private readonly bullmq: BullmqService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly connectorResolver: ConnectorContextResolver,
   ) {}
 
   async receive(input: ReceiveWebhookInput) {
-    const { connector, tokenId } = await this.authorizeConnector(input);
+    const { connector, webhookTokenId } = await this.connectorResolver.resolveFromWebhookToken(
+      input.webhookSlug,
+      input.pathName,
+      parseBearerToken(input.authorization),
+    );
     const releaseLine = await this.repo.findActiveReleaseForConnector(connector.id);
     if (!releaseLine) {
       throw new ConflictException('webhook_no_active_release');
@@ -121,7 +126,7 @@ export class WebhookService {
         payload,
         mapped.externalId,
         runResultId,
-        tokenId,
+        webhookTokenId,
         asyncCall,
       );
       try {
@@ -173,42 +178,17 @@ export class WebhookService {
   }
 
   async getCallResult(input: GetWebhookCallInput) {
-    const { connector } = await this.authorizeConnector(input);
+    const { connector } = await this.connectorResolver.resolveFromWebhookToken(
+      input.webhookSlug,
+      input.pathName,
+      parseBearerToken(input.authorization),
+    );
     const receipt = await this.readAsyncCall(input.callId);
     if (!receipt || receipt.projectId !== connector.projectId || receipt.connectorId !== connector.id) {
       return { status: 'expired', call_id: input.callId, expires_in_seconds: 0 };
     }
     const expiresInSeconds = await this.getAsyncCallExpiresInSeconds(input.callId, receipt);
     return formatAsyncCallReceipt(receipt, expiresInSeconds);
-  }
-
-  /**
-   * Validates inbound webhook credentials:
-   * - looks up the connector + its active webhook token via slug + pathName + token_hash in a single query;
-   * - any "connector does not exist / token does not match" uniformly returns 401 `invalid_webhook_token` to avoid enumeration;
-   * - expired returns `expired_webhook_token` separately, distinguished from invalid for upstream operations.
-   *
-   * See docs/specs/03-orchestration.md §3.6.
-   */
-  private async authorizeConnector(input: {
-    webhookSlug: string;
-    pathName: string;
-    authorization: string | null;
-  }): Promise<{ connector: WebhookConnectorRow; tokenId: string }> {
-    const token = parseBearerToken(input.authorization);
-    const tokenHash = createHash('sha256').update(token).digest('hex');
-    const result = await this.repo.findConnectorWithValidToken(
-      normalizeSlug(input.webhookSlug),
-      normalizePathName(input.pathName),
-      tokenHash,
-    );
-    if (!result) throw new UnauthorizedException('invalid_webhook_token');
-    const expiresAt = result.tokenExpiresAt ? new Date(result.tokenExpiresAt).getTime() : null;
-    if (expiresAt !== null && expiresAt <= Date.now()) {
-      throw new UnauthorizedException('expired_webhook_token');
-    }
-    await this.repo.touchTokenLastUsed(result.tokenId);
-    return { connector: result.connector, tokenId: result.tokenId };
   }
 
   private async waitForRunResult(runResultId: string, timeoutMs: number): Promise<WebhookRunResultRow> {
@@ -255,24 +235,6 @@ export class WebhookService {
     if (ttl > 0) return ttl;
     return remainingWebhookAsyncCallTtlSeconds(receipt.expiresAt);
   }
-}
-
-function parseBearerToken(header: string | null): string {
-  const match = /^Bearer\s+(.+)$/iu.exec(header ?? '');
-  if (!match?.[1]) throw new UnauthorizedException('missing_api_token');
-  return match[1].trim();
-}
-
-function normalizeSlug(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function normalizePathName(value: string): string {
-  return value
-    .split('/')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join('/');
 }
 
 function assertRecord(value: unknown): Record<string, unknown> {

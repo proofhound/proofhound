@@ -6,6 +6,7 @@ import {
 } from '@proofhound/orchestration-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BullmqService } from '../../../infrastructure/orchestration/bullmq.service';
+import { LocalConnectorContextResolver } from '../local-connector-context.resolver';
 import type { WebhookRepository, WebhookRunResultRow } from '../webhook.repository';
 import { WebhookService } from '../webhook.service';
 
@@ -120,7 +121,15 @@ describe('WebhookService', () => {
   });
 
   function makeService(repo: ReturnType<typeof makeRepo>) {
-    return new WebhookService(repo as unknown as WebhookRepository, bullmq as BullmqService, redis as never);
+    // The connector resolver delegates to the same repo, so the existing repo-call assertions
+    // (findConnectorWithValidToken / touchTokenLastUsed / invalid|expired_webhook_token) still hold.
+    const resolver = new LocalConnectorContextResolver(repo as unknown as WebhookRepository);
+    return new WebhookService(
+      repo as unknown as WebhookRepository,
+      bullmq as BullmqService,
+      redis as never,
+      resolver,
+    );
   }
 
   it('authenticates a public webhook path and enqueues a release LLM job', async () => {
