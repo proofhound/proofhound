@@ -21,6 +21,7 @@ import { QuickStartModule } from './modules/quick-start/quick-start.module';
 import { ReleaseLineModule } from './modules/release-line/release-line.module';
 import { RunResultModule } from './modules/run-result/run-result.module';
 import { TokenModule } from './modules/token/token.module';
+import { McpModule } from './channels/mcp/mcp.module';
 
 // ProofHoundServerModule — the shared server root module, assembled as a dynamic module via forRoot
 // so the `contracts` adapter bindings are supplied at boot instead of hard-coded. OSS passes
@@ -60,6 +61,7 @@ export class ProofHoundServerModule {
         ConnectorModule,
         CanaryReleaseModule,
         ProductionReleaseModule,
+        McpModule,
       ],
       controllers: [HealthController],
       providers: [HealthService],

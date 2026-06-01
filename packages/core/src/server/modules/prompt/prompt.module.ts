@@ -10,6 +10,6 @@ import { PromptService } from './prompt.service';
   imports: [DatabaseModule, RedisModule],
   controllers: [PromptController],
   providers: [PromptRepository, PromptService, PromptTryRunService],
-  exports: [PromptService, PromptRepository],
+  exports: [PromptService, PromptRepository, PromptTryRunService],
 })
 export class PromptModule {}

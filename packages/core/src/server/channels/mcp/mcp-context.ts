@@ -1,54 +1,33 @@
 // mcp-context — actor / project context adapter for MCP tool entrypoints
-// See docs/specs/08-saas-adapter-boundary.md §3.3
+// See docs/specs/08-saas-adapter-boundary.md §3.3 and docs/specs/09-mcp-server.md.
 //
-// Current state:
-//   - OSS has not yet mounted a real MCP transport (mcp.controller.ts is an empty controller);
-//     `McpToolContext` is the placeholder shape used during tool dispatch; historically the actor field was passed in directly by the caller.
-//   - This file no longer hardcodes a default actor and instead relies on:
-//       1) `getMcpActor`: the tool already has the caller-provided actor (backward compatible) and returns it directly;
-//          throws if missing — forcing callers to invoke `resolveMcpActor(metadata)` first during dispatch.
-//       2) `resolveMcpActor`: wired to McpAuthResolver, performing real validation against MCP protocol metadata.
-//          This will be the standard entrypoint once the MCP transport adapter lands.
-//
-// TODO(mcp-transport): once the MCP transport is actually wired up, the transport adapter should call
-// `resolveMcpActor(metadata)` before each tool dispatch and write the result into McpToolContext.actor,
-// then invoke the tool handler — so every handler obtains the resolver-validated actor via `getMcpActor(ctx)`.
+// The MCP transport (mcp.transport.ts) authenticates each request and builds the McpToolContext via
+// `McpDispatchContextFactory.build(metadata)` BEFORE dispatching a tool, so every tool handler obtains
+// the resolver-validated actor through `getMcpActor(ctx)`. There is no unauthenticated fallback.
 
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { LOCAL_PROJECT_CONTEXT, type ProjectContext } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { McpAuthResolver } from '../../common/contracts/mcp-auth.resolver';
 import { ProjectContextResolver } from '../../common/contracts/project-context.resolver';
 import type { McpRequestMetadataLike } from '../../common/contracts/types';
-import { resolveProjectContext } from '../../common/project-context';
 import type { ActorContext } from '../../common/actor-context';
 import type { McpToolContext } from './mcp.types';
 
 /**
- * Extracts the actor from an already-dispatched McpToolContext.
- * The caller must populate ctx.actor first via resolveMcpActor / the dispatch layer.
- *
- * Backward compatibility: if ctx.actor is missing but ctx.actorUserId is present, fall back to the legacy behavior.
- * This fallback will be removed once the MCP transport adapter lands (at which point ctx.actor must be injected by the resolver).
+ * Extracts the resolver-validated actor from a dispatched McpToolContext. The MCP transport
+ * (mcp.transport.ts) always injects `ctx.actor` via McpDispatchContextFactory; a missing actor means
+ * the request was not authenticated, so this throws rather than synthesizing a default.
  */
 export function getMcpActor(ctx: McpToolContext): CurrentUserPayload {
-  if (ctx.actor) return ctx.actor;
-
-  // Fallback: the MCP transport is not yet wired up; keep dev / internal scripts working.
-  // Once the MCP transport lands, this path should throw UnauthorizedException instead.
-  const projectContext = resolveProjectContext();
-  return {
-    sub: ctx.actorUserId,
-    actorId: ctx.actorUserId,
-    actorKind: 'system_mcp',
-    projectId: projectContext.projectId,
-    email: ctx.email ?? '',
-    isSuperAdmin: ctx.isSuperAdmin ?? false,
-    isActive: true,
-  };
+  if (!ctx.actor) throw new UnauthorizedException('missing_user_token');
+  return ctx.actor;
 }
 
-export function resolveMcpProjectContext(ctx: McpToolContext) {
-  return resolveProjectContext(getMcpActor(ctx));
+/** The ProjectContext carried by the validated actor (resolved by ProjectContextResolver at dispatch). */
+export function resolveMcpProjectContext(ctx: McpToolContext): ProjectContext {
+  const actor = getMcpActor(ctx);
+  return { projectId: actor.projectId ?? LOCAL_PROJECT_CONTEXT.projectId, source: 'local' };
 }
 
 /**
