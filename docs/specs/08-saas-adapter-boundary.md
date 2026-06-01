@@ -10,22 +10,36 @@ This document describes the boundary between the open-source self-hosted edition
 
 | Repository | Role |
 | ---- | ---- |
-| `proofhound` (OSS, this repository) | Business implementation + adapter extension points + local default implementations |
-| Separate SaaS repository | Depends on OSS packages, overrides extension points, adds multi-tenant control plane business |
+| `proofhound` (OSS, this repository) | Business implementation packaged through `@proofhound/core` + adapter extension points + local default implementations + OSS process shells |
+| Separate SaaS repository | Depends on OSS packages (`@proofhound/core` and foundational `@proofhound/*` packages), overrides extension points, adds multi-tenant control plane business |
 
 The OSS trunk must always run standalone in a "local single project + default implementation" form; the SaaS repository does not exist in this repository, nor does this repository carry an edition branch.
 
 Form reference: this design follows the "open-core + adapter override" pattern (close to GitLab CE/EE, Sentry SaaS), distinct from Supabase's "multi-instance + outer orchestration" pattern. Both forms have their trade-offs; ProofHound chose adapter override based on a realistic judgment about team size and a single-tenant shared business codebase.
 
-## 2. Adapter injection mechanism
+## 2. Core package and adapter injection mechanism
 
-The OSS trunk does not yet undergo an npm packaging overhaul; `apps/*` and `packages/*` are still organized as a pnpm workspace. How the SaaS repository references OSS source is outside the scope of this SPEC (git submodule / workspace sub-project / fork-and-extend are all acceptable), but the OSS must guarantee the following contracts:
+The reusable backend runtime is exported from `packages/core` as `@proofhound/core`. `apps/server`, `apps/webhook`, and `apps/worker` are OSS process shells only; they are not library entry points, and the SaaS repository must not import them through deep paths or app-level barrels.
 
-- Public exports of `packages/*` are stable; any breaking export change is treated as a breaking change
+During local development the SaaS repository may consume the OSS packages through a workspace link, local tarballs, or a local registry. The import surface must still be the same package exports used by npm distribution, for example `@proofhound/core/server` and `@proofhound/core/contracts`; local source paths under `apps/*` are never the integration contract.
+
+The OSS must guarantee the following contracts:
+
+- Public exports of `@proofhound/core` and other `packages/*` packages are stable; any breaking export change is treated as a breaking change
+- `@proofhound/core` declares dependencies on the foundational OSS packages it uses (`@proofhound/shared`, `@proofhound/db`, `@proofhound/logger`, etc.) instead of bundling duplicate copies of them into one artifact
+- `@proofhound/core` exposes stable subpaths for the reusable runtime:
+  - `@proofhound/core/server`: `ProofHoundServerModule.forRoot({ contracts })`
+  - `@proofhound/core/webhook`: `ProofHoundWebhookModule`
+  - `@proofhound/core/worker`: `ProofHoundWorkerModule`
+  - `@proofhound/core/contracts`: abstract-class DI tokens and OSS local defaults
 - All extension points are injected via DI tokens (abstract class); internal OSS code never hard-imports the concrete classes of the default implementations
-- Top-level Nest modules must be importable externally and any extension point replaceable via `overrideProvider`
+- The core server module is assembled as a dynamic module via `ProofHoundServerModule.forRoot({ contracts })`. The `contracts` argument is a `@Global` module that binds every extension-point token to a concrete implementation: the OSS shell passes `LocalContractsModule` (the `Local*` defaults), a SaaS shell passes its own `SaasContractsModule` (the `Remote*` implementations). Assembly-time injection through `forRoot` is the **production** mechanism for replacing extension points; OSS business code never learns which `contracts` module was supplied, and no edition flag is introduced (cf. §8)
+- `overrideProvider` (`Test.createTestingModule(...).overrideProvider(X)`) is reserved strictly as a **test-time** replacement primitive—`@nestjs/testing` must never enter the production bundle. Production form differences are carried solely by the `contracts` module handed to `forRoot`, not by `overrideProvider`
+- App-level barrels are not an accepted integration mechanism. If runtime code must be shared, it belongs in `packages/core` and is exported by `@proofhound/core`, not by `apps/server/src/index.ts` or equivalent.
 
-DI tokens uniformly use abstract class form (e.g. `ProjectContextResolver`), not Symbol—cross-package shared Symbol token behavior is unstable.
+DI tokens uniformly use abstract class form (e.g. `ProjectContextResolver`), not Symbol—cross-package shared Symbol token behavior is unstable. The `contracts` module passed to `forRoot` is the only edition-variable input, keeping OSS↔SaaS to a single assembly-time seam rather than a runtime branch.
+
+> Current state (2026-05): PR0 has landed — the reusable runtime lives in `packages/core` (`@proofhound/core`, internal layout `src/{shared,server,webhook,worker}`) and the OSS apps are thin process shells consuming it; `ProofHoundServerModule.forRoot({ contracts })` is wired in `apps/server/src/main.ts`. `@proofhound/core` is currently a **workspace-internal TS-source package** (`private: true`, `main`/`exports` point at `src/`, consumed via source like the other `@proofhound/*` packages — its `tsc` `dist/` is not the integration artifact and nothing consumes it yet). A formal published / tarball package build is a **separate future step**, not required for the workspace-link / local-tarball / local-registry consumption noted above. The three landed extension points (§3.1–§3.3) are already abstract-class tokens; the remaining six (§3.4–§3.8, see §7 PR6–10) join the same `contracts` module as they land.
 
 ## 3. Extension point list
 
@@ -55,7 +69,7 @@ Current OSS state (audit Explore report 2026-05):
 
 - The HTTP entry guard is a stub that directly injects a hardcoded LOCAL_ACTOR and performs no real token validation
 - The MCP entry has zero pre-validation; the token is the responsibility of the MCP client side
-- The webhook entry already has real token validation (`apps/webhook/src/channels/webhook/webhook.service.ts:185-206`); the error code `invalid_webhook_token` is already distinguished from the user token failure code `invalid_user_token`
+- The webhook entry already has real token validation (`packages/core/src/webhook/channels/webhook/webhook.service.ts:185-206`); the error code `invalid_webhook_token` is already distinguished from the user token failure code `invalid_user_token`
 
 The three entry resolvers defined in this section serve a dual purpose: "completing real OSS validation" and "providing a SaaS adapter integration point". The OSS default implementations `LocalActorContextResolver` / `LocalMcpAuthResolver` / `LocalConnectorContextResolver` must perform real validation; they are not no-ops.
 
@@ -86,12 +100,12 @@ Call entries:
 
 - **HTTP Controller** invokes the resolver indirectly via the `@CurrentProject()` decorator
 - **MCP channel** obtains the resolver via DI in `mcp-context.ts` and calls it explicitly
-- **Webhook entry (`apps/webhook`): does not call this resolver**. Webhook credentials do not represent the project administrator; `ConnectorContextResolver` (§3.4) produces the ProjectContext + ActorContext in one shot; under OSS the projectId is fixed to LOCAL, and after the SaaS replaces the resolver the real projectId is determined by the connector configuration
+- **Webhook entry (core webhook runtime mounted by `apps/webhook`): does not call this resolver**. Webhook credentials do not represent the project administrator; `ConnectorContextResolver` (§3.4) produces the ProjectContext + ActorContext in one shot; under OSS the projectId is fixed to LOCAL, and after the SaaS replaces the resolver the real projectId is determined by the connector configuration
 - **DBOS workflow / BullMQ handler do not call the resolver**—the projectId has already been validated by the entry at enqueue time and written into the payload; inside the workflow only the payload is trusted
 
 ### 3.2 ActorContextResolver
 
-Dedicated to the HTTP entry (`apps/server` Controller): resolves the identity credential in the request into an `ActorContext`. The HTTP entry **carries two sources at the same time**—external API calls (script / CI / third party) and browser UI sessions—branched at the request layer by the same resolver. The MCP entry belongs to §3.3, the webhook entry to §3.4.
+Dedicated to the HTTP entry (core server Controllers mounted by the `apps/server` OSS shell): resolves the identity credential in the request into an `ActorContext`. The HTTP entry **carries two sources at the same time**—external API calls (script / CI / third party) and browser UI sessions—branched at the request layer by the same resolver. The MCP entry belongs to §3.3, the webhook entry to §3.4.
 
 | Item | OSS default | SaaS expectation |
 | -- | -------- | --------- |
@@ -121,7 +135,7 @@ export abstract class ActorContextResolver {
 
 API tokens must adopt the `ph_` prefix to distinguish them from the JWT form—this is a convention, not an env configuration. The token generation side (`POST /tokens`) uniformly outputs plaintext with the `ph_` prefix; the resolver side **does not strip the prefix** before hash comparison (the prefix is part of the token entity and participates in the hash).
 
-`ActorContext` is actually shaped like `{ actorId, actorKind, projectId? }` (see `apps/server/src/common/actor-context.ts`). `actorKind` is a flat enum, **not** a colon-namespaced string—the specific id is held separately in `actorId`, not encoded into kind. The parts produced by the HTTP entry:
+`ActorContext` is actually shaped like `{ actorId, actorKind, projectId? }` (`packages/core/src/server/common/actor-context.ts`). `actorKind` is a flat enum, **not** a colon-namespaced string—the specific id is held separately in `actorId`, not encoded into kind. The parts produced by the HTTP entry:
 
 - `actorKind='script'`: the script actor corresponding to a user token under the API channel, `actorId`=token row id (common to OSS / SaaS)
 - `actorKind='local_user'`: the user under the UI channel. Under OSS, `actorId`=`LOCAL_ACTOR_ID` (the trusted header hit and the LOCAL_ACTOR fallback share the same actorKind); under SaaS, `actorId`=Supabase `sub`, with role/org placed in `actor.claims`
@@ -181,7 +195,7 @@ Reasons for not supporting formation C: a built-in login system requires subsyst
 
 ### 3.3 McpAuthResolver
 
-Dedicated to the MCP channel (`apps/server/src/channels/mcp/`): resolves the user token carried in the MCP request metadata into an `ActorContext`. **Independent of `ActorContextResolver`**—although under OSS the HTTP / MCP entries share the same user token resource pool, the two entries are handled by independent resolvers, and the SaaS form can override them separately (e.g. SaaS HTTP integrates a Supabase JWT while MCP still uses static tokens).
+Dedicated to the MCP channel (`packages/core/src/server/channels/mcp/`): resolves the user token carried in the MCP request metadata into an `ActorContext`. **Independent of `ActorContextResolver`**—although under OSS the HTTP / MCP entries share the same user token resource pool, the two entries are handled by independent resolvers, and the SaaS form can override them separately (e.g. SaaS HTTP integrates a Supabase JWT while MCP still uses static tokens).
 
 | Item | OSS default | SaaS expectation |
 | -- | -------- | --------- |
@@ -220,7 +234,7 @@ SaaS replacement constraints:
 
 ### 3.4 ConnectorContextResolver
 
-Dedicated to the webhook entry (`apps/webhook`): resolves `(:webhookSlug, :pathName) + webhook token` into a connector context, then produces a `ProjectContext` and a system actor. **Independent of `ActorContextResolver` (§3.2) / `McpAuthResolver` (§3.3)**; the credential systems are not reused.
+Dedicated to the core webhook entry runtime mounted by `apps/webhook`: resolves `(:webhookSlug, :pathName) + webhook token` into a connector context, then produces a `ProjectContext` and a system actor. **Independent of `ActorContextResolver` (§3.2) / `McpAuthResolver` (§3.3)**; the credential systems are not reused.
 
 | Item | OSS default | SaaS expectation |
 | -- | -------- | --------- |
@@ -273,7 +287,7 @@ Usage statistics per token:
 
 ### 3.5 TokenService
 
-CRUD for user tokens. **Current state**: `apps/server/src/modules/token/token.service.ts` is a concrete `@Injectable()` that only handles `scope='user'`; the token→`ActorContext` validation (hash comparison / expiry) is **not in this service**, but split into `LocalUserTokenVerifier`, reused by `ActorContextResolver` (§3.2) / `McpAuthResolver` (§3.3). The abstract seam is a TODO in §7 PR7.
+CRUD for user tokens. **Current state**: `TokenService` is a concrete `@Injectable()` (`packages/core/src/server/modules/token/`) that only handles `scope='user'`; the token→`ActorContext` validation (hash comparison / expiry) is **not in this service**, but split into `LocalUserTokenVerifier`, reused by `ActorContextResolver` (§3.2) / `McpAuthResolver` (§3.3). The abstract seam is a TODO in §7 PR7.
 
 | Item | OSS default | SaaS expectation |
 | -- | -------- | --------- |
@@ -310,33 +324,30 @@ Decides whether `actor + project + action` is allowed.
 
 | Item | OSS default | SaaS expectation |
 | -- | -------- | --------- |
-| Implementation class | Currently a concrete singleton `SelfHostedAccessControl` (`apps/server/src/common/access-control.ts`, exports `const accessControl`); PR8 extracts an abstract `AccessControlService` + default implementation | `RbacAccessControl` |
+| Implementation class | Abstract `AccessControlService` + OSS default `LocalAccessControlService` (`packages/core/src/server/common/contracts/`), DI-bound in `LocalContractsModule` (landed PR8) | `RbacAccessControl` |
 | Behavior | `system_*` + `local_user` all pass; `script` passes but is forbidden `platform_manage` (to prevent token privilege escalation); everything else forbidden | Checks based on the actor's org membership + role |
 
 Contract draft:
 
 ```ts
-// Current state (concrete singleton, sync, apps/server/src/common/access-control.ts):
+// Landed (PR8). AccessAction + the toActorContext() normalizer live in
+// packages/core/src/server/common/access-control.ts; the seam lives in common/contracts/.
 export type AccessAction =
   | 'project_read' | 'project_write' | 'release_manage'
   | 'platform_manage' | 'user_token_manage' | 'mcp_tool';
 
-class SelfHostedAccessControl {
-  assertCan(actor: ActorContext | CurrentUserPayload, action: AccessAction, context?: Partial<ProjectContext>): void;
-}
-export const accessControl = new SelfHostedAccessControl();
-
-// PR8 (§7) target abstract seam — SaaS RBAC needs project + action, so the signature is upgraded to three params + async + DI:
 export abstract class AccessControlService {
   abstract assertCan(actor: ActorContext, project: ProjectContext, action: AccessAction): Promise<void>;
 }
+// OSS default LocalAccessControlService applies the actorKind rules below and ignores `project`;
+// SaaS binds RbacAccessControl to the same token in its SaasContractsModule.
 ```
 
-Signature change constraints:
+Signature constraints (landed PR8):
 
-- The current `accessControl.assertCan(actor, action, context?)` is a sync concrete singleton (directly imported, not DI)
-- PR8 changes it to abstract + DI injection + three parameters `assertCan(actor, project, action)` (async); the OSS implementation may ignore the first two params, but SaaS must read them
-- `AccessAction` is currently a 6-value coarse-grained enum; PR8 may refine it if SaaS RBAC needs it, but without coupling to roles or resource ids
+- Services inject `AccessControlService` and call `await this.accessControl.assertCan(toActorContext(actor), project, action)`; the old directly-imported `accessControl` singleton is removed.
+- Three parameters `(actor, project, action)`, async; the OSS implementation ignores actor/project beyond `actorKind`, but SaaS must read them. Platform-level actions (e.g. `user_token_manage`) that are not project-scoped pass the actor-derived local project (`actor.projectId ? { projectId, source: 'local' } : LOCAL_PROJECT_CONTEXT`).
+- `AccessAction` is a 6-value coarse-grained enum; it may be refined later if SaaS RBAC needs it, but without coupling to roles or resource ids.
 - An actor with `actorKind='system_webhook'` passes everything by default under OSS; SaaS may define in the RBAC implementation "which actions a connector inbound may perform" (generally limited to channel actions, such as writing run results)
 
 ### 3.7 LimiterKeyStrategy
@@ -363,7 +374,7 @@ export abstract class LimiterKeyStrategy {
 Caller constraints:
 
 - The internals of `packages/limiter` are unaware of actor / project, remaining a pure key/value counter
-- `apps/server` / `apps/worker` assemble the key using the strategy before calling the limiter
+- The core server / worker runtimes assemble the key using the strategy before calling the limiter
 - The source of the rate limit quota configuration (RPM / TPM / concurrency cap) is also indirectly determined by the strategy in the SaaS form (the key prefix determines the counting space)
 - The autostate of auto-concurrency (latency / token EWMA + backoff multiplier) is also per-key state, reusing the same key counting space (`model:<modelId>:autostate` under OSS); changing the key prefix in the strategy naturally isolates it, and the `LimiterKeyStrategy` contract stays unchanged
 
@@ -400,8 +411,8 @@ export abstract class WorkflowAuthorizationHook {
 
 Entry constraints:
 
-- **`apps/server` Service**: every Service method that starts a workflow / enqueues a job calls the hook once before writing the payload
-- **`apps/webhook`**: the webhook ingress calls the hook before enqueuing the BullMQ job; the actor is `actorKind='system_webhook'` and the project is the ProjectContext returned by `ConnectorContextResolver`
+- **Core server Services**: every Service method that starts a workflow / enqueues a job calls the hook once before writing the payload
+- **Core webhook runtime**: the webhook ingress calls the hook before enqueuing the BullMQ job; the actor is `actorKind='system_webhook'` and the project is the ProjectContext returned by `ConnectorContextResolver`
 - The projectId inside the payload is **not** re-authorized on the worker / runner side—once a payload is written it is considered already authorized
 - This is the only boundary in the OSS trunk where "trusting the entry authentication" is allowed; the worker / runner do not hold an actor
 
@@ -653,11 +664,11 @@ The OSS schema change principles remain unchanged ([06](06-database-schema.md)):
 
 The OSS trunk provides `TokenService` (§3.5) as the extension point for user token CRUD and validation. In the SaaS form:
 
-- The SaaS repository `overrideProvider(TokenService)` replaces it with `RemoteTokenService`
+- The SaaS repository binds `TokenService` to `RemoteTokenService` inside its `SaasContractsModule` (the `contracts` argument handed to `ProofHoundServerModule.forRoot({ contracts })`, see §2)
 - `RemoteTokenService` reads and writes the SaaS schema's token table and does not write `scope='user'` rows in the OSS `ph_core.tokens`
 - The OSS `ph_core.tokens` table structure is retained; under a SaaS deployment the `user` scope does not write data, but `scope='webhook'` rows are still written normally (managed by the connector resource, unrelated to the SaaS switch)
 - Likewise, `ActorContextResolver` (§3.2) and `McpAuthResolver` (§3.3) are also replaced by SaaS with their respective Remote implementations; the three are overridden independently without affecting each other
-- There is no need to write env branches such as `process.env.DEPLOYMENT_MODE` in OSS code—the form difference is entirely borne by provider override
+- There is no need to write env branches such as `process.env.DEPLOYMENT_MODE` in OSS code—the form difference is entirely borne by the `contracts` module passed to `forRoot` (§2)
 
 The per-connector token of the webhook entry is not managed by `TokenService`; it is stored in `ph_core.tokens with scope='webhook' AND connector_id=?` and validated by `ConnectorContextResolver` (§3.4). If SaaS wants to replace the webhook integration (e.g. switch to HMAC, add multi-tenant isolation), it only needs to override `ConnectorContextResolver`, without affecting `TokenService` / `ActorContextResolver` / `McpAuthResolver`.
 
@@ -667,20 +678,21 @@ The OSS trunk migrates from its current state to an adapter-ready state, with PR
 
 | No. | PR content | Scope |
 | -- | ------- | ---- |
+| 0 | Extract `@proofhound/core` runtime package | Move reusable server / webhook / worker runtime from `apps/*` into `packages/core`; expose `@proofhound/core/server`, `@proofhound/core/webhook`, `@proofhound/core/worker`, and `@proofhound/core/contracts`; reduce `apps/server`, `apps/webhook`, and `apps/worker` to process shells. This is an extraction, not an app-level barrel. OSS apps must consume the new package themselves so the package has a real OSS caller. |
 | 1 | Land the DI abstractions and decorator | Define the abstract classes of the 8 extension points + OSS default implementation provider placeholders (the implementation may temporarily be a stub throwing NotImplemented), add the `@CurrentProject()` decorator, extend `ProjectContextModule` to register all extension points |
 | 2 | DB migration: tokens table refactor + run_results adds webhook_token_id | Drizzle migration: (1) merge `project_api` + `global_mcp` into `user`, rename the `ph_core.api_tokens` table to `ph_core.tokens`; (2) extend the CHECK constraint to allow `scope='webhook'`, add the `connector_id` FK, backfill existing webhook token rows; (3) remove the `ph_assets.connectors.webhook_token_id` reverse reference; (4) remove the global MCP singleton unique constraint; (5) add a length max 64 CHECK to the `name` field; (6) `ph_runs.run_results` adds `webhook_token_id uuid NULL REFERENCES ph_core.tokens(id) ON DELETE SET NULL` |
 | 3 | Converge the Controller / MCP entries | Replace the direct function calls in 16 Controllers + `mcp-context.ts`, all going through the decorator / resolver; within this PR the resolver may still be a stub, with real validation completed in the next PR |
 | 4a | `LocalActorContextResolver` API channel + ph_ prefix | Implement HTTP `Authorization: Bearer ph_*` parsing, sha256 hash (**including the `ph_` prefix**) comparison against `ph_core.tokens where scope='user'`, expiry / IP whitelist validation, touch `last_used_at`; the JWT form (`eyJ*`) returns 401 `unsupported_credential`; the token generation side (`POST /tokens`) uniformly outputs plaintext with the `ph_` prefix, and the sha256 hash includes the prefix. **Note**: after this PR lands, all old user tokens (without the prefix) become invalid; the OSS single-person project requires ZiqiXiao to manually revoke + recreate once |
 | 4b | `LocalActorContextResolver` UI channel + HttpActorGuard rework | On the basis of PR4a, complete the UI channel branch: when there is no `Authorization`, read the trusted deployment header (env `PH_TRUSTED_USER_HEADER`, default `X-Forwarded-User`) → `actorKind='local_user'`; if the header is also absent → LOCAL_ACTOR fallback (`actorKind='local_user'`, `actorId=LOCAL_ACTOR_ID`); change `HttpActorGuard` to an executable base class, dependency-inject `ActorContextResolver`, and remove the hardcoded LOCAL_ACTOR. **Precondition**: the old HTTP guard stub's "no Bearer → direct 401" behavior must be changed to channel-aware in this PR, otherwise after PR4a lands the OSS Web UI is in an unopenable state |
 | 5 | `LocalMcpAuthResolver` completes real validation | Implement token extraction from the MCP metadata, sha256 hash comparison against `ph_core.tokens where scope='user'`, expiry validation; the MCP entry (`mcp-context.ts`) is changed to call the resolver first and then dispatch the tool |
-| 6 | `LocalConnectorContextResolver` extraction + going through the unified token model | Extract the `authorizeConnector` at `apps/webhook/src/channels/webhook/webhook.service.ts:185` into a resolver that queries `ph_core.tokens where scope='webhook' AND connector_id=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())` and returns `{ connector, projectContext, actorContext }`; **the resolver produces the projectContext in one shot and does not call `ProjectContextResolver`**; the error code uses `invalid_webhook_token` (distinguished from the user token's `invalid_user_token`); the actor is `actorKind='system_webhook'` (the flat enum already landed in `apps/server/src/common/actor-context.ts`, connectorId placed in `actorId`, no new kind variant added); the webhook entry's BullMQ job payload carries `webhookTokenId`, and the worker fills the `webhook_token_id` column when writing the run_result; add `webhook.service.spec.ts` asserting that the context and tokenId returned by the resolver propagate to the downstream LLM job |
+| 6 | `LocalConnectorContextResolver` extraction + going through the unified token model | Extract the inline webhook authorization logic (now in `packages/core/src/webhook/channels/webhook/webhook.service.ts`) into a resolver that queries `ph_core.tokens where scope='webhook' AND connector_id=? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())` and returns `{ connector, projectContext, actorContext }`; **the resolver produces the projectContext in one shot and does not call `ProjectContextResolver`**; the error code uses `invalid_webhook_token` (distinguished from the user token's `invalid_user_token`); the actor is `actorKind='system_webhook'` (the flat enum lives in the core actor context, connectorId placed in `actorId`, no new kind variant added); the webhook entry's BullMQ job payload carries `webhookTokenId`, and the worker fills the `webhook_token_id` column when writing the run_result; add `webhook.service.spec.ts` asserting that the context and tokenId returned by the resolver propagate to the downstream LLM job |
 | 7 | `TokenService` abstraction | Change the existing token Service into an abstract class + `LocalTokenService` implementation, handling only `scope='user'` rows |
-| 8 | `AccessControl` signature refactor | Change 45 call sites of `accessControl.assertCan(action)` to the three-parameter signature, injected into 15 Services |
-| 9 | `LimiterKeyStrategy` integration | `apps/server` / `apps/worker` go through the strategy before calling the limiter; `packages/limiter` stays unchanged |
-| 10 | `WorkflowAuthorizationHook` integration | Call the hook before starting a workflow / enqueuing a job, OSS no-op; `apps/webhook` integrated in sync |
-| 11 | API client transport | `packages/api-client` exposes `AuthSource` + `configureApiClient`; `ProofHoundWebProvider` calls `configureApiClient({ authSource, getProjectId, baseUrl })` on mount to register a single request interceptor that adds `X-Project-Id` (§4.1) from the active `ProjectContext` and `Authorization` (§4.2) only when the token is non-null. OSS injects `LocalAuthSource` (returns null); SaaS injects `SupabaseAuthSource` |
+| 8 | `AccessControl` DI seam **(landed)** | Extracted abstract `AccessControlService` + OSS `LocalAccessControlService` (`common/contracts/`), bound `@Global` in `LocalContractsModule`; converted 34 call sites across 15 Services to `await this.accessControl.assertCan(toActorContext(actor), project, action)` (async, three-param) |
+| 9 | `LimiterKeyStrategy` integration | Core server / worker runtimes go through the strategy before calling the limiter; `packages/limiter` stays unchanged |
+| 10 | `WorkflowAuthorizationHook` integration | Call the hook before starting a workflow / enqueuing a job, OSS no-op; core webhook runtime integrated in sync |
+| 11 | API client transport | `packages/api-client` exposes `AuthSource` + `configureApiClient`; `ProofHoundWebProvider` calls `configureApiClient({ authSource, getProjectId, baseUrl })` before its children render to register a single request interceptor that adds `X-Project-Id` (§4.1) from the active `ProjectContext` and `Authorization` (§4.2) only when the token is non-null. OSS injects `LocalAuthSource` (returns null); SaaS injects `SupabaseAuthSource` |
 
-After PRs 1-6 are complete, the OSS authentication layer is upgraded from a stub to a production-usable form (all three entries—HTTP / MCP / Webhook—have real token validation, and the HTTP entry's dual channels are channel-aware). After PRs 7-11 are complete, all 8 extension points are DI-ified. The SaaS repository can begin independent development after PR 1 lands, and can fully integrate against stable interfaces once PR 6 is complete.
+With PR0 landed, after PRs 1-6 are complete the OSS authentication layer is upgraded from a stub to a production-usable form (all three entries—HTTP / MCP / Webhook—have real token validation, and the HTTP entry's dual channels are channel-aware) and the SaaS repository has a stable package import surface. After PRs 7-11 are complete, all 8 extension points are DI-ified. The SaaS repository can begin independent development after PR0 + PR1 land, and can fully integrate against stable interfaces once PR6 is complete.
 
 PR 1 has a relatively large scope (8 extension points + decorator + module registration); at implementation time it can be split into eight independent PRs 1a-1h, one per extension point, starting from `ProjectContextResolver`. The specific split is decided by the implementer at their own pace.
 
@@ -691,6 +703,8 @@ PR 2 is the schema precondition for the subsequent PRs 4a/4b/6 and must be merge
 - Do not introduce organizations / memberships / roles business implementations into the OSS trunk
 - Do not add an `organization_id` column or control plane tables to the OSS schema
 - Do not add SaaS-only fields such as `organization_id` / membership / role to `ph_core.tokens` for control plane alignment
+- Do not make `apps/server`, `apps/webhook`, or `apps/worker` library entry points; reusable backend runtime belongs in `packages/core` and is exported as `@proofhound/core`
+- Do not add app-level barrels as a shortcut for SaaS reuse
 - Do not build a project switcher or organization switcher in the OSS frontend or in the shared `@proofhound/web-ui` package—the project switcher is SaaS-only private chrome that belongs in the SaaS app shell, not in the shared product UI
 - Do not introduce an `IS_PLATFORM`-style edition flag anywhere in the OSS trunk or in `@proofhound/web-ui` to distinguish self-hosted / SaaS forms within the same codebase (cf. the Supabase Studio cautionary tale: it caused long-term technical debt + community criticism, and the team itself could not pull off a refactor); in the shared package the single `WebContracts` injection at `ProofHoundWebProvider` is the only allowed variation point—screens / hooks / components must be form-neutral
 - Do not let OSS Controllers / Services directly import default implementation classes—import only the abstract class (i.e. the DI token)
@@ -712,5 +726,5 @@ PR 2 is the schema precondition for the subsequent PRs 4a/4b/6 and must be merge
 - [02](02-tech-stack.md): this SPEC introduces no new tech stack, only specifying the use of existing NestJS DI and axios interceptors
 - [03](03-orchestration.md): §3.8 `WorkflowAuthorizationHook` of this SPEC is a new pre-step for the 03 orchestration entry; the complete `WorkflowKind` enum is governed by 03's workflow / queue list; the webhook entry paragraph at the end of 03 §3 aligns with §3.4 `ConnectorContextResolver` of this SPEC
 - [06](06-database-schema.md): §5 of this SPEC makes clear that the SaaS schema does not enter `ph_*`; the `scope='webhook'` + `connector_id` fields and the user / webhook scope binary introduced by this SPEC are reflected in the `ph_core.tokens` table structure in 06 §3.2
-- [07](07-code-structure.md): the abstract classes and default implementations of the extension points are located in `apps/server/src/common/contracts/` and `apps/server/src/common/`; the MCP / Controller entries go through the `@CurrentProject()` decorator; the frontend package layout (`@proofhound/ui` design system, `@proofhound/web-ui` shared product UI, `apps/web` OSS thin shell) is governed by §7 of that SPEC
-- [26](26-connectors.md): §3.4 `ConnectorContextResolver` of this SPEC is extracted from the existing connector authentication logic of `apps/webhook`, with the credential lifecycle managed by the connector resource
+- [07](07-code-structure.md): reusable backend runtime is extracted to `packages/core`; the abstract classes and default implementations of the extension points are exported from `@proofhound/core/contracts`; the MCP / Controller entries go through the `@CurrentProject()` decorator; the frontend package layout (`@proofhound/ui` design system, `@proofhound/web-ui` shared product UI, `apps/web` OSS thin shell) is governed by §7 of that SPEC
+- [26](26-connectors.md): §3.4 `ConnectorContextResolver` of this SPEC is extracted from the existing connector authentication logic of the webhook runtime, with the credential lifecycle managed by the connector resource

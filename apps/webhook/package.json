@@ -22,6 +22,7 @@
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.21",
     "@nestjs/platform-express": "^11.1.21",
+    "@proofhound/core": "workspace:*",
     "@proofhound/db": "workspace:*",
     "@proofhound/limiter": "workspace:*",
     "@proofhound/logger": "workspace:*",

@@ -77,6 +77,9 @@ importers:
       '@proofhound/connector-client':
         specifier: workspace:*
         version: link:../../packages/connector-client
+      '@proofhound/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@proofhound/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
@@ -376,6 +379,9 @@ importers:
       '@nestjs/platform-express':
         specifier: ^11.1.21
         version: 11.1.21(@nestjs/common@11.1.21(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.21)
+      '@proofhound/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@proofhound/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -485,6 +491,9 @@ importers:
       '@proofhound/connector-client':
         specifier: workspace:*
         version: link:../../packages/connector-client
+      '@proofhound/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@proofhound/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
@@ -620,6 +629,142 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.6(@types/node@24.12.4)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1)(vite@7.3.3(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.1)(yaml@2.9.0))
+
+  packages/core:
+    dependencies:
+      '@dbos-inc/dbos-sdk':
+        specifier: ^4.18.10
+        version: 4.18.10
+      '@nestjs/bullmq':
+        specifier: ^11.0.4
+        version: 11.0.4(@nestjs/common@11.1.21(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.21)(bullmq@5.76.10)
+      '@nestjs/common':
+        specifier: ^11.1.21
+        version: 11.1.21(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/config':
+        specifier: ^4.0.4
+        version: 4.0.4(@nestjs/common@11.1.21(reflect-metadata@0.2.2)(rxjs@7.8.2))(rxjs@7.8.2)
+      '@nestjs/core':
+        specifier: ^11.1.21
+        version: 11.1.21(@nestjs/common@11.1.21(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@11.1.21)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/platform-express':
+        specifier: ^11.1.21
+        version: 11.1.21(@nestjs/common@11.1.21(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.21)
+      '@proofhound/connector-client':
+        specifier: workspace:*
+        version: link:../connector-client
+      '@proofhound/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@proofhound/db':
+        specifier: workspace:*
+        version: link:../db
+      '@proofhound/judgment':
+        specifier: workspace:*
+        version: link:../judgment
+      '@proofhound/limiter':
+        specifier: workspace:*
+        version: link:../limiter
+      '@proofhound/llm-client':
+        specifier: workspace:*
+        version: link:../llm-client
+      '@proofhound/logger':
+        specifier: workspace:*
+        version: link:../logger
+      '@proofhound/metrics':
+        specifier: workspace:*
+        version: link:../metrics
+      '@proofhound/optimization-strategy':
+        specifier: workspace:*
+        version: link:../optimization-strategy
+      '@proofhound/orchestration-shared':
+        specifier: workspace:*
+        version: link:../orchestration-shared
+      '@proofhound/shared':
+        specifier: workspace:*
+        version: link:../shared
+      bullmq:
+        specifier: ^5.76.10
+        version: 5.76.10
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@types/pg@8.20.0)(pg@8.20.0)(postgres@3.4.9)
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
+      ioredis:
+        specifier: ^5.10.1
+        version: 5.10.1
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
+      jsonrepair:
+        specifier: ^3.14.0
+        version: 3.14.0
+      kafkajs:
+        specifier: ^2.2.4
+        version: 2.2.4
+      nestjs-pino:
+        specifier: ^4.6.1
+        version: 4.6.1(@nestjs/common@11.1.21(reflect-metadata@0.2.2)(rxjs@7.8.2))(pino-http@11.0.0)(pino@10.3.1)(rxjs@7.8.2)
+      pino:
+        specifier: ^10.3.1
+        version: 10.3.1
+      pino-http:
+        specifier: ^11.0.0
+        version: 11.0.0
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+      rxjs:
+        specifier: ^7.8.2
+        version: 7.8.2
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@nestjs/testing':
+        specifier: ^11.1.21
+        version: 11.1.21(@nestjs/common@11.1.21(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.21)(@nestjs/platform-express@11.1.21)
+      '@swc/core':
+        specifier: ^1.13.20
+        version: 1.15.33
+      '@types/express':
+        specifier: ^5.0.6
+        version: 5.0.6
+      '@types/node':
+        specifier: ^24.12.4
+        version: 24.12.4
+      '@types/supertest':
+        specifier: ^7.2.0
+        version: 7.2.0
+      '@vitest/coverage-v8':
+        specifier: ^4.1.6
+        version: 4.1.6(vitest@4.1.6)
+      supertest:
+        specifier: ^7.2.2
+        version: 7.2.2
+      tsx:
+        specifier: ^4.21.1
+        version: 4.21.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      unplugin-swc:
+        specifier: ^1.5.7
+        version: 1.5.9(@swc/core@1.15.33)(rollup@4.60.4)
+      vite-tsconfig-paths:
+        specifier: ^5.1.4
+        version: 5.1.4(typescript@6.0.3)(vite@7.3.3(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.1)(yaml@2.9.0))
       vitest:
         specifier: ^4.1.6
         version: 4.1.6(@types/node@24.12.4)(@vitest/coverage-v8@4.1.6)(jsdom@29.1.1)(vite@7.3.3(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.47.1)(tsx@4.21.1)(yaml@2.9.0))

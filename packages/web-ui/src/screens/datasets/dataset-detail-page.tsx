@@ -646,15 +646,16 @@ export function DatasetDetailPage({
   }, [searchInput]);
 
   // Re-sync the editable working copy + selection whenever the server page changes (page / search / refetch).
-  // The setState-in-effect below is an intentional derived-state reset keyed on the freshly-fetched server page:
-  // it discards the local editable copy + selection and rehydrates from pageSamples on page/search/refetch. Safe & required.
-  /* eslint-disable react-hooks/set-state-in-effect -- intentional resync of editable working copy + selection to the server page */
-  useEffect(() => {
+  // React-recommended "adjust state during render" pattern — avoids the setState-in-effect cascading render
+  // flagged by react-hooks/set-state-in-effect. pageSamples is a useMemo keyed on the query data, so the
+  // guard only fires when the page data actually changes (no render loop).
+  const [syncedPageSamples, setSyncedPageSamples] = useState(pageSamples);
+  if (syncedPageSamples !== pageSamples) {
+    setSyncedPageSamples(pageSamples);
     setSamples(pageSamples);
     setSelectedSampleIds([]);
     setSelectedSampleId(pageSamples[0]?.id ?? '');
-  }, [pageSamples]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  }
 
   const displayFields = useMemo(() => {
     const merged = mergeFieldsWithSampleData(fields, samples);

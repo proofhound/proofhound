@@ -13,7 +13,6 @@
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
-    "probe:model": "tsx src/scripts/probe-model-from-env.ts",
     "start": "node dist/main.js",
     "clean": "rm -rf dist .turbo tsconfig.tsbuildinfo"
   },
@@ -21,6 +20,7 @@
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.1.21",
     "@nestjs/core": "^11.1.21",
+    "@proofhound/core": "workspace:*",
     "@proofhound/optimization-strategy": "workspace:*",
     "@proofhound/connector-client": "workspace:*",
     "@proofhound/crypto": "workspace:*",

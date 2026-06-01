@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_WORKER_CONCURRENCY } from './worker-concurrency';
+import { DEFAULT_WORKER_CONCURRENCY } from '@proofhound/core/worker';
 
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'staging', 'production', 'test']).default('development'),

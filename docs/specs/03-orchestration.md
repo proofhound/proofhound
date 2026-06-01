@@ -5,7 +5,7 @@ This chapter explains how long-running tasks and asynchronous jobs are carried i
 ## 1. Runtime Topology
 
 ```text
-apps/server
+apps/server (mounts @proofhound/core/server)
   ├─ REST / MCP Controller
   ├─ DBOS runtime
   ├─ BullMQ producer
@@ -15,7 +15,7 @@ apps/server
         Redis / BullMQ
           │
           ▼
-apps/worker
+apps/worker (mounts @proofhound/core/worker)
   └─ llm consumer -> LLM -> run_results
 ```
 
@@ -86,7 +86,7 @@ Release operation history is the `release_line_events` event stream:
 
 ### 3.6 Webhook Entry Point
 
-`apps/webhook` is a standalone NestJS app. It does not mount `HttpActorGuard`, does not go through the MCP context resolver, and **does not call `ProjectContextResolver`'s actor-project access check** (the webhook credential is a per-consumer channel credential and does not represent the project administrator). Entry-point authentication and context resolution are done in one step by a dedicated `ConnectorContextResolver` that directly produces a ProjectContext + ActorContext (contract in [08 §3.4](08-saas-adapter-boundary.md#34-connectorcontextresolver)).
+`apps/webhook` is a standalone NestJS process shell that mounts `@proofhound/core/webhook`. It does not mount `HttpActorGuard`, does not go through the MCP context resolver, and **does not call `ProjectContextResolver`'s actor-project access check** (the webhook credential is a per-consumer channel credential and does not represent the project administrator). Entry-point authentication and context resolution are done in one step by a dedicated `ConnectorContextResolver` that directly produces a ProjectContext + ActorContext (contract in [08 §3.4](08-saas-adapter-boundary.md#34-connectorcontextresolver)).
 
 Request processing path:
 
@@ -94,7 +94,7 @@ Request processing path:
 2. Extract the webhook token from `Authorization: Bearer <token>`, sha256-hash it, and look up `ph_core.tokens where scope='webhook' AND connector_id=<connector.id> AND token_hash=? AND revoked_at IS NULL`; verify `expires_at`; failure → 401 `invalid_webhook_token`
 3. Resolution output:
    - `ProjectContext`: `{ projectId: connector.projectId }`. In OSS, `projectId` is fixed to the local default project; in SaaS, after replacing `ConnectorContextResolver`, it is determined by the connector configuration
-   - `ActorContext`: `{ kind: 'system:webhook:<connectorId>', actorId }`. This actor does not map to any user / API token actor; in run results and logs, the event's `actor` field is recorded as `system:webhook:<connectorId>`
+   - `ActorContext`: `{ actorKind: 'system_webhook', actorId: connectorId }`. This actor does not map to any user / API token actor; in run results and logs, the event's actor identity is recorded with the flat `actorKind` plus the connector id in `actorId`
 4. Subsequent routing / enqueue logic reuses the same flow as the §3.3 Release Runner: release line decisions (production / canary / split / dual_run), variable mapping, enqueue into the `llm` queue; the BullMQ job payload additionally carries `webhookTokenId` (the resolved webhook token UUID)
 5. Writes to `ph_runs.run_results` and stdout logs both use the above `ProjectContext / ActorContext`; when the worker writes a run_result, it passes the `webhookTokenId` from the payload through to the `ph_runs.run_results.webhook_token_id` column, used for per-consumer usage aggregation by token (the HTTP / MCP entry points write NULL)
 6. Idempotent deduplication is keyed on the `externalId` in the request body and handled by the business layer; the resolver is unaware of it
@@ -105,7 +105,7 @@ Credential isolation principles:
 - Both physically coexist in `ph_core.tokens` (distinguished by `scope`), but their lifecycles, entry-point resolvers, and SaaS replacement paths are entirely independent
 - The webhook token's lifecycle is managed by the connector resource (creation / addition / revocation / deletion follow the connector), not by `TokenService`; a single connector supports multiple valid tokens coexisting steadily for per-consumer distribution (see [26 §5.2](26-connectors.md#52-token-management))
 
-Current OSS state: the existing `authorizeConnector` at `apps/webhook/src/channels/webhook/webhook.service.ts:185-206` is an inline form of `ConnectorContextResolver`—this refactor extracts it into a dedicated resolver, switches it to the unified token model (scope='webhook' + connector_id), and changes the error code from `invalid_api_token` to `invalid_webhook_token`.
+Current transition state: the existing `authorizeConnector` at `apps/webhook/src/channels/webhook/webhook.service.ts:185-206` is an inline form of `ConnectorContextResolver`. The core extraction moves the reusable webhook runtime into `packages/core/src/webhook`; this resolver refactor then switches authorization to the unified token model (scope='webhook' + connector_id) and changes the error code from `invalid_api_token` to `invalid_webhook_token`.
 
 ## 4. General Conventions
 

@@ -8,7 +8,10 @@ This document describes the implementation choices for the open-source self-host
 Web UI (Next.js + Refine + shadcn/ui)
         │ HTTPS / SSE
         ▼
-apps/server (NestJS)
+apps/server (OSS process shell)
+        │ mounts
+        ▼
+@proofhound/core/server (NestJS runtime)
   - REST management API / MCP
   - local actor injection
   - DBOS workflow runtime
@@ -17,12 +20,14 @@ apps/server (NestJS)
         │
         ├── PostgreSQL + StorageProvider
         ├── Redis (BullMQ / limiter / PubSub)
-        └── apps/worker (BullMQ LLM consumer)
+        └── apps/worker (OSS process shell)
+              └── @proofhound/core/worker (BullMQ LLM consumer)
 
-apps/webhook
-  - standalone /webhooks/* ingress
-  - Webhook token authentication (per-connector)
-  - enqueue / acknowledgment
+apps/webhook (OSS process shell)
+        └── @proofhound/core/webhook
+              - standalone /webhooks/* ingress
+              - Webhook token authentication (per-connector)
+              - enqueue / acknowledgment
 ```
 
 Entry-point authentication is uniformly constrained by SPEC 08 §3 / §3.2.1: the HTTP entry point is dual-channel (the API channel uses an `Authorization: Bearer ph_*` user token; the UI channel uses a deployment-layer trusted header or falls back to LOCAL_ACTOR, routed by `ActorContextResolver`); the MCP entry point uses the user token (sharing the same token resource pool as the HTTP API); the Webhook entry point uses a per-connector webhook token. The OSS edition does not ship a built-in login page or session system; for UI-channel credential forms, see SPEC 08 deployment topologies A/B/C.
@@ -38,12 +43,13 @@ Entry-point authentication is uniformly constrained by SPEC 08 §3 / §3.2.1: th
 
 ## 3. Backend
 
-- A NestJS monolith, split into modules under `apps/server/src/modules/<resource>/`.
+- A NestJS monolith runtime published from `packages/core` as `@proofhound/core`, split into modules under `packages/core/src/server/modules/<resource>/` after the core extraction.
+- `apps/server`, `apps/webhook`, and `apps/worker` are thin OSS process shells. They load env, configure process-level middleware / logging, and mount the matching core runtime; they are not library entry points.
 - Controllers only handle parameter validation, local actor injection, calling the Service, starting a workflow, or enqueuing a job.
 - Request entry points are uniformly converted into an `ActorContext`, and the default local `ProjectContext` is resolved via `ProjectContextProvider` / `resolveProjectContext`; business Services authorize actions through `accessControl.assertCan(...)`.
 - DTOs uniformly come from the Zod schemas in `packages/shared/src/dto/`.
 - MCP tools and REST entry points converge on the same set of Services.
-- Webhook ingress lives independently in `apps/webhook` and does not mount the management API.
+- Webhook ingress lives independently as the core webhook runtime mounted by `apps/webhook` and does not mount the management API.
 
 ## 4. Data Layer
 

@@ -262,6 +262,7 @@ export function AnnotationDetailPage({ projectId, annotationTaskId }: { projectI
             value={formatCount(task.submitted)}
             detail={`${formatCount(task.submitted)} / ${formatCount(task.total)}`}
             tone="success"
+            testId="annotation-detail-metric-submitted"
           />
           <AnnotationMetricCard
             label={t('annotations.detail.metric.quality')}
@@ -702,6 +703,7 @@ function AnnotationWorkspaceForm({
                       key={category}
                       type="button"
                       role="radio"
+                      data-testid={`annotation-sample-category-${category}`}
                       aria-checked={selected}
                       aria-keyshortcuts={shortcut}
                       disabled={!canEdit}
@@ -756,7 +758,13 @@ function AnnotationWorkspaceForm({
               <RotateCcw className="size-4" />
               {releasePending ? t('annotations.form.releasing') : t('annotations.form.release')}
             </Button>
-            <Button type="button" onClick={submitCurrent} aria-keyshortcuts="Enter" disabled={!canSubmit}>
+            <Button
+              type="button"
+              data-testid="annotation-save"
+              onClick={submitCurrent}
+              aria-keyshortcuts="Enter"
+              disabled={!canSubmit}
+            >
               <Save className="size-4" />
               {submitPending ? t('annotations.form.submitting') : t('annotations.form.submit')}
             </Button>

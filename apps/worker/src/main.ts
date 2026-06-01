@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { createLogger } from '@proofhound/logger';
 import { envSchema } from './config/env.schema';
-import { WorkerModule } from './worker.module';
+import { ProofHoundWorkerModule } from '@proofhound/core/worker';
 
 function loadRootEnv(): void {
   try {
@@ -19,7 +19,7 @@ async function bootstrap(): Promise<void> {
   const env = envSchema.parse(process.env);
   const logger = createLogger('worker.bootstrap', { service: 'worker', level: env.LOG_LEVEL });
 
-  const app = await NestFactory.createApplicationContext(WorkerModule, { abortOnError: true });
+  const app = await NestFactory.createApplicationContext(ProofHoundWorkerModule, { abortOnError: true });
   app.enableShutdownHooks();
 
   const queues = env.WORKER_QUEUES.split(',')

@@ -13,7 +13,6 @@
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
-    "test:integration": "vitest run --config ./vitest.integration.config.ts",
     "start": "node dist/main.js",
     "clean": "rm -rf dist .turbo tsconfig.tsbuildinfo"
   },
@@ -24,6 +23,7 @@
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.21",
     "@nestjs/platform-express": "^11.1.21",
+    "@proofhound/core": "workspace:*",
     "@proofhound/optimization-strategy": "workspace:*",
     "@proofhound/connector-client": "workspace:*",
     "@proofhound/crypto": "workspace:*",

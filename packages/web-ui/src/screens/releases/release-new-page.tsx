@@ -804,6 +804,7 @@ function FieldMappingTable({
               value={externalIdField}
               onChange={(event) => onExternalIdFieldChange(event.target.value)}
               className="h-9 rounded-md border border-input bg-background px-3 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              data-testid="release-new-mapping-external-id"
             >
               <option value="">{t('canaryReleases.new.fieldSelectPlaceholder')}</option>
               {fields.map((field) => (
@@ -848,6 +849,7 @@ function FieldMappingTable({
                   value={mapping[variable.name] ?? ''}
                   onChange={(event) => onMappingChange(variable.name, event.target.value)}
                   className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  data-testid={`release-new-mapping-source-${variable.name}`}
                 >
                   <option value="">{t('canaryReleases.new.mapping.unmapped')}</option>
                   {fields.map((field) => (
@@ -1287,6 +1289,7 @@ function TrafficSelectionField({
             onChange={(event) => onChange(event.target.value)}
             aria-label={t('releases.new.traffic.percentInput')}
             className="h-8 font-mono text-xs"
+            data-testid="release-new-traffic"
           />
           <span className="font-mono text-xs text-muted-foreground">%</span>
         </label>
@@ -1331,15 +1334,17 @@ function DeployButton({
   label,
   pendingLabel,
   className,
+  testId,
 }: {
   canSubmit: boolean;
   isPending: boolean;
   label: string;
   pendingLabel: string;
   className?: string;
+  testId?: string;
 }) {
   return (
-    <Button type="submit" className={className} disabled={!canSubmit}>
+    <Button type="submit" className={className} disabled={!canSubmit} data-testid={testId}>
       {isPending ? (
         <>
           <Loader2 className="size-4 animate-spin" />
@@ -1831,6 +1836,7 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                         onChange={(event) => setReleaseName(event.target.value)}
                         placeholder={t('releases.new.field.namePlaceholder')}
                         className="font-mono text-[13px]"
+                        data-testid="release-new-name"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1885,12 +1891,13 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                             <PickerEmpty>{t('releases.new.canary.versionEmpty')}</PickerEmpty>
                           ) : (
                             availablePromptVersions.map((version) => (
-                              <PromptVersionRow
-                                key={version.id}
-                                option={version}
-                                selected={version.id === effectiveVersionId}
-                                onSelect={() => handleVersionSelect(version.id)}
-                              />
+                              <div key={version.id} data-testid={`release-new-version-row-${version.id}`}>
+                                <PromptVersionRow
+                                  option={version}
+                                  selected={version.id === effectiveVersionId}
+                                  onSelect={() => handleVersionSelect(version.id)}
+                                />
+                              </div>
                             ))
                           )}
                         </div>
@@ -1915,12 +1922,13 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                               <PickerEmpty>{t('canaryReleases.new.promptEmpty')}</PickerEmpty>
                             ) : (
                               filteredPrompts.map((prompt) => (
-                                <PromptRow
-                                  key={prompt.id}
-                                  prompt={prompt}
-                                  selected={prompt.id === effectivePromptId}
-                                  onSelect={() => handlePromptSelect(prompt.id)}
-                                />
+                                <div key={prompt.id} data-testid={`release-new-prompt-row-${prompt.id}`}>
+                                  <PromptRow
+                                    prompt={prompt}
+                                    selected={prompt.id === effectivePromptId}
+                                    onSelect={() => handlePromptSelect(prompt.id)}
+                                  />
+                                </div>
                               ))
                             )}
                           </div>
@@ -1938,12 +1946,13 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                               <PickerEmpty>{t('canaryReleases.new.versionEmpty')}</PickerEmpty>
                             ) : (
                               availablePromptVersions.map((version) => (
-                                <PromptVersionRow
-                                  key={version.id}
-                                  option={version}
-                                  selected={version.id === effectiveVersionId}
-                                  onSelect={() => handleVersionSelect(version.id)}
-                                />
+                                <div key={version.id} data-testid={`release-new-version-row-${version.id}`}>
+                                  <PromptVersionRow
+                                    option={version}
+                                    selected={version.id === effectiveVersionId}
+                                    onSelect={() => handleVersionSelect(version.id)}
+                                  />
+                                </div>
                               ))
                             )}
                           </div>
@@ -1969,12 +1978,13 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                     <PickerEmpty>{t('canaryReleases.new.modelEmpty')}</PickerEmpty>
                   ) : (
                     filteredModels.map((model) => (
-                      <ModelOptionRow
-                        key={model.id}
-                        model={model}
-                        selected={model.id === effectiveModelId}
-                        onSelect={() => handleModelSelect(model)}
-                      />
+                      <div key={model.id} data-testid={`release-new-model-row-${model.id}`}>
+                        <ModelOptionRow
+                          model={model}
+                          selected={model.id === effectiveModelId}
+                          onSelect={() => handleModelSelect(model)}
+                        />
+                      </div>
                     ))
                   )}
                 </div>
@@ -2019,12 +2029,13 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                       <PickerEmpty>{t('canaryReleases.new.inputConnectorEmpty')}</PickerEmpty>
                     ) : (
                       inputConnectors.map((connector) => (
-                        <ConnectorOptionRow
-                          key={connector.id}
-                          connector={connector}
-                          selected={connector.id === effectiveInputConnectorId}
-                          onSelect={() => handleInputConnectorSelect(connector.id)}
-                        />
+                        <div key={connector.id} data-testid={`release-new-input-connector-${connector.id}`}>
+                          <ConnectorOptionRow
+                            connector={connector}
+                            selected={connector.id === effectiveInputConnectorId}
+                            onSelect={() => handleInputConnectorSelect(connector.id)}
+                          />
+                        </div>
                       ))
                     )}
                   </div>
@@ -2310,6 +2321,7 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                     : t('productionReleases.new.action.submitting')
                 }
                 className="min-w-28"
+                testId="release-new-submit"
               />
             </div>
           </div>

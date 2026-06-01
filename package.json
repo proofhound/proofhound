@@ -46,7 +46,7 @@
     "db:seed": "pnpm --filter @proofhound/db seed",
     "db:seed:dev": "pnpm --filter @proofhound/db seed:dev",
     "db:clean-test-residue": "pnpm --filter @proofhound/db clean-test-residue",
-    "probe:model": "pnpm --filter @proofhound/worker probe:model",
+    "probe:model": "pnpm --filter @proofhound/core probe:model",
     "docker:build": "pnpm docker:build:server && pnpm docker:build:webhook && pnpm docker:build:worker && pnpm docker:build:web",
     "docker:build:server": "docker build -f apps/server/Dockerfile -t proofhound-server:local .",
     "docker:build:webhook": "docker build -f apps/webhook/Dockerfile -t proofhound-webhook:local .",
