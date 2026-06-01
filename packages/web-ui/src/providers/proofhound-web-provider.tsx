@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useState } from 'react';
 import { configureApiClient } from '@proofhound/api-client';
 import { UiStringsProvider } from '@proofhound/ui/strings';
 import { I18nProvider, useI18n, type Language } from '../i18n';
@@ -17,13 +17,23 @@ export function ProofHoundWebProvider({
   children: ReactNode;
   defaultLanguage?: Language;
 }) {
-  useEffect(() => {
-    configureApiClient({
-      authSource: contracts.authSource,
-      getProjectId: () => contracts.projectContext.projectId,
-      baseUrl: contracts.baseUrl,
-    });
-  }, [contracts]);
+  // Wire the api client during the first render — before children mount — so a
+  // child screen's first TanStack Query already carries the baseUrl,
+  // Authorization, and X-Project-Id from WebContracts. A post-mount effect runs
+  // *after* child effects, letting that first request escape unconfigured —
+  // which matters once a consuming shell injects a non-default
+  // baseUrl/token/project. The lazy useState initializer runs once on mount,
+  // ahead of child render; SSR skips it because httpClient is client-only.
+  useState(() => {
+    if (typeof window !== 'undefined') {
+      configureApiClient({
+        authSource: contracts.authSource,
+        getProjectId: () => contracts.projectContext.projectId,
+        baseUrl: contracts.baseUrl,
+      });
+    }
+    return null;
+  });
 
   return (
     <I18nProvider defaultLanguage={defaultLanguage} extend={contracts.i18nExtend}>

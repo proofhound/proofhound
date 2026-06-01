@@ -12,6 +12,6 @@
     "baseUrl": ".",
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vitest.setup.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "types/**/*.d.ts", "vitest.setup.ts"],
   "exclude": ["node_modules", "dist"]
 }
