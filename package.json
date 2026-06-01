@@ -61,7 +61,7 @@
     "spec:terms": "node scripts/check-stale-terms.mjs",
     "clean": "turbo run clean --filter='@proofhound/*' && rm -rf node_modules .turbo",
     "clean:soft": "turbo run clean --filter='@proofhound/*'",
-    "ci": "pnpm typecheck && pnpm lint && pnpm test && pnpm deps:check && pnpm spec:terms"
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm deps:check && pnpm spec:terms"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

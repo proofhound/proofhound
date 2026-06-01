@@ -50,7 +50,7 @@ Common commands (pnpm@10 + turbo orchestration):
 | Test                                     | `pnpm test` (= test:unit) / `pnpm test:e2e`                   |
 | Migration                                | `pnpm db:generate` (generate) / `pnpm db:migrate` (apply)     |
 | Reset / seed database                    | `pnpm db:reset` / `pnpm db:seed`                              |
-| Full gate                                | `pnpm ci` = `typecheck + lint + test + deps:check + spec:terms` |
+| Full gate                                | `pnpm verify` = `typecheck + lint + test + deps:check + spec:terms` |
 | Circular deps / terminology check        | `pnpm deps:check` (madge) / `pnpm spec:terms`                 |
 
 > First run: after `cp .env.example .env`, fill in `DATABASE_URL` / `REDIS_URL`; `MODEL_API_KEY_ENCRYPTION_KEY` (@proofhound/crypto encrypts/decrypts the API Key) and `MCP_TOKEN_SIGNING_SECRET` (MCP token signing) are application-managed secrets, and their absence will cause startup / invocation failures.
@@ -59,6 +59,7 @@ Common commands (pnpm@10 + turbo orchestration):
 
 - Branch naming: `<type>/<kebab>` aligned with Conventional Commits (`feat/`, `fix/`, `docs/`, `refactor/`, `chore/`, …) — e.g. `refactor/contracts-forroot-override`.
 - `master` is PR-only: no direct push (branch protection + `enforce_admins`). Squash-merge with a Conventional-Commit PR title so release-please categorizes it.
+- The primary working directory stays on `master` by default. Unless explicitly told otherwise, do not check out a feature branch in the primary checkout — create a worktree (below) for any non-`master` development, so the primary tree always reflects `master`.
 - Worktrees: the repo-root `worktrees/` directory is the designated home for branch-development worktrees. It is deliberately excluded from every root tool — `.gitignore` (`/worktrees/`), `.dockerignore` (`worktrees`), `pnpm-workspace.yaml` (`!worktrees/**`), and `.prettierignore` (`worktrees`) — so a nested checkout there is never tracked, copied into a Docker build context, treated as a pnpm workspace package, or rewritten by `pnpm format`. Always create worktrees under it, never elsewhere in the tree.
 - Create with `mkdir -p worktrees && git worktree add worktrees/<name> -b <type>/<kebab> master` (a fresh `<type>/<kebab>` branch off `master`). Do not rely on tooling that forces a `worktree-` prefix or rewrites `/` to `+`; rename the branch to conform if it does.
 - After creating a worktree, before working in it: (1) copy the local secrets from the primary worktree so the new tree can boot — `cp .env worktrees/<name>/.env` (`.env` is gitignored, so a fresh worktree starts without it); (2) build its own CodeGraph index with `cd worktrees/<name> && codegraph init -i` (`.codegraph` state is gitignored and per-worktree, so the index does not carry over).
@@ -114,7 +115,7 @@ Common commands (pnpm@10 + turbo orchestration):
 - Frontend copy is synced across the Chinese and English i18n.
 - DB schema changes go through a Drizzle migration, not manual `psql` edits to the database.
 - Business semantics are synced to the SPEC.
-- `pnpm ci` is green, or the delivery notes clearly state which items were not run and why.
+- `pnpm verify` is green, or the delivery notes clearly state which items were not run and why.
 
 ## 7. Skill Routing
 
