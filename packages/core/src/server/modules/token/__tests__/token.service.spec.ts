@@ -3,7 +3,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { vi, type Mocked } from 'vitest';
 import { CryptoService } from '../../../../shared/crypto/crypto.service';
 import { TokenRepository, type UserTokenRow } from '../token.repository';
-import { TokenService } from '../token.service';
+import { LocalTokenService, TokenService } from '../token.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 
@@ -56,13 +56,14 @@ describe('TokenService', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
-        TokenService,
+        { provide: TokenService, useClass: LocalTokenService },
         { provide: TokenRepository, useValue: repo },
         { provide: CryptoService, useValue: crypto },
         { provide: AccessControlService, useClass: LocalAccessControlService },
       ],
     }).compile();
     service = moduleRef.get(TokenService);
+    expect(service).toBeInstanceOf(LocalTokenService);
   });
 
   it('lists user tokens without plaintext', async () => {
