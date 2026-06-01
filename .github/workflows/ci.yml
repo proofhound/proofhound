@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Unit / lint / typecheck / circular-deps / terminology gate (mirrors `pnpm run ci`).
+  # Unit / lint / typecheck / circular-deps / terminology gate (mirrors `pnpm run verify`).
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -24,7 +24,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run ci
+      - run: pnpm run verify
 
   # Functional end-to-end suite against a real server/worker/webhook + ephemeral Postgres/Redis,
   # with the LLM faked (Playwright starts the fake server + the web dev server itself).

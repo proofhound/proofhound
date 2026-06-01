@@ -48,7 +48,7 @@ Common commands (pnpm@10 + turbo orchestration):
 | Test                                     | `pnpm test` (= test:unit) / `pnpm test:e2e`                   |
 | Migration                                | `pnpm db:generate` (generate) / `pnpm db:migrate` (apply)     |
 | Reset / seed database                    | `pnpm db:reset` / `pnpm db:seed`                              |
-| Full gate                                | `pnpm ci` = `typecheck + lint + test + deps:check + spec:terms` |
+| Full gate                                | `pnpm verify` = `typecheck + lint + test + deps:check + spec:terms` |
 | Circular deps / terminology check        | `pnpm deps:check` (madge) / `pnpm spec:terms`                 |
 
 > First run: after `cp .env.example .env`, fill in `DATABASE_URL` / `REDIS_URL`; `MODEL_API_KEY_ENCRYPTION_KEY` (@proofhound/crypto encrypts/decrypts the API Key) and `MCP_TOKEN_SIGNING_SECRET` (MCP token signing) are application-managed secrets, and their absence will cause startup / invocation failures.
@@ -111,7 +111,7 @@ Common commands (pnpm@10 + turbo orchestration):
 - Frontend copy is synced across the Chinese and English i18n.
 - DB schema changes go through a Drizzle migration, not manual `psql` edits to the database.
 - Business semantics are synced to the SPEC.
-- `pnpm ci` is green, or the delivery notes clearly state which items were not run and why.
+- `pnpm verify` is green, or the delivery notes clearly state which items were not run and why.
 
 ## 7. Skill Routing
 
