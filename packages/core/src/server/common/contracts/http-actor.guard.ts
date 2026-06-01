@@ -11,23 +11,40 @@
 import { Injectable } from '@nestjs/common';
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import type { Request } from 'express';
-import type { ActorContext } from '../actor-context';
+import type { ActorContext, ProjectContext } from '../actor-context';
 import type { CurrentUserPayload } from '../decorators/current-user.decorator';
 import { ActorContextResolver } from './actor-context.resolver';
+import { ProjectContextResolver } from './project-context.resolver';
 
 @Injectable()
 export class HttpActorGuard implements CanActivate {
-  constructor(private readonly resolver: ActorContextResolver) {}
+  constructor(
+    private readonly resolver: ActorContextResolver,
+    private readonly projectResolver: ProjectContextResolver,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context
       .switchToHttp()
-      .getRequest<Request & { user: CurrentUserPayload }>();
+      .getRequest<Request & { user: CurrentUserPayload; projectContext: ProjectContext }>();
 
     const actor = await this.resolver.resolveFromHttp(request);
     request.user = toCurrentUserPayload(actor);
+
+    // Resolve the request's ProjectContext via the DI resolver and attach it for @CurrentProject.
+    // OSS LocalProjectContextResolver ignores the hint and returns LOCAL_PROJECT_CONTEXT; SaaS reads
+    // the X-Project-Id header and validates the actor's access to the project.
+    request.projectContext = await this.projectResolver.resolve(actor, {
+      projectIdHeader: readProjectIdHeader(request),
+    });
     return true;
   }
+}
+
+function readProjectIdHeader(request: Request): string | undefined {
+  const raw = request.headers['x-project-id'];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value && value.length > 0 ? value : undefined;
 }
 
 export function toCurrentUserPayload(actor: ActorContext): CurrentUserPayload {

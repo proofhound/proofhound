@@ -1,7 +1,10 @@
 import type { ExecutionContext } from '@nestjs/common';
 import { UnauthorizedException } from '@nestjs/common';
+import { LOCAL_PROJECT_CONTEXT } from '@proofhound/shared';
 import { describe, expect, it, vi } from 'vitest';
+import type { ActorContext } from '../../actor-context';
 import type { ActorContextResolver } from '../actor-context.resolver';
+import type { ProjectContextResolver } from '../project-context.resolver';
 import { HttpActorGuard } from '../http-actor.guard';
 
 function buildContext(req: Record<string, unknown>): ExecutionContext {
@@ -12,13 +15,23 @@ function buildContext(req: Record<string, unknown>): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
+function buildGuard(actor: ActorContext | Error): {
+  guard: HttpActorGuard;
+  projectResolve: ReturnType<typeof vi.fn>;
+} {
+  const resolver: Pick<ActorContextResolver, 'resolveFromHttp' | 'resolveFromUserToken'> = {
+    resolveFromHttp:
+      actor instanceof Error ? vi.fn().mockRejectedValue(actor) : vi.fn().mockResolvedValue(actor),
+    resolveFromUserToken: vi.fn(),
+  };
+  const projectResolve = vi.fn().mockResolvedValue(LOCAL_PROJECT_CONTEXT);
+  const projectResolver = { resolve: projectResolve } as unknown as ProjectContextResolver;
+  return { guard: new HttpActorGuard(resolver as ActorContextResolver, projectResolver), projectResolve };
+}
+
 describe('HttpActorGuard', () => {
   it('success path: attaches request.user as CurrentUserPayload', async () => {
-    const resolver: Pick<ActorContextResolver, 'resolveFromHttp' | 'resolveFromUserToken'> = {
-      resolveFromHttp: vi.fn().mockResolvedValue({ actorId: 'tok-1', actorKind: 'script' }),
-      resolveFromUserToken: vi.fn(),
-    };
-    const guard = new HttpActorGuard(resolver as ActorContextResolver);
+    const { guard } = buildGuard({ actorId: 'tok-1', actorKind: 'script' });
     const req: Record<string, unknown> = { headers: { authorization: 'Bearer x' } };
     const ok = await guard.canActivate(buildContext(req));
 
@@ -35,34 +48,36 @@ describe('HttpActorGuard', () => {
     });
   });
 
-  it('does not swallow the 401 thrown by the resolver', async () => {
-    const resolver: Pick<ActorContextResolver, 'resolveFromHttp' | 'resolveFromUserToken'> = {
-      resolveFromHttp: vi.fn().mockRejectedValue(new UnauthorizedException('invalid_user_token')),
-      resolveFromUserToken: vi.fn(),
+  it('resolves and attaches request.projectContext via ProjectContextResolver with the X-Project-Id hint', async () => {
+    const { guard, projectResolve } = buildGuard({ actorId: 'tok-1', actorKind: 'script' });
+    const req: Record<string, unknown> = {
+      headers: { authorization: 'Bearer x', 'x-project-id': 'p-1' },
     };
-    const guard = new HttpActorGuard(resolver as ActorContextResolver);
+    await guard.canActivate(buildContext(req));
+
+    expect(req.projectContext).toBe(LOCAL_PROJECT_CONTEXT);
+    expect(projectResolve).toHaveBeenCalledWith(
+      { actorId: 'tok-1', actorKind: 'script' },
+      { projectIdHeader: 'p-1' },
+    );
+  });
+
+  it('does not swallow the 401 thrown by the resolver', async () => {
+    const { guard } = buildGuard(new UnauthorizedException('invalid_user_token'));
     await expect(guard.canActivate(buildContext({ headers: {} }))).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
   });
 
   it('local_user actor (UI session) maps to isSuperAdmin=true', async () => {
-    const resolver: Pick<ActorContextResolver, 'resolveFromHttp' | 'resolveFromUserToken'> = {
-      resolveFromHttp: vi.fn().mockResolvedValue({ actorId: 'admin-1', actorKind: 'local_user' }),
-      resolveFromUserToken: vi.fn(),
-    };
-    const guard = new HttpActorGuard(resolver as ActorContextResolver);
+    const { guard } = buildGuard({ actorId: 'admin-1', actorKind: 'local_user' });
     const req: Record<string, unknown> = { headers: { authorization: 'Bearer x' } };
     await guard.canActivate(buildContext(req));
     expect((req.user as { isSuperAdmin: boolean }).isSuperAdmin).toBe(true);
   });
 
   it('system_mcp actor maps to isSuperAdmin=false (system actors use the access-control system bypass)', async () => {
-    const resolver: Pick<ActorContextResolver, 'resolveFromHttp' | 'resolveFromUserToken'> = {
-      resolveFromHttp: vi.fn().mockResolvedValue({ actorId: 'mcp-1', actorKind: 'system_mcp' }),
-      resolveFromUserToken: vi.fn(),
-    };
-    const guard = new HttpActorGuard(resolver as ActorContextResolver);
+    const { guard } = buildGuard({ actorId: 'mcp-1', actorKind: 'system_mcp' });
     const req: Record<string, unknown> = { headers: { authorization: 'Bearer x' } };
     await guard.canActivate(buildContext(req));
     expect((req.user as { isSuperAdmin: boolean }).isSuperAdmin).toBe(false);

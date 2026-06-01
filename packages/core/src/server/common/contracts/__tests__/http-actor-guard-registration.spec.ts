@@ -32,7 +32,9 @@ import { RunResultModule } from '../../../modules/run-result/run-result.module';
 import { TokenController } from '../../../modules/token/token.controller';
 import { TokenModule } from '../../../modules/token/token.module';
 import { ModelService } from '../../../modules/model/model.service';
+import { LOCAL_PROJECT_CONTEXT } from '@proofhound/shared';
 import { ActorContextResolver } from '../actor-context.resolver';
+import { ProjectContextResolver } from '../project-context.resolver';
 import { HttpActorGuard } from '../http-actor.guard';
 
 const guardedModules = [
@@ -72,6 +74,7 @@ describe('HttpActorGuard module registration', () => {
       controllers: [ProjectModelController],
       providers: [
         { provide: ActorContextResolver, useValue: { resolveFromHttp, resolveFromUserToken: vi.fn() } },
+        { provide: ProjectContextResolver, useValue: { resolve: vi.fn().mockResolvedValue(LOCAL_PROJECT_CONTEXT) } },
         { provide: ModelService, useValue: { listProjectModels } },
       ],
     }).compile();

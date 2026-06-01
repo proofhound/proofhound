@@ -12,6 +12,7 @@ import { Global, Module } from '@nestjs/common';
 import { DatabaseModule } from '../../../shared/database/database.module';
 import { AccessControlService } from './access-control.service';
 import { ActorContextResolver } from './actor-context.resolver';
+import { LimiterKeyStrategy, LocalLimiterKeyStrategy } from './limiter-key.strategy';
 import { LocalAccessControlService } from './local-access-control.service';
 import { LocalActorContextResolver } from './local-actor-context.resolver';
 import { LocalMcpAuthResolver } from './local-mcp-auth.resolver';
@@ -19,6 +20,7 @@ import { LocalProjectContextResolver } from './local-project-context.resolver';
 import { LocalUserTokenVerifier } from './local-user-token.verifier';
 import { McpAuthResolver } from './mcp-auth.resolver';
 import { ProjectContextResolver } from './project-context.resolver';
+import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './workflow-authorization.hook';
 
 @Global()
 @Module({
@@ -29,12 +31,16 @@ import { ProjectContextResolver } from './project-context.resolver';
     { provide: ActorContextResolver, useClass: LocalActorContextResolver },
     { provide: McpAuthResolver, useClass: LocalMcpAuthResolver },
     { provide: AccessControlService, useClass: LocalAccessControlService },
+    { provide: LimiterKeyStrategy, useClass: LocalLimiterKeyStrategy },
+    { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
   ],
   exports: [
     ProjectContextResolver,
     ActorContextResolver,
     McpAuthResolver,
     AccessControlService,
+    LimiterKeyStrategy,
+    WorkflowAuthorizationHook,
     LocalUserTokenVerifier,
   ],
 })
