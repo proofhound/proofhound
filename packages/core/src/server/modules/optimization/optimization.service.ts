@@ -39,6 +39,7 @@ import {
 import { createLogger } from '@proofhound/logger';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { aggregateExperimentMetrics } from '../experiment/experiment.aggregator';
@@ -95,6 +96,7 @@ export class OptimizationService {
     private readonly runResults: RunResultService,
     private readonly promptRepo: PromptRepository,
     private readonly accessControl: AccessControlService,
+    private readonly workflowAuth: WorkflowAuthorizationHook,
   ) {}
 
   async listOptimizations(
@@ -271,6 +273,8 @@ export class OptimizationService {
       createdBy: actor.sub,
     });
 
+    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'optimization');
+
     let workflowId: string | null = null;
     try {
       workflowId = await this.launcher.launch(insertedId);
@@ -381,6 +385,7 @@ export class OptimizationService {
     }
 
     if (parsedAction === 'resume') {
+      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'optimization');
       await this.launcher.resume(optimizationId);
     }
 

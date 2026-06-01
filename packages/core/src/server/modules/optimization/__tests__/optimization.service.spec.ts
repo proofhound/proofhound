@@ -15,6 +15,10 @@ import {
 import { OptimizationService } from '../optimization.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import {
+  LocalWorkflowAuthorizationHook,
+  WorkflowAuthorizationHook,
+} from '../../../common/contracts/workflow-authorization.hook';
 import { vi, type Mocked } from 'vitest';
 
 const actor = {
@@ -244,6 +248,7 @@ describe('OptimizationService', () => {
         { provide: RunResultService, useValue: runResults },
         { provide: PromptRepository, useValue: promptRepo },
         { provide: AccessControlService, useClass: LocalAccessControlService },
+        { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
         OptimizationService,
       ],
     }).compile();

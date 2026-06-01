@@ -27,6 +27,7 @@ import type {
 } from '@proofhound/shared';
 import type Redis from 'ioredis';
 import { ConnectorContextResolver } from '../../../server/common/contracts/connector-context.resolver';
+import { WorkflowAuthorizationHook } from '../../../server/common/contracts/workflow-authorization.hook';
 import { BullmqService } from '../../infrastructure/orchestration/bullmq.service';
 import { REDIS_CLIENT } from '../../../shared/redis/redis.constants';
 import {
@@ -67,14 +68,18 @@ export class WebhookService {
     @Inject(BullmqService) private readonly bullmq: BullmqService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly connectorResolver: ConnectorContextResolver,
+    private readonly workflowAuth: WorkflowAuthorizationHook,
   ) {}
 
   async receive(input: ReceiveWebhookInput) {
-    const { connector, webhookTokenId } = await this.connectorResolver.resolveFromWebhookToken(
-      input.webhookSlug,
-      input.pathName,
-      parseBearerToken(input.authorization),
-    );
+    const { connector, webhookTokenId, projectContext, actorContext } =
+      await this.connectorResolver.resolveFromWebhookToken(
+        input.webhookSlug,
+        input.pathName,
+        parseBearerToken(input.authorization),
+      );
+    // Webhook ingress is an entry: authorize the workflow start before enqueuing (OSS no-op; SaaS RBAC).
+    await this.workflowAuth.assertCanStart(actorContext, projectContext, 'llm');
     const releaseLine = await this.repo.findActiveReleaseForConnector(connector.id);
     if (!releaseLine) {
       throw new ConflictException('webhook_no_active_release');

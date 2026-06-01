@@ -8,6 +8,10 @@ import { ExperimentRepository, type ExperimentProjectAccessRow, type ExperimentR
 import { ExperimentService } from '../experiment.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import {
+  LocalWorkflowAuthorizationHook,
+  WorkflowAuthorizationHook,
+} from '../../../common/contracts/workflow-authorization.hook';
 import { vi, type Mocked, type Mock } from 'vitest';
 
 const actor = {
@@ -145,6 +149,7 @@ describe('ExperimentService', () => {
         { provide: RunResultService, useValue: runResults },
         { provide: DATABASE_CLIENT, useValue: db },
         { provide: AccessControlService, useClass: LocalAccessControlService },
+        { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
         ExperimentService,
       ],
     }).compile();

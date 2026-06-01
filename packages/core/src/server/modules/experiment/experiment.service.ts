@@ -27,6 +27,7 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
@@ -59,6 +60,7 @@ export class ExperimentService {
     private readonly runResults: RunResultService,
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
     private readonly accessControl: AccessControlService,
+    private readonly workflowAuth: WorkflowAuthorizationHook,
   ) {}
 
   async createExperiment(
@@ -89,6 +91,8 @@ export class ExperimentService {
       totalSamples: context.dataset.sampleCount,
       createdBy: actor.sub,
     });
+
+    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'experiment');
 
     let workflowId: string | null = null;
     try {
@@ -162,6 +166,7 @@ export class ExperimentService {
     await this.repo.updateExperiment(projectId, experimentId, nextValues);
 
     if (parsedAction === 'resume' || parsedAction === 'retry') {
+      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'experiment');
       try {
         if (parsedAction === 'resume') await this.launcher.resume(experimentId);
         else await this.launcher.retry(experimentId);
