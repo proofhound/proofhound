@@ -23,7 +23,8 @@ import {
 import type { Response } from 'express';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { resolveProjectContext } from '../../common/project-context';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
+import type { ProjectContext } from '@proofhound/shared';
 import { ExperimentService } from './experiment.service';
 
 @Controller('experiments')
@@ -35,12 +36,13 @@ export class ExperimentController {
   async createExperiment(
     @Body() body: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parsed = createExperimentSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
     }
-    return this.experimentService.createExperiment(resolveProjectContext(actor).projectId, parsed.data, actor);
+    return this.experimentService.createExperiment(project.projectId, parsed.data, actor);
   }
 
   @Get()
@@ -49,19 +51,21 @@ export class ExperimentController {
     @Query('search') search: string | undefined,
     @Query('sort') sort: string | undefined,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const query = experimentListQuerySchema.safeParse({ status, search, sort });
     if (!query.success) {
       throw new BadRequestException(query.error.issues);
     }
 
-    return this.experimentService.listExperiments(resolveProjectContext(actor).projectId, actor, query.data);
+    return this.experimentService.listExperiments(project.projectId, actor, query.data);
   }
 
   @Get('export')
   async exportExperiments(
     @Query('format') format: string | undefined,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
     @Res({ passthrough: true }) response: Response,
   ) {
     const parse = experimentExportFormatSchema.safeParse(format ?? 'csv');
@@ -69,7 +73,7 @@ export class ExperimentController {
       throw new BadRequestException(parse.error.issues);
     }
 
-    const file = await this.experimentService.exportExperiments(resolveProjectContext(actor).projectId, parse.data, actor);
+    const file = await this.experimentService.exportExperiments(project.projectId, parse.data, actor);
     this.setExportHeaders(response, file);
     return new StreamableFile(file.buffer);
   }
@@ -79,6 +83,7 @@ export class ExperimentController {
     @Param('experimentId') experimentId: string,
     @Query('format') format: string | undefined,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
     @Res({ passthrough: true }) response: Response,
   ) {
     const parse = experimentExportFormatSchema.safeParse(format ?? 'csv');
@@ -87,7 +92,7 @@ export class ExperimentController {
     }
 
     const file = await this.experimentService.exportExperiments(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       parse.data,
       actor,
       this.parseExperimentId(experimentId),
@@ -100,12 +105,9 @@ export class ExperimentController {
   async getExperiment(
     @Param('experimentId') experimentId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.experimentService.getExperiment(
-      resolveProjectContext(actor).projectId,
-      this.parseExperimentId(experimentId),
-      actor,
-    );
+    return this.experimentService.getExperiment(project.projectId, this.parseExperimentId(experimentId), actor);
   }
 
   @Post(':experimentId/actions/:action')
@@ -113,6 +115,7 @@ export class ExperimentController {
     @Param('experimentId') experimentId: string,
     @Param('action') action: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parsedAction = experimentControlActionSchema.safeParse(action);
     if (!parsedAction.success) {
@@ -120,7 +123,7 @@ export class ExperimentController {
     }
 
     return this.experimentService.controlExperiment(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parseExperimentId(experimentId),
       parsedAction.data,
       actor,
@@ -132,12 +135,9 @@ export class ExperimentController {
   async deleteExperiment(
     @Param('experimentId') experimentId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    await this.experimentService.deleteExperiment(
-      resolveProjectContext(actor).projectId,
-      this.parseExperimentId(experimentId),
-      actor,
-    );
+    await this.experimentService.deleteExperiment(project.projectId, this.parseExperimentId(experimentId), actor);
   }
 
   private parseExperimentId(experimentId: string) {

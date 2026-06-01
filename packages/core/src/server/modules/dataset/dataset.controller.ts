@@ -25,7 +25,8 @@ import {
 import type { Response } from 'express';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { resolveProjectContext } from '../../common/project-context';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
+import type { ProjectContext } from '@proofhound/shared';
 import { DatasetService } from './dataset.service';
 
 @Controller('datasets')
@@ -34,8 +35,8 @@ export class DatasetController {
   constructor(private readonly datasetService: DatasetService) {}
 
   @Get()
-  async listDatasets(@CurrentUser() actor: CurrentUserPayload) {
-    return this.datasetService.listDatasets(resolveProjectContext(actor).projectId, actor);
+  async listDatasets(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
+    return this.datasetService.listDatasets(project.projectId, actor);
   }
 
   @Get(':datasetId/samples')
@@ -43,18 +44,14 @@ export class DatasetController {
     @Param('datasetId') datasetId: string,
     @Query() rawQuery: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = datasetSamplesQuerySchema.safeParse(rawQuery);
     if (!parse.success) {
       throw new BadRequestException(parse.error.issues);
     }
 
-    return this.datasetService.listDatasetSamples(
-      resolveProjectContext(actor).projectId,
-      this.parseDatasetId(datasetId),
-      actor,
-      parse.data,
-    );
+    return this.datasetService.listDatasetSamples(project.projectId, this.parseDatasetId(datasetId), actor, parse.data);
   }
 
   @Get(':datasetId/export')
@@ -62,6 +59,7 @@ export class DatasetController {
     @Param('datasetId') datasetId: string,
     @Query('format') format: string | undefined,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
     @Res({ passthrough: true }) response: Response,
   ) {
     const parse = datasetExportFormatSchema.safeParse(format ?? 'csv');
@@ -70,7 +68,7 @@ export class DatasetController {
     }
 
     const file = await this.datasetService.exportDataset(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parseDatasetId(datasetId),
       parse.data,
       actor,
@@ -88,21 +86,23 @@ export class DatasetController {
   async getDataset(
     @Param('datasetId') datasetId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.datasetService.getDataset(resolveProjectContext(actor).projectId, this.parseDatasetId(datasetId), actor);
+    return this.datasetService.getDataset(project.projectId, this.parseDatasetId(datasetId), actor);
   }
 
   @Post()
   async createDataset(
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = createDatasetSchema.safeParse(rawBody);
     if (!parse.success) {
       throw new BadRequestException(parse.error.issues);
     }
 
-    return this.datasetService.createDataset(resolveProjectContext(actor).projectId, parse.data, actor);
+    return this.datasetService.createDataset(project.projectId, parse.data, actor);
   }
 
   @Patch(':datasetId')
@@ -110,6 +110,7 @@ export class DatasetController {
     @Param('datasetId') datasetId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = updateDatasetMetadataSchema.safeParse(rawBody);
     if (!parse.success) {
@@ -117,7 +118,7 @@ export class DatasetController {
     }
 
     return this.datasetService.updateDatasetMetadata(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parseDatasetId(datasetId),
       parse.data,
       actor,
@@ -130,6 +131,7 @@ export class DatasetController {
     @Param('datasetId') datasetId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = deleteDatasetSamplesSchema.safeParse(rawBody);
     if (!parse.success) {
@@ -137,7 +139,7 @@ export class DatasetController {
     }
 
     return this.datasetService.deleteDatasetSamples(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parseDatasetId(datasetId),
       parse.data,
       actor,
@@ -149,8 +151,9 @@ export class DatasetController {
   async deleteDataset(
     @Param('datasetId') datasetId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    await this.datasetService.deleteDataset(resolveProjectContext(actor).projectId, this.parseDatasetId(datasetId), actor);
+    await this.datasetService.deleteDataset(project.projectId, this.parseDatasetId(datasetId), actor);
   }
 
   private parseDatasetId(datasetId: string) {

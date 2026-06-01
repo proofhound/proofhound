@@ -24,7 +24,8 @@ import {
 import type { Response } from 'express';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { resolveProjectContext } from '../../common/project-context';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
+import type { ProjectContext } from '@proofhound/shared';
 import { ModelService } from './model.service';
 
 @Controller('models')
@@ -33,16 +34,17 @@ export class ProjectModelController {
   constructor(private readonly modelService: ModelService) {}
 
   @Get()
-  async list(@CurrentUser() actor: CurrentUserPayload) {
-    return this.modelService.listProjectModels(resolveProjectContext(actor).projectId, actor);
+  async list(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
+    return this.modelService.listProjectModels(project.projectId, actor);
   }
 
   @Get('export')
   async export(
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const file = await this.modelService.exportProjectModelsCsv(resolveProjectContext(actor).projectId, actor);
+    const file = await this.modelService.exportProjectModelsCsv(project.projectId, actor);
     response.set({
       'Content-Disposition': `attachment; filename="${file.fileName}"; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
       'Content-Length': String(file.byteLength),
@@ -55,44 +57,49 @@ export class ProjectModelController {
   async detail(
     @Param('modelId') modelId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.modelService.getProjectModelDetail(resolveProjectContext(actor).projectId, this.parseModelId(modelId), actor);
+    return this.modelService.getProjectModelDetail(project.projectId, this.parseModelId(modelId), actor);
   }
 
   @Get(':modelId/api-key')
   async revealApiKey(
     @Param('modelId') modelId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.modelService.revealProjectApiKey(resolveProjectContext(actor).projectId, this.parseModelId(modelId), actor);
+    return this.modelService.revealProjectApiKey(project.projectId, this.parseModelId(modelId), actor);
   }
 
   @Get(':modelId/references')
   async references(
     @Param('modelId') modelId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.modelService.getProjectModelReferences(resolveProjectContext(actor).projectId, this.parseModelId(modelId), actor);
+    return this.modelService.getProjectModelReferences(project.projectId, this.parseModelId(modelId), actor);
   }
 
   @Post()
   async create(
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = createProjectModelSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.modelService.createProjectModel(resolveProjectContext(actor).projectId, parse.data, actor);
+    return this.modelService.createProjectModel(project.projectId, parse.data, actor);
   }
 
   @Post('probe-draft')
   async probeDraft(
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = probeDraftProjectModelSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.modelService.probeDraftProjectModel(resolveProjectContext(actor).projectId, parse.data, actor);
+    return this.modelService.probeDraftProjectModel(project.projectId, parse.data, actor);
   }
 
   @Patch(':modelId')
@@ -100,31 +107,29 @@ export class ProjectModelController {
     @Param('modelId') modelId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = updateProjectModelSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.modelService.updateProjectModel(
-      resolveProjectContext(actor).projectId,
-      this.parseModelId(modelId),
-      parse.data,
-      actor,
-    );
+    return this.modelService.updateProjectModel(project.projectId, this.parseModelId(modelId), parse.data, actor);
   }
 
   @Post(':modelId/probe')
   async probe(
     @Param('modelId') modelId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.modelService.probeProjectModel(resolveProjectContext(actor).projectId, this.parseModelId(modelId), actor);
+    return this.modelService.probeProjectModel(project.projectId, this.parseModelId(modelId), actor);
   }
 
   @Post(':modelId/duplicate')
   async duplicate(
     @Param('modelId') modelId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.modelService.duplicateProjectModel(resolveProjectContext(actor).projectId, this.parseModelId(modelId), actor);
+    return this.modelService.duplicateProjectModel(project.projectId, this.parseModelId(modelId), actor);
   }
 
   @Delete(':modelId')
@@ -133,15 +138,11 @@ export class ProjectModelController {
     @Param('modelId') modelId: string,
     @Query() rawQuery: Record<string, string>,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = modelDeleteQuerySchema.safeParse(rawQuery);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    await this.modelService.deleteProjectModel(
-      resolveProjectContext(actor).projectId,
-      this.parseModelId(modelId),
-      parse.data,
-      actor,
-    );
+    await this.modelService.deleteProjectModel(project.projectId, this.parseModelId(modelId), parse.data, actor);
   }
 
   private parseModelId(modelId: string): string {

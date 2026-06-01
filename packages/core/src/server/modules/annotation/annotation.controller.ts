@@ -8,7 +8,8 @@ import {
 import { z } from 'zod';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { resolveProjectContext } from '../../common/project-context';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
+import type { ProjectContext } from '@proofhound/shared';
 import { AnnotationService } from './annotation.service';
 
 const uuidSchema = z.string().uuid();
@@ -24,25 +25,33 @@ export class AnnotationController {
   constructor(private readonly service: AnnotationService) {}
 
   @Get()
-  async list(@CurrentUser() actor: CurrentUserPayload) {
-    return this.service.listTasks(resolveProjectContext(actor).projectId, actor);
+  async list(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
+    return this.service.listTasks(project.projectId, actor);
   }
 
   @Get('options')
-  async options(@CurrentUser() actor: CurrentUserPayload) {
-    return this.service.listOptions(resolveProjectContext(actor).projectId, actor);
+  async options(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
+    return this.service.listOptions(project.projectId, actor);
   }
 
   @Post()
-  async create(@Body() rawBody: unknown, @CurrentUser() actor: CurrentUserPayload) {
+  async create(
+    @Body() rawBody: unknown,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
     const parse = createAnnotationTaskInputSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.createTask(resolveProjectContext(actor).projectId, parse.data, actor);
+    return this.service.createTask(project.projectId, parse.data, actor);
   }
 
   @Get(':taskId')
-  async detail(@Param('taskId') taskId: string, @CurrentUser() actor: CurrentUserPayload) {
-    return this.service.getTask(resolveProjectContext(actor).projectId, this.parseUuid(taskId), actor);
+  async detail(
+    @Param('taskId') taskId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.service.getTask(project.projectId, this.parseUuid(taskId), actor);
   }
 
   @Get(':taskId/samples')
@@ -50,36 +59,47 @@ export class AnnotationController {
     @Param('taskId') taskId: string,
     @Query() rawQuery: Record<string, string>,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = sampleListQuerySchema.safeParse(rawQuery);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.listSamples(resolveProjectContext(actor).projectId, this.parseUuid(taskId), parse.data, actor);
+    return this.service.listSamples(project.projectId, this.parseUuid(taskId), parse.data, actor);
   }
 
   @Post(':taskId/samples/claim')
-  async claim(@Param('taskId') taskId: string, @Body() rawBody: unknown, @CurrentUser() actor: CurrentUserPayload) {
+  async claim(
+    @Param('taskId') taskId: string,
+    @Body() rawBody: unknown,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
     const parse = claimAnnotationSamplesInputSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.claimSamples(resolveProjectContext(actor).projectId, this.parseUuid(taskId), parse.data, actor);
+    return this.service.claimSamples(project.projectId, this.parseUuid(taskId), parse.data, actor);
   }
 
   @Post(':taskId/samples/submit')
-  async submit(@Param('taskId') taskId: string, @Body() rawBody: unknown, @CurrentUser() actor: CurrentUserPayload) {
+  async submit(
+    @Param('taskId') taskId: string,
+    @Body() rawBody: unknown,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
     const parse = submitAnnotationSampleInputSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.submitSample(resolveProjectContext(actor).projectId, this.parseUuid(taskId), parse.data, actor);
+    return this.service.submitSample(project.projectId, this.parseUuid(taskId), parse.data, actor);
   }
 
   @Post(':taskId/samples/release')
-  async release(@Param('taskId') taskId: string, @Body() rawBody: unknown, @CurrentUser() actor: CurrentUserPayload) {
+  async release(
+    @Param('taskId') taskId: string,
+    @Body() rawBody: unknown,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
     const parse = releaseAnnotationSampleInputSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.releaseSample(
-      resolveProjectContext(actor).projectId,
-      this.parseUuid(taskId),
-      parse.data,
-      actor,
-    );
+    return this.service.releaseSample(project.projectId, this.parseUuid(taskId), parse.data, actor);
   }
 
   private parseUuid(value: string): string {

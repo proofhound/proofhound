@@ -22,7 +22,8 @@ import {
 } from '@proofhound/shared';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { resolveProjectContext } from '../../common/project-context';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
+import type { ProjectContext } from '@proofhound/shared';
 import { PromptTryRunService } from './prompt-try-run.service';
 import { PromptService } from './prompt.service';
 
@@ -35,31 +36,35 @@ export class PromptController {
   ) {}
 
   @Get()
-  async listPrompts(@CurrentUser() actor: CurrentUserPayload) {
-    return this.promptService.listPrompts(resolveProjectContext(actor).projectId, actor);
+  async listPrompts(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
+    return this.promptService.listPrompts(project.projectId, actor);
   }
 
   @Get(':promptId')
-  async getPrompt(@Param('promptId') promptId: string, @CurrentUser() actor: CurrentUserPayload) {
-    return this.promptService.getPrompt(resolveProjectContext(actor).projectId, this.parsePromptId(promptId), actor);
+  async getPrompt(
+    @Param('promptId') promptId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.promptService.getPrompt(project.projectId, this.parsePromptId(promptId), actor);
   }
 
   @Get(':promptId/metrics')
-  async getPromptMetrics(@Param('promptId') promptId: string, @CurrentUser() actor: CurrentUserPayload) {
-    return this.promptService.getPromptMetrics(
-      resolveProjectContext(actor).projectId,
-      this.parsePromptId(promptId),
-      actor,
-    );
+  async getPromptMetrics(
+    @Param('promptId') promptId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.promptService.getPromptMetrics(project.projectId, this.parsePromptId(promptId), actor);
   }
 
   @Get(':promptId/delete-impact')
-  async getPromptDeleteImpact(@Param('promptId') promptId: string, @CurrentUser() actor: CurrentUserPayload) {
-    return this.promptService.getPromptDeleteImpact(
-      resolveProjectContext(actor).projectId,
-      this.parsePromptId(promptId),
-      actor,
-    );
+  async getPromptDeleteImpact(
+    @Param('promptId') promptId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.promptService.getPromptDeleteImpact(project.projectId, this.parsePromptId(promptId), actor);
   }
 
   @Get(':promptId/versions/:versionId/delete-impact')
@@ -67,9 +72,10 @@ export class PromptController {
     @Param('promptId') promptId: string,
     @Param('versionId') versionId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     return this.promptService.getPromptVersionDeleteImpact(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parsePromptId(promptId),
       this.parsePromptVersionId(versionId),
       actor,
@@ -77,13 +83,17 @@ export class PromptController {
   }
 
   @Post()
-  async createPrompt(@Body() rawBody: unknown, @CurrentUser() actor: CurrentUserPayload) {
+  async createPrompt(
+    @Body() rawBody: unknown,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
     const parse = createPromptSchema.safeParse(rawBody);
     if (!parse.success) {
       throw new BadRequestException(parse.error.issues);
     }
 
-    return this.promptService.createPrompt(resolveProjectContext(actor).projectId, parse.data, actor);
+    return this.promptService.createPrompt(project.projectId, parse.data, actor);
   }
 
   @Patch(':promptId')
@@ -91,18 +101,14 @@ export class PromptController {
     @Param('promptId') promptId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = updatePromptSchema.safeParse(rawBody);
     if (!parse.success) {
       throw new BadRequestException(parse.error.issues);
     }
 
-    return this.promptService.updatePrompt(
-      resolveProjectContext(actor).projectId,
-      this.parsePromptId(promptId),
-      parse.data,
-      actor,
-    );
+    return this.promptService.updatePrompt(project.projectId, this.parsePromptId(promptId), parse.data, actor);
   }
 
   @Patch(':promptId/labels')
@@ -110,18 +116,14 @@ export class PromptController {
     @Param('promptId') promptId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = updatePromptVersionLabelSchema.safeParse(rawBody);
     if (!parse.success) {
       throw new BadRequestException(parse.error.issues);
     }
 
-    return this.promptService.updateVersionLabel(
-      resolveProjectContext(actor).projectId,
-      this.parsePromptId(promptId),
-      parse.data,
-      actor,
-    );
+    return this.promptService.updateVersionLabel(project.projectId, this.parsePromptId(promptId), parse.data, actor);
   }
 
   @Post(':promptId/versions')
@@ -129,18 +131,14 @@ export class PromptController {
     @Param('promptId') promptId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = createPromptDraftVersionSchema.safeParse(rawBody);
     if (!parse.success) {
       throw new BadRequestException(parse.error.issues);
     }
 
-    return this.promptService.createDraftVersion(
-      resolveProjectContext(actor).projectId,
-      this.parsePromptId(promptId),
-      parse.data,
-      actor,
-    );
+    return this.promptService.createDraftVersion(project.projectId, this.parsePromptId(promptId), parse.data, actor);
   }
 
   @Delete(':promptId/versions/:versionId')
@@ -149,9 +147,10 @@ export class PromptController {
     @Param('promptId') promptId: string,
     @Param('versionId') versionId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     await this.promptService.deleteDraftVersion(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parsePromptId(promptId),
       this.parsePromptVersionId(versionId),
       actor,
@@ -164,6 +163,7 @@ export class PromptController {
     @Param('versionId') versionId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = updatePromptDraftVersionSchema.safeParse(rawBody);
     if (!parse.success) {
@@ -171,7 +171,7 @@ export class PromptController {
     }
 
     return this.promptService.updateDraftVersion(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parsePromptId(promptId),
       this.parsePromptVersionId(versionId),
       parse.data,
@@ -184,19 +184,19 @@ export class PromptController {
     @Param('promptId') promptId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.promptTryRunService.tryRun(
-      resolveProjectContext(actor).projectId,
-      this.parsePromptId(promptId),
-      rawBody,
-      actor,
-    );
+    return this.promptTryRunService.tryRun(project.projectId, this.parsePromptId(promptId), rawBody, actor);
   }
 
   @Delete(':promptId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deletePrompt(@Param('promptId') promptId: string, @CurrentUser() actor: CurrentUserPayload) {
-    await this.promptService.deletePrompt(resolveProjectContext(actor).projectId, this.parsePromptId(promptId), actor);
+  async deletePrompt(
+    @Param('promptId') promptId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    await this.promptService.deletePrompt(project.projectId, this.parsePromptId(promptId), actor);
   }
 
   private parsePromptId(promptId: string) {

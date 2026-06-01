@@ -3,7 +3,8 @@ import { experimentIdParamSchema, runResultListQuerySchema, runResultReleaseList
 import { z } from 'zod';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { resolveProjectContext } from '../../common/project-context';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
+import type { ProjectContext } from '@proofhound/shared';
 import { RunResultService } from './run-result.service';
 
 const runResultIdParamSchema = z.string().uuid();
@@ -18,6 +19,7 @@ export class RunResultController {
     @Param('experimentId') experimentId: string,
     @Query() rawQuery: Record<string, unknown>,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const queryParse = runResultListQuerySchema.safeParse(rawQuery ?? {});
     if (!queryParse.success) {
@@ -25,7 +27,7 @@ export class RunResultController {
     }
 
     return this.runResultService.listExperimentRunResults(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parseExperimentId(experimentId),
       actor,
       queryParse.data,
@@ -37,6 +39,7 @@ export class RunResultController {
     @Param('experimentId') experimentId: string,
     @Param('runResultId') runResultId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = runResultIdParamSchema.safeParse(runResultId);
     if (!parse.success) {
@@ -44,7 +47,7 @@ export class RunResultController {
     }
 
     return this.runResultService.getExperimentRunResult(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parseExperimentId(experimentId),
       parse.data,
       actor,
@@ -66,12 +69,16 @@ export class ReleaseRunResultController {
   constructor(private readonly runResultService: RunResultService) {}
 
   @Get('releases')
-  async listForRelease(@Query() rawQuery: Record<string, unknown>, @CurrentUser() actor: CurrentUserPayload) {
+  async listForRelease(
+    @Query() rawQuery: Record<string, unknown>,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
     const queryParse = runResultReleaseListQuerySchema.safeParse(rawQuery ?? {});
     if (!queryParse.success) {
       throw new BadRequestException(queryParse.error.issues);
     }
 
-    return this.runResultService.listReleaseRunResults(resolveProjectContext(actor).projectId, actor, queryParse.data);
+    return this.runResultService.listReleaseRunResults(project.projectId, actor, queryParse.data);
   }
 }

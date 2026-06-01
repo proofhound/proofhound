@@ -19,7 +19,8 @@ import {
 } from '@proofhound/shared';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { resolveProjectContext } from '../../common/project-context';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
+import type { ProjectContext } from '@proofhound/shared';
 import { OptimizationService } from './optimization.service';
 
 @Controller('optimizations')
@@ -33,36 +34,35 @@ export class OptimizationController {
     @Query('search') search: string | undefined,
     @Query('sort') sort: string | undefined,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const query = optimizationListQuerySchema.safeParse({ status, search, sort });
     if (!query.success) {
       throw new BadRequestException(query.error.issues);
     }
-    return this.optimizationService.listOptimizations(resolveProjectContext(actor).projectId, actor, query.data);
+    return this.optimizationService.listOptimizations(project.projectId, actor, query.data);
   }
 
   @Get(':optimizationId')
   async getOptimization(
     @Param('optimizationId') optimizationId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.optimizationService.getOptimization(
-      resolveProjectContext(actor).projectId,
-      this.parseOptimizationId(optimizationId),
-      actor,
-    );
+    return this.optimizationService.getOptimization(project.projectId, this.parseOptimizationId(optimizationId), actor);
   }
 
   @Post()
   async createOptimization(
     @Body() body: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parsed = createOptimizationSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
     }
-    return this.optimizationService.createOptimization(resolveProjectContext(actor).projectId, parsed.data, actor);
+    return this.optimizationService.createOptimization(project.projectId, parsed.data, actor);
   }
 
   @Post(':optimizationId/actions/:action')
@@ -70,13 +70,14 @@ export class OptimizationController {
     @Param('optimizationId') optimizationId: string,
     @Param('action') action: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parsedAction = optimizationControlActionSchema.safeParse(action);
     if (!parsedAction.success) {
       throw new BadRequestException(parsedAction.error.issues);
     }
     return this.optimizationService.controlOptimization(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parseOptimizationId(optimizationId),
       parsedAction.data,
       actor,
@@ -88,9 +89,10 @@ export class OptimizationController {
   async deleteOptimization(
     @Param('optimizationId') optimizationId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     await this.optimizationService.deleteOptimization(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parseOptimizationId(optimizationId),
       actor,
     );

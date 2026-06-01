@@ -3,7 +3,8 @@ import { updateReleaseLineRunConfigInputSchema, updateReleaseLineTrafficRatioInp
 import { z } from 'zod';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { resolveProjectContext } from '../../common/project-context';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
+import type { ProjectContext } from '@proofhound/shared';
 import { ReleaseLineService } from './release-line.service';
 
 const uuidSchema = z.string().uuid();
@@ -14,18 +15,26 @@ export class ReleaseLineController {
   constructor(private readonly service: ReleaseLineService) {}
 
   @Get()
-  async list(@CurrentUser() actor: CurrentUserPayload) {
-    return this.service.list(resolveProjectContext(actor).projectId, actor);
+  async list(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
+    return this.service.list(project.projectId, actor);
   }
 
   @Get(':releaseLineId')
-  async get(@Param('releaseLineId') releaseLineId: string, @CurrentUser() actor: CurrentUserPayload) {
-    return this.service.get(resolveProjectContext(actor).projectId, this.parseUuid(releaseLineId), actor);
+  async get(
+    @Param('releaseLineId') releaseLineId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.service.get(project.projectId, this.parseUuid(releaseLineId), actor);
   }
 
   @Get(':releaseLineId/events')
-  async events(@Param('releaseLineId') releaseLineId: string, @CurrentUser() actor: CurrentUserPayload) {
-    return this.service.listEvents(resolveProjectContext(actor).projectId, this.parseUuid(releaseLineId), actor);
+  async events(
+    @Param('releaseLineId') releaseLineId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.service.listEvents(project.projectId, this.parseUuid(releaseLineId), actor);
   }
 
   @Post(':releaseLineId/traffic-ratio')
@@ -33,15 +42,11 @@ export class ReleaseLineController {
     @Param('releaseLineId') releaseLineId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = updateReleaseLineTrafficRatioInputSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.updateTrafficRatio(
-      resolveProjectContext(actor).projectId,
-      this.parseUuid(releaseLineId),
-      parse.data,
-      actor,
-    );
+    return this.service.updateTrafficRatio(project.projectId, this.parseUuid(releaseLineId), parse.data, actor);
   }
 
   @Post(':releaseLineId/run-config')
@@ -49,15 +54,11 @@ export class ReleaseLineController {
     @Param('releaseLineId') releaseLineId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = updateReleaseLineRunConfigInputSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.updateRunConfig(
-      resolveProjectContext(actor).projectId,
-      this.parseUuid(releaseLineId),
-      parse.data,
-      actor,
-    );
+    return this.service.updateRunConfig(project.projectId, this.parseUuid(releaseLineId), parse.data, actor);
   }
 
   private parseUuid(value: string): string {

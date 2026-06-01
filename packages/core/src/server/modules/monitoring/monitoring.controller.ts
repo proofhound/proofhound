@@ -10,7 +10,8 @@ import {
 import { z } from 'zod';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { resolveProjectContext } from '../../common/project-context';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
+import type { ProjectContext } from '@proofhound/shared';
 import { MonitoringService } from './monitoring.service';
 
 @Controller('monitoring')
@@ -19,19 +20,31 @@ export class MonitoringController {
   constructor(private readonly monitoring: MonitoringService) {}
 
   @Get('stats')
-  async getStats(@Query() rawQuery: Record<string, unknown>, @CurrentUser() actor: CurrentUserPayload) {
-    return this.monitoring.getStats(resolveProjectContext(actor).projectId, parseFilter(rawQuery), actor);
+  async getStats(
+    @Query() rawQuery: Record<string, unknown>,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.monitoring.getStats(project.projectId, parseFilter(rawQuery), actor);
   }
 
   @Get('timeseries')
-  async getTimeseries(@Query() rawQuery: Record<string, unknown>, @CurrentUser() actor: CurrentUserPayload) {
-    return this.monitoring.getTimeseries(resolveProjectContext(actor).projectId, parseFilter(rawQuery), actor);
+  async getTimeseries(
+    @Query() rawQuery: Record<string, unknown>,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.monitoring.getTimeseries(project.projectId, parseFilter(rawQuery), actor);
   }
 
   @Get('prompts/ranking')
-  async getPromptRanking(@Query() rawQuery: Record<string, unknown>, @CurrentUser() actor: CurrentUserPayload) {
+  async getPromptRanking(
+    @Query() rawQuery: Record<string, unknown>,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
     return this.monitoring.getPromptRanking(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       parseFilter(rawQuery),
       parsePromptSortBy(rawQuery),
       actor,
@@ -39,13 +52,12 @@ export class MonitoringController {
   }
 
   @Get('models/ranking')
-  async getModelRanking(@Query() rawQuery: Record<string, unknown>, @CurrentUser() actor: CurrentUserPayload) {
-    return this.monitoring.getModelRanking(
-      resolveProjectContext(actor).projectId,
-      parseFilter(rawQuery),
-      parseModelSortBy(rawQuery),
-      actor,
-    );
+  async getModelRanking(
+    @Query() rawQuery: Record<string, unknown>,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.monitoring.getModelRanking(project.projectId, parseFilter(rawQuery), parseModelSortBy(rawQuery), actor);
   }
 }
 
@@ -66,7 +78,10 @@ function parseFilter(rawQuery: Record<string, unknown>): ProjectMonitoringFilter
 }
 
 function parsePromptSortBy(rawQuery: Record<string, unknown>): PromptMonitoringRankingResponseDto['sortBy'] {
-  const parse = z.enum(promptMonitoringRankingSortBy).default('requests').safeParse(readQueryString(rawQuery, 'sortBy'));
+  const parse = z
+    .enum(promptMonitoringRankingSortBy)
+    .default('requests')
+    .safeParse(readQueryString(rawQuery, 'sortBy'));
   if (!parse.success) throw new BadRequestException(parse.error.issues);
   return parse.data;
 }
@@ -87,7 +102,8 @@ function readQueryString(rawQuery: Record<string, unknown>, key: string): string
 function readCsvQuery(rawQuery: Record<string, unknown>, key: string): string[] | undefined {
   const value = rawQuery[key];
   const values = Array.isArray(value) ? value : value === undefined ? [] : [value];
-  const parsed = values.flatMap((item) => (typeof item === 'string' ? item.split(',') : []))
+  const parsed = values
+    .flatMap((item) => (typeof item === 'string' ? item.split(',') : []))
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
   return parsed.length > 0 ? parsed : undefined;

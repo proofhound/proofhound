@@ -25,7 +25,8 @@ import {
 import { z } from 'zod';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { resolveProjectContext } from '../../common/project-context';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
+import type { ProjectContext } from '@proofhound/shared';
 import { ConnectorService } from './connector.service';
 
 @Controller('connectors')
@@ -37,36 +38,40 @@ export class ConnectorController {
   async list(
     @Query() rawQuery: Record<string, string>,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parseQuery = connectorListQuerySchema.safeParse(rawQuery);
     if (!parseQuery.success) throw new BadRequestException(parseQuery.error.issues);
-    return this.service.list(resolveProjectContext(actor).projectId, actor, parseQuery.data);
+    return this.service.list(project.projectId, actor, parseQuery.data);
   }
 
   @Get(':connectorId')
   async detail(
     @Param('connectorId') connectorId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.service.getDetail(resolveProjectContext(actor).projectId, this.parseConnectorId(connectorId), actor);
+    return this.service.getDetail(project.projectId, this.parseConnectorId(connectorId), actor);
   }
 
   @Get(':connectorId/references')
   async references(
     @Param('connectorId') connectorId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.service.getReferences(resolveProjectContext(actor).projectId, this.parseConnectorId(connectorId), actor);
+    return this.service.getReferences(project.projectId, this.parseConnectorId(connectorId), actor);
   }
 
   @Post()
   async create(
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = createConnectorSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.create(resolveProjectContext(actor).projectId, parse.data, actor);
+    return this.service.create(project.projectId, parse.data, actor);
   }
 
   @Patch(':connectorId')
@@ -74,10 +79,11 @@ export class ConnectorController {
     @Param('connectorId') connectorId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = updateConnectorSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.update(resolveProjectContext(actor).projectId, this.parseConnectorId(connectorId), parse.data, actor);
+    return this.service.update(project.projectId, this.parseConnectorId(connectorId), parse.data, actor);
   }
 
   @Delete(':connectorId')
@@ -86,28 +92,31 @@ export class ConnectorController {
     @Param('connectorId') connectorId: string,
     @Query() rawQuery: Record<string, string>,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = connectorDeleteQuerySchema.safeParse(rawQuery);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    await this.service.delete(resolveProjectContext(actor).projectId, this.parseConnectorId(connectorId), parse.data, actor);
+    await this.service.delete(project.projectId, this.parseConnectorId(connectorId), parse.data, actor);
   }
 
   @Post('bulk-delete')
   async bulkDelete(
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = bulkDeleteConnectorsRequestSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.bulkDelete(resolveProjectContext(actor).projectId, parse.data, actor);
+    return this.service.bulkDelete(project.projectId, parse.data, actor);
   }
 
   @Post(':connectorId/probe')
   async probe(
     @Param('connectorId') connectorId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.service.probe(resolveProjectContext(actor).projectId, this.parseConnectorId(connectorId), actor);
+    return this.service.probe(project.projectId, this.parseConnectorId(connectorId), actor);
   }
 
   @Post(':connectorId/peek')
@@ -115,10 +124,11 @@ export class ConnectorController {
     @Param('connectorId') connectorId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = peekConnectorRequestSchema.safeParse(rawBody ?? {});
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.peek(resolveProjectContext(actor).projectId, this.parseConnectorId(connectorId), parse.data, actor);
+    return this.service.peek(project.projectId, this.parseConnectorId(connectorId), parse.data, actor);
   }
 
   // -------------------------------------------------------------------------
@@ -130,12 +140,9 @@ export class ConnectorController {
   async listWebhookTokens(
     @Param('connectorId') connectorId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
-    return this.service.listWebhookTokens(
-      resolveProjectContext(actor).projectId,
-      this.parseConnectorId(connectorId),
-      actor,
-    );
+    return this.service.listWebhookTokens(project.projectId, this.parseConnectorId(connectorId), actor);
   }
 
   @Post(':connectorId/webhook-tokens')
@@ -143,15 +150,11 @@ export class ConnectorController {
     @Param('connectorId') connectorId: string,
     @Body() rawBody: unknown,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parse = createWebhookTokenSchema.safeParse(rawBody ?? {});
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.createWebhookToken(
-      resolveProjectContext(actor).projectId,
-      this.parseConnectorId(connectorId),
-      parse.data,
-      actor,
-    );
+    return this.service.createWebhookToken(project.projectId, this.parseConnectorId(connectorId), parse.data, actor);
   }
 
   @Delete(':connectorId/webhook-tokens/:tokenId')
@@ -160,11 +163,12 @@ export class ConnectorController {
     @Param('connectorId') connectorId: string,
     @Param('tokenId') tokenId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parsedTokenId = z.string().uuid().safeParse(tokenId);
     if (!parsedTokenId.success) throw new BadRequestException(parsedTokenId.error.issues);
     await this.service.revokeWebhookToken(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parseConnectorId(connectorId),
       parsedTokenId.data,
       actor,
@@ -176,11 +180,12 @@ export class ConnectorController {
     @Param('connectorId') connectorId: string,
     @Param('tokenId') tokenId: string,
     @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
   ) {
     const parsedTokenId = z.string().uuid().safeParse(tokenId);
     if (!parsedTokenId.success) throw new BadRequestException(parsedTokenId.error.issues);
     return this.service.revealWebhookToken(
-      resolveProjectContext(actor).projectId,
+      project.projectId,
       this.parseConnectorId(connectorId),
       parsedTokenId.data,
       actor,
