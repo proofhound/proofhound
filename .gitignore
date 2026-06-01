@@ -55,6 +55,9 @@ datasets/yelp_polarity/yelp_polarity.jsonl
 # Local tooling state
 .codegraph/
 
+# Branch-development worktrees (root-level; see AGENTS.md → Git workflow)
+/worktrees/
+
 # Local notes source files
 docs/notes/
 docs/specs/notes/

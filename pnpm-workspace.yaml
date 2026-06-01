@@ -2,6 +2,10 @@ packages:
   - .
   - apps/*
   - packages/*
+  # Branch-development worktrees live at repo root (see AGENTS.md → Git workflow);
+  # never treat a nested checkout there as a workspace package.
+  - '!worktrees'
+  - '!worktrees/**'
 allowBuilds:
   '@nestjs/core': true
   '@swc/core': true

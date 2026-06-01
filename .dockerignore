@@ -30,5 +30,9 @@ __pycache__
 .venv
 venv
 
+# Branch-development worktrees (root-level; see AGENTS.md → Git workflow)
+worktrees
+**/worktrees
+
 # Local full-size datasets
 datasets/yelp_polarity/yelp_polarity.jsonl

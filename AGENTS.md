@@ -30,13 +30,15 @@ This repository carries only OSS self-hosted capabilities. Future SaaS / control
 ```
 proofhound/
 ├── apps/        server / webhook / worker / web
-├── packages/    shared / db / crypto / providers / logger / limiter / metrics / judgment / optimization-strategy / orchestration-shared / llm-client / connector-client / api-client / ui
+├── packages/    core / shared / db / crypto / providers / logger / limiter / metrics / judgment / optimization-strategy / orchestration-shared / llm-client / connector-client / api-client / ui / web-ui
 ├── dev/         local development dependency services docker-compose
 ├── docs/specs/  open-source edition business SPEC
 ├── .agents/skills/
 ├── AGENTS.md / CLAUDE.md
 └── pnpm-workspace.yaml / tsconfig.base.json
 ```
+
+`@proofhound/core` (backend) and `@proofhound/web-ui` (frontend) hold the isomorphic, deployment-agnostic logic; `apps/*` are thin shells that inject the OSS/SaaS adapter contracts — server via `ProofHoundServerModule.forRoot({ contracts })`, web via `<ProofHoundWebProvider contracts>`.
 
 Common commands (pnpm@10 + turbo orchestration):
 
@@ -57,8 +59,10 @@ Common commands (pnpm@10 + turbo orchestration):
 
 - Branch naming: `<type>/<kebab>` aligned with Conventional Commits (`feat/`, `fix/`, `docs/`, `refactor/`, `chore/`, …) — e.g. `refactor/contracts-forroot-override`.
 - `master` is PR-only: no direct push (branch protection + `enforce_admins`). Squash-merge with a Conventional-Commit PR title so release-please categorizes it.
-- Worktrees: create with `mkdir -p .claude/worktrees && git worktree add .claude/worktrees/<name> -b <type>/<kebab> master` (a fresh `<type>/<kebab>` branch off `master`). Do not rely on tooling that forces a `worktree-` prefix or rewrites `/` to `+`; rename the branch to conform if it does.
-- After creating a worktree, before working in it: (1) copy the local secrets from the primary worktree so the new tree can boot — `cp .env .claude/worktrees/<name>/.env` (`.env` is gitignored, so a fresh worktree starts without it); (2) build its own CodeGraph index with `cd .claude/worktrees/<name> && codegraph init -i` (`.codegraph` state is gitignored and per-worktree, so the index does not carry over).
+- Worktrees: the repo-root `worktrees/` directory is the designated home for branch-development worktrees. It is deliberately excluded from every root tool — `.gitignore` (`/worktrees/`), `.dockerignore` (`worktrees`), `pnpm-workspace.yaml` (`!worktrees/**`), and `.prettierignore` (`worktrees`) — so a nested checkout there is never tracked, copied into a Docker build context, treated as a pnpm workspace package, or rewritten by `pnpm format`. Always create worktrees under it, never elsewhere in the tree.
+- Create with `mkdir -p worktrees && git worktree add worktrees/<name> -b <type>/<kebab> master` (a fresh `<type>/<kebab>` branch off `master`). Do not rely on tooling that forces a `worktree-` prefix or rewrites `/` to `+`; rename the branch to conform if it does.
+- After creating a worktree, before working in it: (1) copy the local secrets from the primary worktree so the new tree can boot — `cp .env worktrees/<name>/.env` (`.env` is gitignored, so a fresh worktree starts without it); (2) build its own CodeGraph index with `cd worktrees/<name> && codegraph init -i` (`.codegraph` state is gitignored and per-worktree, so the index does not carry over).
+- Keep the VS Code multi-root workspace in step with the live worktrees. The single workspace file lives at the main checkout's `.vscode/proofhound.code-workspace` (under the gitignored `.vscode/`, so it is per-machine and never committed; its `folders` paths are relative to `.vscode/`). When you **add** a worktree, append `{ "path": "../worktrees/<name>" }` to its `folders` array — create the file if it is missing, always keeping `{ "path": ".." }` (the main checkout) as the first entry, e.g. `{ "folders": [{ "path": ".." }, { "path": "../worktrees/<name>" }], "settings": {} }`. When you **remove** a worktree, delete the matching `folders` entry.
 
 ## 3. What to Read Before Starting
 

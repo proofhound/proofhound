@@ -7,3 +7,4 @@ playwright-report
 test-results
 pnpm-lock.yaml
 packages/db/src/migrations
+worktrees
