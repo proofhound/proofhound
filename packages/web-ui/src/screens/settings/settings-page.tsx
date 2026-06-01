@@ -28,6 +28,7 @@ import type { TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import {
   useCreateToken,
+  useDelayedLoading,
   useDeleteToken,
   useRevealToken,
   useTokens,
@@ -274,7 +275,7 @@ export function SettingsPage() {
     }
   }
 
-  const loading = tokensQuery.isLoading;
+  const loading = useDelayedLoading(tokensQuery.isLoading);
 
   return (
     <Main className="gap-0">

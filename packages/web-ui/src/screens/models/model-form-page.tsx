@@ -55,6 +55,7 @@ import { useI18n } from '../../i18n';
 import { getApiErrorMessage, toIntegerInputValue, buildProviderTypeOptions, isProjectNameTaken } from '../../lib';
 import {
   useCreateProjectModel,
+  useDelayedLoading,
   useProbeProjectModel,
   useProbeDraftProjectModel,
   useDeleteProjectModel,
@@ -1481,6 +1482,8 @@ export function ModelFormPage({
     [isNew, copyFromId, copyQuery.data, copySuffix],
   );
   const waitingForCopy = isNew && !!copyFromId && !copySource;
+  // Gate the copy-source skeleton behind the 300ms threshold so a fast copy fetch doesn't flash the full-page skeleton.
+  const copyLoading = useDelayedLoading(waitingForCopy);
   const fetchedModel = useMemo(() => (modelQuery.data ? dtoToProjectModel(modelQuery.data) : null), [modelQuery.data]);
   const quickFillModel = useMemo(
     () => (isNew && quickFillDraft ? projectModelFromQuickFillDraft(quickFillDraft) : null),
@@ -1790,7 +1793,7 @@ export function ModelFormPage({
     return (
       <Main className="gap-0 bg-muted/35 p-0">
         <div className="mx-auto w-full max-w-[1440px] px-4 pb-24 pt-6 sm:px-6 lg:px-8" data-testid="model-new-page">
-          <DetailPageSkeleton />
+          {copyLoading ? <DetailPageSkeleton /> : null}
         </div>
       </Main>
     );

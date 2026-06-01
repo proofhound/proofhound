@@ -20,6 +20,7 @@ import {
 } from '@proofhound/ui';
 import { useProjectModels } from '../../hooks';
 import {
+  useDelayedLoading,
   useProjectModelMonitoringRanking,
   useProjectMonitoringStats,
   useProjectMonitoringTimeseries,
@@ -143,6 +144,8 @@ export function ProjectMonitoringPage({ testId, titleKey, subtitleKey }: Project
   const timeseriesQuery = useProjectMonitoringTimeseries(projectId, filter);
   const promptRankingQuery = usePromptMonitoringRanking(projectId, filter, promptSortBy);
   const modelRankingQuery = useProjectModelMonitoringRanking(projectId, filter, modelSortBy);
+  const promptRankingLoading = useDelayedLoading(promptRankingQuery.isPending);
+  const modelRankingLoading = useDelayedLoading(modelRankingQuery.isPending);
 
   const granularityLabel =
     timeseriesQuery.data?.granularity === 'minute'
@@ -364,7 +367,7 @@ export function ProjectMonitoringPage({ testId, titleKey, subtitleKey }: Project
             data={promptRankingQuery.data?.items ?? []}
             sortBy={promptSortBy}
             onSortByChange={setPromptSortBy}
-            loading={promptRankingQuery.isPending}
+            loading={promptRankingLoading}
             totalPrompts={promptsList.length}
             formatRequests={formatBigNumber}
             formatCost={formatCost}
@@ -373,7 +376,7 @@ export function ProjectMonitoringPage({ testId, titleKey, subtitleKey }: Project
             data={modelRankingQuery.data?.items ?? []}
             sortBy={modelSortBy}
             onSortByChange={setModelSortBy}
-            loading={modelRankingQuery.isPending}
+            loading={modelRankingLoading}
             formatRequests={formatBigNumber}
             formatTokens={formatBigNumber}
             formatCost={formatCost}

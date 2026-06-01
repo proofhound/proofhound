@@ -1,5 +1,5 @@
 import { PlatformLoadingScreen } from '@proofhound/ui';
 
 export default function Loading() {
-  return <PlatformLoadingScreen />;
+  return <PlatformLoadingScreen delayReveal />;
 }

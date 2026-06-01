@@ -41,9 +41,19 @@ export function PlatformLoader({ className, size = 'lg' }: PlatformLoaderProps) 
   );
 }
 
-export function PlatformLoadingScreen() {
+interface PlatformLoadingScreenProps {
+  /** Delay the loader's appearance by 300ms so a fast route transition doesn't flash a full-screen loader. */
+  delayReveal?: boolean;
+}
+
+export function PlatformLoadingScreen({ delayReveal = false }: PlatformLoadingScreenProps = {}) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4">
+    <main
+      className={cn(
+        'flex min-h-screen items-center justify-center bg-background px-4',
+        delayReveal && 'ph-loader-delayed-reveal',
+      )}
+    >
       <PlatformLoader />
     </main>
   );

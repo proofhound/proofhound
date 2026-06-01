@@ -653,6 +653,18 @@
     }
   }
 
+  @keyframes ph-loader-reveal {
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Hold a full-screen route-transition loader invisible for 300ms; a fast navigation unmounts it before it ever paints. */
+  .ph-loader-delayed-reveal {
+    opacity: 0;
+    animation: ph-loader-reveal 0s linear 300ms forwards;
+  }
+
   .status-running {
     background: var(--status-running-bg);
     color: var(--status-running-fg);

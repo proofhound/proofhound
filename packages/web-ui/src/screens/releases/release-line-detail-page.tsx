@@ -1084,8 +1084,11 @@ function VariantsPane({
 }) {
   const { t } = useI18n();
   const details = useMemo(() => buildReleaseVariantDetails(line, releaseEvents), [line, releaseEvents]);
+  const showLoader = useDelayedLoading(loading);
 
-  if (loading && details.length === 0) return <PlatformLoader className="py-8" size="sm" />;
+  if (loading && details.length === 0) {
+    return showLoader ? <PlatformLoader className="py-8" size="sm" /> : null;
+  }
   if (details.length === 0) {
     return (
       <div className="rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
@@ -2079,8 +2082,11 @@ function HistoryPane({
         (right.createdAt ? Date.parse(right.createdAt) : 0) - (left.createdAt ? Date.parse(left.createdAt) : 0),
     );
   }, [line.canary, productionHistory, releaseEvents, t]);
+  const showLoader = useDelayedLoading(loading);
 
-  if (loading) return <PlatformLoader className="py-8" size="sm" />;
+  if (loading) {
+    return showLoader ? <PlatformLoader className="py-8" size="sm" /> : null;
+  }
   if (items.length === 0) {
     return (
       <div className="rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
