@@ -33,7 +33,6 @@ import { DEV_PROMPTS } from './fixtures/dev/prompts';
 
 const PRODUCTION_ENV_NAMES = new Set(['prod', 'production']);
 const DEV_MODEL_API_KEY_PLACEHOLDER = 'dev-seed-placeholder-api-key';
-const DEFAULT_MODEL_PROBE_API_KEY_ENV = 'MODEL_PROBE_API_KEY';
 const LOCAL_ACTOR_ID = '00000000-0000-4000-8000-000000000001';
 
 function getCurrentEnvironment(): string {
@@ -191,17 +190,16 @@ async function main(): Promise<void> {
       console.warn('⚠️  跳过模型数据：MODEL_API_KEY_ENCRYPTION_KEY 未配置');
     }
   } else {
-    const warnedMissingEnvs = new Set<string>();
+    let warnedMissingModelProbeKey = false;
 
     for (const fixture of DEV_MODELS) {
-      const envVar = fixture.apiKeyEnvVar ?? DEFAULT_MODEL_PROBE_API_KEY_ENV;
-      const rawApiKey = process.env[envVar]?.trim();
+      const rawApiKey = process.env['MODEL_PROBE_API_KEY']?.trim();
       const apiKey = rawApiKey && rawApiKey.length > 0 ? rawApiKey : DEV_MODEL_API_KEY_PLACEHOLDER;
       const apiKeyEncrypted = encryptApiKey(apiKey, modelApiKeyEncryptionKey);
 
-      if (apiKey === DEV_MODEL_API_KEY_PLACEHOLDER && !warnedMissingEnvs.has(envVar)) {
-        console.warn(`⚠️  ${envVar} 未配置，使用占位凭证的模型连通性测试会失败`);
-        warnedMissingEnvs.add(envVar);
+      if (apiKey === DEV_MODEL_API_KEY_PLACEHOLDER && !warnedMissingModelProbeKey) {
+        console.warn('⚠️  MODEL_PROBE_API_KEY 未配置，使用占位凭证的模型连通性测试会失败');
+        warnedMissingModelProbeKey = true;
       }
 
       await db

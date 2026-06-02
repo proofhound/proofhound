@@ -3,13 +3,20 @@ import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { createLogger } from '@proofhound/logger';
 import { envSchema } from './config/env.schema';
-import { ProofHoundWorkerModule } from '@proofhound/core/worker';
 
 function loadRootEnv(): void {
-  try {
-    process.loadEnvFile(resolve(process.cwd(), '../../.env'));
-  } catch {
-    // Missing .env in CI / containerized deploys is expected.
+  for (const candidate of [
+    resolve(process.cwd(), '.env.local'),
+    resolve(process.cwd(), '.env'),
+    resolve(process.cwd(), '../../.env.local'),
+    resolve(process.cwd(), '../../.env'),
+  ]) {
+    try {
+      process.loadEnvFile(candidate);
+      return;
+    } catch {
+      // Try the next conventional location.
+    }
   }
 }
 
@@ -18,14 +25,12 @@ async function bootstrap(): Promise<void> {
 
   const env = envSchema.parse(process.env);
   const logger = createLogger('worker.bootstrap', { service: 'worker', level: env.LOG_LEVEL });
+  const { ProofHoundWorkerModule } = await import('@proofhound/core/worker');
 
   const app = await NestFactory.createApplicationContext(ProofHoundWorkerModule, { abortOnError: true });
   app.enableShutdownHooks();
 
-  const queues = env.WORKER_QUEUES.split(',')
-    .map((q) => q.trim())
-    .filter(Boolean);
-  logger.info({ queues, concurrency: env.WORKER_CONCURRENCY }, 'worker_started');
+  logger.info({ queues: ['llm', 'probe'], concurrency: env.WORKER_CONCURRENCY }, 'worker_started');
 }
 
 bootstrap().catch((error: unknown) => {

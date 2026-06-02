@@ -9,7 +9,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(__dirname, '../../../..');
 
 const DEFAULT_MODEL_KEY = 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
-const DEFAULT_MCP_SECRET = 'e2e-local-mcp-signing-secret';
 const DEFAULT_DATABASE_URL = 'postgres://postgres:postgres@localhost:5432/proofhound_e2e';
 const DEFAULT_REDIS_URL = 'redis://localhost:6379/1';
 const DEFAULT_BASE_URL = 'http://localhost:3200';
@@ -48,11 +47,9 @@ async function main() {
   process.env.NODE_ENV = process.env.NODE_ENV ?? 'development';
   process.env.LOG_LEVEL = process.env.LOG_LEVEL ?? 'info';
   process.env.MODEL_API_KEY_ENCRYPTION_KEY = process.env.MODEL_API_KEY_ENCRYPTION_KEY ?? DEFAULT_MODEL_KEY;
-  process.env.MCP_TOKEN_SIGNING_SECRET = process.env.MCP_TOKEN_SIGNING_SECRET ?? DEFAULT_MCP_SECRET;
   process.env.WEBHOOK_BODY_LIMIT = process.env.WEBHOOK_BODY_LIMIT ?? '1mb';
-  process.env.WORKER_QUEUES = process.env.WORKER_QUEUES ?? 'llm,probe';
   process.env.WORKER_CONCURRENCY = process.env.WORKER_CONCURRENCY ?? '16';
-  process.env.CANARY_RUNNER_SCAN_INTERVAL_MS = process.env.CANARY_RUNNER_SCAN_INTERVAL_MS ?? '2000';
+  process.env.RELEASE_RUNNER_SCAN_INTERVAL_MS = process.env.RELEASE_RUNNER_SCAN_INTERVAL_MS ?? '2000';
 
   await ensureDependencyServices(databaseURL, redisURL);
   await resetDatabase();

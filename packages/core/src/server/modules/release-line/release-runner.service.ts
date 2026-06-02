@@ -346,7 +346,7 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private getScanIntervalMs(): number {
-    const raw = Number(process.env['RELEASE_RUNNER_SCAN_INTERVAL_MS'] ?? process.env['CANARY_RUNNER_SCAN_INTERVAL_MS']);
+    const raw = Number(process.env['RELEASE_RUNNER_SCAN_INTERVAL_MS']);
     if (Number.isFinite(raw) && raw >= 1_000) return raw;
     return DEFAULT_SCAN_INTERVAL_MS;
   }
@@ -394,7 +394,7 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private getLockTtlMs(): number {
-    const raw = Number(process.env['RELEASE_RUNNER_LOCK_TTL_MS'] ?? process.env['CANARY_RUNNER_LOCK_TTL_MS']);
+    const raw = Number(process.env['RELEASE_RUNNER_LOCK_TTL_MS']);
     if (Number.isFinite(raw) && raw >= MIN_LOCK_TTL_MS) return Math.floor(raw);
     return DEFAULT_LOCK_TTL_MS;
   }

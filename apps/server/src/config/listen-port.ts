@@ -1,5 +1,5 @@
 type ListenPortSource = 'PORT' | 'SERVER_PORT';
-type ListenPortEnv = Partial<Record<ListenPortSource, string | undefined>>;
+type ListenPortEnv = Partial<Record<ListenPortSource, string | number | undefined>>;
 
 const DEFAULT_SERVER_PORT = 4000;
 
@@ -18,7 +18,7 @@ export function resolveListenPort(env: ListenPortEnv): {
   };
 }
 
-function parsePort(value: string | undefined, source: ListenPortSource): number | undefined {
+function parsePort(value: string | number | undefined, source: ListenPortSource): number | undefined {
   if (value === undefined) return undefined;
 
   const port = Number(value);

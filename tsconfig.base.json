@@ -63,6 +63,7 @@
       "@proofhound/core/server": ["./packages/core/src/server/index.ts"],
       "@proofhound/core/webhook": ["./packages/core/src/webhook/index.ts"],
       "@proofhound/core/worker": ["./packages/core/src/worker/index.ts"],
+      "@proofhound/core/worker/config": ["./packages/core/src/worker/config/worker-concurrency.ts"],
       "@proofhound/core/contracts": ["./packages/core/src/server/common/contracts/index.ts"]
     }
   },

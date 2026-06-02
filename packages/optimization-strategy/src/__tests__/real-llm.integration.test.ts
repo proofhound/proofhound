@@ -1,8 +1,8 @@
 /* eslint-disable no-console -- integration tests use console.log to print LLM I/O for manual observation */
 // Real LLM integration test — 1-round optimization closed-loop smoke
 //
-// Trigger: enabled when MODEL_PROBE_PROVIDER_TYPE / MODEL_ID / ENDPOINT / API_KEY are all present;
-// otherwise skipped automatically. When env is missing, vitest does not fail; it just shows skipped.
+// Trigger: enabled when MODEL_PROBE_API_KEY is present; otherwise skipped automatically.
+// MODEL_PROBE_PROVIDER_TYPE defaults to openai; openai / anthropic derive endpoint + model defaults.
 //
 // Reuses the project's MODEL_PROBE_* series (same convention as apps/worker/src/scripts/probe-model-from-env.ts),
 // so the same .env can run both model connectivity probes and this integration test.
@@ -58,12 +58,18 @@ function loadEnvFile(): void {
 
 loadEnvFile();
 
-const REQUIRED = [
-  'MODEL_PROBE_PROVIDER_TYPE',
-  'MODEL_PROBE_MODEL_ID',
-  'MODEL_PROBE_ENDPOINT',
-  'MODEL_PROBE_API_KEY',
-];
+const PROBE_PROTOCOL_DEFAULTS = {
+  openai: {
+    providerModelId: 'gpt-4o-mini',
+    endpoint: 'https://api.openai.com/v1',
+  },
+  anthropic: {
+    providerModelId: 'claude-sonnet-4-6',
+    endpoint: 'https://api.anthropic.com',
+  },
+} as const;
+
+const REQUIRED = ['MODEL_PROBE_API_KEY'];
 
 const hasEnv = REQUIRED.every((k) => {
   const v = process.env[k];
@@ -72,12 +78,29 @@ const hasEnv = REQUIRED.every((k) => {
 
 const describeIf = hasEnv ? describe : describe.skip;
 
+function readOptionalEnv(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value && value.length > 0 ? value : undefined;
+}
+
+function normalizeProviderType(providerType: string): string {
+  return providerType.trim().toLowerCase().replace(/_/gu, '-');
+}
+
 function modelFromEnv(): ModelInvocationConfig {
+  const providerType = normalizeProviderType(readOptionalEnv('MODEL_PROBE_PROVIDER_TYPE') ?? 'openai');
+  const defaults = PROBE_PROTOCOL_DEFAULTS[providerType as keyof typeof PROBE_PROTOCOL_DEFAULTS];
+  const providerModelId = readOptionalEnv('MODEL_PROBE_MODEL_ID') ?? defaults?.providerModelId;
+  const endpoint = readOptionalEnv('MODEL_PROBE_ENDPOINT') ?? defaults?.endpoint;
+
+  if (!providerModelId) throw new Error(`MODEL_PROBE_MODEL_ID is required for provider type "${providerType}"`);
+  if (!endpoint) throw new Error(`MODEL_PROBE_ENDPOINT is required for provider type "${providerType}"`);
+
   return {
     id: 'model_integration_probe',
-    providerType: process.env['MODEL_PROBE_PROVIDER_TYPE']!,
-    providerModelId: process.env['MODEL_PROBE_MODEL_ID']!,
-    endpoint: process.env['MODEL_PROBE_ENDPOINT']!,
+    providerType,
+    providerModelId,
+    endpoint,
     apiKey: process.env['MODEL_PROBE_API_KEY']!,
     rpmLimit: Number(process.env['MODEL_PROBE_RPM_LIMIT'] ?? 60),
     tpmLimit: Number(process.env['MODEL_PROBE_TPM_LIMIT'] ?? 100_000),
@@ -317,7 +340,7 @@ describeIf('runIterationLoop · real LLM integration', () => {
 
 if (!hasEnv) {
   console.log(
-    '[real-llm.integration.test] skipped — set MODEL_PROBE_PROVIDER_TYPE / MODEL_ID / ENDPOINT / API_KEY to enable. ' +
+    '[real-llm.integration.test] skipped — set MODEL_PROBE_API_KEY to enable. ' +
       'See .env.example for the full list.',
   );
 }
