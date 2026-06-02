@@ -1,8 +1,21 @@
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
-import { FAKE_LLM_PORT } from './e2e/support/fake-llm-contract.mjs';
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:3000';
+const configDir = __dirname;
+const portPlan = resolvePortPlan();
+Object.assign(process.env, portPlan.env);
+
+const baseURL = portPlan.baseURL;
 const serverURL = new URL(baseURL);
+const apiURL = portPlan.apiURL;
+const servicesReadyURL = portPlan.servicesReadyURL;
+const webPort = serverURL.port || (serverURL.protocol === 'https:' ? '443' : '80');
+const gracefulShutdown = { signal: 'SIGTERM' as const, timeout: 15_000 };
+
+console.log(
+  `[e2e-ports] web=${baseURL} api=${apiURL} webhook=${portPlan.webhookURL} services=${servicesReadyURL} fakeLlm=${portPlan.fakeLLMPort}`,
+);
 
 export default defineConfig({
   testDir: './e2e',
@@ -19,16 +32,47 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
-      command: `pnpm exec next dev -H ${serverURL.hostname} -p ${serverURL.port || '3000'}`,
+      command: `node ${'e2e/support/e2e-services.mjs'}`,
+      url: servicesReadyURL,
+      reuseExistingServer: false,
+      timeout: 240_000,
+      gracefulShutdown,
+    },
+    {
+      command: `pnpm exec next dev -H ${serverURL.hostname} -p ${webPort}`,
       url: baseURL,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 120_000,
+      env: {
+        NEXT_PUBLIC_SERVER_URL: apiURL,
+        NEXT_PUBLIC_API_URL: apiURL,
+      },
+      gracefulShutdown,
     },
     {
       command: `node ${'e2e/support/fake-llm-server.mjs'}`,
-      url: `http://127.0.0.1:${FAKE_LLM_PORT}/health`,
-      reuseExistingServer: true,
+      url: `http://127.0.0.1:${portPlan.fakeLLMPort}/health`,
+      reuseExistingServer: false,
       timeout: 30_000,
+      gracefulShutdown,
     },
   ],
 });
+
+type PortPlan = {
+  baseURL: string;
+  apiURL: string;
+  webhookURL: string;
+  servicesReadyURL: string;
+  fakeLLMPort: number;
+  env: Record<string, string>;
+};
+
+function resolvePortPlan(): PortPlan {
+  const output = execFileSync(process.execPath, [resolve(configDir, 'e2e/support/e2e-port-plan.mjs')], {
+    cwd: configDir,
+    env: process.env,
+    encoding: 'utf8',
+  });
+  return JSON.parse(output) as PortPlan;
+}

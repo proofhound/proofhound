@@ -2,8 +2,8 @@ import type { APIRequestContext } from '@playwright/test';
 import { FAKE_LLM_ENDPOINT } from './fake-llm-contract.mjs';
 
 export const SERVER_URL =
-  process.env.PLAYWRIGHT_SERVER_URL ?? process.env.NEXT_PUBLIC_SERVER_URL ?? 'http://localhost:4000';
-export const WEBHOOK_URL = process.env.PLAYWRIGHT_WEBHOOK_URL ?? 'http://localhost:4001';
+  process.env.PLAYWRIGHT_SERVER_URL ?? process.env.NEXT_PUBLIC_SERVER_URL ?? 'http://localhost:4200';
+export const WEBHOOK_URL = process.env.PLAYWRIGHT_WEBHOOK_URL ?? 'http://localhost:4201';
 
 async function postJson<T>(request: APIRequestContext, path: string, data: unknown): Promise<T> {
   const res = await request.post(`${SERVER_URL}${path}`, { data });
@@ -21,7 +21,9 @@ async function getJson<T>(request: APIRequestContext, path: string): Promise<T> 
 export class ResourceLedger {
   private readonly items: Array<{ kind: string; path: string }> = [];
   constructor(private readonly request: APIRequestContext) {}
-  track(kind: string, path: string) { this.items.push({ kind, path }); }
+  track(kind: string, path: string) {
+    this.items.push({ kind, path });
+  }
   async cleanup() {
     // delete in reverse insertion order (children were created/tracked after parents)
     for (const item of [...this.items].reverse()) {
@@ -245,7 +247,13 @@ type AnnotationOptionsResponse = {
 };
 export async function waitForReleaseRunResults(
   request: APIRequestContext,
-  args: { releaseLineId: string; releaseVariantId: string; scope?: 'canary' | 'online'; min: number; timeoutMs?: number },
+  args: {
+    releaseLineId: string;
+    releaseVariantId: string;
+    scope?: 'canary' | 'online';
+    min: number;
+    timeoutMs?: number;
+  },
 ) {
   const scope = args.scope ?? 'canary';
   const deadline = Date.now() + (args.timeoutMs ?? 60_000);

@@ -79,15 +79,34 @@ pnpm dev
 
 默认本地服务：
 
-| 服务 | 地址 |
-| --- | --- |
-| 本地管理端 | localhost:3000 |
-| 服务端 API | localhost:4000 |
-| PostgreSQL | localhost:5432 |
-| Redis | localhost:6379 |
-| Kafka | localhost:9092 |
+| 服务             | 地址           |
+| ---------------- | -------------- |
+| 本地管理端       | localhost:3000 |
+| 服务端 API       | localhost:4000 |
+| PostgreSQL       | localhost:5432 |
+| Redis            | localhost:6379 |
+| Kafka            | localhost:9092 |
 | Redpanda Console | localhost:8088 |
-| RedisInsight | localhost:5540 |
+| RedisInsight     | localhost:5540 |
+
+## 测试
+
+```bash
+pnpm test
+pnpm test:e2e
+```
+
+`pnpm test` 运行单元测试。`pnpm test:e2e` 运行 Playwright 功能级套件，并自动准备一套隔离的本地
+测试栈：创建 / 重置 `proofhound_e2e`，使用 Redis DB 1，启动 API、webhook、worker、web 与 fake LLM
+server；Playwright 结束后会停止这些应用进程。套件优先使用 API `http://localhost:4200`、webhook
+`http://localhost:4201`、web `http://localhost:3200` 与 fake LLM 端口 `5599`，但默认端口被占用时会
+自动选择附近可用端口。
+
+运行单个 e2e spec：
+
+```bash
+pnpm test:e2e e2e/experiment.spec.ts --reporter=line
+```
 
 ## 配置
 
@@ -146,14 +165,14 @@ flowchart TD
     WORK --> REDIS
 ```
 
-| 层 | 选型 |
-| --- | --- |
-| 前端 | Next.js + TypeScript + Refine + shadcn/ui + Tailwind |
-| 后端 | NestJS 单体，按模块边界拆分 |
-| 数据库 | PostgreSQL + Drizzle ORM（`ph_*` schema），不依赖专有 SQL 扩展 |
-| 编排 | DBOS + BullMQ + Node.js LLM worker |
-| 限流 | Redis 集中限流（RPM / TPM / 并发） |
-| 日志 | Pino，stdout JSON；每次 LLM 调用在写入运行结果前都记录完整入参与响应 |
+| 层     | 选型                                                                 |
+| ------ | -------------------------------------------------------------------- |
+| 前端   | Next.js + TypeScript + Refine + shadcn/ui + Tailwind                 |
+| 后端   | NestJS 单体，按模块边界拆分                                          |
+| 数据库 | PostgreSQL + Drizzle ORM（`ph_*` schema），不依赖专有 SQL 扩展       |
+| 编排   | DBOS + BullMQ + Node.js LLM worker                                   |
+| 限流   | Redis 集中限流（RPM / TPM / 并发）                                   |
+| 日志   | Pino，stdout JSON；每次 LLM 调用在写入运行结果前都记录完整入参与响应 |
 
 ## 模型与供应商
 

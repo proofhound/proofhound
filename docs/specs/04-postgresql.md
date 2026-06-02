@@ -73,6 +73,10 @@ Metadata registration and business validation always go through NestJS; entrypoi
 - `pnpm dev` first runs `pnpm dev:docker:ready` to start local dependencies such as PostgreSQL / Redis / Kafka.
 - `.env.example` is the ProofHound application configuration.
 - Locally the default is `DATABASE_URL=postgres://postgres:postgres@localhost:5432/proofhound`.
+- Web e2e uses a separate local database by default:
+  `E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/proofhound_e2e`. `pnpm test:e2e`
+  creates/resets that database before starting the e2e stack, and uses Redis DB 1 to avoid mixing BullMQ
+  / DBOS state with ordinary local development.
 - To use a remote database, replace only `DATABASE_URL` and connect using the standard PostgreSQL protocol.
 
 ## 7. Replacement Paths

@@ -36,7 +36,6 @@
   <video src="https://github.com/user-attachments/assets/8290f7f3-0fc8-4464-87b1-d351b3d54fb5" controls muted playsinline width="100%" title="ProofHound quick start demo"></video>
 </p>
 
-
 ProofHound turns prompt engineering into a data-driven, traceable workflow. Instead of stitching together scripts, ad-hoc experiments, spreadsheets, and hand-rolled release logic, you run the whole loop — dataset regression, experiments, automatic optimization, canary and production releases, immutable run results, and rollback — in one place, self-hosted on infrastructure you control.
 
 It is built for developers first: clone, `pnpm dev`, connect a model, and start experimenting in minutes. And because the tuning loop is productized around datasets, metrics, and prompt versions, non-engineering teammates can define goals, launch optimizations, and ship releases too. The open-source edition runs as a single-workspace local admin console and keeps a `project_id` data boundary, so it can later connect to an external control plane without changing core resource semantics.
@@ -80,15 +79,35 @@ pnpm dev
 
 Default local services:
 
-| Service | Address |
-| --- | --- |
-| Web UI | localhost:3000 |
-| Server API | localhost:4000 |
-| PostgreSQL | localhost:5432 |
-| Redis | localhost:6379 |
-| Kafka | localhost:9092 |
+| Service          | Address        |
+| ---------------- | -------------- |
+| Web UI           | localhost:3000 |
+| Server API       | localhost:4000 |
+| PostgreSQL       | localhost:5432 |
+| Redis            | localhost:6379 |
+| Kafka            | localhost:9092 |
 | Redpanda Console | localhost:8088 |
-| RedisInsight | localhost:5540 |
+| RedisInsight     | localhost:5540 |
+
+## Testing
+
+```bash
+pnpm test
+pnpm test:e2e
+```
+
+`pnpm test` runs the unit test suite. `pnpm test:e2e` runs the Playwright functional suite through an
+isolated local stack: it creates/resets `proofhound_e2e`, uses Redis DB 1, starts API, webhook,
+worker, web, and the fake LLM server, then stops the app processes after Playwright exits. The suite
+prefers API `http://localhost:4200`, webhook `http://localhost:4201`, web `http://localhost:3200`,
+and fake LLM port `5599`, but automatically selects nearby free ports when those defaults are
+occupied.
+
+To run a single e2e spec:
+
+```bash
+pnpm test:e2e e2e/experiment.spec.ts --reporter=line
+```
 
 ## Configuration
 
@@ -147,14 +166,14 @@ flowchart TD
     WORK --> REDIS
 ```
 
-| Layer | Choice |
-| --- | --- |
-| Frontend | Next.js + TypeScript + Refine + shadcn/ui + Tailwind |
-| Backend | NestJS monolith, split by module boundaries |
-| Database | PostgreSQL + Drizzle ORM (`ph_*` schema), no proprietary SQL extensions |
-| Orchestration | DBOS + BullMQ + Node.js LLM worker |
-| Rate limiting | Centralized in Redis (RPM / TPM / concurrency) |
-| Logging | Pino, stdout JSON; every LLM call is logged with full input and response before run results are written |
+| Layer         | Choice                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| Frontend      | Next.js + TypeScript + Refine + shadcn/ui + Tailwind                                                    |
+| Backend       | NestJS monolith, split by module boundaries                                                             |
+| Database      | PostgreSQL + Drizzle ORM (`ph_*` schema), no proprietary SQL extensions                                 |
+| Orchestration | DBOS + BullMQ + Node.js LLM worker                                                                      |
+| Rate limiting | Centralized in Redis (RPM / TPM / concurrency)                                                          |
+| Logging       | Pino, stdout JSON; every LLM call is logged with full input and response before run results are written |
 
 ## Models and providers
 

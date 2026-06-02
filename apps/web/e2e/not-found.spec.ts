@@ -10,7 +10,7 @@ test('unknown routes render the 404 page', async ({ page }) => {
 });
 
 test('back action from 404 restores the previous app page', async ({ page }, testInfo) => {
-  const baseURL = String(testInfo.project.use.baseURL ?? 'http://localhost:3000');
+  const baseURL = String(testInfo.project.use.baseURL ?? 'http://localhost:3200');
 
   await page.goto('/prompts');
   await expect(page.getByTestId('prompts-page')).toBeVisible();

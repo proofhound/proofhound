@@ -1,7 +1,5 @@
 import { createServer } from 'node:http';
-import {
-  FAKE_LLM_PORT, OPT_MARKER, ANS_OPEN, ANS_CLOSE, BASELINE_WRONG,
-} from './fake-llm-contract.mjs';
+import { FAKE_LLM_PORT, OPT_MARKER, ANS_OPEN, ANS_CLOSE, BASELINE_WRONG } from './fake-llm-contract.mjs';
 
 // --- optimizer step detection (mirrors packages/optimization-strategy fake-llm-adapter detectStep) ---
 function detectStep(systemPrompt) {
@@ -40,8 +38,29 @@ const OPTIMIZER_RESPONSES = {
   summarize: JSON.stringify({
     summary: '本轮失败集中在分类边界，建议直接按输入判定。',
     evidenceBundleVersion: 1,
-    errorPatterns: [{ patternId: 'p1', label: '分类错误', count: 1, affectedCount: 1, reason: '边界不清', exampleSampleIds: [], source: 'confusion', bucketKey: 'B→A' }],
-    suggestedChanges: [{ changeId: 'c1', section: '任务说明', change: '强化判别', rationale: '减少偏移', addressesPatternIds: ['p1'], affectedCount: 1, priority: 'high' }],
+    errorPatterns: [
+      {
+        patternId: 'p1',
+        label: '分类错误',
+        count: 1,
+        affectedCount: 1,
+        reason: '边界不清',
+        exampleSampleIds: [],
+        source: 'confusion',
+        bucketKey: 'B→A',
+      },
+    ],
+    suggestedChanges: [
+      {
+        changeId: 'c1',
+        section: '任务说明',
+        change: '强化判别',
+        rationale: '减少偏移',
+        addressesPatternIds: ['p1'],
+        affectedCount: 1,
+        priority: 'high',
+      },
+    ],
     conflicts: [],
   }),
 };
@@ -62,7 +81,10 @@ function decisionForInference(allText) {
 
 function buildContent(body) {
   const messages = Array.isArray(body.messages) ? body.messages : [];
-  const systemPrompt = messages.filter((m) => m.role === 'system').map((m) => textOf(m.content)).join('\n');
+  const systemPrompt = messages
+    .filter((m) => m.role === 'system')
+    .map((m) => textOf(m.content))
+    .join('\n');
   const step = detectStep(systemPrompt);
   if (step !== 'inference') return OPTIMIZER_RESPONSES[step];
   const allText = messages.map((m) => textOf(m.content)).join('\n');
@@ -83,7 +105,11 @@ const server = createServer((req, res) => {
   req.on('data', (c) => chunks.push(c));
   req.on('end', () => {
     let body = {};
-    try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { body = {}; }
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+    } catch {
+      body = {};
+    }
     const content = buildContent(body);
     const payload = {
       id: 'fake-cmpl',
@@ -97,6 +123,5 @@ const server = createServer((req, res) => {
 });
 
 server.listen(FAKE_LLM_PORT, '127.0.0.1', () => {
-  // eslint-disable-next-line no-console
   console.log(`[fake-llm] listening on http://127.0.0.1:${FAKE_LLM_PORT}`);
 });

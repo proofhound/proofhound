@@ -80,33 +80,15 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm --filter @proofhound/web exec playwright install --with-deps chromium
 
-      - name: Apply database migrations
-        run: pnpm db:migrate
-
-      - name: Build backend services
-        run: pnpm turbo run build --filter=@proofhound/server --filter=@proofhound/webhook --filter=@proofhound/worker
-
-      - name: Start backend services
-        run: |
-          node apps/server/dist/main.js  > /tmp/server.log  2>&1 &
-          node apps/webhook/dist/main.js > /tmp/webhook.log 2>&1 &
-          node apps/worker/dist/main.js  > /tmp/worker.log  2>&1 &
-          echo "Waiting for API server on :4000 ..."
-          for i in $(seq 1 60); do
-            if curl -sf -o /dev/null http://localhost:4000/datasets; then echo "server is up"; exit 0; fi
-            sleep 2
-          done
-          echo "::error::API server did not become ready"; cat /tmp/server.log; exit 1
-
       - name: Run e2e suite
         run: pnpm --filter @proofhound/web test:e2e
 
       - name: Dump service logs on failure
         if: failure()
         run: |
-          echo "===== server ====="; tail -n 200 /tmp/server.log  || true
-          echo "===== webhook ====="; tail -n 200 /tmp/webhook.log || true
-          echo "===== worker ====="; tail -n 200 /tmp/worker.log  || true
+          echo "===== server ====="; tail -n 200 /tmp/proofhound-e2e-server.log  || true
+          echo "===== webhook ====="; tail -n 200 /tmp/proofhound-e2e-webhook.log || true
+          echo "===== worker ====="; tail -n 200 /tmp/proofhound-e2e-worker.log  || true
 
       - name: Upload Playwright report on failure
         if: failure()
