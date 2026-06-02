@@ -53,18 +53,18 @@ URLs and accept that it will write to that stack's `DATABASE_URL`.
 | `PLAYWRIGHT_SKIP_DOCKER`                           | unset                                                        | set `1` to fail fast instead of starting local docker dependencies |
 | `PLAYWRIGHT_SKIP_DB_RESET`                         | unset                                                        | set `1` to skip the pre-e2e isolated database reset                |
 | `PLAYWRIGHT_START_KAFKA`                           | unset                                                        | set `1` to include Kafka in dependency orchestration               |
-| `PLAYWRIGHT_WORKER_MODE`                           | `auto`                                                       | `auto`, `skip`, or `force-start` worker orchestration              |
 | `FAKE_LLM_PORT`                                    | `5599`                                                       | fake LLM server port                                               |
 
 When the `PLAYWRIGHT_*_URL` / `FAKE_LLM_PORT` variables above are unset, their default ports are
 preferred but not fixed; occupied defaults are replaced with nearby free ports. Setting one of these
-variables pins that endpoint to the supplied value.
+variables pins that endpoint to the supplied value, and the run fails if that pinned port is already
+occupied because Playwright always starts its own application processes.
 
 ## Architecture
 
 - **No login:** the OSS `LOCAL_ACTOR` fallback authenticates UI + REST automatically (no token header).
-- **Process orchestration:** Playwright starts or reuses the API / webhook / worker, then starts the web
-  app and fake LLM. It writes service logs to `/tmp/proofhound-e2e-*.log`.
+- **Process orchestration:** Playwright starts fresh API / webhook / worker / web / fake LLM processes
+  for each run. It writes service logs to `/tmp/proofhound-e2e-*.log`.
 - **Database isolation:** e2e runs against `proofhound_e2e` by default. The Playwright service
   orchestrator resets that database before starting the app services, so failed tests cannot leave
   residue in the ordinary development database.

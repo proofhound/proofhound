@@ -41,7 +41,7 @@ export default defineConfig({
     {
       command: `pnpm exec next dev -H ${serverURL.hostname} -p ${webPort}`,
       url: baseURL,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 120_000,
       env: {
         NEXT_PUBLIC_SERVER_URL: apiURL,
@@ -52,7 +52,7 @@ export default defineConfig({
     {
       command: `node ${'e2e/support/fake-llm-server.mjs'}`,
       url: `http://127.0.0.1:${portPlan.fakeLLMPort}/health`,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 30_000,
       gracefulShutdown,
     },

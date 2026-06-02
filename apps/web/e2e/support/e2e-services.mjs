@@ -56,21 +56,21 @@ async function main() {
 
   await ensureDependencyServices(databaseURL, redisURL);
   await resetDatabase();
-  await ensureHttpService({
+  await startHttpService({
     name: 'server',
     readyUrl: new URL('/readyz', apiURL).toString(),
     command: ['pnpm', ['--filter', '@proofhound/server', 'dev']],
     env: serviceEnv({ PORT: undefined, SERVER_PORT: String(urlPort(apiURL, 4000)) }),
     logFile: '/tmp/proofhound-e2e-server.log',
   });
-  await ensureHttpService({
+  await startHttpService({
     name: 'webhook',
     readyUrl: new URL('/readyz', webhookURL).toString(),
     command: ['pnpm', ['--filter', '@proofhound/webhook', 'dev']],
     env: serviceEnv({ PORT: String(urlPort(webhookURL, 4001)) }),
     logFile: '/tmp/proofhound-e2e-webhook.log',
   });
-  await ensureWorker();
+  await startWorker();
 
   await startReadinessServer(readyURL);
 }
@@ -98,7 +98,7 @@ async function ensureDependencyServices(databaseURL, redisURL) {
 
   if (missingServices.length === 0) {
     const dependencies = shouldStartKafka ? 'postgres/redis/kafka' : 'postgres/redis';
-    console.log(`[e2e-services] ${dependencies} already reachable; reusing them`);
+    console.log(`[e2e-services] ${dependencies} already reachable`);
     return;
   }
 
@@ -137,29 +137,14 @@ async function resetDatabase() {
   await runForeground('isolated e2e database reset', 'pnpm', ['db:e2e:reset']);
 }
 
-async function ensureHttpService({ name, readyUrl, command, env, logFile }) {
-  if (await isHttpOk(readyUrl)) {
-    console.log(`[e2e-services] ${name} already ready at ${readyUrl}; reusing it`);
-    return;
-  }
-
+async function startHttpService({ name, readyUrl, command, env, logFile }) {
   const child = startProcess(name, command[0], command[1], env, logFile);
   await waitForHttpOk(name, readyUrl, 180_000);
   console.log(`[e2e-services] ${name} ready at ${readyUrl}`);
   return child;
 }
 
-async function ensureWorker() {
-  const mode = process.env.PLAYWRIGHT_WORKER_MODE ?? 'auto';
-  if (mode === 'skip') {
-    console.log('[e2e-services] PLAYWRIGHT_WORKER_MODE=skip; not starting worker');
-    return;
-  }
-  if (mode !== 'force-start' && (await hasLikelyWorkerProcess())) {
-    console.log('[e2e-services] worker process already appears to be running; reusing it');
-    return;
-  }
-
+async function startWorker() {
   const child = startProcess(
     'worker',
     'pnpm',
@@ -270,29 +255,6 @@ function isTcpReachable(host, port, timeoutMs) {
     socket.on('timeout', () => done(false));
     socket.on('error', () => done(false));
   });
-}
-
-async function hasLikelyWorkerProcess() {
-  if (process.platform === 'win32') return false;
-  const output = await new Promise((resolvePromise) => {
-    const child = spawn('ps', ['-eo', 'pid=,command='], { stdio: ['ignore', 'pipe', 'ignore'] });
-    let text = '';
-    child.stdout.on('data', (chunk) => {
-      text += chunk.toString();
-    });
-    child.on('exit', () => resolvePromise(text));
-    child.on('error', () => resolvePromise(''));
-  });
-  return output
-    .split('\n')
-    .some(
-      (line) =>
-        line.includes(rootDir) &&
-        (line.includes('@proofhound/worker') ||
-          line.includes('/apps/worker/dist/main.js') ||
-          (line.includes('/apps/worker') && line.includes('nest start')) ||
-          (line.includes('/apps/worker') && line.includes('src/main.ts'))),
-    );
 }
 
 async function startReadinessServer(readyUrl) {

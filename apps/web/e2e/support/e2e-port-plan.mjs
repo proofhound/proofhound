@@ -15,22 +15,18 @@ async function createPortPlan() {
   const baseURL = await resolveUrlPort({
     explicitUrl: process.env.PLAYWRIGHT_BASE_URL,
     preferredUrl: process.env.PLAYWRIGHT_BASE_URL ?? DEFAULT_BASE_URL,
-    reusableHealthPath: null,
   });
   const apiURL = await resolveUrlPort({
     explicitUrl: process.env.PLAYWRIGHT_SERVER_URL,
     preferredUrl: process.env.PLAYWRIGHT_SERVER_URL ?? process.env.NEXT_PUBLIC_SERVER_URL ?? DEFAULT_API_URL,
-    reusableHealthPath: '/readyz',
   });
   const webhookURL = await resolveUrlPort({
     explicitUrl: process.env.PLAYWRIGHT_WEBHOOK_URL,
     preferredUrl: process.env.PLAYWRIGHT_WEBHOOK_URL ?? DEFAULT_WEBHOOK_URL,
-    reusableHealthPath: '/readyz',
   });
   const servicesReadyURL = await resolveUrlPort({
     explicitUrl: process.env.PLAYWRIGHT_SERVICES_READY_URL,
     preferredUrl: process.env.PLAYWRIGHT_SERVICES_READY_URL ?? DEFAULT_READY_URL,
-    reusableHealthPath: null,
   });
   const fakeLLMPort = await resolvePort({
     explicitPort: process.env.FAKE_LLM_PORT,
@@ -57,16 +53,11 @@ async function createPortPlan() {
   };
 }
 
-async function resolveUrlPort({ explicitUrl, preferredUrl, reusableHealthPath }) {
+async function resolveUrlPort({ explicitUrl, preferredUrl }) {
   const url = new URL(preferredUrl);
   const port = urlPort(url);
 
   if (explicitUrl) {
-    markPort(port);
-    return formatUrl(url);
-  }
-
-  if (reusableHealthPath && (await isHttpOk(withPath(url, reusableHealthPath)))) {
     markPort(port);
     return formatUrl(url);
   }
@@ -120,14 +111,6 @@ function urlPort(url) {
   return 80;
 }
 
-function withPath(url, path) {
-  const next = new URL(url.toString());
-  next.pathname = path;
-  next.search = '';
-  next.hash = '';
-  return next.toString();
-}
-
 function formatUrl(url) {
   if (url.pathname === '/' && url.search === '' && url.hash === '') return url.origin;
   return url.toString();
@@ -143,17 +126,4 @@ function isPortAvailable(host, port) {
       server.close(() => resolve(true));
     });
   });
-}
-
-async function isHttpOk(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 500);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    return response.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
 }
