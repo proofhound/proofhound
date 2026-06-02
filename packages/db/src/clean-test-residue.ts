@@ -29,7 +29,7 @@ async function main(): Promise<void> {
 
   const databaseUrl = process.env['DATABASE_URL'];
   if (!databaseUrl) {
-    console.error('❌  DATABASE_URL 未配置');
+    console.error('❌  DATABASE_URL is not configured');
     process.exit(1);
   }
 
@@ -49,8 +49,8 @@ async function main(): Promise<void> {
     droppedSchemas.push(row.schema_name);
   }
 
-  writeLine('✅  DBOS 集成测试残留清理完成');
-  writeLine(`  • DBOS 系统 schema (dbos_test_*):               ${droppedSchemas.length}`);
+  writeLine('✅  DBOS integration test leftovers cleaned up');
+  writeLine(`  • DBOS system schemas (dbos_test_*):               ${droppedSchemas.length}`);
   if (droppedSchemas.length > 0) {
     writeLine(`    ${droppedSchemas.join(', ')}`);
   }
@@ -59,6 +59,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error('❌  清理失败:', err);
+  console.error('❌  Cleanup failed:', err);
   process.exit(1);
 });

@@ -54,7 +54,7 @@ export const DEV_PROMPTS: DevPromptFixture[] = [
           fields: [
             {
               key: 'expected_output',
-              value: 'negative 或 positive',
+              value: 'negative or positive',
               isJudgment: true,
             },
           ],
@@ -65,7 +65,7 @@ export const DEV_PROMPTS: DevPromptFixture[] = [
         promptLanguage: 'en-US',
         parentVersionId: null,
         generatedByOptimizationId: null,
-        changeReason: '初始版本',
+        changeReason: 'Initial version',
         isFrozen: true,
         createdAt: '2026-05-23T03:09:52.572Z',
         frozenAt: '2026-05-23T04:25:10.807Z',
@@ -87,7 +87,7 @@ export const DEV_PROMPTS: DevPromptFixture[] = [
           fields: [
             {
               key: 'expected_output',
-              value: 'negative 或 positive',
+              value: 'negative or positive',
               isJudgment: true,
             },
           ],
@@ -121,7 +121,7 @@ export const DEV_PROMPTS: DevPromptFixture[] = [
           fields: [
             {
               key: 'expected_output',
-              value: 'negative 或 positive',
+              value: 'negative or positive',
               isJudgment: true,
             },
           ],

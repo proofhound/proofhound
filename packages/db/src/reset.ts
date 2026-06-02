@@ -37,20 +37,20 @@ async function main(): Promise<void> {
   try {
     process.loadEnvFile(resolve(process.cwd(), '../../.env'));
   } catch {
-    // CI / 其它已注入 env 的环境
+    // CI / other environments that already have env injected
   }
 
   const databaseUrl = process.env['DATABASE_URL'];
   if (!databaseUrl) {
-    console.error('❌  DATABASE_URL 未配置');
+    console.error('❌  DATABASE_URL is not configured');
     process.exit(1);
   }
 
   const local = isLocalDatabaseUrl(databaseUrl);
   const allowReset = process.env['ALLOW_DB_RESET'] === '1';
   if (!local && !allowReset) {
-    console.error('❌  DATABASE_URL 指向远端数据库，拒绝执行 reset');
-    console.error('    本地开发请用 localhost；如确需在远端（staging）执行，显式设置：');
+    console.error('❌  DATABASE_URL points to a remote database; refusing to run reset');
+    console.error('    Use localhost for local development; to run against a remote (staging) database, set explicitly:');
     console.error('    ALLOW_DB_RESET=1 pnpm db:reset');
     process.exit(1);
   }
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   `);
   const rows = unwrapRows<{ schema_name: string }>(rawRows);
 
-  writeLine(`🗑   DROP 所有用户 schema (${rows.length})`);
+  writeLine(`🗑   DROP all user schemas (${rows.length})`);
   for (const { schema_name: schemaName } of rows) {
     await db.execute(sql`DROP SCHEMA IF EXISTS ${sql.identifier(schemaName)} CASCADE`);
     writeLine(`   ✓ ${schemaName}`);
@@ -75,11 +75,11 @@ async function main(): Promise<void> {
   await db.execute(sql`GRANT USAGE ON SCHEMA "public" TO PUBLIC`);
   writeLine('   ✓ public (recreated)');
 
-  writeLine('\n✅  Reset 完成，接下来由 pnpm migrate + pnpm seed 重建结构与默认本地项目');
+  writeLine('\n✅  Reset complete; pnpm migrate + pnpm seed will now rebuild the structure and the default local project');
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error('❌  Reset 失败:', err);
+  console.error('❌  Reset failed:', err);
   process.exit(1);
 });

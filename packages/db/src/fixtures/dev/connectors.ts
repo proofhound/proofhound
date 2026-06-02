@@ -23,8 +23,8 @@ const KAFKA_CONNECTION = {
 const WEBHOOK_INPUT_PAYLOAD_SCHEMA = {
   type: 'object',
   properties: {
-    sample_id: { type: 'string', description: '样本 ID' },
-    text: { type: 'string', description: '需要提示词处理的文本内容' },
+    sample_id: { type: 'string', description: 'Sample ID' },
+    text: { type: 'string', description: 'Text content to be processed by the prompt' },
   },
 };
 
@@ -97,21 +97,21 @@ export const DEV_CONNECTORS: DevConnectorFixture[] = [
     kind: 'redis-input',
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000001',
     name: 'yelp-polarity-redis-list-in',
-    description: 'Redis list 输入 · Yelp Polarity 随机 50 条样本',
+    description: 'Redis list input · 50 random Yelp Polarity samples',
     config: { connection: REDIS_CONNECTION, mode: 'list', key: 'datasets:yelp-polarity:random-50' },
   },
   {
     kind: 'redis-output',
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000002',
     name: 'decisions-list-out',
-    description: 'Redis list 输出 · 决策推送',
+    description: 'Redis list output · decision push',
     config: { connection: REDIS_CONNECTION, mode: 'list', key: 'datasets:yelp-polarity:random-50', maxLen: 100000 },
   },
   {
     kind: 'kafka-input',
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000003',
     name: 'yelp-polarity-kafka-topic-in',
-    description: 'Kafka 输入 · Yelp Polarity 随机 50 条样本',
+    description: 'Kafka input · 50 random Yelp Polarity samples',
     config: {
       connection: KAFKA_CONNECTION,
       topic: 'datasets.yelp-polarity.random-50',
@@ -123,14 +123,14 @@ export const DEV_CONNECTORS: DevConnectorFixture[] = [
     kind: 'kafka-output',
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000004',
     name: 'decisions-topic-out',
-    description: 'Kafka 输出 · 决策 topic',
+    description: 'Kafka output · decisions topic',
     config: { connection: KAFKA_CONNECTION, topic: 'risk-decisions', partitionKey: 'orderId' },
   },
   {
     kind: 'webhook-input',
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000005',
     name: 'sync-webhook-in',
-    description: 'Webhook 输入 · 同步模式(上游 POST 等待 LLM 完成再返回)',
+    description: 'Webhook input · sync mode (upstream POST waits for the LLM to finish before returning)',
     webhookPath: 'a3a1b2c3-d4e5-4f60-8788-aabbccddeeff',
     config: {
       webhookMode: 'sync',
@@ -142,7 +142,7 @@ export const DEV_CONNECTORS: DevConnectorFixture[] = [
     kind: 'webhook-input',
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000006',
     name: 'async-webhook-in',
-    description: 'Webhook 输入 · 异步模式(立即返回 callId,结果由输出连接器或查询接口取回)',
+    description: 'Webhook input · async mode (returns callId immediately; the result is retrieved via the output connector or the query API)',
     webhookPath: 'b4b2c3d4-e5f6-4071-8899-bbccddeeff00',
     config: {
       webhookMode: 'async',

@@ -92,34 +92,34 @@ async function main(): Promise<void> {
   }
 
   if (process.env['SEED_PROFILE'] !== 'dev' && process.env['ALLOW_DEV_SEED'] !== 'true') {
-    console.error('❌  Dev seed 需要显式开启：SEED_PROFILE=dev pnpm db:seed:dev');
+    console.error('❌  Dev seed must be explicitly enabled: SEED_PROFILE=dev pnpm db:seed:dev');
     process.exit(1);
   }
 
   const currentEnvironment = getCurrentEnvironment();
   if (process.env['ALLOW_DEV_SEED'] !== 'true' && PRODUCTION_ENV_NAMES.has(currentEnvironment)) {
-    console.error(`❌  Dev seed 拒绝写入 ${currentEnvironment} 环境`);
-    console.error('    如确需写入，请显式设置 ALLOW_DEV_SEED=true');
+    console.error(`❌  Dev seed refuses to write to the ${currentEnvironment} environment`);
+    console.error('    If you really need to write, explicitly set ALLOW_DEV_SEED=true');
     process.exit(1);
   }
 
   const databaseUrl = process.env['DATABASE_URL'];
   if (!databaseUrl) {
-    console.error('❌  DATABASE_URL 必须配置');
+    console.error('❌  DATABASE_URL must be configured');
     process.exit(1);
   }
 
   const modelApiKeyEncryptionKey = process.env['MODEL_API_KEY_ENCRYPTION_KEY'];
   const db = createDbClient(databaseUrl);
 
-  console.warn(`\n🌱  使用本地 actor 写入 ${currentEnvironment} 环境 dev 数据快照`);
+  console.warn(`\n🌱  Writing the dev data snapshot to the ${currentEnvironment} environment as the local actor`);
 
   await db
     .insert(projects)
     .values({
       id: LOCAL_PROJECT_ID,
-      name: '本地项目',
-      description: 'Self-hosted 单项目数据边界',
+      name: 'Local Project',
+      description: 'Self-hosted single-project data boundary',
       type: 'classification',
       status: 'active',
       createdBy: LOCAL_ACTOR_ID,
@@ -127,8 +127,8 @@ async function main(): Promise<void> {
     .onConflictDoUpdate({
       target: projects.id,
       set: {
-        name: '本地项目',
-        description: 'Self-hosted 单项目数据边界',
+        name: 'Local Project',
+        description: 'Self-hosted single-project data boundary',
         type: 'classification',
         status: 'active',
         archivedAt: null,
@@ -184,10 +184,10 @@ async function main(): Promise<void> {
       );
 
     if (existingDevModels.length === DEV_MODELS.length) {
-      console.warn('⚠️  MODEL_API_KEY_ENCRYPTION_KEY 未配置，复用已有模型数据');
+      console.warn('⚠️  MODEL_API_KEY_ENCRYPTION_KEY is not configured; reusing existing model data');
       seededDevModels = true;
     } else {
-      console.warn('⚠️  跳过模型数据：MODEL_API_KEY_ENCRYPTION_KEY 未配置');
+      console.warn('⚠️  Skipping model data: MODEL_API_KEY_ENCRYPTION_KEY is not configured');
     }
   } else {
     let warnedMissingModelProbeKey = false;
@@ -198,7 +198,7 @@ async function main(): Promise<void> {
       const apiKeyEncrypted = encryptApiKey(apiKey, modelApiKeyEncryptionKey);
 
       if (apiKey === DEV_MODEL_API_KEY_PLACEHOLDER && !warnedMissingModelProbeKey) {
-        console.warn('⚠️  MODEL_PROBE_API_KEY 未配置，使用占位凭证的模型连通性测试会失败');
+        console.warn('⚠️  MODEL_PROBE_API_KEY is not configured; model connectivity tests using the placeholder credential will fail');
         warnedMissingModelProbeKey = true;
       }
 
@@ -249,7 +249,7 @@ async function main(): Promise<void> {
         });
     }
 
-    console.warn(`✅  模型数据就绪：${DEV_MODELS.length} 个模型`);
+    console.warn(`✅  Model data ready: ${DEV_MODELS.length} models`);
     seededDevModels = true;
   }
 
@@ -289,7 +289,7 @@ async function main(): Promise<void> {
         },
       });
   }
-  console.warn(`✅  连接器数据就绪：${DEV_CONNECTORS.length} 条`);
+  console.warn(`✅  Connector data ready: ${DEV_CONNECTORS.length} records`);
 
   for (const fixture of DEV_TOKENS) {
     const tokenHash = createHash('sha256').update(fixture.plaintext).digest('hex');
@@ -319,12 +319,12 @@ async function main(): Promise<void> {
         },
       });
   }
-  console.warn(`✅  连接器 webhook token 数据就绪：${DEV_TOKENS.length} 条`);
+  console.warn(`✅  Connector webhook token data ready: ${DEV_TOKENS.length} records`);
 
   for (const fixture of DEV_EXPERIMENT_DATASETS) {
     if (fixture.sampleCount !== fixture.samples.length) {
       console.error(
-        `❌  数据集 ${fixture.name} sampleCount=${fixture.sampleCount} 与实际样本数 ${fixture.samples.length} 不一致`,
+        `❌  Dataset ${fixture.name} sampleCount=${fixture.sampleCount} does not match the actual sample count ${fixture.samples.length}`,
       );
       process.exit(1);
     }
@@ -390,7 +390,7 @@ async function main(): Promise<void> {
         });
     }
   }
-  console.warn(`✅  数据集数据就绪：${DEV_EXPERIMENT_DATASETS.length} 个`);
+  console.warn(`✅  Dataset data ready: ${DEV_EXPERIMENT_DATASETS.length} datasets`);
 
   await db.transaction(async (tx) => {
     await setPromptVersionsFreezeGuard(tx, 'disable');
@@ -473,10 +473,10 @@ async function main(): Promise<void> {
 
     await setPromptVersionsFreezeGuard(tx, 'enable');
   });
-  console.warn(`✅  提示词数据就绪：${DEV_PROMPTS.length} 个`);
+  console.warn(`✅  Prompt data ready: ${DEV_PROMPTS.length} prompts`);
 
   if (!seededDevModels) {
-    console.warn('⚠️  跳过实验 / 优化数据：实验需要先写入模型数据');
+    console.warn('⚠️  Skipping experiment / optimization data: experiments require model data to be written first');
     process.exit(0);
   }
 
@@ -617,7 +617,7 @@ async function main(): Promise<void> {
   for (const fixture of DEV_EXPERIMENTS.filter((experiment) => experiment.optimizationId !== null)) {
     await upsertExperiment(fixture);
   }
-  console.warn(`✅  实验数据就绪：${DEV_EXPERIMENTS.length} 个`);
+  console.warn(`✅  Experiment data ready: ${DEV_EXPERIMENTS.length} experiments`);
 
   for (const fixture of DEV_OPTIMIZATION_ROUND_STEPS) {
     await db
@@ -658,8 +658,8 @@ async function main(): Promise<void> {
         },
       });
   }
-  console.warn(`✅  优化数据就绪：${DEV_OPTIMIZATIONS.length} 个，步骤 ${DEV_OPTIMIZATION_ROUND_STEPS.length} 条`);
-  console.warn('✅  本地 dev 数据快照写入完成');
+  console.warn(`✅  Optimization data ready: ${DEV_OPTIMIZATIONS.length} optimizations, ${DEV_OPTIMIZATION_ROUND_STEPS.length} steps`);
+  console.warn('✅  Local dev data snapshot written successfully');
 
   process.exit(0);
 }

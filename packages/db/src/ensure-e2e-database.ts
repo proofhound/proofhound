@@ -61,8 +61,8 @@ async function main(): Promise<void> {
   const databaseName = getDatabaseName(targetUrl);
 
   if (!isLocalDatabaseHost(targetUrl) && process.env['ALLOW_E2E_DB_CREATE'] !== '1') {
-    console.error('❌  E2E_DATABASE_URL 指向远端数据库，拒绝自动创建');
-    console.error('    如确需创建远端 e2e 数据库，请显式设置 ALLOW_E2E_DB_CREATE=1');
+    console.error('❌  E2E_DATABASE_URL points to a remote database; refusing to auto-create');
+    console.error('    To create a remote e2e database, set ALLOW_E2E_DB_CREATE=1 explicitly');
     process.exit(1);
   }
 
