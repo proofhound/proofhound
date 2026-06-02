@@ -79,31 +79,50 @@ pnpm dev
 
 默认本地服务：
 
-| 服务 | 地址 |
-| --- | --- |
-| 本地管理端 | localhost:3000 |
-| 服务端 API | localhost:4000 |
-| PostgreSQL | localhost:5432 |
-| Redis | localhost:6379 |
-| Kafka | localhost:9092 |
+| 服务             | 地址           |
+| ---------------- | -------------- |
+| 本地管理端       | localhost:3000 |
+| 服务端 API       | localhost:4000 |
+| PostgreSQL       | localhost:5432 |
+| Redis            | localhost:6379 |
+| Kafka            | localhost:9092 |
 | Redpanda Console | localhost:8088 |
-| RedisInsight | localhost:5540 |
+| RedisInsight     | localhost:5540 |
+
+## 测试
+
+```bash
+pnpm test
+pnpm test:e2e
+```
+
+`pnpm test` 运行单元测试。`pnpm test:e2e` 运行 Playwright 功能级套件，并自动准备一套隔离的本地
+测试栈：创建 / 重置 `proofhound_e2e`，使用 Redis DB 1，启动 API、webhook、worker、web 与 fake LLM
+server；Playwright 结束后会停止这些应用进程。套件优先使用 API `http://localhost:4200`、webhook
+`http://localhost:4201`、web `http://localhost:3200` 与 fake LLM 端口 `5599`，但默认端口被占用时会
+自动选择附近可用端口。
+
+运行单个 e2e spec：
+
+```bash
+pnpm test:e2e e2e/experiment.spec.ts --reporter=line
+```
 
 ## 配置
 
 ProofHound 读取仓库根目录的 `.env`（由 server、webhook、worker 与 DB 脚本使用；`apps/web` 从 `apps/web/.env.local` 读取 `NEXT_PUBLIC_*`）。`cp .env.example .env` 已给出可用的本地默认值——下面列出几个常用、可能需要调整的变量：
 
-| 变量 | 用途 | 默认值 |
-| --- | --- | --- |
-| `MODEL_API_KEY_ENCRYPTION_KEY` | **必填** —— 加密静态存储的模型 API Key。用 `openssl rand -base64 32` 生成真实密钥。 | 开发占位值 |
-| `MCP_TOKEN_SIGNING_SECRET` | **必填** —— 为 MCP token 签名；本地开发之外务必更换。 | 开发占位值 |
-| `DATABASE_URL` | PostgreSQL 连接串。 | 指向 Docker Compose 的 Postgres |
-| `REDIS_URL` | Redis 连接（限流 + 队列）。 | 指向 Docker Compose 的 Redis |
-| `SERVER_PORT` / `SERVER_PUBLIC_URL` | 服务端 API 端口与公开 URL。 | `4000` / `http://localhost:4000` |
-| `WEB_PUBLIC_URL` | 允许跨域的 Web 来源（CORS）。 | `http://localhost:3000` |
-| `NEXT_PUBLIC_SERVER_URL` | Web 应用调用的服务端 URL。 | `http://localhost:4000` |
-| `WORKER_QUEUES` / `WORKER_CONCURRENCY` | Worker 队列与单进程并发。 | `llm,probe` / `64` |
-| `LOG_LEVEL` | Pino 日志级别。 | `debug` |
+| 变量                                   | 用途                                                                                | 默认值                           |
+| -------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------- |
+| `MODEL_API_KEY_ENCRYPTION_KEY`         | **必填** —— 加密静态存储的模型 API Key。用 `openssl rand -base64 32` 生成真实密钥。 | 开发占位值                       |
+| `MCP_TOKEN_SIGNING_SECRET`             | **必填** —— 为 MCP token 签名；本地开发之外务必更换。                               | 开发占位值                       |
+| `DATABASE_URL`                         | PostgreSQL 连接串。                                                                 | 指向 Docker Compose 的 Postgres  |
+| `REDIS_URL`                            | Redis 连接（限流 + 队列）。                                                         | 指向 Docker Compose 的 Redis     |
+| `SERVER_PORT` / `SERVER_PUBLIC_URL`    | 服务端 API 端口与公开 URL。                                                         | `4000` / `http://localhost:4000` |
+| `WEB_PUBLIC_URL`                       | 允许跨域的 Web 来源（CORS）。                                                       | `http://localhost:3000`          |
+| `NEXT_PUBLIC_SERVER_URL`               | Web 应用调用的服务端 URL。                                                          | `http://localhost:4000`          |
+| `WORKER_QUEUES` / `WORKER_CONCURRENCY` | Worker 队列与单进程并发。                                                           | `llm,probe` / `64`               |
+| `LOG_LEVEL`                            | Pino 日志级别。                                                                     | `debug`                          |
 
 更高级 / 可选的变量（部署元数据、数据库重置与种子、测试、`pnpm probe:model` 脚本、连接器示例）在 [`.env.example`](.env.example) 内有逐项注释。
 
@@ -147,14 +166,14 @@ flowchart TD
     WORK --> REDIS
 ```
 
-| 层 | 选型 |
-| --- | --- |
-| 前端 | Next.js + TypeScript + Refine + shadcn/ui + Tailwind |
-| 后端 | NestJS 单体，按模块边界拆分 |
-| 数据库 | PostgreSQL + Drizzle ORM（`ph_*` schema），不依赖专有 SQL 扩展 |
-| 编排 | DBOS + BullMQ + Node.js LLM worker |
-| 限流 | Redis 集中限流（RPM / TPM / 并发） |
-| 日志 | Pino，stdout JSON；每次 LLM 调用在写入运行结果前都记录完整入参与响应 |
+| 层     | 选型                                                                 |
+| ------ | -------------------------------------------------------------------- |
+| 前端   | Next.js + TypeScript + Refine + shadcn/ui + Tailwind                 |
+| 后端   | NestJS 单体，按模块边界拆分                                          |
+| 数据库 | PostgreSQL + Drizzle ORM（`ph_*` schema），不依赖专有 SQL 扩展       |
+| 编排   | DBOS + BullMQ + Node.js LLM worker                                   |
+| 限流   | Redis 集中限流（RPM / TPM / 并发）                                   |
+| 日志   | Pino，stdout JSON；每次 LLM 调用在写入运行结果前都记录完整入参与响应 |
 
 ## 模型与供应商
 

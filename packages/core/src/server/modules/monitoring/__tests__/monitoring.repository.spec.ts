@@ -149,6 +149,80 @@ describe('MonitoringRepository', () => {
     });
   });
 
+  it('maps prompt and model ranking rows into DTO response shape', async () => {
+    const db = {
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              prompt_id: '11111111-1111-4111-8111-111111111111',
+              prompt_name: 'Classify support tickets',
+              latest_version_number: '3',
+              version_count: '4',
+              request_count: '6',
+              total_request_count: '12',
+              cost_estimate: '0.120000',
+              failure_rate: '0.166667',
+              hit_rate: '0.833333',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              model_id: '22222222-2222-4222-8222-222222222222',
+              model_name: 'e2e-model',
+              provider_type: 'openai',
+              provider_model_id: 'fake-model',
+              request_count: '6',
+              total_tokens: '90',
+              cost_estimate: '0.120000',
+              capacity_used_ratio: '0.010000',
+              rpm_limit: '600',
+            },
+          ],
+        }),
+    };
+    const repo = new MonitoringRepository(db as never);
+
+    const promptRanking = await repo.getPromptRanking(PROJECT_ID, FILTER, 'requests');
+    const modelRanking = await repo.getModelRanking(PROJECT_ID, FILTER, 'requests');
+
+    expect(promptRanking).toEqual({
+      sortBy: 'requests',
+      items: [
+        {
+          promptId: '11111111-1111-4111-8111-111111111111',
+          promptName: 'Classify support tickets',
+          latestVersionNumber: 3,
+          versionCount: 4,
+          requestCount: 6,
+          shareRatio: 0.5,
+          costEstimate: 0.12,
+          failureRate: 0.166667,
+          hitRate: 0.833333,
+        },
+      ],
+    });
+    expect(modelRanking).toEqual({
+      sortBy: 'requests',
+      items: [
+        {
+          modelId: '22222222-2222-4222-8222-222222222222',
+          modelName: 'e2e-model',
+          providerType: 'openai',
+          providerModelId: 'fake-model',
+          requestCount: 6,
+          totalTokens: 90,
+          costEstimate: 0.12,
+          capacityUsedRatio: 0.01,
+          rpmLimit: 600,
+        },
+      ],
+    });
+  });
+
   it('builds filtered ranking SQL with project, prompt, model, and source constraints', async () => {
     let query: Query | null = null;
     const db = {

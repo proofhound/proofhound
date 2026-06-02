@@ -1,10 +1,10 @@
 import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { SERVER_URL } from './support/api';
 
 // Unlike the page-shell smokes, this exercises the real upload → create → detail flow, so it needs the API
-// server + database running (e.g. `pnpm dev`). It self-cleans the dataset it creates via the REST API.
+// server + isolated e2e database running (e.g. `pnpm dev:e2e`).
 const fixturePath = resolve('e2e/fixtures/dataset-smoke.jsonl');
-const SERVER_URL = process.env.PLAYWRIGHT_SERVER_URL ?? process.env.NEXT_PUBLIC_SERVER_URL ?? 'http://localhost:4000';
 // The visually-hidden file input (the folder input has no `accept`).
 const FILE_INPUT = 'input[accept=".csv,.tsv,.jsonl,.json,.zip"]';
 

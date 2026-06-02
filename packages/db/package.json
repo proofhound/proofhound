@@ -12,6 +12,7 @@
   },
   "scripts": {
     "generate": "drizzle-kit generate",
+    "ensure:e2e": "tsx src/ensure-e2e-database.ts",
     "migrate": "tsx src/migrate.ts",
     "studio": "drizzle-kit studio",
     "reset": "tsx src/reset.ts && pnpm migrate && pnpm seed",

@@ -36,7 +36,6 @@
   <video src="https://github.com/user-attachments/assets/8290f7f3-0fc8-4464-87b1-d351b3d54fb5" controls muted playsinline width="100%" title="ProofHound quick start demo"></video>
 </p>
 
-
 ProofHound turns prompt engineering into a data-driven, traceable workflow. Instead of stitching together scripts, ad-hoc experiments, spreadsheets, and hand-rolled release logic, you run the whole loop — dataset regression, experiments, automatic optimization, canary and production releases, immutable run results, and rollback — in one place, self-hosted on infrastructure you control.
 
 It is built for developers first: clone, `pnpm dev`, connect a model, and start experimenting in minutes. And because the tuning loop is productized around datasets, metrics, and prompt versions, non-engineering teammates can define goals, launch optimizations, and ship releases too. The open-source edition runs as a single-workspace local admin console and keeps a `project_id` data boundary, so it can later connect to an external control plane without changing core resource semantics.
@@ -80,31 +79,51 @@ pnpm dev
 
 Default local services:
 
-| Service | Address |
-| --- | --- |
-| Web UI | localhost:3000 |
-| Server API | localhost:4000 |
-| PostgreSQL | localhost:5432 |
-| Redis | localhost:6379 |
-| Kafka | localhost:9092 |
+| Service          | Address        |
+| ---------------- | -------------- |
+| Web UI           | localhost:3000 |
+| Server API       | localhost:4000 |
+| PostgreSQL       | localhost:5432 |
+| Redis            | localhost:6379 |
+| Kafka            | localhost:9092 |
 | Redpanda Console | localhost:8088 |
-| RedisInsight | localhost:5540 |
+| RedisInsight     | localhost:5540 |
+
+## Testing
+
+```bash
+pnpm test
+pnpm test:e2e
+```
+
+`pnpm test` runs the unit test suite. `pnpm test:e2e` runs the Playwright functional suite through an
+isolated local stack: it creates/resets `proofhound_e2e`, uses Redis DB 1, starts API, webhook,
+worker, web, and the fake LLM server, then stops the app processes after Playwright exits. The suite
+prefers API `http://localhost:4200`, webhook `http://localhost:4201`, web `http://localhost:3200`,
+and fake LLM port `5599`, but automatically selects nearby free ports when those defaults are
+occupied.
+
+To run a single e2e spec:
+
+```bash
+pnpm test:e2e e2e/experiment.spec.ts --reporter=line
+```
 
 ## Configuration
 
 ProofHound reads the repo-root `.env` (used by server, webhook, worker, and the DB scripts; `apps/web` reads `NEXT_PUBLIC_*` from `apps/web/.env.local`). `cp .env.example .env` gives working local defaults — the common variables you may want to set:
 
-| Variable | What it's for | Default |
-| --- | --- | --- |
-| `MODEL_API_KEY_ENCRYPTION_KEY` | **Required** — encrypts stored model API keys at rest. Generate a real one with `openssl rand -base64 32`. | dev placeholder |
-| `MCP_TOKEN_SIGNING_SECRET` | **Required** — signs MCP tokens; change it outside local dev. | dev placeholder |
-| `DATABASE_URL` | PostgreSQL connection string. | Docker Compose Postgres |
-| `REDIS_URL` | Redis connection (rate limits + queues). | Docker Compose Redis |
-| `SERVER_PORT` / `SERVER_PUBLIC_URL` | Server API port and public URL. | `4000` / `http://localhost:4000` |
-| `WEB_PUBLIC_URL` | Web origin allowed for CORS. | `http://localhost:3000` |
-| `NEXT_PUBLIC_SERVER_URL` | Server URL the web app calls. | `http://localhost:4000` |
-| `WORKER_QUEUES` / `WORKER_CONCURRENCY` | Worker queues and per-process concurrency. | `llm,probe` / `64` |
-| `LOG_LEVEL` | Pino log level. | `debug` |
+| Variable                               | What it's for                                                                                              | Default                          |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `MODEL_API_KEY_ENCRYPTION_KEY`         | **Required** — encrypts stored model API keys at rest. Generate a real one with `openssl rand -base64 32`. | dev placeholder                  |
+| `MCP_TOKEN_SIGNING_SECRET`             | **Required** — signs MCP tokens; change it outside local dev.                                              | dev placeholder                  |
+| `DATABASE_URL`                         | PostgreSQL connection string.                                                                              | Docker Compose Postgres          |
+| `REDIS_URL`                            | Redis connection (rate limits + queues).                                                                   | Docker Compose Redis             |
+| `SERVER_PORT` / `SERVER_PUBLIC_URL`    | Server API port and public URL.                                                                            | `4000` / `http://localhost:4000` |
+| `WEB_PUBLIC_URL`                       | Web origin allowed for CORS.                                                                               | `http://localhost:3000`          |
+| `NEXT_PUBLIC_SERVER_URL`               | Server URL the web app calls.                                                                              | `http://localhost:4000`          |
+| `WORKER_QUEUES` / `WORKER_CONCURRENCY` | Worker queues and per-process concurrency.                                                                 | `llm,probe` / `64`               |
+| `LOG_LEVEL`                            | Pino log level.                                                                                            | `debug`                          |
 
 More advanced / optional variables (deploy metadata, DB reset & seeding, tests, the `pnpm probe:model` script, connector demos) are documented inline in [`.env.example`](.env.example).
 
@@ -148,14 +167,14 @@ flowchart TD
     WORK --> REDIS
 ```
 
-| Layer | Choice |
-| --- | --- |
-| Frontend | Next.js + TypeScript + Refine + shadcn/ui + Tailwind |
-| Backend | NestJS monolith, split by module boundaries |
-| Database | PostgreSQL + Drizzle ORM (`ph_*` schema), no proprietary SQL extensions |
-| Orchestration | DBOS + BullMQ + Node.js LLM worker |
-| Rate limiting | Centralized in Redis (RPM / TPM / concurrency) |
-| Logging | Pino, stdout JSON; every LLM call is logged with full input and response before run results are written |
+| Layer         | Choice                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| Frontend      | Next.js + TypeScript + Refine + shadcn/ui + Tailwind                                                    |
+| Backend       | NestJS monolith, split by module boundaries                                                             |
+| Database      | PostgreSQL + Drizzle ORM (`ph_*` schema), no proprietary SQL extensions                                 |
+| Orchestration | DBOS + BullMQ + Node.js LLM worker                                                                      |
+| Rate limiting | Centralized in Redis (RPM / TPM / concurrency)                                                          |
+| Logging       | Pino, stdout JSON; every LLM call is logged with full input and response before run results are written |
 
 ## Models and providers
 
