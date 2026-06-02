@@ -8,10 +8,18 @@ import { envSchema } from './config/env.schema';
 import { resolveListenPort } from './config/listen-port';
 
 function loadRootEnv(): void {
-  try {
-    process.loadEnvFile(resolve(process.cwd(), '../../.env'));
-  } catch {
-    // CI / container deployments do not always mount a local .env file.
+  for (const candidate of [
+    resolve(process.cwd(), '.env.local'),
+    resolve(process.cwd(), '.env'),
+    resolve(process.cwd(), '../../.env.local'),
+    resolve(process.cwd(), '../../.env'),
+  ]) {
+    try {
+      process.loadEnvFile(candidate);
+      return;
+    } catch {
+      // Try the next conventional location.
+    }
   }
 }
 

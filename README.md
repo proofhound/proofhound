@@ -76,7 +76,7 @@ pnpm dev
 
 `pnpm dev` starts the local dependency services, runs database migrations, and launches server, webhook, worker, and web together.
 
-`cp .env.example .env` ships working local defaults, but set the two required secrets before your first run — see [Configuration](#configuration).
+`cp .env.example .env` ships working local defaults, but replace the model API key encryption secret before any non-local run — see [Configuration](#configuration).
 
 Default local services:
 
@@ -97,13 +97,12 @@ ProofHound reads the repo-root `.env` (used by server, webhook, worker, and the 
 | Variable | What it's for | Default |
 | --- | --- | --- |
 | `MODEL_API_KEY_ENCRYPTION_KEY` | **Required** — encrypts stored model API keys at rest. Generate a real one with `openssl rand -base64 32`. | dev placeholder |
-| `MCP_TOKEN_SIGNING_SECRET` | **Required** — signs MCP tokens; change it outside local dev. | dev placeholder |
 | `DATABASE_URL` | PostgreSQL connection string. | Docker Compose Postgres |
 | `REDIS_URL` | Redis connection (rate limits + queues). | Docker Compose Redis |
-| `SERVER_PORT` / `SERVER_PUBLIC_URL` | Server API port and public URL. | `4000` / `http://localhost:4000` |
+| `SERVER_PORT` | Server API port. | `4000` |
 | `WEB_PUBLIC_URL` | Web origin allowed for CORS. | `http://localhost:3000` |
 | `NEXT_PUBLIC_SERVER_URL` | Server URL the web app calls. | `http://localhost:4000` |
-| `WORKER_QUEUES` / `WORKER_CONCURRENCY` | Worker queues and per-process concurrency. | `llm,probe` / `64` |
+| `WORKER_CONCURRENCY` | Per-process `llm` queue concurrency. | `64` |
 | `LOG_LEVEL` | Pino log level. | `debug` |
 
 More advanced / optional variables (deploy metadata, DB reset & seeding, tests, the `pnpm probe:model` script, connector demos) are documented inline in [`.env.example`](.env.example).
