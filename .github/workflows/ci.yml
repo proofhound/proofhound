@@ -62,14 +62,12 @@ jobs:
       REDIS_URL: redis://localhost:6379
       # CI-only throwaway secrets (NOT real). base64 of 32 bytes for the model-key encryption.
       MODEL_API_KEY_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
-      MCP_TOKEN_SIGNING_SECRET: ci-mcp-signing-secret
       SERVER_PORT: "4000"
       WEB_PUBLIC_URL: http://localhost:3000
       NEXT_PUBLIC_SERVER_URL: http://localhost:4000
       WEBHOOK_BODY_LIMIT: 1mb
-      WORKER_QUEUES: llm,probe
       WORKER_CONCURRENCY: "16"
-      CANARY_RUNNER_SCAN_INTERVAL_MS: "2000"
+      RELEASE_RUNNER_SCAN_INTERVAL_MS: "2000"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
