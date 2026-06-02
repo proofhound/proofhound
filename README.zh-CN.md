@@ -75,7 +75,7 @@ pnpm dev
 
 `pnpm dev` 会启动本地依赖服务、执行数据库迁移，并同时拉起 server、webhook、worker 和 web。
 
-`cp .env.example .env` 已给出一套可直接使用的本地默认值；首次运行前请先设好两个必填密钥（见[配置](#配置)）。
+`cp .env.example .env` 已给出一套可直接使用的本地默认值；非本地运行前请先替换模型 API Key 加密密钥（见[配置](#配置)）。
 
 默认本地服务：
 
@@ -96,13 +96,12 @@ ProofHound 读取仓库根目录的 `.env`（由 server、webhook、worker 与 D
 | 变量 | 用途 | 默认值 |
 | --- | --- | --- |
 | `MODEL_API_KEY_ENCRYPTION_KEY` | **必填** —— 加密静态存储的模型 API Key。用 `openssl rand -base64 32` 生成真实密钥。 | 开发占位值 |
-| `MCP_TOKEN_SIGNING_SECRET` | **必填** —— 为 MCP token 签名；本地开发之外务必更换。 | 开发占位值 |
 | `DATABASE_URL` | PostgreSQL 连接串。 | 指向 Docker Compose 的 Postgres |
 | `REDIS_URL` | Redis 连接（限流 + 队列）。 | 指向 Docker Compose 的 Redis |
-| `SERVER_PORT` / `SERVER_PUBLIC_URL` | 服务端 API 端口与公开 URL。 | `4000` / `http://localhost:4000` |
+| `SERVER_PORT` | 服务端 API 端口。 | `4000` |
 | `WEB_PUBLIC_URL` | 允许跨域的 Web 来源（CORS）。 | `http://localhost:3000` |
 | `NEXT_PUBLIC_SERVER_URL` | Web 应用调用的服务端 URL。 | `http://localhost:4000` |
-| `WORKER_QUEUES` / `WORKER_CONCURRENCY` | Worker 队列与单进程并发。 | `llm,probe` / `64` |
+| `WORKER_CONCURRENCY` | 单进程 `llm` queue 并发。 | `64` |
 | `LOG_LEVEL` | Pino 日志级别。 | `debug` |
 
 更高级 / 可选的变量（部署元数据、数据库重置与种子、测试、`pnpm probe:model` 脚本、连接器示例）在 [`.env.example`](.env.example) 内有逐项注释。

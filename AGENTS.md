@@ -53,7 +53,7 @@ Common commands (pnpm@10 + turbo orchestration):
 | Full gate                                | `pnpm verify` = `typecheck + lint + test + deps:check + spec:terms` |
 | Circular deps / terminology check        | `pnpm deps:check` (madge) / `pnpm spec:terms`                 |
 
-> First run: after `cp .env.example .env`, fill in `DATABASE_URL` / `REDIS_URL`; `MODEL_API_KEY_ENCRYPTION_KEY` (@proofhound/crypto encrypts/decrypts the API Key) and `MCP_TOKEN_SIGNING_SECRET` (MCP token signing) are application-managed secrets, and their absence will cause startup / invocation failures.
+> First run: after `cp .env.example .env`, fill in `DATABASE_URL` / `REDIS_URL`; `MODEL_API_KEY_ENCRYPTION_KEY` (@proofhound/crypto encrypts/decrypts the API Key) is an application-managed secret, and its absence will cause startup / invocation failures.
 
 ### Git workflow
 

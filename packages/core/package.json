@@ -10,6 +10,7 @@
     "./server": "./src/server/index.ts",
     "./webhook": "./src/webhook/index.ts",
     "./worker": "./src/worker/index.ts",
+    "./worker/config": "./src/worker/config/worker-concurrency.ts",
     "./contracts": "./src/server/common/contracts/index.ts"
   },
   "scripts": {

@@ -15,7 +15,6 @@ export type DevModelFixture = {
   };
   extraBody: Record<string, unknown>;
   isActive: boolean;
-  apiKeyEnvVar?: string;
 };
 
 export const DEV_MODELS: DevModelFixture[] = [
@@ -36,7 +35,6 @@ export const DEV_MODELS: DevModelFixture[] = [
     },
     extraBody: {},
     isActive: true,
-    apiKeyEnvVar: 'QIANFAN_API_KEY',
   },
   {
     id: '45be9255-88d5-4e32-b650-ba624f33c8f0',
@@ -55,7 +53,6 @@ export const DEV_MODELS: DevModelFixture[] = [
     },
     extraBody: {},
     isActive: true,
-    apiKeyEnvVar: 'ANTHROPIC_API_KEY',
   },
   {
     id: '826d092f-0afa-4e01-b223-d608d1db519d',
@@ -74,6 +71,5 @@ export const DEV_MODELS: DevModelFixture[] = [
     },
     extraBody: {},
     isActive: true,
-    apiKeyEnvVar: 'QIANFAN_API_KEY',
   },
 ];
