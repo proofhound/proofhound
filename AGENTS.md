@@ -105,7 +105,7 @@ Common commands (pnpm@10 + turbo orchestration):
 14. Frontend date-time is uniformly `YYYY/MM/DD HH:mm:ss`.
 15. Frontend theme colors use semantic tokens; do not hardcode single-theme colors.
 16. Every Service method that can be invoked by the frontend exposes a corresponding MCP tool in `apps/server/src/channels/mcp/`; UI internal state is exempt.
-17. Do not start local development services (web / server / worker / database / Redis, etc.) on your own; when you need integration or verification, first check the relevant existing services, and if they are already running use them directly, otherwise ask the user to start them before continuing.
+17. Do not start local development services (web / server / worker / database / Redis, etc.) on your own; when you need integration or verification, first check the relevant existing services, and if they are already running use them directly, otherwise ask the user to start them before continuing. Exception: when the user explicitly asks to run `pnpm test:e2e` / Playwright e2e, the test command may start its configured isolated e2e services (for example server / webhook / worker / web / fake LLM) and shut them down as part of the test run.
 
 ## 6. Definition of Done
 

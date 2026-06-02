@@ -11,7 +11,8 @@
     "./webhook": "./src/webhook/index.ts",
     "./worker": "./src/worker/index.ts",
     "./worker/config": "./src/worker/config/worker-concurrency.ts",
-    "./contracts": "./src/server/common/contracts/index.ts"
+    "./contracts": "./src/server/common/contracts/index.ts",
+    "./infra": "./src/infra/index.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

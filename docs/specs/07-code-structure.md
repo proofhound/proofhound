@@ -125,6 +125,7 @@ Stable package exports:
 @proofhound/core/webhook     # ProofHoundWebhookModule + webhook entry contracts
 @proofhound/core/worker      # ProofHoundWorkerModule + worker handlers
 @proofhound/core/contracts   # adapter extension-point abstract classes + local defaults
+@proofhound/core/infra       # shared Nest infra modules/services used to compose runtime contracts
 ```
 
 The extraction has landed: reusable backend code lives in `packages/core` and `apps/*` are thin shells. New reusable backend code goes in `packages/core` (under the matching runtime subtree, or `shared/` if used by more than one runtime), never behind an `apps/*` barrel.

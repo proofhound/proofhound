@@ -17,4 +17,7 @@ export * from './local-mcp-auth.resolver';
 export * from './local-access-control.service';
 export * from './local-user-token.verifier';
 export { LocalTokenService } from '../../modules/token/token.service';
+export * from '../../modules/token/token.repository';
+export { LocalConnectorContextResolver } from '../../../webhook/channels/webhook/local-connector-context.resolver';
+export * from '../../../webhook/channels/webhook/webhook.repository';
 export { LocalContractsModule } from './local-contracts.module';
