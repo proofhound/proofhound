@@ -7,7 +7,6 @@ import type { CryptoService } from '../../../../shared/crypto/crypto.service';
 import type { PromptRepository } from '../prompt.repository';
 import { PromptTryRunService } from '../prompt-try-run.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
-import { LocalLimiterKeyStrategy } from '../../../common/contracts/limiter-key.strategy';
 
 vi.mock('@proofhound/llm-client', async (importOriginal) => {
   const actual = await importOriginal<object>();
@@ -101,7 +100,11 @@ function buildService(overrides?: {
     dbStub as never,
     limiter as never,
     new LocalAccessControlService(),
-    new LocalLimiterKeyStrategy(),
+    {
+      buildModelKey: vi.fn(
+        (project: { projectId: string }, modelId: string) => `project:${project.projectId}:model:${modelId}`,
+      ),
+    },
   );
 
   return { service, promptRepo, crypto };
@@ -169,6 +172,12 @@ describe('PromptTryRunService', () => {
     expect(out.latencyMs).toBe(432);
     expect(out.inputTokens).toBe(10);
     expect(out.outputTokens).toBe(4);
+    expect(llmClient.invokeLLM).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limiterKey: `project:${PROJECT_ID}:model:${MODEL_ID}`,
+      }),
+      expect.anything(),
+    );
   });
 
   it('falls back to markdown JSON parsing when invokeLLM returns null parsed output', async () => {

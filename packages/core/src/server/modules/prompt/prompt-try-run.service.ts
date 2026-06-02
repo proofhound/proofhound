@@ -24,7 +24,6 @@ import {
   type PromptVariableDto,
   type PromptOutputSchemaDto,
 } from '@proofhound/shared';
-import { LOCAL_PROJECT_CONTEXT } from '@proofhound/shared';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
@@ -85,7 +84,7 @@ export class PromptTryRunService {
       result = await invokeLLM(
         {
           model,
-          limiterKey: this.limiterKeyStrategy.buildModelKey(LOCAL_PROJECT_CONTEXT, model.id),
+          limiterKey: this.limiterKeyStrategy.buildModelKey({ projectId, source: 'local' }, model.id),
           messages: renderedPrompt.messages as LLMMessage[] | undefined,
           prompt: renderedPrompt.prompt,
           params: {

@@ -33,6 +33,7 @@ export interface GenerateNextVersionArgs {
   optimizationId: string;
   roundNumber: number;
   analysisModel: ModelInvocationConfig;
+  analysisLimiterKey: string;
   currentVersion: PromptVersionRef;
   analysis: AnalyzeFailuresResult;
   metrics: MetricSnapshot;
@@ -227,7 +228,7 @@ export async function generateNextVersion(
     const result = await invokeLLM(
       {
         model: args.analysisModel,
-        limiterKey: `model:${args.analysisModel.id}`,
+        limiterKey: args.analysisLimiterKey,
         messages,
         params: {
           temperature: args.strategyConfig.temperature,

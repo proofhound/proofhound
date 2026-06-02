@@ -18,7 +18,7 @@ This repository carries only OSS self-hosted capabilities. Future SaaS / control
 | Backend  | NestJS + TypeScript monolith, split along Module boundaries               |
 | Database | Native PostgreSQL + Drizzle ORM, schema prefix `ph_*`                      |
 | Auth     | Dual-channel HTTP entry (API `Authorization: Bearer ph_*` user token / UI deployment-layer trusted header or LOCAL_ACTOR fallback); MCP entry user token; Webhook entry per-connector webhook token; OSS ships no built-in login system, deployment forms A/B/C detailed in [08](docs/specs/08-saas-adapter-boundary.md) |
-| Storage  | Replaceable object storage `StorageProvider` (datasets / exports)         |
+| Storage  | Current OSS main path stores datasets / results in PostgreSQL; object storage is reserved until a real consumer exists |
 | Realtime | React Query polling + NestJS SSE (business orchestration streaming)        |
 | Orchestration | DBOS + BullMQ + Node.js LLM Worker                                    |
 | Rate limit | Redis centralized rate limiting (RPM / TPM / concurrency)               |
@@ -30,7 +30,7 @@ This repository carries only OSS self-hosted capabilities. Future SaaS / control
 ```
 proofhound/
 ├── apps/        server / webhook / worker / web
-├── packages/    core / shared / db / crypto / providers / logger / limiter / metrics / judgment / optimization-strategy / orchestration-shared / llm-client / connector-client / api-client / ui / web-ui
+├── packages/    core / shared / db / crypto / logger / limiter / metrics / judgment / optimization-strategy / orchestration-shared / llm-client / connector-client / api-client / ui / web-ui
 ├── dev/         local development dependency services docker-compose
 ├── docs/specs/  open-source edition business SPEC
 ├── .agents/skills/

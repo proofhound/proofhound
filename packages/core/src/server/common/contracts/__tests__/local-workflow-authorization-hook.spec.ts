@@ -1,7 +1,11 @@
 import { LOCAL_PROJECT_CONTEXT } from '@proofhound/shared';
 import { describe, expect, it } from 'vitest';
 import type { ActorContext } from '../../actor-context';
-import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from '../workflow-authorization.hook';
+import {
+  LocalWorkflowAuthorizationHook,
+  WorkflowAuthorizationHook,
+  type WorkflowKind,
+} from '../workflow-authorization.hook';
 
 describe('LocalWorkflowAuthorizationHook', () => {
   const hook = new LocalWorkflowAuthorizationHook();
@@ -15,9 +19,11 @@ describe('LocalWorkflowAuthorizationHook', () => {
       { actorId: 'tok-1', actorKind: 'script' },
       { actorId: 'conn-1', actorKind: 'system_webhook' },
     ];
+    const workflows: WorkflowKind[] = ['experiment', 'optimization', 'release', 'llm', 'probe'];
     for (const actor of actors) {
-      await expect(hook.assertCanStart(actor, LOCAL_PROJECT_CONTEXT, 'experiment')).resolves.toBeUndefined();
-      await expect(hook.assertCanStart(actor, LOCAL_PROJECT_CONTEXT, 'llm')).resolves.toBeUndefined();
+      for (const workflow of workflows) {
+        await expect(hook.assertCanStart(actor, LOCAL_PROJECT_CONTEXT, workflow)).resolves.toBeUndefined();
+      }
     }
   });
 });

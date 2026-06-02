@@ -78,7 +78,7 @@ The three limits are mutually independent:
 | TPM         | Input + output tokens in the most recent 60-second sliding window             |
 | Concurrency | Number of in-flight requests at the same time (the concurrency limit when auto concurrency is on) |
 
-RPM / TPM allow `-1` to indicate no limit; concurrency must be `1..999`. All entries share the same model quota, counted uniformly by the centralized Redis rate limiter by `modelId`.
+RPM / TPM allow `-1` to indicate no limit; concurrency must be `1..999`. All entries share the same model quota, counted uniformly by the centralized Redis rate limiter through the opaque key produced by `LimiterKeyStrategy` ([08 §3.7](08-saas-adapter-boundary.md#37-limiterkeystrategy)); the OSS default key is `model:<modelId>`.
 
 Experiment- / optimization-level rate limits can only tighten downward; they cannot exceed the model's limits.
 
@@ -89,14 +89,14 @@ RPM / TPM are the hard quota limits given by the provider, but "how large a conc
 - When on, the system automatically adjusts the actual effective concurrency within the `[1, concurrency limit]` range, and `concurrency_limit` degrades to a safety cap / manually entered cap.
 - When off, `concurrency_limit` is the hard concurrency cap, with behavior consistent with the past.
 
-The adjustment strategy is **hybrid**, with state maintained centrally by Redis (per `modelId`, an independent autostate hash key):
+The adjustment strategy is **hybrid**, with state maintained centrally by Redis (per opaque limiter key produced by `LimiterKeyStrategy`, an independent autostate hash key):
 
 1. **Target concurrency (Little's Law)**: `effective ≈ requests per second needed to achieve RPM/TPM × average latency`. Using an observed-latency EWMA and a per-request-token EWMA, it derives in real time the concurrency that exactly saturates RPM/TPM, then clamps it to `[1, concurrency limit]`. When RPM/TPM is `-1` (no limit), that side does not participate in the constraint.
 2. **Upstream 429 multiplicative backoff (AIMD)**: when the provider returns a 429 (insufficient quota), concurrency converges via a multiplier, and recovers additively after sustained success. This makes concurrency (and therefore the actual throughput) converge to the level the provider can genuinely sustain, rather than hammering the configured RPM/TPM.
 
 The system does not force the configured RPM/TPM to be saturated, only "up to at most"; the configured value is always the upper bound. The effective value and the backoff state are visible to the user (the concurrency usage in the list / details shows `effective / limit`, and the application log records the derivation process).
 
-Note: what is adjusted here is the **model-dimension global in-flight concurrency** (shared across all worker processes / all entries by `modelId`), which is a separate gate from the worker process's own BullMQ pull concurrency (see [03 §7](03-orchestration.md#7-division-of-responsibilities)).
+Note: what is adjusted here is the **limiter-key-dimension global in-flight concurrency** (shared across all worker processes / all entries that resolve to the same key; OSS default key remains `model:<modelId>`), which is a separate gate from the worker process's own BullMQ pull concurrency (see [03 §7](03-orchestration.md#7-division-of-responsibilities)).
 
 ## 7. Unit Price and Cost Estimation
 

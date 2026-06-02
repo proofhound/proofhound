@@ -6,7 +6,7 @@
  */
 import { createUserTokenSchema, tokenIdParamSchema, updateUserTokenSchema } from '@proofhound/shared';
 import { getMcpActor } from './mcp-context';
-import type { TokenService } from '../../modules/token/token.service';
+import type { TokenService } from '../../common/contracts/token.service';
 import type { McpToolDefinition } from './mcp.types';
 
 export function createTokenTools(service: TokenService): McpToolDefinition[] {

@@ -1,5 +1,5 @@
 // Unit tests for from_dataset_only first-version generation — see docs/specs/25-optimizations.md §2.1
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ERROR_PATTERN_ANALYSIS_CONFIG } from '../error-pattern-analysis/config.schema';
 import {
   FirstVersionParseError,
@@ -35,16 +35,35 @@ const validResponse = JSON.stringify({
   changeSummary: '基于 3 条样本归纳出二分类业务',
 });
 
+function recordingLimiter() {
+  const acquiredKeys: string[] = [];
+  return {
+    acquiredKeys,
+    limiter: {
+      acquire: vi.fn(async (args: { key: string }) => {
+        acquiredKeys.push(args.key);
+      }),
+      release: vi.fn(),
+      reportOutcome: vi.fn(),
+    },
+  };
+}
+
 describe('generateInitialVersion (SPEC 25 §2.1)', () => {
   it('parses a valid LLM response into prompt body / variables / outputSchema', async () => {
     const adapter = createFakeAdapter({ generateInitial: { content: validResponse } });
     const writer = new RecordingRunResultWriter();
-    const deps = makeInvokeLLMDependencies(adapter, writer);
+    const limiter = recordingLimiter();
+    const deps = {
+      ...makeInvokeLLMDependencies(adapter, writer),
+      limiter: limiter.limiter,
+    };
 
     const result = await generateInitialVersion(
       {
         optimizationId: 'a1111111-1111-4111-8111-111111111111',
         analysisModel: makeAnalysisModel(),
+        analysisLimiterKey: 'test:analysis-model',
         samples,
         goals,
         fieldWhitelist,
@@ -58,6 +77,7 @@ describe('generateInitialVersion (SPEC 25 §2.1)', () => {
     expect(result.variables).toEqual([{ name: 'text', type: 'text', required: true }]);
     expect(result.outputSchema).toEqual({ fields: [{ key: 'decision', isJudgment: true, value: '' }] });
     expect(result.changeSummary).toContain('归纳');
+    expect(limiter.acquiredKeys).toEqual(['test:analysis-model']);
   });
 
   it('writes a run_result row when runResultMeta + generateRunResultId provided', async () => {
@@ -69,6 +89,7 @@ describe('generateInitialVersion (SPEC 25 §2.1)', () => {
       {
         optimizationId: 'a1111111-1111-4111-8111-111111111111',
         analysisModel: makeAnalysisModel(),
+        analysisLimiterKey: 'test:analysis-model',
         samples,
         goals,
         fieldWhitelist,
@@ -116,6 +137,7 @@ positive 或 negative。",
       {
         optimizationId: 'a1111111-1111-4111-8111-111111111111',
         analysisModel: makeAnalysisModel(),
+        analysisLimiterKey: 'test:analysis-model',
         samples,
         goals,
         fieldWhitelist,
@@ -143,6 +165,7 @@ positive 或 negative。",
         {
           optimizationId: 'a1111111-1111-4111-8111-111111111111',
           analysisModel: makeAnalysisModel(),
+          analysisLimiterKey: 'test:analysis-model',
           samples,
           goals,
           fieldWhitelist,
@@ -172,6 +195,7 @@ positive 或 negative。",
         {
           optimizationId: 'a1111111-1111-4111-8111-111111111111',
           analysisModel: makeAnalysisModel(),
+          analysisLimiterKey: 'test:analysis-model',
           samples,
           goals,
           fieldWhitelist,
@@ -201,6 +225,7 @@ positive 或 negative。",
         {
           optimizationId: 'a1111111-1111-4111-8111-111111111111',
           analysisModel: makeAnalysisModel(),
+          analysisLimiterKey: 'test:analysis-model',
           samples,
           goals,
           fieldWhitelist,
@@ -230,6 +255,7 @@ positive 或 negative。",
         {
           optimizationId: 'a1111111-1111-4111-8111-111111111111',
           analysisModel: makeAnalysisModel(),
+          analysisLimiterKey: 'test:analysis-model',
           samples,
           goals,
           fieldWhitelist,
@@ -249,6 +275,7 @@ positive 或 negative。",
       {
         optimizationId: 'a1111111-1111-4111-8111-111111111111',
         analysisModel: makeAnalysisModel(),
+        analysisLimiterKey: 'test:analysis-model',
         samples,
         goals,
         fieldWhitelist,
@@ -270,6 +297,7 @@ positive 或 negative。",
       {
         optimizationId: 'a1111111-1111-4111-8111-111111111111',
         analysisModel: makeAnalysisModel(),
+        analysisLimiterKey: 'test:analysis-model',
         samples,
         goals,
         fieldWhitelist,
@@ -292,6 +320,7 @@ positive 或 negative。",
       {
         optimizationId: 'a1111111-1111-4111-8111-111111111111',
         analysisModel: makeAnalysisModel(),
+        analysisLimiterKey: 'test:analysis-model',
         samples,
         goals,
         fieldWhitelist,

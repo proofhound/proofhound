@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { createLogger } from '@proofhound/logger';
+import { LocalContractsModule } from '@proofhound/core/contracts';
 import { envSchema } from './config/env.schema';
 
 function loadRootEnv(): void {
@@ -27,7 +28,10 @@ async function bootstrap(): Promise<void> {
   const logger = createLogger('worker.bootstrap', { service: 'worker', level: env.LOG_LEVEL });
   const { ProofHoundWorkerModule } = await import('@proofhound/core/worker');
 
-  const app = await NestFactory.createApplicationContext(ProofHoundWorkerModule, { abortOnError: true });
+  const app = await NestFactory.createApplicationContext(
+    ProofHoundWorkerModule.forRoot({ contracts: LocalContractsModule }),
+    { abortOnError: true },
+  );
   app.enableShutdownHooks();
 
   logger.info({ queues: ['llm', 'probe'], concurrency: env.WORKER_CONCURRENCY }, 'worker_started');

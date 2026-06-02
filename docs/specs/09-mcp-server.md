@@ -67,15 +67,18 @@ Error mapping (resolver throws `UnauthorizedException`):
 
 ## 4. Tool registration & dispatch
 
-- The server collects all tool definitions from `channels/mcp/index.ts` (the 17 `createXxxTools`
+- The server collects all tool definitions from `channels/mcp/index.ts` (the 14 `createXxxTools`
   aggregators), each yielding `McpToolDefinition { name, description, inputSchema, handler(input, ctx) }`.
 - The SDK server answers `tools/list` from the registered names/descriptions/`inputSchema`, and
   `tools/call` by looking up the tool by name and invoking `handler(args, ctx)` where `ctx` is the
   `McpToolContext` carrying the resolver-validated actor + project.
-- Each `handler` delegates to the corresponding Service method. Business authorization stays in the
-  Service via `AccessControlService.assertCan(actor, project, action)` ([08 §3.6](08-saas-adapter-boundary.md));
-  MCP-channel actions use the `mcp_tool` `AccessAction`. The MCP channel grants no admin bypass to the
-  project layer — `system_mcp` flows through access-control's system-kind handling, not super-admin.
+- Before the SDK dispatches a request, `McpDispatchContextFactory` validates the actor + project and calls
+  `AccessControlService.assertCan(actor, project, 'mcp_tool')` ([08 §3.6](08-saas-adapter-boundary.md)).
+  This channel-level gate lets SaaS allow / deny MCP usage independently of the HTTP API. Each `handler`
+  then delegates to the corresponding Service method, whose normal business authorization still runs
+  (`project_read`, `project_write`, `release_manage`, `user_token_manage`, etc.). The MCP channel grants
+  no admin bypass to the project layer — `system_mcp` flows through access-control's system-kind handling,
+  not super-admin.
 - A handler that throws maps to a JSON-RPC error in the `tools/call` response.
 
 The legacy "no transport yet" fallback in `getMcpActor` (which synthesized a default actor when

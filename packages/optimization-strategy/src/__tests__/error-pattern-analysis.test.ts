@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { LLMCallLogger } from '@proofhound/llm-client';
 import { analyzeFailures } from '../error-pattern-analysis/analyze';
 import {
@@ -31,6 +31,20 @@ import {
   makeInvokeLLMDependencies,
   RecordingRunResultWriter,
 } from './helpers/fake-invoke-deps';
+
+function recordingLimiter() {
+  const acquiredKeys: string[] = [];
+  return {
+    acquiredKeys,
+    limiter: {
+      acquire: vi.fn(async (args: { key: string }) => {
+        acquiredKeys.push(args.key);
+      }),
+      release: vi.fn(),
+      reportOutcome: vi.fn(),
+    },
+  };
+}
 
 const currentVersion: PromptVersionRef = {
   id: 'pv_001',
@@ -247,6 +261,7 @@ describe('analyzeFailures', () => {
       optimizationId: 'ai_001',
       roundNumber: 2,
       analysisModel: makeAnalysisModel(),
+      analysisLimiterKey: 'test:analysis-model',
       currentVersion,
       samples,
       currentRunResults,
@@ -260,7 +275,11 @@ describe('analyzeFailures', () => {
 
   it('calls LLM once per confusion pair + once per regression group + 1 summarize', async () => {
     const adapter = defaultAdapter();
-    const result = await analyzeFailures(commonArgs(), makeInvokeLLMDependencies(adapter));
+    const limiter = recordingLimiter();
+    const result = await analyzeFailures(commonArgs(), {
+      ...makeInvokeLLMDependencies(adapter),
+      limiter: limiter.limiter,
+    });
     // confusion: 2 pairs (B→A count=2, A→B count=1)
     expect(adapter.callsFor('confusion')).toHaveLength(2);
     // regression: 1 group (predicted=A from s2)
@@ -277,6 +296,12 @@ describe('analyzeFailures', () => {
         totalRegressionSamples: 1,
       },
     });
+    expect(limiter.acquiredKeys).toEqual([
+      'test:analysis-model',
+      'test:analysis-model',
+      'test:analysis-model',
+      'test:analysis-model',
+    ]);
   });
 
   it('skips regression when previousRunResults is null', async () => {
@@ -499,6 +524,7 @@ describe('generateNextVersion', () => {
       optimizationId: 'ai_001',
       roundNumber: 2,
       analysisModel: makeAnalysisModel(),
+      analysisLimiterKey: 'test:analysis-model',
       currentVersion,
       analysis: {
         errorAnalysisText: analysisOverride?.errorAnalysisText ?? '## 错误模式\n1. B→A',
@@ -585,8 +611,13 @@ describe('generateNextVersion', () => {
 
   it('system prompt covers 9 required blocks', async () => {
     const adapter = defaultAdapter();
-    await generateNextVersion(commonGenArgs(), makeInvokeLLMDependencies(adapter));
+    const limiter = recordingLimiter();
+    await generateNextVersion(commonGenArgs(), {
+      ...makeInvokeLLMDependencies(adapter),
+      limiter: limiter.limiter,
+    });
     const call = adapter.callsFor('generate')[0]!;
+    expect(limiter.acquiredKeys).toEqual(['test:analysis-model']);
     // Assert each of the 9 blocks (per spec)
     expect(call.systemPrompt).toContain('提示词改写工程师'); // 1. Role setup
     expect(call.systemPrompt).toContain('硬约束'); // Optimization constraints
@@ -988,6 +1019,7 @@ describe('optimization run_results 持久化(SPEC 25 §11.2)', () => {
       optimizationId: runResultMeta.sourceId,
       roundNumber: 2,
       analysisModel: makeAnalysisModel(),
+      analysisLimiterKey: 'test:analysis-model',
       currentVersion,
       samples,
       currentRunResults,
@@ -1040,6 +1072,7 @@ describe('optimization run_results 持久化(SPEC 25 §11.2)', () => {
         optimizationId: runResultMeta.sourceId,
         roundNumber: 2,
         analysisModel: makeAnalysisModel(),
+        analysisLimiterKey: 'test:analysis-model',
         currentVersion,
         analysis: {
           errorAnalysisText: '## 错误模式\n1. B→A',

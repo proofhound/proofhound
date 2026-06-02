@@ -39,7 +39,6 @@ proofhound/
 │   ├── db/           # Drizzle schema / migrations / seed
 │   ├── api-client/   # HTTP client
 │   ├── orchestration-shared/
-│   ├── providers/
 │   ├── logger/
 │   ├── limiter/
 │   ├── llm-client/
@@ -229,7 +228,6 @@ When adding or renaming pages, update the Playwright smoke tests accordingly. Us
 | `@proofhound/db` | Drizzle schema, migration, seed, reset |
 | `@proofhound/api-client` | HTTP client shared by the frontend and scripts |
 | `@proofhound/orchestration-shared` | DBOS workflow ids, BullMQ queues, job payload schemas |
-| `@proofhound/providers` | Replaceable interfaces such as Storage / Realtime |
 | `@proofhound/logger` | Pino factory and redact |
 | `@proofhound/limiter` | Redis RPM / TPM / concurrency rate limiting |
 | `@proofhound/llm-client` | LLM provider call wrapper |
@@ -244,7 +242,7 @@ When adding or renaming pages, update the Playwright smoke tests accordingly. Us
 
 ```text
 apps/*  -> packages/core + packages/*
-packages/core -> packages/shared / db / logger / limiter / llm-client / connector-client / metrics / judgment / optimization-strategy / orchestration-shared / providers
+packages/core -> packages/shared / db / logger / limiter / llm-client / connector-client / metrics / judgment / optimization-strategy / orchestration-shared
 packages/api-client -> packages/shared
 packages/db -> packages/shared (share types only when necessary)
 packages/llm-client -> packages/logger

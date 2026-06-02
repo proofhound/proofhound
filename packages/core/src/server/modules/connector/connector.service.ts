@@ -35,6 +35,7 @@ import type {
 } from '@proofhound/shared';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { ConnectorDriverFactory } from './connector.driver-factory';
@@ -82,6 +83,7 @@ export class ConnectorService {
     private readonly driverFactory: ConnectorDriverFactory,
     private readonly crypto: CryptoService,
     private readonly accessControl: AccessControlService,
+    private readonly workflowAuth: WorkflowAuthorizationHook,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -386,6 +388,7 @@ export class ConnectorService {
     await this.getAccessibleProject(projectId, actor);
     const row = await this.repo.findById(projectId, connectorId);
     if (!row) throw new NotFoundException(`Connector ${connectorId} not found`);
+    await this.assertProbeWorkflowStart(projectId, actor);
 
     const startedAt = Date.now();
     const driverResult = await this.driverFactory.probe({
@@ -492,6 +495,10 @@ export class ConnectorService {
 
   private hashToken(plaintext: string): string {
     return createHash('sha256').update(plaintext).digest('hex');
+  }
+
+  private async assertProbeWorkflowStart(projectId: string, actor: CurrentUserPayload): Promise<void> {
+    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'probe');
   }
 
   private async loadWebhookTokenSummaries(row: ConnectorRowWithJoins): Promise<ConnectorWebhookTokenSummaryDto[]> {

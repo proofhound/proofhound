@@ -18,7 +18,7 @@ apps/server (OSS process shell)
   - BullMQ producer
   - release runner service
         │
-        ├── PostgreSQL + StorageProvider
+        ├── PostgreSQL
         ├── Redis (BullMQ / limiter / PubSub)
         └── apps/worker (OSS process shell)
               └── @proofhound/core/worker (BullMQ LLM consumer)
@@ -55,7 +55,8 @@ Entry-point authentication is uniformly constrained by SPEC 08 §3 / §3.2.1: th
 
 - PostgreSQL stores all business data.
 - Drizzle ORM defines the schema and migrations.
-- `StorageProvider` stores dataset uploads, images, and exported files.
+- Dataset imports and current exports use PostgreSQL-backed flows; no object-storage provider is part of the current OSS runtime.
+- Object storage remains a future extension point for real consumers such as offline image storage or signed export files (see [04 §4](04-postgresql.md#4-storage)).
 - Database Realtime is not used for page subscriptions.
 - No dependency on hosted-platform proprietary SQL extensions; stay PostgreSQL-first.
 
@@ -110,7 +111,8 @@ DBOS integration tests must run serially: `pool: 'forks'`, `singleFork: true`, `
 ## 9. Deployment
 
 - Local dependency services: `dev/docker-compose.yml` provides PostgreSQL / Redis / Kafka, etc.
-- PostgreSQL / Storage: production uses standard PostgreSQL 14+ and object storage wired through `StorageProvider`.
+- PostgreSQL: production uses standard PostgreSQL 14+.
+- Object storage is not wired in the current OSS runtime; add a provider only when a concrete storage-backed feature needs it.
 - Production target: server / webhook / worker / web are deployed as separate processes; log collection, retention, metrics, and tracing are the responsibility of the deployment environment.
 
 ## 10. Channel Consistency

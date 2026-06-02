@@ -69,6 +69,7 @@ export interface AnalyzeFailuresArgs {
   optimizationId: string;
   roundNumber: number;
   analysisModel: ModelInvocationConfig;
+  analysisLimiterKey: string;
   currentVersion: PromptVersionRef;
   previousVersion?: PromptVersionRef | null;
   samples: SampleRecord[];
@@ -248,7 +249,7 @@ async function runAnalysisBatch(
   const result = await invokeLLM(
     {
       model: args.analysisModel,
-      limiterKey: `model:${args.analysisModel.id}`,
+      limiterKey: args.analysisLimiterKey,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -576,7 +577,7 @@ async function runSummarize(
   const result = await invokeLLM(
     {
       model: args.analysisModel,
-      limiterKey: `model:${args.analysisModel.id}`,
+      limiterKey: args.analysisLimiterKey,
       messages,
       params: {
         temperature: args.strategyConfig.temperature,

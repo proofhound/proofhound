@@ -88,6 +88,7 @@ export interface OptimizationConfig<TStrategyConfig = unknown> {
   maxRounds: number;
   fieldWhitelist: FieldWhitelist;
   analysisModel: ModelInvocationConfig;
+  analysisLimiterKey: string;
   taskModel: ModelInvocationConfig;
   strategyKey: 'error_pattern_analysis';
   strategyConfig: TStrategyConfig;

@@ -181,6 +181,7 @@ function makeConfig(model: ModelInvocationConfig): OptimizationConfig<ErrorPatte
     },
     optimizationHint: '请聚焦在如何让模型识别 negative 情感的关键词',
     analysisModel: model,
+    analysisLimiterKey: `model:${model.id}`,
     taskModel: model,
     strategyKey: 'error_pattern_analysis',
     strategyConfig: DEFAULT_ERROR_PATTERN_ANALYSIS_CONFIG,

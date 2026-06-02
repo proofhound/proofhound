@@ -93,6 +93,7 @@ function makeConfig(
     goals,
     maxRounds,
     analysisModel: makeAnalysisModel(),
+    analysisLimiterKey: 'test:analysis-model',
     taskModel: makeTaskModel(),
     fieldWhitelist: { promptVariables: ['text'] },
     strategyKey: 'error_pattern_analysis',

@@ -13,7 +13,8 @@ import {
 import { ModelService } from '../model.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
-import { LimiterKeyStrategy, LocalLimiterKeyStrategy } from '../../../common/contracts/limiter-key.strategy';
+import { LimiterKeyStrategy } from '../../../common/contracts/limiter-key.strategy';
+import { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 
 vi.mock('@proofhound/llm-client', () => ({
   __esModule: true,
@@ -117,17 +118,43 @@ function makeLimiter(snapshot: Partial<UsageSnapshot> = {}): Mocked<RateLimiter>
   } as unknown as Mocked<RateLimiter>;
 }
 
+function draftProbeDto() {
+  return {
+    name: 'Local',
+    providerType: 'openai',
+    providerModelId: 'gpt-4o',
+    endpoint: 'https://api.openai.com/v1',
+    apiKey: 'sk-draft',
+    contextWindowTokens: 128000,
+    rpm: { limit: 60 },
+    tpm: { limit: 1000 },
+    concurrency: { limit: 1 },
+    autoConcurrency: true,
+    pricing: { inputPerMillion: 0, outputPerMillion: 0 },
+    capabilities: { image: 'none' as const },
+    extraBody: {},
+  };
+}
+
 describe('ModelService', () => {
   let service: ModelService;
   let repo: Mocked<ModelRepository>;
   let crypto: Mocked<CryptoService>;
   let limiter: Mocked<RateLimiter>;
+  let limiterKeyStrategy: { buildModelKey: Mock };
+  let workflowAuth: { assertCanStart: Mock };
 
   beforeEach(async () => {
     (testModelConnectivity as Mock).mockReset();
     repo = makeRepo();
     crypto = makeCrypto();
     limiter = makeLimiter();
+    limiterKeyStrategy = {
+      buildModelKey: vi.fn(
+        (project: { projectId: string }, modelId: string) => `project:${project.projectId}:model:${modelId}`,
+      ),
+    };
+    workflowAuth = { assertCanStart: vi.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -135,7 +162,8 @@ describe('ModelService', () => {
         { provide: CryptoService, useValue: crypto },
         { provide: REDIS_LIMITER, useValue: limiter },
         { provide: AccessControlService, useClass: LocalAccessControlService },
-        { provide: LimiterKeyStrategy, useClass: LocalLimiterKeyStrategy },
+        { provide: LimiterKeyStrategy, useValue: limiterKeyStrategy },
+        { provide: WorkflowAuthorizationHook, useValue: workflowAuth },
         ModelService,
       ],
     }).compile();
@@ -352,28 +380,50 @@ describe('ModelService', () => {
 
     const result = await service.probeDraftProjectModel(
       WORKSPACE_ID,
-      {
-        name: 'Local',
-        providerType: 'openai',
-        providerModelId: 'gpt-4o',
-        endpoint: 'https://api.openai.com/v1',
-        apiKey: 'sk-draft',
-        contextWindowTokens: 128000,
-        rpm: { limit: 60 },
-        tpm: { limit: 1000 },
-        concurrency: { limit: 1 },
-        autoConcurrency: true,
-        pricing: { inputPerMillion: 0, outputPerMillion: 0 },
-        capabilities: { image: 'none' },
-        extraBody: {},
-      },
+      draftProbeDto(),
       ACTOR,
     );
 
     expect(result.status).toBe('failed');
     expect(result.error).toBe('invalid_api_key');
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: ACTOR.sub, actorKind: 'local_user' }),
+      { projectId: WORKSPACE_ID, source: 'local' },
+      'probe',
+    );
+    expect(testModelConnectivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limiterKey: expect.stringContaining(`project:${WORKSPACE_ID}:model:`),
+      }),
+      expect.anything(),
+    );
     expect(repo.createModel).not.toHaveBeenCalled();
     expect(repo.updateProbeOutcome).not.toHaveBeenCalled();
+  });
+
+  it('does not run a draft model probe when the workflow hook rejects', async () => {
+    workflowAuth.assertCanStart.mockRejectedValueOnce(new Error('workflow_denied'));
+
+    await expect(service.probeDraftProjectModel(WORKSPACE_ID, draftProbeDto(), ACTOR)).rejects.toThrow(
+      'workflow_denied',
+    );
+
+    expect(testModelConnectivity).not.toHaveBeenCalled();
+    expect(repo.createModel).not.toHaveBeenCalled();
+    expect(repo.updateProbeOutcome).not.toHaveBeenCalled();
+  });
+
+  it('does not run a quick start draft probe when the workflow hook rejects', async () => {
+    workflowAuth.assertCanStart.mockRejectedValueOnce(new Error('workflow_denied'));
+
+    await expect(service.probeQuickStartDraftModel(draftProbeDto(), ACTOR)).rejects.toThrow('workflow_denied');
+
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: ACTOR.sub, actorKind: 'local_user' }),
+      { projectId: WORKSPACE_ID, source: 'local' },
+      'probe',
+    );
+    expect(testModelConnectivity).not.toHaveBeenCalled();
   });
 
   it('duplicates a model by decrypting the source key and creating a local copy', async () => {
@@ -453,11 +503,32 @@ describe('ModelService', () => {
 
     expect(result.status).toBe('failed');
     expect(result.error).toBe('invalid_api_key');
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: ACTOR.sub, actorKind: 'local_user' }),
+      { projectId: WORKSPACE_ID, source: 'local' },
+      'probe',
+    );
+    expect(testModelConnectivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limiterKey: `project:${WORKSPACE_ID}:model:00000000-0000-4000-8000-000000000101`,
+      }),
+      expect.anything(),
+    );
     expect(repo.updateProbeOutcome).toHaveBeenCalledWith(
       '00000000-0000-4000-8000-000000000101',
       new Date('2026-05-18T01:00:00.000Z'),
       'invalid_api_key',
     );
+  });
+
+  it('does not record an existing model probe when the workflow hook rejects', async () => {
+    repo.findModelAccessibleToProject.mockResolvedValue(fakeRow());
+    workflowAuth.assertCanStart.mockRejectedValueOnce(new Error('workflow_denied'));
+
+    await expect(service.probeProjectModel(WORKSPACE_ID, 'model-1', ACTOR)).rejects.toThrow('workflow_denied');
+
+    expect(testModelConnectivity).not.toHaveBeenCalled();
+    expect(repo.updateProbeOutcome).not.toHaveBeenCalled();
   });
 
   it('handles context window dictionary operations', async () => {

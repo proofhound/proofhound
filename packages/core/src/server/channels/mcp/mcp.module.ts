@@ -34,7 +34,7 @@ import { ReleaseLineService } from '../../modules/release-line/release-line.serv
 import { RunResultModule } from '../../modules/run-result/run-result.module';
 import { RunResultService } from '../../modules/run-result/run-result.service';
 import { TokenModule } from '../../modules/token/token.module';
-import { TokenService } from '../../modules/token/token.service';
+import { TokenService } from '../../common/contracts/token.service';
 import {
   createAnnotationTools,
   createCanaryReleaseTools,

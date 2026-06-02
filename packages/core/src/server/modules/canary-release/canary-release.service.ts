@@ -15,6 +15,7 @@ import type {
 } from '@proofhound/shared';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { ReleaseLineService } from '../release-line/release-line.service';
 import {
@@ -43,6 +44,7 @@ export class CanaryReleaseService {
     private readonly repo: CanaryReleaseRepository,
     private readonly releaseLineService: ReleaseLineService,
     private readonly accessControl: AccessControlService,
+    private readonly workflowAuth: WorkflowAuthorizationHook,
   ) {}
 
   async list(
@@ -139,6 +141,8 @@ export class CanaryReleaseService {
       );
     }
 
+    await this.assertReleaseWorkflowStart(projectId, actor);
+
     const snapshots = buildPromptSnapshots(version);
     const now = new Date();
     const line = await this.releaseLineService.recordCanaryEvent(
@@ -199,6 +203,7 @@ export class CanaryReleaseService {
     if (current.status !== 'stopped') {
       throw new ConflictException(`Canary ${canaryId} cannot start from status ${current.status}`);
     }
+    await this.assertReleaseWorkflowStart(projectId, actor);
     const eventId = await this.recordCanaryOperation(current, 'resume_lane', 'running', null, actor);
     return this.getDetail(projectId, eventId, actor);
   }
@@ -339,6 +344,10 @@ export class CanaryReleaseService {
   private async assertWriteAccess(projectId: string, actor: CurrentUserPayload): Promise<void> {
     await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'release_manage');
     return this.assertReadAccess(projectId, actor);
+  }
+
+  private async assertReleaseWorkflowStart(projectId: string, actor: CurrentUserPayload): Promise<void> {
+    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'release');
   }
 
   private async getCanaryRow(projectId: string, canaryId: string): Promise<CanaryReleaseRowWithJoins> {

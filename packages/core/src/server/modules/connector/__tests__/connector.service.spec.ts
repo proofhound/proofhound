@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { vi, type Mocked } from 'vitest';
+import { vi, type Mock, type Mocked } from 'vitest';
 import { CryptoService } from '../../../../shared/crypto/crypto.service';
 import { ConnectorDriverFactory } from '../connector.driver-factory';
 import {
@@ -12,6 +12,7 @@ import {
 import { ConnectorService } from '../connector.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 
 const WORKSPACE_ID = '11111111-1111-4111-8111-000000000010';
 const CONNECTOR_ID = '22222222-2222-4222-8222-000000000010';
@@ -101,6 +102,7 @@ describe('ConnectorService', () => {
   let repo: Mocked<ConnectorRepository>;
   let driverFactory: Mocked<ConnectorDriverFactory>;
   let crypto: Mocked<CryptoService>;
+  let workflowAuth: { assertCanStart: Mock };
 
   beforeEach(async () => {
     repo = {
@@ -136,6 +138,7 @@ describe('ConnectorService', () => {
       encryptApiKey: vi.fn((value: string) => `encrypted:${value}`),
       decryptApiKey: vi.fn((value: string) => value.replace(/^encrypted:/u, '')),
     } as unknown as Mocked<CryptoService>;
+    workflowAuth = { assertCanStart: vi.fn().mockResolvedValue(undefined) };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
@@ -144,6 +147,7 @@ describe('ConnectorService', () => {
         { provide: ConnectorDriverFactory, useValue: driverFactory },
         { provide: CryptoService, useValue: crypto },
         { provide: AccessControlService, useClass: LocalAccessControlService },
+        { provide: WorkflowAuthorizationHook, useValue: workflowAuth },
       ],
     }).compile();
     service = moduleRef.get(ConnectorService);
@@ -327,12 +331,27 @@ describe('ConnectorService', () => {
     const result = await service.probe(WORKSPACE_ID, CONNECTOR_ID, ACTOR);
 
     expect(result.status).toBe('failed');
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: ACTOR.sub, actorKind: 'local_user' }),
+      { projectId: WORKSPACE_ID, source: 'local' },
+      'probe',
+    );
     expect(repo.updateProbeOutcome).toHaveBeenCalledWith(
       WORKSPACE_ID,
       CONNECTOR_ID,
       expect.any(Date),
       'kafka topic not found: risk-decisions',
     );
+  });
+
+  it('does not run connector probe driver when the workflow hook rejects', async () => {
+    repo.findById.mockResolvedValue(fakeJoinRow());
+    workflowAuth.assertCanStart.mockRejectedValueOnce(new Error('workflow_denied'));
+
+    await expect(service.probe(WORKSPACE_ID, CONNECTOR_ID, ACTOR)).rejects.toThrow('workflow_denied');
+
+    expect(driverFactory.probe).not.toHaveBeenCalled();
+    expect(repo.updateProbeOutcome).not.toHaveBeenCalled();
   });
 
   it('returns partial bulk delete success when some connectors are referenced', async () => {

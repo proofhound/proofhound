@@ -5,6 +5,7 @@ import type { ReleaseLineService } from '../../release-line/release-line.service
 import type { CanaryReleaseRepository, CanaryReleaseRowWithJoins } from '../canary-release.repository';
 import { CanaryReleaseService } from '../canary-release.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import type { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const promptId = '22222222-2222-4222-8222-222222222222';
@@ -162,18 +163,31 @@ function releaseLineServiceMock(activeId = canaryEventId) {
   };
 }
 
+function workflowAuthMock(): WorkflowAuthorizationHook {
+  return {
+    assertCanStart: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe('CanaryReleaseService.create', () => {
   it('records canary directly as a release line event with full prompt snapshot', async () => {
     const repo = repoMock();
     const releaseLines = releaseLineServiceMock();
+    const workflowAuth = workflowAuthMock();
     const service = new CanaryReleaseService(
       repo as unknown as CanaryReleaseRepository,
       releaseLines as unknown as ReleaseLineService,
       new LocalAccessControlService(),
+      workflowAuth,
     );
 
     const canary = await service.create(projectId, createInput, actor);
 
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId, actorKind: 'local_user' }),
+      { projectId, source: 'local' },
+      'release',
+    );
     expect(releaseLines.recordCanaryEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         projectId,
@@ -193,6 +207,55 @@ describe('CanaryReleaseService.create', () => {
     expect(repo.markPromptVersionGray).toHaveBeenCalledWith(promptId, promptVersionId, actorId);
     expect(canary.id).toBe(canaryEventId);
   });
+
+  it('does not record a running canary when the workflow hook rejects', async () => {
+    const repo = repoMock();
+    const releaseLines = releaseLineServiceMock();
+    const workflowAuth = {
+      assertCanStart: vi.fn().mockRejectedValue(new Error('workflow_denied')),
+    };
+    const service = new CanaryReleaseService(
+      repo as unknown as CanaryReleaseRepository,
+      releaseLines as unknown as ReleaseLineService,
+      new LocalAccessControlService(),
+      workflowAuth as unknown as WorkflowAuthorizationHook,
+    );
+
+    await expect(service.create(projectId, createInput, actor)).rejects.toThrow('workflow_denied');
+
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId, actorKind: 'local_user' }),
+      { projectId, source: 'local' },
+      'release',
+    );
+    expect(releaseLines.recordCanaryEvent).not.toHaveBeenCalled();
+    expect(repo.markPromptVersionGray).not.toHaveBeenCalled();
+  });
+});
+
+describe('CanaryReleaseService.start', () => {
+  it('does not resume a stopped canary when the workflow hook rejects', async () => {
+    const repo = repoMock(canaryRow({ status: 'stopped', finishedAt: new Date('2026-05-20T01:00:00.000Z') }));
+    const releaseLines = releaseLineServiceMock();
+    const workflowAuth = {
+      assertCanStart: vi.fn().mockRejectedValue(new Error('workflow_denied')),
+    };
+    const service = new CanaryReleaseService(
+      repo as unknown as CanaryReleaseRepository,
+      releaseLines as unknown as ReleaseLineService,
+      new LocalAccessControlService(),
+      workflowAuth as unknown as WorkflowAuthorizationHook,
+    );
+
+    await expect(service.start(projectId, canaryEventId, actor)).rejects.toThrow('workflow_denied');
+
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId, actorKind: 'local_user' }),
+      { projectId, source: 'local' },
+      'release',
+    );
+    expect(releaseLines.recordCanaryEvent).not.toHaveBeenCalled();
+  });
 });
 
 describe('CanaryReleaseService.updateTrafficRatio', () => {
@@ -207,6 +270,7 @@ describe('CanaryReleaseService.updateTrafficRatio', () => {
       repo as unknown as CanaryReleaseRepository,
       releaseLines as unknown as ReleaseLineService,
       new LocalAccessControlService(),
+      workflowAuthMock(),
     );
 
     const canary = await service.updateTrafficRatio(projectId, canaryEventId, { trafficRatio: 0.25 }, actor);

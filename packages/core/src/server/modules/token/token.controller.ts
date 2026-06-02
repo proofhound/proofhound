@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post,
 import { createUserTokenSchema, tokenIdParamSchema, updateUserTokenSchema } from '@proofhound/shared';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
-import { TokenService } from './token.service';
+import { TokenService } from '../../common/contracts/token.service';
 
 @Controller('tokens')
 @UseGuards(HttpActorGuard)

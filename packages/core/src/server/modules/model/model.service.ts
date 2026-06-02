@@ -27,11 +27,12 @@ import type {
   UpdateProjectModelDto,
   UpsertModelContextWindowDto,
 } from '@proofhound/shared';
-import { LOCAL_PROJECT_CONTEXT } from '@proofhound/shared';
+import { LOCAL_PROJECT_CONTEXT, type ProjectContext } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
+import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { REDIS_LIMITER } from '../../../shared/redis/redis.constants';
@@ -68,6 +69,7 @@ export class ModelService {
     @Inject(REDIS_LIMITER) private readonly limiter: RateLimiter,
     private readonly accessControl: AccessControlService,
     private readonly limiterKeyStrategy: LimiterKeyStrategy,
+    private readonly workflowAuth: WorkflowAuthorizationHook,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -134,6 +136,7 @@ export class ModelService {
   ): Promise<ProbeModelResponseDto> {
     void source;
     await this.getWritableProject(projectId, actor);
+    await this.assertProbeWorkflowStart({ projectId, source: 'local' }, actor);
     const modelId = randomUUID();
     const model: ModelInvocationConfig = {
       id: modelId,
@@ -151,7 +154,11 @@ export class ModelService {
       extraBody: dto.extraBody ?? {},
     };
 
-    const result = await this.runConnectivityProbe(model, `probe-draft-${modelId}`);
+    const result = await this.runConnectivityProbe(
+      { projectId, source: 'local' },
+      model,
+      `probe-draft-${modelId}`,
+    );
     const probedAt = new Date(result.checkedAt);
     const probeError = result.ok ? null : (result.errorMessage ?? result.errorClass ?? 'unknown');
 
@@ -169,8 +176,8 @@ export class ModelService {
     actor: CurrentUserPayload,
     source: ActionSource = 'api',
   ): Promise<ProbeModelResponseDto> {
-    void actor;
     void source;
+    await this.assertProbeWorkflowStart(LOCAL_PROJECT_CONTEXT, actor);
     const modelId = randomUUID();
     const model: ModelInvocationConfig = {
       id: modelId,
@@ -188,7 +195,11 @@ export class ModelService {
       extraBody: dto.extraBody ?? {},
     };
 
-    const result = await this.runConnectivityProbe(model, `probe-quick-start-draft-${modelId}`);
+    const result = await this.runConnectivityProbe(
+      LOCAL_PROJECT_CONTEXT,
+      model,
+      `probe-quick-start-draft-${modelId}`,
+    );
     const probedAt = new Date(result.checkedAt);
     const probeError = result.ok ? null : (result.errorMessage ?? result.errorClass ?? 'unknown');
 
@@ -301,7 +312,8 @@ export class ModelService {
     await this.getAccessibleProject(projectId, actor);
     const row = await this.repo.findModelAccessibleToProject(projectId, modelId);
     if (!row) throw new NotFoundException(`Model ${modelId} not found`);
-    return this.probeAndRecord(row, actor.sub, source, 'local');
+    await this.assertProbeWorkflowStart({ projectId, source: 'local' }, actor);
+    return this.probeAndRecord({ projectId, source: 'local' }, row, actor.sub, source, 'local');
   }
 
   async probeQuickStartExistingModel(
@@ -313,7 +325,8 @@ export class ModelService {
     if (!row) {
       throw new NotFoundException(`Model ${modelId} not found`);
     }
-    return this.probeAndRecord(row, actor.sub, source, 'quick_start');
+    await this.assertProbeWorkflowStart(LOCAL_PROJECT_CONTEXT, actor);
+    return this.probeAndRecord(LOCAL_PROJECT_CONTEXT, row, actor.sub, source, 'quick_start');
   }
 
   async getProjectModelReferences(
@@ -377,6 +390,10 @@ export class ModelService {
   private async getWritableProject(projectId: string, actor: CurrentUserPayload) {
     await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     return this.getAccessibleProject(projectId, actor);
+  }
+
+  private async assertProbeWorkflowStart(project: ProjectContext, actor: CurrentUserPayload): Promise<void> {
+    await this.workflowAuth.assertCanStart(toActorContext(actor), project, 'probe');
   }
 
   private async assertNotActivelyReferenced(modelId: string): Promise<void> {
@@ -468,6 +485,7 @@ export class ModelService {
   }
 
   private async probeAndRecord(
+    project: ProjectContext,
     row: AnyModelRow,
     actorUserId: string,
     source: ActionSource,
@@ -493,7 +511,7 @@ export class ModelService {
       extraBody: this.toExtraBody(row.extraBody),
     };
 
-    const result = await this.runConnectivityProbe(model, `probe-${row.id}`);
+    const result = await this.runConnectivityProbe(project, model, `probe-${row.id}`);
 
     const probedAt = new Date(result.checkedAt);
     const probeError = result.ok ? null : (result.errorMessage ?? result.errorClass ?? 'unknown');
@@ -508,11 +526,11 @@ export class ModelService {
     };
   }
 
-  private runConnectivityProbe(model: ModelInvocationConfig, requestId: string) {
+  private runConnectivityProbe(project: ProjectContext, model: ModelInvocationConfig, requestId: string) {
     return testModelConnectivity(
       {
         model,
-        limiterKey: this.limiterKeyStrategy.buildModelKey(LOCAL_PROJECT_CONTEXT, model.id),
+        limiterKey: this.limiterKeyStrategy.buildModelKey(project, model.id),
         requestId,
         timeoutMs: 30_000,
       },
@@ -527,7 +545,8 @@ export class ModelService {
   // Mapping: DB row → DTO
   // -------------------------------------------------------------------------
   private async toProjectModelListItem(row: ProjectVisibleModelRow): Promise<ProjectModelListItemDto> {
-    const usage = await this.fetchUsageSnapshot(row.id);
+    const project = row.projectId ? { projectId: row.projectId, source: 'local' as const } : LOCAL_PROJECT_CONTEXT;
+    const usage = await this.fetchUsageSnapshot(row.id, project);
     const refs = await this.repo.getTotalReferenceCounts(row.id);
 
     return {
@@ -558,11 +577,14 @@ export class ModelService {
     };
   }
 
-  private async fetchUsageSnapshot(modelId: string): Promise<UsageSnapshot | null> {
+  private async fetchUsageSnapshot(
+    modelId: string,
+    project: ProjectContext = LOCAL_PROJECT_CONTEXT,
+  ): Promise<UsageSnapshot | null> {
     if (!this.limiter.getUsage) return null;
     try {
       // Query the same key the worker counts against (§3.7) so usage reflects real rate-limit state.
-      const key = this.limiterKeyStrategy.buildModelKey(LOCAL_PROJECT_CONTEXT, modelId);
+      const key = this.limiterKeyStrategy.buildModelKey(project, modelId);
       return await withTimeout(
         this.limiter.getUsage(key),
         MODEL_USAGE_SNAPSHOT_TIMEOUT_MS,

@@ -30,8 +30,6 @@
       "@proofhound/orchestration-shared/*": ["./packages/orchestration-shared/src/*"],
       "@proofhound/api-client": ["./packages/api-client/src/index.ts"],
       "@proofhound/api-client/*": ["./packages/api-client/src/*"],
-      "@proofhound/providers": ["./packages/providers/src/index.ts"],
-      "@proofhound/providers/*": ["./packages/providers/src/*"],
       "@proofhound/logger": ["./packages/logger/src/index.ts"],
       "@proofhound/logger/*": ["./packages/logger/src/*"],
       "@proofhound/limiter": ["./packages/limiter/src/index.ts"],

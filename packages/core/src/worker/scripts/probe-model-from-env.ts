@@ -2,7 +2,9 @@ import { resolve } from 'node:path';
 import { createLogger } from '@proofhound/logger';
 import { StubLimiter } from '@proofhound/limiter';
 import { testModelConnectivity, type ModelInvocationConfig } from '@proofhound/llm-client';
+import { LOCAL_PROJECT_CONTEXT } from '@proofhound/shared';
 import { z } from 'zod';
+import { LocalLimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
 
 const PROBE_PROTOCOL_DEFAULTS = {
   openai: {
@@ -96,11 +98,12 @@ async function main(): Promise<void> {
     inputTokenPricePerMillion: env.MODEL_PROBE_INPUT_PRICE_PER_MILLION,
     outputTokenPricePerMillion: env.MODEL_PROBE_OUTPUT_PRICE_PER_MILLION,
   };
+  const limiterKeyStrategy = new LocalLimiterKeyStrategy();
 
   const result = await testModelConnectivity(
     {
       model,
-      limiterKey: `model:${model.id}`,
+      limiterKey: limiterKeyStrategy.buildModelKey(LOCAL_PROJECT_CONTEXT, model.id),
       requestId: `env-probe-${Date.now()}`,
       timeoutMs: env.MODEL_PROBE_TIMEOUT_MS,
     },

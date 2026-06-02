@@ -68,6 +68,7 @@ Releases do not enter DBOS; they are driven by an in-server runner service ticki
 - Write run results, push outputs to the corresponding lane's output connector, and accumulate the release event count snapshot.
 - Read the release event's `control_state` to respond to stop / resume / cancel / extend.
 - When a split canary reaches 100%, transactionally write a `promote_canary` production lane event and set the canary event to `completed`.
+- The runner does not re-authorize on each tick. Production release submission and canary release creation / resume call `WorkflowAuthorizationHook(workflow='release')` before writing or resuming a `running` release event; the runner trusts those authorized events because it has no actor context.
 
 ### 3.4 Release Event Stream
 
@@ -80,7 +81,7 @@ Release operation history is the `release_line_events` event stream:
 
 ### 3.5 Probe / Export / Dataset Import Cleanup
 
-- `probe`: model or connector connectivity probe. Model probes can be executed by the worker because they trigger real LLM calls.
+- `probe`: model or connector connectivity probe. Direct probes call `WorkflowAuthorizationHook(workflow='probe')` before invoking the model LLM probe or connector driver. Model probes can be executed by the worker when queued because they trigger real LLM calls.
 - `export`: paginate over business data, write to Storage, and return a signed URL.
 - Dataset import cleanup: large-file import is a **client-driven synchronous batched write** that does not enter DBOS or the BullMQ queue (see [22 §3.1.2](22-datasets.md#312-large-file-streaming-batched-import)). Abandoned import sessions (the user leaves midway / loses connectivity / crashes without reaching `complete`) are cleaned up by an in-server **periodic sweep tick**: it scans `ph_assets.dataset_imports` for sessions where `status='importing'` and `updated_at` has exceeded the threshold with no heartbeat, and deletes the session rows (staged samples are cascade-removed via the `ON DELETE CASCADE` foreign key). This tick is an in-server periodic task like the [§3.3](#33-release-runner) release runner, not a queue job.
 
@@ -152,7 +153,7 @@ The current open-source schema does not keep a separate `ph_streaming` table; sh
 Rate limiting has **two independent gates**; do not conflate them when configuring:
 
 - **Worker process concurrency**: BullMQ `@Processor('llm', { concurrency })` (default 4, overridable via `WORKER_CONCURRENCY`), the number of jobs a single process pulls simultaneously, **shared across all models**.
-- **Model-level effective concurrency**: Redis controls "the number of in-flight requests globally for a given model" by `modelId`, **shared across all worker processes / all entry points**; when auto-concurrency is enabled, the system self-tunes it ([21 §6.1](21-models.md#61-auto-concurrency)).
+- **Model-level effective concurrency**: Redis controls "the number of in-flight requests globally for a limiter key" using the opaque key produced by `LimiterKeyStrategy` (OSS default: `model:<modelId>`), **shared across all worker processes / all entry points that resolve to that key**; when auto-concurrency is enabled, the system self-tunes it ([21 §6.1](21-models.md#61-auto-concurrency)).
 
 A job first passes worker process concurrency, then `limiter.acquire` (≤ effective). For raising a model's effective concurrency to actually take effect, you need enough worker processes × process concurrency; otherwise it will be bottlenecked by worker process concurrency. When effective is smaller than the in-flight jobs, the surplus jobs are re-queued at `acquire` via `moveToDelayed` (without consuming BullMQ attempts).
 

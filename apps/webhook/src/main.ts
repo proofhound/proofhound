@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { createHttpLogger, createLogger } from '@proofhound/logger';
 import { json, urlencoded } from 'express';
 import { ProofHoundWebhookModule, PinoExceptionFilter } from '@proofhound/core/webhook';
+import { LocalContractsModule } from '@proofhound/core/contracts';
 import { envSchema } from './config/env.schema';
 import { resolveListenPort } from './config/listen-port';
 
@@ -31,7 +32,10 @@ async function bootstrap(): Promise<void> {
   const logger = createLogger('webhook.bootstrap', { service: 'webhook-ingress', level: env.LOG_LEVEL });
 
   logger.info({}, 'webhook_ingress_bootstrap_start');
-  const app = await NestFactory.create(ProofHoundWebhookModule, { bodyParser: false, abortOnError: true });
+  const app = await NestFactory.create(ProofHoundWebhookModule.forRoot({ contracts: LocalContractsModule }), {
+    bodyParser: false,
+    abortOnError: true,
+  });
   app.use(json({ limit: env.WEBHOOK_BODY_LIMIT }));
   app.use(urlencoded({ extended: true, limit: env.WEBHOOK_BODY_LIMIT }));
   app.use(createHttpLogger({ service: 'webhook-ingress' }));

@@ -25,7 +25,10 @@ export function createProbeRunner(deps: ProbeRunnerDependencies) {
   return async function runProbeJob(input: ProbeJobPayload): Promise<ModelConnectivityProbeResult> {
     const model = await loadModelInvocationConfig(deps, input.modelId);
     // Same key as the LLM runner so a probe shares the model's rate-limit counting space (§3.7).
-    const limiterKey = deps.limiterKeyStrategy.buildModelKey(LOCAL_PROJECT_CONTEXT, input.modelId);
+    const limiterKey = deps.limiterKeyStrategy.buildModelKey(
+      input.projectId ? { projectId: input.projectId, source: 'local' } : LOCAL_PROJECT_CONTEXT,
+      input.modelId,
+    );
     const result = await testModelConnectivity(
       { model, limiterKey, requestId: input.requestId, timeoutMs: input.timeoutMs },
       { limiter: deps.limiter, logger: deps.logger },

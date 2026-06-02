@@ -5,6 +5,7 @@ import type { ReleaseLineService } from '../../release-line/release-line.service
 import type { ProductionReleaseEventRowWithJoins, ProductionReleaseRepository } from '../production-release.repository';
 import { ProductionReleaseService } from '../production-release.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import type { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const promptId = '22222222-2222-4222-8222-222222222222';
@@ -138,18 +139,31 @@ function releaseLineServiceMock(eventId = '77777777-7777-4777-8777-777777777777'
   };
 }
 
+function workflowAuthMock(): WorkflowAuthorizationHook {
+  return {
+    assertCanStart: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
 describe('ProductionReleaseService.create', () => {
   it('records production directly as a release line event with prompt snapshots', async () => {
     const repo = createRepoMock(false);
     const releaseLines = releaseLineServiceMock();
+    const workflowAuth = workflowAuthMock();
     const service = new ProductionReleaseService(
       repo as unknown as ProductionReleaseRepository,
       new LocalAccessControlService(),
+      workflowAuth,
       releaseLines as unknown as ReleaseLineService,
     );
 
     const event = await service.create(projectId, createInput, actor);
 
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId, actorKind: 'local_user' }),
+      { projectId, source: 'local' },
+      'release',
+    );
     expect(repo.freezePromptVersionIfNeeded).toHaveBeenCalledWith(promptVersionId);
     expect(releaseLines.recordProductionEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -175,6 +189,7 @@ describe('ProductionReleaseService.create', () => {
     const service = new ProductionReleaseService(
       repo as unknown as ProductionReleaseRepository,
       new LocalAccessControlService(),
+      workflowAuthMock(),
       releaseLines as unknown as ReleaseLineService,
     );
 
@@ -182,6 +197,31 @@ describe('ProductionReleaseService.create', () => {
 
     expect(repo.freezePromptVersionIfNeeded).not.toHaveBeenCalled();
     expect(releaseLines.recordProductionEvent).toHaveBeenCalled();
+  });
+
+  it('does not freeze or record a running production release when the workflow hook rejects', async () => {
+    const repo = createRepoMock(false);
+    const releaseLines = releaseLineServiceMock();
+    const workflowAuth = {
+      assertCanStart: vi.fn().mockRejectedValue(new Error('workflow_denied')),
+    };
+    const service = new ProductionReleaseService(
+      repo as unknown as ProductionReleaseRepository,
+      new LocalAccessControlService(),
+      workflowAuth as unknown as WorkflowAuthorizationHook,
+      releaseLines as unknown as ReleaseLineService,
+    );
+
+    await expect(service.create(projectId, createInput, actor)).rejects.toThrow('workflow_denied');
+
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId, actorKind: 'local_user' }),
+      { projectId, source: 'local' },
+      'release',
+    );
+    expect(repo.freezePromptVersionIfNeeded).not.toHaveBeenCalled();
+    expect(releaseLines.recordProductionEvent).not.toHaveBeenCalled();
+    expect(repo.markPromptVersionProduction).not.toHaveBeenCalled();
   });
 });
 
@@ -202,6 +242,7 @@ describe('ProductionReleaseService.stop', () => {
     const service = new ProductionReleaseService(
       repo as unknown as ProductionReleaseRepository,
       new LocalAccessControlService(),
+      workflowAuthMock(),
       releaseLines as unknown as ReleaseLineService,
     );
 

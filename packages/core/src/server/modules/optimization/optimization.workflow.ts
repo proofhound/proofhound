@@ -57,6 +57,7 @@ import {
 import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 import { DrizzleRunResultWriter } from '../../infrastructure/llm/run-result-writer';
@@ -116,6 +117,7 @@ interface WorkflowConfigSnapshot {
   sourceExperimentId: string | null;
   promptLanguage: PromptLanguageDto;
   analysisModel: ModelInvocationConfig;
+  analysisLimiterKey: string;
   taskModel: ModelInvocationConfig;
   goals: OptimizationGoal[];
   fieldWhitelist: FieldWhitelist;
@@ -238,6 +240,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     private readonly crypto: CryptoService,
     @Inject(REDIS_LIMITER) private readonly limiter: RateLimiter,
     private readonly runResultWriter: DrizzleRunResultWriter,
+    private readonly limiterKeyStrategy: LimiterKeyStrategy,
   ) {
     super('optimization-workflow');
     this.loadConfigStep = DBOS.registerStep(this.loadConfigImpl.bind(this), {
@@ -725,6 +728,10 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       sourceExperimentId: ctx.sourceExperimentId,
       promptLanguage,
       analysisModel,
+      analysisLimiterKey: this.limiterKeyStrategy.buildModelKey(
+        { projectId: ctx.projectId, source: 'local' },
+        analysisModel.id,
+      ),
       taskModel,
       goals: goalsParsed.data.map(toLoopGoal),
       fieldWhitelist,
@@ -803,6 +810,10 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       if (!analysisModel) {
         throw new Error('first_version_generation_failed_v1:analysis_model_unavailable');
       }
+      const analysisLimiterKey = this.limiterKeyStrategy.buildModelKey(
+        { projectId: ctx.projectId, source: 'local' },
+        analysisModel.id,
+      );
 
       // Load and randomly sample
       const allSamples = await this.repo.loadDatasetSamples(ctx.datasetId);
@@ -836,6 +847,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         {
           optimizationId,
           analysisModel,
+          analysisLimiterKey,
           samples,
           goals: goalsParsed.data.map(toLoopGoal),
           fieldWhitelist,
@@ -1341,6 +1353,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
             optimizationId,
             roundNumber,
             analysisModel: snapshot.analysisModel,
+            analysisLimiterKey: snapshot.analysisLimiterKey,
             currentVersion: analysisVersion,
             previousVersion,
             samples,
@@ -1437,6 +1450,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
             optimizationId,
             roundNumber,
             analysisModel: snapshot.analysisModel,
+            analysisLimiterKey: snapshot.analysisLimiterKey,
             currentVersion: baseVersionForRound,
             analysis: analysisFull,
             metrics: analysisMetrics,
@@ -2162,6 +2176,7 @@ function invalidSnapshot(reason: string): WorkflowConfigSnapshot {
     sourceExperimentId: null,
     promptLanguage: DEFAULT_PROMPT_LANGUAGE,
     analysisModel: emptyModel(),
+    analysisLimiterKey: '',
     taskModel: emptyModel(),
     goals: [],
     fieldWhitelist: { promptVariables: [] },

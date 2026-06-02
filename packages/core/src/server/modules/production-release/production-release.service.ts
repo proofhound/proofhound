@@ -11,20 +11,22 @@ import type {
 } from '@proofhound/shared';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { ReleaseLineService } from '../release-line/release-line.service';
 import {
   ProductionReleaseRepository,
   type ProductionReleaseEventRowWithJoins,
   type ProductionReleasePromptRow,
   type ProductionReleasePromptVersionRow,
 } from './production-release.repository';
-import { ReleaseLineService } from '../release-line/release-line.service';
 
 @Injectable()
 export class ProductionReleaseService {
   constructor(
     private readonly repo: ProductionReleaseRepository,
     private readonly accessControl: AccessControlService,
+    private readonly workflowAuth: WorkflowAuthorizationHook,
     private readonly releaseLineService?: ReleaseLineService,
   ) {}
 
@@ -151,6 +153,8 @@ export class ProductionReleaseService {
 
     // Source ID consistency
     this.assertSourceConsistency(input);
+
+    await this.assertReleaseWorkflowStart(projectId, actor);
 
     if (!version.isFrozen) {
       await this.repo.freezePromptVersionIfNeeded(input.promptVersionId);
@@ -284,6 +288,10 @@ export class ProductionReleaseService {
   private async assertWriteAccess(projectId: string, actor: CurrentUserPayload): Promise<void> {
     await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'release_manage');
     return this.assertReadAccess(projectId, actor);
+  }
+
+  private async assertReleaseWorkflowStart(projectId: string, actor: CurrentUserPayload): Promise<void> {
+    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'release');
   }
 
   private assertSourceConsistency(input: CreateProductionReleaseInputDto): void {

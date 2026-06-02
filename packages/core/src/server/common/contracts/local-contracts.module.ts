@@ -9,9 +9,15 @@
 // @Global() ensures every feature module can inject these resolvers without a per-module import.
 
 import { Global, Module } from '@nestjs/common';
+import { CryptoModule } from '../../../shared/crypto/crypto.module';
 import { DatabaseModule } from '../../../shared/database/database.module';
+import { LocalConnectorContextResolver } from '../../../webhook/channels/webhook/local-connector-context.resolver';
+import { WebhookRepository } from '../../../webhook/channels/webhook/webhook.repository';
+import { TokenRepository } from '../../modules/token/token.repository';
+import { LocalTokenService } from '../../modules/token/token.service';
 import { AccessControlService } from './access-control.service';
 import { ActorContextResolver } from './actor-context.resolver';
+import { ConnectorContextResolver } from './connector-context.resolver';
 import { LimiterKeyStrategy, LocalLimiterKeyStrategy } from './limiter-key.strategy';
 import { LocalAccessControlService } from './local-access-control.service';
 import { LocalActorContextResolver } from './local-actor-context.resolver';
@@ -20,16 +26,21 @@ import { LocalProjectContextResolver } from './local-project-context.resolver';
 import { LocalUserTokenVerifier } from './local-user-token.verifier';
 import { McpAuthResolver } from './mcp-auth.resolver';
 import { ProjectContextResolver } from './project-context.resolver';
+import { TokenService } from './token.service';
 import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './workflow-authorization.hook';
 
 @Global()
 @Module({
-  imports: [DatabaseModule],
+  imports: [CryptoModule, DatabaseModule],
   providers: [
+    WebhookRepository,
+    TokenRepository,
     LocalUserTokenVerifier,
     { provide: ProjectContextResolver, useClass: LocalProjectContextResolver },
     { provide: ActorContextResolver, useClass: LocalActorContextResolver },
     { provide: McpAuthResolver, useClass: LocalMcpAuthResolver },
+    { provide: ConnectorContextResolver, useClass: LocalConnectorContextResolver },
+    { provide: TokenService, useClass: LocalTokenService },
     { provide: AccessControlService, useClass: LocalAccessControlService },
     { provide: LimiterKeyStrategy, useClass: LocalLimiterKeyStrategy },
     { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
@@ -38,6 +49,8 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     ProjectContextResolver,
     ActorContextResolver,
     McpAuthResolver,
+    ConnectorContextResolver,
+    TokenService,
     AccessControlService,
     LimiterKeyStrategy,
     WorkflowAuthorizationHook,

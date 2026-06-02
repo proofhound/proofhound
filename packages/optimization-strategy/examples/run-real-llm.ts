@@ -116,6 +116,7 @@ function main(): Promise<void> {
       inputTokenPricePerMillion: 3,
       outputTokenPricePerMillion: 15,
     },
+    analysisLimiterKey: 'model:demo_analysis_model',
     taskModel: snapshot.taskModel,
     strategyKey: 'error_pattern_analysis',
     strategyConfig: DEFAULT_ERROR_PATTERN_ANALYSIS_CONFIG,
