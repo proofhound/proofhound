@@ -15,10 +15,7 @@ import {
 import { OptimizationService } from '../optimization.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
-import {
-  LocalWorkflowAuthorizationHook,
-  WorkflowAuthorizationHook,
-} from '../../../common/contracts/workflow-authorization.hook';
+import { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 import { vi, type Mocked } from 'vitest';
 
 const actor = {
@@ -230,6 +227,7 @@ describe('OptimizationService', () => {
   let experimentService: Mocked<ExperimentService>;
   let runResults: Mocked<RunResultService>;
   let promptRepo: Mocked<PromptRepository>;
+  let workflowAuth: Mocked<WorkflowAuthorizationHook>;
 
   beforeEach(async () => {
     repo = makeRepo();
@@ -238,6 +236,9 @@ describe('OptimizationService', () => {
     experimentService = makeExperimentService();
     runResults = makeRunResultService();
     promptRepo = makePromptRepo();
+    workflowAuth = {
+      assertCanStart: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Mocked<WorkflowAuthorizationHook>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -248,7 +249,7 @@ describe('OptimizationService', () => {
         { provide: RunResultService, useValue: runResults },
         { provide: PromptRepository, useValue: promptRepo },
         { provide: AccessControlService, useClass: LocalAccessControlService },
-        { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
+        { provide: WorkflowAuthorizationHook, useValue: workflowAuth },
         OptimizationService,
       ],
     }).compile();
@@ -1861,6 +1862,37 @@ describe('OptimizationService', () => {
         }),
       );
       expect(launcher.launch).toHaveBeenCalledWith('new-id-dataset');
+    });
+
+    it('rejects workflow authorization before creating placeholder prompts, inserting rows, or launching', async () => {
+      repo.findProjectAccess.mockResolvedValue(projectAccess());
+      repo.findDatasetForOptimization.mockResolvedValue({
+        id: 'd1111111-1111-4111-8111-111111111111',
+        name: 'customer-feedback',
+      });
+      workflowAuth.assertCanStart.mockRejectedValueOnce(new Error('workflow_denied'));
+
+      const datasetInput: CreateOptimizationDto = {
+        ...createInput,
+        startingMode: 'from_dataset_only',
+        sourceExperimentId: null,
+        promptId: null,
+        baseVersionId: null,
+        datasetId: 'd1111111-1111-4111-8111-111111111111',
+      };
+
+      await expect(service.createOptimization(projectAccess().id, datasetInput, actor)).rejects.toThrow(
+        'workflow_denied',
+      );
+
+      expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+        expect.objectContaining({ actorId: actor.sub }),
+        { projectId: projectAccess().id, source: 'local' },
+        'optimization',
+      );
+      expect(promptRepo.createPlaceholderPromptForOptimization).not.toHaveBeenCalled();
+      expect(repo.insertOptimization).not.toHaveBeenCalled();
+      expect(launcher.launch).not.toHaveBeenCalled();
     });
 
     it('throws BadRequest when dataset is missing for from_dataset_only', async () => {

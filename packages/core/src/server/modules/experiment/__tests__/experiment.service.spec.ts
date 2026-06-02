@@ -8,10 +8,7 @@ import { ExperimentRepository, type ExperimentProjectAccessRow, type ExperimentR
 import { ExperimentService } from '../experiment.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
-import {
-  LocalWorkflowAuthorizationHook,
-  WorkflowAuthorizationHook,
-} from '../../../common/contracts/workflow-authorization.hook';
+import { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 import { vi, type Mocked, type Mock } from 'vitest';
 
 const actor = {
@@ -124,6 +121,7 @@ describe('ExperimentService', () => {
   let modelService: Mocked<ModelService>;
   let runResults: Mocked<RunResultService>;
   let db: { select: Mock; update: Mock };
+  let workflowAuth: Mocked<WorkflowAuthorizationHook>;
 
   beforeEach(async () => {
     repo = makeRepo();
@@ -140,6 +138,9 @@ describe('ExperimentService', () => {
       select: vi.fn(),
       update: vi.fn(),
     };
+    workflowAuth = {
+      assertCanStart: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Mocked<WorkflowAuthorizationHook>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -149,7 +150,7 @@ describe('ExperimentService', () => {
         { provide: RunResultService, useValue: runResults },
         { provide: DATABASE_CLIENT, useValue: db },
         { provide: AccessControlService, useClass: LocalAccessControlService },
-        { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
+        { provide: WorkflowAuthorizationHook, useValue: workflowAuth },
         ExperimentService,
       ],
     }).compile();
@@ -263,6 +264,64 @@ describe('ExperimentService', () => {
       }),
     );
     expect(launcher.launch).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222');
+  });
+
+  it('rejects workflow authorization before freezing, creating, or launching', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findExperimentByProjectAndName.mockResolvedValue(null);
+    modelService.findModelAccessibleToProject.mockResolvedValue({
+      deletedAt: null,
+      isActive: true,
+    } as never);
+    workflowAuth.assertCanStart.mockRejectedValueOnce(new Error('workflow_denied'));
+    db.select
+      .mockReturnValueOnce(
+        makeSelectQuery([
+          {
+            promptVersionId: '33333333-3333-4333-8333-333333333333',
+            promptId: '66666666-6666-4666-8666-666666666666',
+            promptName: 'sql-risk-judge',
+            versionNumber: 17,
+            body: 'Judge {{text}}',
+            variables: [{ name: 'text', type: 'text', required: true, datasetField: 'text' }],
+            outputSchema: null,
+            judgmentRules: null,
+            isFrozen: false,
+            promptDeletedAt: null,
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        makeSelectQuery([
+          {
+            id: '44444444-4444-4444-8444-444444444444',
+            sampleCount: 10,
+            deletedAt: null,
+          },
+        ]),
+      );
+
+    await expect(
+      service.createExperiment(
+        '77777777-7777-4777-8777-777777777777',
+        {
+          name: 'blocked-start',
+          promptVersionId: '33333333-3333-4333-8333-333333333333',
+          datasetId: '44444444-4444-4444-8444-444444444444',
+          modelId: '55555555-5555-4555-8555-555555555555',
+        },
+        actor,
+      ),
+    ).rejects.toThrow('workflow_denied');
+
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: actor.sub }),
+      { projectId: '77777777-7777-4777-8777-777777777777', source: 'local' },
+      'experiment',
+    );
+    expect(db.update).not.toHaveBeenCalled();
+    expect(repo.createExperiment).not.toHaveBeenCalled();
+    expect(launcher.launch).not.toHaveBeenCalled();
   });
 
   it('stops a running experiment', async () => {

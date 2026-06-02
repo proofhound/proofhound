@@ -77,6 +77,8 @@ export class ExperimentService {
     }
     const context = await this.loadAndValidateReferences(projectId, parsed);
 
+    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'experiment');
+
     if (!context.promptVersion.isFrozen) {
       await this.freezePromptVersion(parsed.promptVersionId);
     }
@@ -91,8 +93,6 @@ export class ExperimentService {
       totalSamples: context.dataset.sampleCount,
       createdBy: actor.sub,
     });
-
-    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'experiment');
 
     let workflowId: string | null = null;
     try {
