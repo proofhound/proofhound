@@ -68,7 +68,7 @@ export class McpDispatchContextFactory {
 }
 
 function toCurrentUserPayload(actor: ActorContext, projectId: string): CurrentUserPayload {
-  return {
+  const payload: CurrentUserPayload = {
     sub: actor.actorId,
     actorId: actor.actorId,
     actorKind: actor.actorKind,
@@ -79,6 +79,8 @@ function toCurrentUserPayload(actor: ActorContext, projectId: string): CurrentUs
     isSuperAdmin: false,
     isActive: true,
   };
+  if (actor.orgId !== undefined) payload.orgId = actor.orgId;
+  return payload;
 }
 
 // Re-export so the MCP transport adapter can import the concrete 401 type directly

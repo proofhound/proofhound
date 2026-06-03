@@ -52,6 +52,15 @@ describe('HttpActorGuard', () => {
       isSuperAdmin: true,
       isActive: true,
     });
+    expect(req.user).not.toHaveProperty('orgId');
+  });
+
+  it('preserves orgId for org-pinned actors', async () => {
+    const { guard } = buildGuard({ actorId: 'tok-1', actorKind: 'script', orgId: 'org-1' });
+    const req: Record<string, unknown> = { headers: { authorization: 'Bearer x' } };
+    await guard.canActivate(buildContext(req));
+
+    expect(req.user).toMatchObject({ actorId: 'tok-1', orgId: 'org-1' });
   });
 
   it('resolves and attaches request.projectContext via ProjectContextResolver with the X-Project-Id hint', async () => {

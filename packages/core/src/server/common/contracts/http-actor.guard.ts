@@ -55,18 +55,19 @@ function readProjectIdHeader(request: Request): string | undefined {
 }
 
 export function toCurrentUserPayload(actor: ActorContext): CurrentUserPayload {
-  return {
+  const payload: CurrentUserPayload = {
     sub: actor.actorId,
     actorId: actor.actorId,
     actorKind: actor.actorKind,
     projectId: actor.projectId,
-    orgId: actor.orgId,
     // OSS user tokens have no email / role metadata; the field is kept for backward compatibility.
     // SaaS-specific claims should be exposed through a dedicated adapter/decorator, not read by OSS business code.
     email: '',
     isSuperAdmin: isOwnerActor(actor.actorKind),
     isActive: true,
   };
+  if (actor.orgId !== undefined) payload.orgId = actor.orgId;
+  return payload;
 }
 
 // OSS single-workspace: UI session user and API-token script both represent the local owner,

@@ -63,6 +63,22 @@ describe('mcp-context', () => {
     });
   });
 
+  it('McpDispatchContextFactory preserves orgId for org-pinned MCP actors', async () => {
+    const orgActorContext: ActorContext = { ...actorContext, orgId: 'org-1' };
+    const authResolver = { resolveFromMcp: vi.fn().mockResolvedValue(orgActorContext) };
+    const projectResolver = { resolve: vi.fn().mockResolvedValue(projectContext) };
+    const accessControl = { assertCan: vi.fn().mockResolvedValue(undefined) };
+    const factory = new McpDispatchContextFactory(
+      authResolver as unknown as McpAuthResolver,
+      projectResolver as unknown as ProjectContextResolver,
+      accessControl as unknown as AccessControlService,
+    );
+
+    const ctx = await factory.build(metadata);
+
+    expect(ctx.actor).toMatchObject({ actorId: 'tok-1', projectId: 'p-9', orgId: 'org-1' });
+  });
+
   it('McpDispatchContextFactory rejects dispatch when mcp_tool is denied', async () => {
     const authResolver = { resolveFromMcp: vi.fn().mockResolvedValue(actorContext) };
     const projectResolver = { resolve: vi.fn().mockResolvedValue(projectContext) };
