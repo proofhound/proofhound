@@ -7,6 +7,7 @@ export interface CurrentUserPayload {
   actorId?: string;
   actorKind?: ActorKind;
   projectId?: string;
+  orgId?: string;
   email: string;
   isSuperAdmin: boolean;
   isActive: boolean;

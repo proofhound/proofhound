@@ -60,6 +60,7 @@ export function toCurrentUserPayload(actor: ActorContext): CurrentUserPayload {
     actorId: actor.actorId,
     actorKind: actor.actorKind,
     projectId: actor.projectId,
+    orgId: actor.orgId,
     // OSS user tokens have no email / role metadata; the field is kept for backward compatibility.
     // SaaS-specific claims should be exposed through a dedicated adapter/decorator, not read by OSS business code.
     email: '',

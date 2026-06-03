@@ -19,6 +19,7 @@ export function toActorContext(actor: CurrentUserPayload | ActorContext): ActorC
       actorId: maybeContext.actorId,
       actorKind: maybeContext.actorKind,
       projectId: maybeContext.projectId,
+      orgId: maybeContext.orgId,
     };
   }
   const current = actor as CurrentUserPayload;
@@ -26,5 +27,6 @@ export function toActorContext(actor: CurrentUserPayload | ActorContext): ActorC
     actorId: current.sub,
     actorKind: current.actorKind ?? 'local_user',
     projectId: current.projectId,
+    orgId: current.orgId,
   };
 }

@@ -13,6 +13,8 @@ export interface ActorContext {
   actorId: string;
   actorKind: ActorKind;
   projectId?: string;
+  /** SaaS-only: the org this actor is pinned to (e.g. an org-scoped API token). OSS never sets it. */
+  orgId?: string;
 }
 
 // Stable UUID used as the synthetic local-user actor in OSS self-hosted deployments.
