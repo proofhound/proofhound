@@ -23,8 +23,7 @@ function buildGuard(
   projectResolve: ReturnType<typeof vi.fn>;
 } {
   const resolver: Pick<ActorContextResolver, 'resolveFromHttp' | 'resolveFromUserToken'> = {
-    resolveFromHttp:
-      actor instanceof Error ? vi.fn().mockRejectedValue(actor) : vi.fn().mockResolvedValue(actor),
+    resolveFromHttp: actor instanceof Error ? vi.fn().mockRejectedValue(actor) : vi.fn().mockResolvedValue(actor),
     resolveFromUserToken: vi.fn(),
   };
   const projectResolve =
@@ -56,7 +55,11 @@ describe('HttpActorGuard', () => {
   });
 
   it('preserves orgId for org-pinned actors', async () => {
-    const { guard } = buildGuard({ actorId: 'tok-1', actorKind: 'script', orgId: '00000000-0000-4000-8000-000000000111' });
+    const { guard } = buildGuard({
+      actorId: 'tok-1',
+      actorKind: 'script',
+      orgId: '00000000-0000-4000-8000-000000000111',
+    });
     const req: Record<string, unknown> = { headers: { authorization: 'Bearer x' } };
     await guard.canActivate(buildContext(req));
 
@@ -71,17 +74,12 @@ describe('HttpActorGuard', () => {
     await guard.canActivate(buildContext(req));
 
     expect(req.projectContext).toBe(LOCAL_PROJECT_CONTEXT);
-    expect(projectResolve).toHaveBeenCalledWith(
-      { actorId: 'tok-1', actorKind: 'script' },
-      { projectIdHeader: 'p-1' },
-    );
+    expect(projectResolve).toHaveBeenCalledWith({ actorId: 'tok-1', actorKind: 'script' }, { projectIdHeader: 'p-1' });
   });
 
   it('does not swallow the 401 thrown by the resolver', async () => {
     const { guard } = buildGuard(new UnauthorizedException('invalid_user_token'));
-    await expect(guard.canActivate(buildContext({ headers: {} }))).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(guard.canActivate(buildContext({ headers: {} }))).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('maps ProjectAccessDeniedError from ProjectContextResolver to 403', async () => {
@@ -92,10 +90,7 @@ describe('HttpActorGuard', () => {
     const req: Record<string, unknown> = { headers: { authorization: 'Bearer x', 'x-project-id': 'p-2' } };
 
     await expect(guard.canActivate(buildContext(req))).rejects.toBeInstanceOf(ForbiddenException);
-    expect(projectResolve).toHaveBeenCalledWith(
-      { actorId: 'tok-1', actorKind: 'script' },
-      { projectIdHeader: 'p-2' },
-    );
+    expect(projectResolve).toHaveBeenCalledWith({ actorId: 'tok-1', actorKind: 'script' }, { projectIdHeader: 'p-2' });
     expect(req.projectContext).toBeUndefined();
   });
 

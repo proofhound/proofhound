@@ -96,7 +96,11 @@ describe('mcp-context', () => {
 
     const ctx = await factory.build(metadata);
 
-    expect(ctx.actor).toMatchObject({ actorId: 'tok-1', projectId: 'p-9', orgId: '00000000-0000-4000-8000-000000000111' });
+    expect(ctx.actor).toMatchObject({
+      actorId: 'tok-1',
+      projectId: 'p-9',
+      orgId: '00000000-0000-4000-8000-000000000111',
+    });
   });
 
   it('McpDispatchContextFactory rejects dispatch when mcp_tool is denied', async () => {

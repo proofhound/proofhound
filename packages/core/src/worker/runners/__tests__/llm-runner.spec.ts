@@ -5,10 +5,7 @@ import type { ModelInvocationConfig } from '@proofhound/llm-client';
 import { describe, expect, it, vi } from 'vitest';
 import type { ProjectContext } from '@proofhound/shared';
 import { applyExperimentLimits, createLlmRunner, loadModelInvocationConfig } from '../llm-runner';
-import {
-  LimiterKeyStrategy,
-  LocalLimiterKeyStrategy,
-} from '../../../server/common/contracts/limiter-key.strategy';
+import { LimiterKeyStrategy, LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
 import {
   LocalRuntimeLimitsProvider,
   RuntimeLimitsProvider,

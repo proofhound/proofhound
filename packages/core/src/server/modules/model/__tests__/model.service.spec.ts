@@ -594,7 +594,9 @@ describe('ModelService', () => {
 
     await service.listProjectModels(WORKSPACE_ID, ACTOR, '00000000-0000-4000-8000-000000000777');
 
-    expect(limiter.getUsage).toHaveBeenCalledWith('org:00000000-0000-4000-8000-000000000777:model:00000000-0000-4000-8000-000000000101');
+    expect(limiter.getUsage).toHaveBeenCalledWith(
+      'org:00000000-0000-4000-8000-000000000777:model:00000000-0000-4000-8000-000000000101',
+    );
   });
 
   it('threads the project orgId into the draft probe limiter key', async () => {
@@ -608,7 +610,13 @@ describe('ModelService', () => {
       checkedAt: '2026-05-18T01:00:00.000Z',
     });
 
-    await service.probeDraftProjectModel(WORKSPACE_ID, draftProbeDto(), ACTOR, 'api', '00000000-0000-4000-8000-000000000777');
+    await service.probeDraftProjectModel(
+      WORKSPACE_ID,
+      draftProbeDto(),
+      ACTOR,
+      'api',
+      '00000000-0000-4000-8000-000000000777',
+    );
 
     expect(testModelConnectivity).toHaveBeenCalledWith(
       expect.objectContaining({
