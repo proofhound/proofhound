@@ -6,6 +6,7 @@ import { LOCAL_PROJECT_ID } from '@proofhound/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { createProbeRunner } from '../probe-runner';
 import { LimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
+import { LocalQuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
 import {
   LocalRuntimeLimitsProvider,
   RuntimeLimitsProvider,
@@ -61,6 +62,7 @@ describe('runProbeJob — orgId 透传至限流 key 的 ProjectContext', () => {
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: spy,
+      quotaPolicy: new LocalQuotaPolicyHook(),
       runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
@@ -87,6 +89,7 @@ describe('runProbeJob — orgId 透传至限流 key 的 ProjectContext', () => {
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: spy,
+      quotaPolicy: new LocalQuotaPolicyHook(),
       runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
@@ -124,6 +127,7 @@ describe('runProbeJob — RuntimeLimitsProvider 把 plan cap 并入有效限制'
           return 'model:test';
         }
       })(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
       runtimeLimitsProvider: new CapProvider(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),

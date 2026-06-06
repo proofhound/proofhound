@@ -15,7 +15,7 @@ import {
 } from '@proofhound/llm-client';
 import type { LlmJobPayload } from '@proofhound/orchestration-shared';
 import type { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
-import { LocalQuotaPolicyHook, type QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
+import type { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 import type { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
 import { applyRuntimeLimits } from '../../shared/llm/runtime-limits';
 import type { ModelSecretResolver } from './model-secret';
@@ -25,7 +25,7 @@ export interface LlmRunnerDependencies {
   db: DbClient;
   limiter: RateLimiter;
   limiterKeyStrategy: LimiterKeyStrategy;
-  quotaPolicy?: QuotaPolicyHook;
+  quotaPolicy: QuotaPolicyHook;
   runtimeLimitsProvider: RuntimeLimitsProvider;
   logger: LLMCallLogger;
   modelSecretResolver: ModelSecretResolver;
@@ -52,8 +52,7 @@ export interface LlmRunnerResult {
 }
 
 export function createLlmRunner(deps: LlmRunnerDependencies) {
-  const quotaPolicy = deps.quotaPolicy ?? new LocalQuotaPolicyHook();
-  const runResultWriter = new DrizzleRunResultWriter(deps.db, quotaPolicy);
+  const runResultWriter = new DrizzleRunResultWriter(deps.db, deps.quotaPolicy);
 
   return async function runLlmJob(input: LlmJobPayload, jobContext: LlmRunnerJobContext): Promise<LlmRunnerResult> {
     const runResultId = input.runResultId ?? randomUUID();
@@ -87,7 +86,7 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
     const project = { projectId: input.projectId, orgId: input.orgId, source: 'local' as const };
     const limiterKey = deps.limiterKeyStrategy.buildModelKey(project, input.modelId);
 
-    const result = await quotaPolicy.withExecutionSlot(
+    const result = await deps.quotaPolicy.withExecutionSlot(
       { project, source: input.source, modelId: input.modelId, requestId: input.requestId },
       () =>
         invokeLLM(

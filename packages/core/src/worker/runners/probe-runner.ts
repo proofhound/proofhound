@@ -6,7 +6,7 @@ import { testModelConnectivity, type LLMCallLogger, type ModelConnectivityProbeR
 import { LOCAL_PROJECT_CONTEXT, type ProjectContext } from '@proofhound/shared';
 import type { ProbeJobPayload } from '@proofhound/orchestration-shared';
 import type { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
-import { LocalQuotaPolicyHook, type QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
+import type { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 import type { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
 import { applyRuntimeLimits } from '../../shared/llm/runtime-limits';
 import { loadModelInvocationConfig } from './llm-runner';
@@ -16,14 +16,13 @@ export interface ProbeRunnerDependencies {
   db: DbClient;
   limiter: RateLimiter;
   limiterKeyStrategy: LimiterKeyStrategy;
-  quotaPolicy?: QuotaPolicyHook;
+  quotaPolicy: QuotaPolicyHook;
   runtimeLimitsProvider: RuntimeLimitsProvider;
   logger: LLMCallLogger;
   modelSecretResolver: ModelSecretResolver;
 }
 
 export function createProbeRunner(deps: ProbeRunnerDependencies) {
-  const quotaPolicy = deps.quotaPolicy ?? new LocalQuotaPolicyHook();
   return async function runProbeJob(input: ProbeJobPayload): Promise<ModelConnectivityProbeResult> {
     const model = await loadModelInvocationConfig(deps, input.modelId);
     const project = toProbeProjectContext(input);
@@ -35,7 +34,7 @@ export function createProbeRunner(deps: ProbeRunnerDependencies) {
     const effectiveModel = applyRuntimeLimits(model, mergedLimits);
     // Same key as the LLM runner so a probe shares the model's rate-limit counting space (§3.7).
     const limiterKey = deps.limiterKeyStrategy.buildModelKey(project, input.modelId);
-    const result = await quotaPolicy.withExecutionSlot(
+    const result = await deps.quotaPolicy.withExecutionSlot(
       { project, source: 'probe', modelId: input.modelId, requestId: input.requestId },
       () =>
         testModelConnectivity(

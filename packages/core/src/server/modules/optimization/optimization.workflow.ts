@@ -59,6 +59,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
+import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../common/contracts/runtime-limits.provider';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
@@ -248,6 +249,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     private readonly runResultWriter: DrizzleRunResultWriter,
     private readonly limiterKeyStrategy: LimiterKeyStrategy,
     private readonly runtimeLimitsProvider: RuntimeLimitsProvider,
+    private readonly quotaPolicy: QuotaPolicyHook,
   ) {
     super('optimization-workflow');
     this.loadConfigStep = DBOS.registerStep(this.loadConfigImpl.bind(this), {
@@ -773,6 +775,16 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     return applyRuntimeLimits(model, mergedLimits);
   }
 
+  private async withOptimizationExecutionSlot<T>(
+    project: ProjectContext,
+    source: 'optimization_analysis' | 'optimization_generate',
+    modelId: string,
+    requestId: string,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    return this.quotaPolicy.withExecutionSlot({ project, source, modelId, requestId }, run);
+  }
+
   // SPEC 25 §2.1: first version generation for the from_dataset_only start.
   // 1) randomly sample initialSamplingRounds × initialSamplesPerRound items from the dataset
   // 2) call analysisModel to have the LLM induce the first prompt body / variables / outputSchema
@@ -835,8 +847,9 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         { projectId: ctx.projectId, orgId, source: 'local' },
         analysisModel.id,
       );
+      const project = { projectId: ctx.projectId, ...(orgId ? { orgId } : {}), source: 'local' as const };
       const effectiveAnalysisModel = await this.applySynchronousRuntimeLimits(
-        { projectId: ctx.projectId, ...(orgId ? { orgId } : {}), source: 'local' },
+        project,
         analysisModel,
         'optimization_generate',
       );
@@ -869,34 +882,41 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
 
       // Call LLM to generate the first version
       const promptLanguage = parsePromptLanguage(ctx.promptLanguage);
-      const generated = await generateInitialVersion(
-        {
-          optimizationId,
-          analysisModel: effectiveAnalysisModel,
-          analysisLimiterKey,
-          samples,
-          goals: goalsParsed.data.map(toLoopGoal),
-          fieldWhitelist,
-          description: ctx.description,
-          optimizationHint: readOptimizationHintFromContext(ctx),
-          promptLanguage,
-          strategyConfig,
-          runResultMeta: {
-            projectId: ctx.projectId,
-            sourceId: optimizationId,
-            promptVersionId: versionId,
-            modelId: analysisModel.id,
-            dbosWorkflowId,
-            bullmqJobId: null,
-            attempt: 0,
-          },
-          generateRunResultId,
-        },
-        {
-          limiter: this.limiter as RateLimiterLike,
-          logger: this.llmLogger,
-          runResultWriter: this.runResultWriter,
-        },
+      const generated = await this.withOptimizationExecutionSlot(
+        project,
+        'optimization_generate',
+        analysisModel.id,
+        generateRunResultId,
+        () =>
+          generateInitialVersion(
+            {
+              optimizationId,
+              analysisModel: effectiveAnalysisModel,
+              analysisLimiterKey,
+              samples,
+              goals: goalsParsed.data.map(toLoopGoal),
+              fieldWhitelist,
+              description: ctx.description,
+              optimizationHint: readOptimizationHintFromContext(ctx),
+              promptLanguage,
+              strategyConfig,
+              runResultMeta: {
+                projectId: ctx.projectId,
+                sourceId: optimizationId,
+                promptVersionId: versionId,
+                modelId: analysisModel.id,
+                dbosWorkflowId,
+                bullmqJobId: null,
+                attempt: 0,
+              },
+              generateRunResultId,
+            },
+            {
+              limiter: this.limiter as RateLimiterLike,
+              logger: this.llmLogger,
+              runResultWriter: this.runResultWriter,
+            },
+          ),
       );
 
       // Write the frozen prompt_versions row (deterministic id makes replay idempotent)
@@ -1374,40 +1394,48 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         dbosWorkflowId: dbosWorkflowIdForSteps,
       });
       try {
+        const project = {
+          projectId: snapshot.projectId,
+          ...(snapshot.orgId ? { orgId: snapshot.orgId } : {}),
+          source: 'local' as const,
+        };
         const analysisModel = await this.applySynchronousRuntimeLimits(
-          {
-            projectId: snapshot.projectId,
-            ...(snapshot.orgId ? { orgId: snapshot.orgId } : {}),
-            source: 'local',
-          },
+          project,
           snapshot.analysisModel,
           'optimization_analysis',
         );
-        analysisFull = await analyzeFailures(
-          {
-            optimizationId,
-            roundNumber,
-            analysisModel,
-            analysisLimiterKey: snapshot.analysisLimiterKey,
-            currentVersion: analysisVersion,
-            previousVersion,
-            samples,
-            currentRunResults,
-            previousRunResults,
-            metrics: analysisMetrics,
-            goals: snapshot.goals,
-            fieldWhitelist: snapshot.fieldWhitelist,
-            strategyConfig: snapshot.strategyConfig,
-            promptLanguage: snapshot.promptLanguage,
-            roundHistory,
-            runResultMeta: analysisRunResultMeta,
-            analysisRunResultId,
-          },
-          {
-            limiter: this.limiter as RateLimiterLike,
-            logger: this.llmLogger,
-            runResultWriter: this.runResultWriter,
-          },
+        analysisFull = await this.withOptimizationExecutionSlot(
+          project,
+          'optimization_analysis',
+          snapshot.analysisModel.id,
+          analysisRunResultId,
+          () =>
+            analyzeFailures(
+              {
+                optimizationId,
+                roundNumber,
+                analysisModel,
+                analysisLimiterKey: snapshot.analysisLimiterKey,
+                currentVersion: analysisVersion,
+                previousVersion,
+                samples,
+                currentRunResults,
+                previousRunResults,
+                metrics: analysisMetrics,
+                goals: snapshot.goals,
+                fieldWhitelist: snapshot.fieldWhitelist,
+                strategyConfig: snapshot.strategyConfig,
+                promptLanguage: snapshot.promptLanguage,
+                roundHistory,
+                runResultMeta: analysisRunResultMeta,
+                analysisRunResultId,
+              },
+              {
+                limiter: this.limiter as RateLimiterLike,
+                logger: this.llmLogger,
+                runResultWriter: this.runResultWriter,
+              },
+            ),
         );
         await this.upsertStepSafe({
           optimizationId,
@@ -1480,39 +1508,47 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         dbosWorkflowId: dbosWorkflowIdForSteps,
       });
       try {
+        const project = {
+          projectId: snapshot.projectId,
+          ...(snapshot.orgId ? { orgId: snapshot.orgId } : {}),
+          source: 'local' as const,
+        };
         const analysisModel = await this.applySynchronousRuntimeLimits(
-          {
-            projectId: snapshot.projectId,
-            ...(snapshot.orgId ? { orgId: snapshot.orgId } : {}),
-            source: 'local',
-          },
+          project,
           snapshot.analysisModel,
           'optimization_generate',
         );
-        const draft = await generateNextVersion(
-          {
-            optimizationId,
-            roundNumber,
-            analysisModel,
-            analysisLimiterKey: snapshot.analysisLimiterKey,
-            currentVersion: baseVersionForRound,
-            analysis: analysisFull,
-            metrics: analysisMetrics,
-            goals: snapshot.goals,
-            fieldWhitelist: snapshot.fieldWhitelist,
-            optimizationHint: snapshot.optimizationHint,
-            strategyConfig: snapshot.strategyConfig,
-            promptLanguage: snapshot.promptLanguage,
-            roundHistory,
-            toolboxSwitchHint,
-            runResultMeta: generateRunResultMeta,
-            generateRunResultId,
-          },
-          {
-            limiter: this.limiter as RateLimiterLike,
-            logger: this.llmLogger,
-            runResultWriter: this.runResultWriter,
-          },
+        const draft = await this.withOptimizationExecutionSlot(
+          project,
+          'optimization_generate',
+          snapshot.analysisModel.id,
+          generateRunResultId,
+          () =>
+            generateNextVersion(
+              {
+                optimizationId,
+                roundNumber,
+                analysisModel,
+                analysisLimiterKey: snapshot.analysisLimiterKey,
+                currentVersion: baseVersionForRound,
+                analysis: analysisFull,
+                metrics: analysisMetrics,
+                goals: snapshot.goals,
+                fieldWhitelist: snapshot.fieldWhitelist,
+                optimizationHint: snapshot.optimizationHint,
+                strategyConfig: snapshot.strategyConfig,
+                promptLanguage: snapshot.promptLanguage,
+                roundHistory,
+                toolboxSwitchHint,
+                runResultMeta: generateRunResultMeta,
+                generateRunResultId,
+              },
+              {
+                limiter: this.limiter as RateLimiterLike,
+                logger: this.llmLogger,
+                runResultWriter: this.runResultWriter,
+              },
+            ),
         );
         generated = {
           newPromptBody: draft.newPromptBody,

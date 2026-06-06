@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ProjectContext } from '@proofhound/shared';
 import { applyExperimentLimits, createLlmRunner, loadModelInvocationConfig } from '../llm-runner';
 import { LimiterKeyStrategy, LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
+import { LocalQuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
 import {
   LocalRuntimeLimitsProvider,
   RuntimeLimitsProvider,
@@ -97,6 +98,7 @@ describe('runLlmJob — webhook 入口归因透传', () => {
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
       runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
@@ -149,6 +151,7 @@ describe('runLlmJob — orgId 透传至限流 key 的 ProjectContext', () => {
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: spy,
+      quotaPolicy: new LocalQuotaPolicyHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
       runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
@@ -207,6 +210,7 @@ describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', 
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
       runtimeLimitsProvider: new CapProvider(),
@@ -245,6 +249,7 @@ describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', 
       db: fakeDb({ ...activeModel, rpmLimit: -1, tpmLimit: -1, concurrencyLimit: 4 }),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
       runtimeLimitsProvider: new CapProvider(),

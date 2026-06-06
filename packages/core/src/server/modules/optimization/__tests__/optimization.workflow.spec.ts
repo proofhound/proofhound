@@ -24,6 +24,7 @@ vi.mock('@dbos-inc/dbos-sdk', () => ({
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FirstVersionParseError } from '@proofhound/optimization-strategy';
+import { LocalQuotaPolicyHook, type QuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 import {
   OptimizationWorkflowRegistrar,
   buildOptimizationExperimentName,
@@ -560,6 +561,7 @@ describe('OptimizationWorkflow.loadConfigImpl — orgId 透传 analysisLimiterKe
       {} as never, // runResultWriter
       limiterKeyStrategy,
       { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) } as never,
+      new LocalQuotaPolicyHook(),
     );
 
     const r = registrar as unknown as Record<string, unknown>;
@@ -658,6 +660,7 @@ describe('OptimizationWorkflow.applySynchronousRuntimeLimits — plan cap', () =
       {} as never,
       {} as never,
       runtimeLimitsProvider as never,
+      new LocalQuotaPolicyHook(),
     );
 
     const model = {
@@ -698,6 +701,57 @@ describe('OptimizationWorkflow.applySynchronousRuntimeLimits — plan cap', () =
   });
 });
 
+describe('OptimizationWorkflow.withOptimizationExecutionSlot — quota hook', () => {
+  it('passes the optimization LLM execution context into QuotaPolicyHook', async () => {
+    const quotaPolicy = {
+      assertCanStore: vi.fn().mockResolvedValue(undefined),
+      withExecutionSlot: vi.fn(async (_input: unknown, run: () => Promise<string>) => run()),
+    } as unknown as QuotaPolicyHook;
+    const registrar = new OptimizationWorkflowRegistrar(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) } as never,
+      quotaPolicy,
+    );
+
+    const result = await (
+      registrar as unknown as {
+        withOptimizationExecutionSlot: (
+          project: { projectId: string; orgId?: string; source: 'local' },
+          source: 'optimization_analysis' | 'optimization_generate',
+          modelId: string,
+          requestId: string,
+          run: () => Promise<string>,
+        ) => Promise<string>;
+      }
+    ).withOptimizationExecutionSlot(
+      { projectId: 'prj-1', orgId: 'org-1', source: 'local' },
+      'optimization_analysis',
+      'model-1',
+      'run-result-1',
+      async () => 'ok',
+    );
+
+    expect(result).toBe('ok');
+    expect(quotaPolicy.withExecutionSlot).toHaveBeenCalledWith(
+      {
+        project: { projectId: 'prj-1', orgId: 'org-1', source: 'local' },
+        source: 'optimization_analysis',
+        modelId: 'model-1',
+        requestId: 'run-result-1',
+      },
+      expect.any(Function),
+    );
+  });
+});
+
 // orgId (SaaS-only; undefined in OSS) threads runWorkflow(optimizationId, orgId) → loadConfigStep → snapshot.orgId,
 // and runImpl must forward that snapshot.orgId as the 2nd arg of the child experiment launch
 // DBOS.startWorkflow(this.experimentWorkflow.runWorkflow, { workflowID })(experimentId, snapshot.orgId).
@@ -724,6 +778,7 @@ describe('OptimizationWorkflow.runImpl — child experiment inherits snapshot.or
       {} as never, // runResultWriter
       {} as never, // limiterKeyStrategy
       { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) } as never,
+      new LocalQuotaPolicyHook(),
     );
 
     // Stub the internal DBOS steps on the instance (registerStep was identity, so these props hold the bound impls).

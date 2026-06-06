@@ -27,7 +27,7 @@ import {
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
-import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
+import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../common/contracts/runtime-limits.provider';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
@@ -51,7 +51,7 @@ export class PromptTryRunService {
     private readonly accessControl: AccessControlService,
     private readonly limiterKeyStrategy: LimiterKeyStrategy,
     private readonly runtimeLimitsProvider: RuntimeLimitsProvider,
-    private readonly quotaPolicy: QuotaPolicyHook = new LocalQuotaPolicyHook(),
+    private readonly quotaPolicy: QuotaPolicyHook,
   ) {}
 
   async tryRun(

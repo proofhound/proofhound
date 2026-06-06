@@ -1,6 +1,7 @@
 import type { Query, SQL } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import { DrizzleRunResultWriter } from '../run-result-writer';
+import { LocalQuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 
 describe('DrizzleRunResultWriter', () => {
   it('renders nullable run_result fields as SQL null params instead of omitted chunks', async () => {
@@ -11,7 +12,7 @@ describe('DrizzleRunResultWriter', () => {
         return [];
       }),
     };
-    const writer = new DrizzleRunResultWriter(db as never);
+    const writer = new DrizzleRunResultWriter(db as never, new LocalQuotaPolicyHook());
 
     await writer.writeRunResult({
       id: '11111111-1111-4111-8111-111111111111',
@@ -42,7 +43,7 @@ describe('DrizzleRunResultWriter', () => {
         return [];
       }),
     };
-    const writer = new DrizzleRunResultWriter(db as never);
+    const writer = new DrizzleRunResultWriter(db as never, new LocalQuotaPolicyHook());
 
     await writer.writeRunResult({
       id: '11111111-1111-4111-8111-111111111111',

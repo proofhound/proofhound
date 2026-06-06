@@ -7,6 +7,7 @@ import type { CryptoService } from '../../../../shared/crypto/crypto.service';
 import type { PromptRepository } from '../prompt.repository';
 import { PromptTryRunService } from '../prompt-try-run.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import { LocalQuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 import type { RuntimeLimitsProvider } from '../../../common/contracts/runtime-limits.provider';
 
 vi.mock('@proofhound/llm-client', async (importOriginal) => {
@@ -113,6 +114,7 @@ function buildService(overrides?: {
       mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits),
       ...overrides?.runtimeLimitsProvider,
     } as RuntimeLimitsProvider,
+    new LocalQuotaPolicyHook(),
   );
 
   return { service, promptRepo, crypto };

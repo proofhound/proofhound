@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 import { sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import type { LLMRunResultRecord, LLMRunResultWriter } from '@proofhound/llm-client';
-import { LocalQuotaPolicyHook, type QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
+import type { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 
 // ph_runs.run_results is a monthly-partitioned table by created_at; a UNIQUE constraint cannot be applied to a single id column;
 // use INSERT ... SELECT ... WHERE NOT EXISTS instead for idempotency, ensuring:
@@ -11,7 +11,7 @@ import { LocalQuotaPolicyHook, type QuotaPolicyHook } from '../../server/common/
 export class DrizzleRunResultWriter implements LLMRunResultWriter {
   constructor(
     private readonly db: DbClient,
-    private readonly quotaPolicy: QuotaPolicyHook = new LocalQuotaPolicyHook(),
+    private readonly quotaPolicy: QuotaPolicyHook,
   ) {}
 
   async writeRunResult(record: LLMRunResultRecord): Promise<void> {

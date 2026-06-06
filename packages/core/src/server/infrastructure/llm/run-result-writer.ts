@@ -3,7 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import type { LLMRunResultRecord, LLMRunResultWriter } from '@proofhound/llm-client';
-import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
+import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 
 // ph_runs.run_results is monthly-partitioned by created_at, so a UNIQUE constraint cannot be applied to a single id column;
@@ -14,7 +14,7 @@ import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 export class DrizzleRunResultWriter implements LLMRunResultWriter {
   constructor(
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
-    private readonly quotaPolicy: QuotaPolicyHook = new LocalQuotaPolicyHook(),
+    private readonly quotaPolicy: QuotaPolicyHook,
   ) {}
 
   async writeRunResult(record: LLMRunResultRecord): Promise<void> {

@@ -32,7 +32,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
-import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
+import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../common/contracts/runtime-limits.provider';
 import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import { isUniqueViolation } from '../../common/errors/db-error';
@@ -74,7 +74,7 @@ export class ModelService {
     private readonly limiterKeyStrategy: LimiterKeyStrategy,
     private readonly runtimeLimitsProvider: RuntimeLimitsProvider,
     private readonly workflowAuth: WorkflowAuthorizationHook,
-    private readonly quotaPolicy: QuotaPolicyHook = new LocalQuotaPolicyHook(),
+    private readonly quotaPolicy: QuotaPolicyHook,
   ) {}
 
   // -------------------------------------------------------------------------
