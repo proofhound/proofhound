@@ -250,15 +250,15 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
     return { registrar, enqueueLlmJob };
   }
 
-  it('runWorkflow(id, org-x) → enqueued payload 携带 orgId=org-x', async () => {
+  it('runWorkflow(id, 00000000-0000-4000-8000-000000000888) → enqueued payload 携带 orgId=00000000-0000-4000-8000-000000000888', async () => {
     const { registrar, enqueueLlmJob } = buildEnqueueRegistrar();
 
     await (
       registrar as unknown as { runWorkflow: (id: string, orgId?: string) => Promise<void> }
-    ).runWorkflow('exp-1', 'org-x');
+    ).runWorkflow('exp-1', '00000000-0000-4000-8000-000000000888');
 
     expect(enqueueLlmJob).toHaveBeenCalledTimes(1);
-    expect(enqueueLlmJob.mock.calls[0]?.[0]).toMatchObject({ orgId: 'org-x', projectId: 'prj-1' });
+    expect(enqueueLlmJob.mock.calls[0]?.[0]).toMatchObject({ orgId: '00000000-0000-4000-8000-000000000888', projectId: 'prj-1' });
   });
 
   it('OSS 默认无 orgId → enqueued payload.orgId 为 undefined', async () => {

@@ -549,11 +549,11 @@ describe('ModelService', () => {
       checkedAt: '2026-05-18T01:00:00.000Z',
     });
 
-    await service.probeProjectModel(WORKSPACE_ID, 'model-1', ACTOR, 'api', 'org-7');
+    await service.probeProjectModel(WORKSPACE_ID, 'model-1', ACTOR, 'api', '00000000-0000-4000-8000-000000000777');
 
     expect(testModelConnectivity).toHaveBeenCalledWith(
       expect.objectContaining({
-        limiterKey: 'org:org-7:model:00000000-0000-4000-8000-000000000101',
+        limiterKey: 'org:00000000-0000-4000-8000-000000000777:model:00000000-0000-4000-8000-000000000101',
       }),
       expect.anything(),
     );
@@ -574,10 +574,10 @@ describe('ModelService', () => {
       checkedAt: '2026-05-18T01:00:00.000Z',
     });
 
-    await service.probeProjectModel(WORKSPACE_ID, 'model-1', ACTOR, 'api', 'org-7');
+    await service.probeProjectModel(WORKSPACE_ID, 'model-1', ACTOR, 'api', '00000000-0000-4000-8000-000000000777');
 
     expect(runtimeLimitsProvider.mergeLlmLimits).toHaveBeenCalledWith({
-      project: { projectId: WORKSPACE_ID, orgId: 'org-7', source: 'local' },
+      project: { projectId: WORKSPACE_ID, orgId: '00000000-0000-4000-8000-000000000777', source: 'local' },
       modelId: '00000000-0000-4000-8000-000000000101',
       source: 'probe',
     });
@@ -592,9 +592,9 @@ describe('ModelService', () => {
   it('threads the project orgId into the usage-snapshot READ key on list (matches the worker WRITE key)', async () => {
     repo.listProjectModels.mockResolvedValue([fakeRow()]);
 
-    await service.listProjectModels(WORKSPACE_ID, ACTOR, 'org-7');
+    await service.listProjectModels(WORKSPACE_ID, ACTOR, '00000000-0000-4000-8000-000000000777');
 
-    expect(limiter.getUsage).toHaveBeenCalledWith('org:org-7:model:00000000-0000-4000-8000-000000000101');
+    expect(limiter.getUsage).toHaveBeenCalledWith('org:00000000-0000-4000-8000-000000000777:model:00000000-0000-4000-8000-000000000101');
   });
 
   it('threads the project orgId into the draft probe limiter key', async () => {
@@ -608,11 +608,11 @@ describe('ModelService', () => {
       checkedAt: '2026-05-18T01:00:00.000Z',
     });
 
-    await service.probeDraftProjectModel(WORKSPACE_ID, draftProbeDto(), ACTOR, 'api', 'org-7');
+    await service.probeDraftProjectModel(WORKSPACE_ID, draftProbeDto(), ACTOR, 'api', '00000000-0000-4000-8000-000000000777');
 
     expect(testModelConnectivity).toHaveBeenCalledWith(
       expect.objectContaining({
-        limiterKey: expect.stringMatching(/^org:org-7:model:/),
+        limiterKey: expect.stringMatching(/^org:00000000-0000-4000-8000-000000000777:model:/),
       }),
       expect.anything(),
     );

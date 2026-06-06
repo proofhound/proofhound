@@ -160,7 +160,7 @@ describe('runLlmJob — orgId 透传至限流 key 的 ProjectContext', () => {
     await runLlmJob(
       {
         projectId,
-        orgId: 'org-xyz',
+        orgId: '00000000-0000-4000-8000-000000000777',
         source: 'experiment',
         sourceId: '33333333-3333-4333-8333-333333333333',
         promptVersionId: '44444444-4444-4444-8444-444444444444',
@@ -171,7 +171,7 @@ describe('runLlmJob — orgId 透传至限流 key 的 ProjectContext', () => {
       { bullmqJobId: 'job-1', bullmqQueue: 'llm', attempt: 1 },
     );
 
-    expect(spy.seen?.orgId).toBe('org-xyz');
+    expect(spy.seen?.orgId).toBe('00000000-0000-4000-8000-000000000777');
     expect(spy.seen?.projectId).toBe(projectId);
   });
 });

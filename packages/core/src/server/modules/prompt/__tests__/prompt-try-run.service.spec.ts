@@ -200,10 +200,10 @@ describe('PromptTryRunService', () => {
 
     const { service } = buildService();
     // orgId is sourced from the resolved ProjectContext (controller passes @CurrentProject().orgId), not the actor.
-    await service.tryRun(PROJECT_ID, PROMPT_ID, validRequest(), actor, 'org-7');
+    await service.tryRun(PROJECT_ID, PROMPT_ID, validRequest(), actor, '00000000-0000-4000-8000-000000000777');
 
     expect(llmClient.invokeLLM).toHaveBeenCalledWith(
-      expect.objectContaining({ limiterKey: `org:org-7:model:${MODEL_ID}` }),
+      expect.objectContaining({ limiterKey: `org:00000000-0000-4000-8000-000000000777:model:${MODEL_ID}` }),
       expect.anything(),
     );
   });
@@ -223,10 +223,10 @@ describe('PromptTryRunService', () => {
     };
     const { service } = buildService({ runtimeLimitsProvider });
 
-    await service.tryRun(PROJECT_ID, PROMPT_ID, validRequest(), actor, 'org-7');
+    await service.tryRun(PROJECT_ID, PROMPT_ID, validRequest(), actor, '00000000-0000-4000-8000-000000000777');
 
     expect(runtimeLimitsProvider.mergeLlmLimits).toHaveBeenCalledWith({
-      project: { projectId: PROJECT_ID, orgId: 'org-7', source: 'local' },
+      project: { projectId: PROJECT_ID, orgId: '00000000-0000-4000-8000-000000000777', source: 'local' },
       modelId: MODEL_ID,
       source: 'prompt_try_run',
     });

@@ -66,9 +66,9 @@ describe('runProbeJob — orgId 透传至限流 key 的 ProjectContext', () => {
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
     });
 
-    await runProbeJob({ modelId: activeModel.id, projectId, orgId: 'org-xyz' });
+    await runProbeJob({ modelId: activeModel.id, projectId, orgId: '00000000-0000-4000-8000-000000000777' });
 
-    expect(spy.seen?.orgId).toBe('org-xyz');
+    expect(spy.seen?.orgId).toBe('00000000-0000-4000-8000-000000000777');
     expect(spy.seen?.projectId).toBe(projectId);
   });
 

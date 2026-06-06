@@ -615,12 +615,12 @@ describe('OptimizationWorkflow.loadConfigImpl — orgId 透传 analysisLimiterKe
       registrar as unknown as {
         loadConfigImpl: (id: string, orgId?: string) => Promise<{ ok: boolean; orgId?: string }>;
       }
-    ).loadConfigImpl('opt-1', 'org-x');
+    ).loadConfigImpl('opt-1', '00000000-0000-4000-8000-000000000888');
 
     expect(snapshot.ok).toBe(true);
-    expect(snapshot.orgId).toBe('org-x');
+    expect(snapshot.orgId).toBe('00000000-0000-4000-8000-000000000888');
     expect(buildModelKey).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: 'prj-1', orgId: 'org-x', source: 'local' }),
+      expect.objectContaining({ projectId: 'prj-1', orgId: '00000000-0000-4000-8000-000000000888', source: 'local' }),
       'analysis-model',
     );
   });
@@ -684,13 +684,13 @@ describe('OptimizationWorkflow.applySynchronousRuntimeLimits — plan cap', () =
         ) => Promise<typeof model>;
       }
     ).applySynchronousRuntimeLimits(
-      { projectId: 'prj-1', orgId: 'org-x', source: 'local' },
+      { projectId: 'prj-1', orgId: '00000000-0000-4000-8000-000000000888', source: 'local' },
       model,
       'optimization_analysis',
     );
 
     expect(runtimeLimitsProvider.mergeLlmLimits).toHaveBeenCalledWith({
-      project: { projectId: 'prj-1', orgId: 'org-x', source: 'local' },
+      project: { projectId: 'prj-1', orgId: '00000000-0000-4000-8000-000000000888', source: 'local' },
       modelId: 'analysis-model',
       source: 'optimization_analysis',
     });
@@ -731,7 +731,7 @@ describe('OptimizationWorkflow.runImpl — child experiment inherits snapshot.or
     const snapshot = {
       ok: true,
       projectId: 'prj-1',
-      orgId: 'org-x',
+      orgId: '00000000-0000-4000-8000-000000000888',
       startingMode: 'from_experiment',
       baseVersionId: 'pv-1',
       sourceExperimentId: 'exp-src',
@@ -763,13 +763,13 @@ describe('OptimizationWorkflow.runImpl — child experiment inherits snapshot.or
     const registrar = buildRegistrar();
     await (registrar as unknown as { runImpl: (id: string, orgId?: string) => Promise<void> }).runImpl(
       'opt-1',
-      'org-x',
+      '00000000-0000-4000-8000-000000000888',
     );
 
     // Exactly one child experiment launch (single round), targeting the experiment workflow with (experimentId, orgId).
     const childLaunch = startWorkflowCalls.find((c) => c.fn === experimentRunWorkflow);
     expect(childLaunch).toBeDefined();
-    expect(childLaunch?.args).toEqual(['child-exp-1', 'org-x']);
+    expect(childLaunch?.args).toEqual(['child-exp-1', '00000000-0000-4000-8000-000000000888']);
   });
 
   it('OSS default (snapshot.orgId undefined) → child experiment launched with orgId=undefined', async () => {
