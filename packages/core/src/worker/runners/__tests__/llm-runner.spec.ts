@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ProjectContext } from '@proofhound/shared';
 import { applyExperimentLimits, createLlmRunner, loadModelInvocationConfig } from '../llm-runner';
 import { LimiterKeyStrategy, LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
-import { LocalQuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
+import { LocalQuotaPolicyHook, type QuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
 import {
   LocalRuntimeLimitsProvider,
   RuntimeLimitsProvider,
@@ -94,11 +94,12 @@ describe('runLlmJob — webhook 入口归因透传', () => {
       costEstimate: 0,
       durationMs: 1,
     });
+    const quotaPolicy = createSpyQuotaPolicy();
     const runLlmJob = createLlmRunner({
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
-      quotaPolicy: new LocalQuotaPolicyHook(),
+      quotaPolicy,
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
       runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
@@ -122,6 +123,18 @@ describe('runLlmJob — webhook 入口归因透传', () => {
     expect(invokeLLMMock).toHaveBeenCalledTimes(1);
     const [args] = invokeLLMMock.mock.calls[0]!;
     expect(args.runResult).toMatchObject({ webhookTokenId });
+    expect(quotaPolicy.withExecutionSlot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project: expect.objectContaining({
+          projectId: '22222222-2222-4222-8222-222222222222',
+          source: 'local',
+        }),
+        source: 'release',
+        modelId: activeModel.id,
+        requestId: undefined,
+      }),
+      expect.any(Function),
+    );
   });
 });
 
@@ -186,6 +199,13 @@ function fakeDb(row: typeof activeModel | undefined): DbClient {
       }),
     }),
   } as unknown as DbClient;
+}
+
+function createSpyQuotaPolicy(): QuotaPolicyHook {
+  return {
+    assertCanStore: vi.fn(async () => undefined),
+    withExecutionSlot: vi.fn(async (_input, run) => run()),
+  };
 }
 
 describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', () => {

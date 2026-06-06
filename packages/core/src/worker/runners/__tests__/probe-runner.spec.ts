@@ -6,7 +6,7 @@ import { LOCAL_PROJECT_ID } from '@proofhound/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { createProbeRunner } from '../probe-runner';
 import { LimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
-import { LocalQuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
+import { LocalQuotaPolicyHook, type QuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
 import {
   LocalRuntimeLimitsProvider,
   RuntimeLimitsProvider,
@@ -58,11 +58,12 @@ describe('runProbeJob — orgId 透传至限流 key 的 ProjectContext', () => {
     });
     const spy = new SpyStrategy();
     const projectId = '22222222-2222-4222-8222-222222222222';
+    const quotaPolicy = createSpyQuotaPolicy();
     const runProbeJob = createProbeRunner({
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: spy,
-      quotaPolicy: new LocalQuotaPolicyHook(),
+      quotaPolicy,
       runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
@@ -72,6 +73,20 @@ describe('runProbeJob — orgId 透传至限流 key 的 ProjectContext', () => {
 
     expect(spy.seen?.orgId).toBe('00000000-0000-4000-8000-000000000777');
     expect(spy.seen?.projectId).toBe(projectId);
+    expect(quotaPolicy.withExecutionSlot).toHaveBeenCalledWith(
+      {
+        project: {
+          projectId,
+          orgId: '00000000-0000-4000-8000-000000000777',
+          source: 'local',
+        },
+        source: 'probe',
+        modelId: activeModel.id,
+        requestId: undefined,
+      },
+      expect.any(Function),
+    );
+    expect(testModelConnectivityMock).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to LOCAL_PROJECT_CONTEXT when projectId is absent (OSS default)', async () => {
@@ -168,4 +183,11 @@ function fakeDb(row: typeof activeModel | undefined): DbClient {
       }),
     }),
   } as unknown as DbClient;
+}
+
+function createSpyQuotaPolicy(): QuotaPolicyHook {
+  return {
+    assertCanStore: vi.fn(async () => undefined),
+    withExecutionSlot: vi.fn(async (_input, run) => run()),
+  };
 }

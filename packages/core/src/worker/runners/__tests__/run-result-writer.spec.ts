@@ -1,7 +1,7 @@
 import type { SQL, Query } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import { DrizzleRunResultWriter } from '../run-result-writer';
-import { LocalQuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
+import { LocalQuotaPolicyHook, type QuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
 
 describe('DrizzleRunResultWriter', () => {
   it('renders nullable run_result fields as SQL null params instead of omitted chunks', async () => {
@@ -12,7 +12,8 @@ describe('DrizzleRunResultWriter', () => {
         return [];
       }),
     };
-    const writer = new DrizzleRunResultWriter(db as never, new LocalQuotaPolicyHook());
+    const quotaPolicy = createSpyQuotaPolicy();
+    const writer = new DrizzleRunResultWriter(db as never, quotaPolicy);
 
     await writer.writeRunResult({
       id: '11111111-1111-4111-8111-111111111111',
@@ -33,6 +34,14 @@ describe('DrizzleRunResultWriter', () => {
     expect(query!.sql).not.toMatch(/,\s*,/u);
     expect(query!.params).not.toContain(undefined);
     expect(query!.params).toContain(null);
+    expect(quotaPolicy.assertCanStore).toHaveBeenCalledWith({
+      bytes: expect.any(Number),
+      project: {
+        projectId: '22222222-2222-4222-8222-222222222222',
+        source: 'local',
+      },
+      source: 'run_result',
+    });
   });
 
   it('persists webhook_token_id when the record carries webhook-entry attribution', async () => {
@@ -125,4 +134,11 @@ function toQuery(query: SQL): Query {
     escapeParam: (index) => `$${index + 1}`,
     escapeString: (value) => `'${value}'`,
   });
+}
+
+function createSpyQuotaPolicy(): QuotaPolicyHook {
+  return {
+    assertCanStore: vi.fn(async () => undefined),
+    withExecutionSlot: vi.fn(async (_input, run) => run()),
+  };
 }
