@@ -15,6 +15,7 @@ import {
 } from '@proofhound/llm-client';
 import type { LlmJobPayload } from '@proofhound/orchestration-shared';
 import type { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
+import { LocalQuotaPolicyHook, type QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 import type { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
 import { applyRuntimeLimits } from '../../shared/llm/runtime-limits';
 import type { ModelSecretResolver } from './model-secret';
@@ -24,6 +25,7 @@ export interface LlmRunnerDependencies {
   db: DbClient;
   limiter: RateLimiter;
   limiterKeyStrategy: LimiterKeyStrategy;
+  quotaPolicy?: QuotaPolicyHook;
   runtimeLimitsProvider: RuntimeLimitsProvider;
   logger: LLMCallLogger;
   modelSecretResolver: ModelSecretResolver;
@@ -50,7 +52,8 @@ export interface LlmRunnerResult {
 }
 
 export function createLlmRunner(deps: LlmRunnerDependencies) {
-  const runResultWriter = new DrizzleRunResultWriter(deps.db);
+  const quotaPolicy = deps.quotaPolicy ?? new LocalQuotaPolicyHook();
+  const runResultWriter = new DrizzleRunResultWriter(deps.db, quotaPolicy);
 
   return async function runLlmJob(input: LlmJobPayload, jobContext: LlmRunnerJobContext): Promise<LlmRunnerResult> {
     const runResultId = input.runResultId ?? randomUUID();
@@ -81,67 +84,69 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
       : undefined;
 
     // Build the rate-limit key at the runtime layer (§3.7); llm-client/limiter stay project-unaware (§8).
-    const limiterKey = deps.limiterKeyStrategy.buildModelKey(
-      { projectId: input.projectId, orgId: input.orgId, source: 'local' },
-      input.modelId,
-    );
+    const project = { projectId: input.projectId, orgId: input.orgId, source: 'local' as const };
+    const limiterKey = deps.limiterKeyStrategy.buildModelKey(project, input.modelId);
 
-    const result = await invokeLLM(
-      {
-        model: effectiveModel,
-        limiterKey,
-        messages: input.renderedPrompt.messages as LLMMessage[] | undefined,
-        prompt: input.renderedPrompt.prompt,
-        params: {
-          temperature: input.inference?.temperature,
-          maxTokens: input.inference?.maxTokens,
-          topP: input.inference?.topP,
-          tools: input.renderedPrompt.tools,
-          responseFormat: input.renderedPrompt.responseFormat,
-          imageRefs: input.renderedPrompt.imageRefs,
-          apiVersion: input.inference?.apiVersion,
-        },
-        maxRetries: input.retry?.maxRetries,
-        context: {
-          requestId: input.requestId,
-          dbosWorkflowId: jobContext.dbosWorkflowId,
-          bullmqJobId: jobContext.bullmqJobId,
-          bullmqQueue: jobContext.bullmqQueue,
-          stepName: jobContext.stepName,
-          runResultId,
-          promptId: input.promptId,
-          promptVersionId: input.promptVersionId,
-          source: input.source,
-          attempt: jobContext.attempt,
-        },
-        runResult: {
-          id: runResultId,
-          projectId: input.projectId,
-          source: input.source,
-          sourceId: input.sourceId,
-          releaseVariantId: input.releaseVariantId ?? null,
-          promptVersionId: input.promptVersionId,
-          modelId: input.modelId,
-          sampleId: input.sampleId ?? null,
-          externalId: input.externalId ?? null,
-          renderedPrompt: normalizeRenderedPrompt(input.renderedPrompt),
-          inputVariables: input.inputVariables,
-          expectedOutput: expectedOutputAsString(expectedOutput),
-          dbosWorkflowId: jobContext.dbosWorkflowId,
-          bullmqJobId: jobContext.bullmqJobId,
-          attempt: jobContext.attempt,
-          webhookTokenId: input.webhookTokenId ?? null,
-        },
-        // The judgment strategy expects a parsed[expected_field]-style structure; when parseResponse is not provided, parsed=undefined,
-        // and the whole metrics is unreliable. Parse strict JSON first; on failure, fall back to parsing a Markdown JSON fence.
-        parseResponse: parseJsonResponseWithMarkdownFallback,
-        evaluateJudgment: evaluateJudgmentHook,
-      },
-      {
-        limiter: deps.limiter,
-        logger: deps.logger,
-        runResultWriter,
-      },
+    const result = await quotaPolicy.withExecutionSlot(
+      { project, source: input.source, modelId: input.modelId, requestId: input.requestId },
+      () =>
+        invokeLLM(
+          {
+            model: effectiveModel,
+            limiterKey,
+            messages: input.renderedPrompt.messages as LLMMessage[] | undefined,
+            prompt: input.renderedPrompt.prompt,
+            params: {
+              temperature: input.inference?.temperature,
+              maxTokens: input.inference?.maxTokens,
+              topP: input.inference?.topP,
+              tools: input.renderedPrompt.tools,
+              responseFormat: input.renderedPrompt.responseFormat,
+              imageRefs: input.renderedPrompt.imageRefs,
+              apiVersion: input.inference?.apiVersion,
+            },
+            maxRetries: input.retry?.maxRetries,
+            context: {
+              requestId: input.requestId,
+              dbosWorkflowId: jobContext.dbosWorkflowId,
+              bullmqJobId: jobContext.bullmqJobId,
+              bullmqQueue: jobContext.bullmqQueue,
+              stepName: jobContext.stepName,
+              runResultId,
+              promptId: input.promptId,
+              promptVersionId: input.promptVersionId,
+              source: input.source,
+              attempt: jobContext.attempt,
+            },
+            runResult: {
+              id: runResultId,
+              projectId: input.projectId,
+              source: input.source,
+              sourceId: input.sourceId,
+              releaseVariantId: input.releaseVariantId ?? null,
+              promptVersionId: input.promptVersionId,
+              modelId: input.modelId,
+              sampleId: input.sampleId ?? null,
+              externalId: input.externalId ?? null,
+              renderedPrompt: normalizeRenderedPrompt(input.renderedPrompt),
+              inputVariables: input.inputVariables,
+              expectedOutput: expectedOutputAsString(expectedOutput),
+              dbosWorkflowId: jobContext.dbosWorkflowId,
+              bullmqJobId: jobContext.bullmqJobId,
+              attempt: jobContext.attempt,
+              webhookTokenId: input.webhookTokenId ?? null,
+            },
+            // The judgment strategy expects a parsed[expected_field]-style structure; when parseResponse is not provided, parsed=undefined,
+            // and the whole metrics is unreliable. Parse strict JSON first; on failure, fall back to parsing a Markdown JSON fence.
+            parseResponse: parseJsonResponseWithMarkdownFallback,
+            evaluateJudgment: evaluateJudgmentHook,
+          },
+          {
+            limiter: deps.limiter,
+            logger: deps.logger,
+            runResultWriter,
+          },
+        ),
     );
 
     return {

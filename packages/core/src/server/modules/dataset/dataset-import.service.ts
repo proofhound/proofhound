@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -20,6 +21,7 @@ import type {
 } from '@proofhound/shared';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { buildDatasetFieldSchema } from './dataset-field-schema.util';
 import {
@@ -47,6 +49,7 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
     private readonly repo: DatasetImportRepository,
     private readonly datasetService: DatasetService,
     private readonly accessControl: AccessControlService,
+    private readonly quotaPolicy: QuotaPolicyHook,
   ) {}
 
   onModuleInit(): void {
@@ -72,6 +75,13 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException('dataset_name_taken');
     }
 
+    await this.quotaPolicy.assertCanStore({
+      actor: toActorContext(actor),
+      bytes: nonnegativeInteger(dto.sourceFile.fileSizeBytes),
+      project: { projectId, source: 'local' },
+      source: 'dataset_import',
+    });
+
     const row = await this.repo.createImport({ projectId, actorUserId: actor.sub, dto });
     return this.toImportItem(row);
   }
@@ -89,6 +99,13 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
     if (dto.batchStartIndex > session.receivedRows) {
       throw new BadRequestException({ message: 'dataset_import_batch_gap', receivedRows: session.receivedRows });
     }
+
+    await this.quotaPolicy.assertCanStore({
+      actor: toActorContext(actor),
+      bytes: utf8JsonBytes(dto.samples),
+      project: { projectId, source: 'local' },
+      source: 'dataset_import_batch',
+    });
 
     const externalIdField = this.externalIdFieldName(session);
     const rows: BatchSampleRow[] = dto.samples.map((sample, offset) => ({
@@ -232,4 +249,12 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
     const raw = Number(process.env['DATASET_IMPORT_STALE_TIMEOUT_MS']);
     return Number.isFinite(raw) && raw >= MIN_TICK_MS ? Math.floor(raw) : DEFAULT_STALE_TIMEOUT_MS;
   }
+}
+
+function utf8JsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value ?? null), 'utf8');
+}
+
+function nonnegativeInteger(value: number | undefined): number {
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value ?? 0)) : 0;
 }

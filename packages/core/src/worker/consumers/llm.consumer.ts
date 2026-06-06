@@ -17,12 +17,10 @@ import {
 import { DelayedError, type Job } from 'bullmq';
 import type Redis from 'ioredis';
 import { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
+import { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
 import { DATABASE_CLIENT } from '../../shared/database/database.constants';
-import {
-  MODEL_SECRET_RESOLVER,
-  modelSecretResolverFactory,
-} from '../infrastructure/llm/model-secret.provider';
+import { MODEL_SECRET_RESOLVER, modelSecretResolverFactory } from '../infrastructure/llm/model-secret.provider';
 import { REDIS_CLIENT, REDIS_LIMITER } from '../../shared/redis/redis.constants';
 import { resolveWorkerConcurrency } from '../config/worker-concurrency';
 import { createLlmRunner, type LlmRunnerResult } from '../runners/llm-runner';
@@ -44,6 +42,7 @@ export class LlmConsumer extends WorkerHost {
     @Inject(MODEL_SECRET_RESOLVER) modelSecretResolver: ModelSecretResolver,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     limiterKeyStrategy: LimiterKeyStrategy,
+    quotaPolicy: QuotaPolicyHook,
     runtimeLimitsProvider: RuntimeLimitsProvider,
   ) {
     super();
@@ -51,11 +50,12 @@ export class LlmConsumer extends WorkerHost {
       db,
       limiter,
       limiterKeyStrategy,
+      quotaPolicy,
       runtimeLimitsProvider,
       logger: this.logger,
       modelSecretResolver,
     });
-    this.runResultWriter = new DrizzleRunResultWriter(db);
+    this.runResultWriter = new DrizzleRunResultWriter(db, quotaPolicy);
   }
 
   async process(job: Job<unknown>, token?: string): Promise<LlmRunnerResult> {
@@ -107,10 +107,7 @@ export class LlmConsumer extends WorkerHost {
   async onFailed(job: Job<unknown>, error: Error): Promise<void> {
     const parsed = llmJobPayloadSchema.safeParse(job.data);
     if (!parsed.success) {
-      this.logger.error(
-        { bullmqJobId: String(job.id), error: error.message },
-        'llm_job_final_failure_payload_invalid',
-      );
+      this.logger.error({ bullmqJobId: String(job.id), error: error.message }, 'llm_job_final_failure_payload_invalid');
       return;
     }
     const payload = parsed.data;
@@ -191,10 +188,7 @@ export class LlmConsumer extends WorkerHost {
     }
   }
 
-  private async writeWebhookAsyncSuccess(
-    call: WebhookAsyncCallContext,
-    result: LlmRunnerResult,
-  ): Promise<void> {
+  private async writeWebhookAsyncSuccess(call: WebhookAsyncCallContext, result: LlmRunnerResult): Promise<void> {
     const ttl = await this.getWebhookAsyncCallTtl(call);
     if (ttl <= 0) return;
     const completedAt = new Date().toISOString();

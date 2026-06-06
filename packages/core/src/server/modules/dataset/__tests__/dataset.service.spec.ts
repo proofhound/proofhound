@@ -4,6 +4,7 @@ import { DatasetRepository, type DatasetProjectAccessRow, type DatasetRow } from
 import { DatasetService } from '../dataset.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 import { vi, type Mocked } from 'vitest';
 
 const actor = {
@@ -67,6 +68,7 @@ describe('DatasetService', () => {
       providers: [
         { provide: DatasetRepository, useValue: repo },
         { provide: AccessControlService, useClass: LocalAccessControlService },
+        { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
         DatasetService,
       ],
     }).compile();

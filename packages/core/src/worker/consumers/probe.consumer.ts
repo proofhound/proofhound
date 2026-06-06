@@ -7,6 +7,7 @@ import { createLogger } from '@proofhound/logger';
 import { probeJobPayloadSchema, type ProbeJobPayload } from '@proofhound/orchestration-shared';
 import { DelayedError, type Job } from 'bullmq';
 import { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
+import { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
 import { DATABASE_CLIENT } from '../../shared/database/database.constants';
 import { MODEL_SECRET_RESOLVER } from '../infrastructure/llm/model-secret.provider';
@@ -25,6 +26,7 @@ export class ProbeConsumer extends WorkerHost {
     @Inject(REDIS_LIMITER) limiter: RateLimiter,
     @Inject(MODEL_SECRET_RESOLVER) modelSecretResolver: ModelSecretResolver,
     limiterKeyStrategy: LimiterKeyStrategy,
+    quotaPolicy: QuotaPolicyHook,
     runtimeLimitsProvider: RuntimeLimitsProvider,
   ) {
     super();
@@ -32,6 +34,7 @@ export class ProbeConsumer extends WorkerHost {
       db,
       limiter,
       limiterKeyStrategy,
+      quotaPolicy,
       runtimeLimitsProvider,
       logger: this.logger,
       modelSecretResolver,

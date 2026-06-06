@@ -4,6 +4,7 @@ import { LocalConnectorContextResolver } from '../../../../webhook/channels/webh
 import { ConnectorContextResolver } from '../connector-context.resolver';
 import { LimiterKeyStrategy, LocalLimiterKeyStrategy } from '../limiter-key.strategy';
 import { LocalContractsModule } from '../local-contracts.module';
+import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../quota-policy.hook';
 import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from '../runtime-limits.provider';
 import { LocalTokenService } from '../../../modules/token/token.service';
 import { TokenService } from '../token.service';
@@ -38,6 +39,10 @@ describe('LocalContractsModule new bindings', () => {
     expect(providerFor(RuntimeLimitsProvider)?.useClass).toBe(LocalRuntimeLimitsProvider);
   });
 
+  it('binds QuotaPolicyHook -> LocalQuotaPolicyHook', () => {
+    expect(providerFor(QuotaPolicyHook)?.useClass).toBe(LocalQuotaPolicyHook);
+  });
+
   it('binds ConnectorContextResolver -> LocalConnectorContextResolver', () => {
     expect(providerFor(ConnectorContextResolver)?.useClass).toBe(LocalConnectorContextResolver);
   });
@@ -48,6 +53,7 @@ describe('LocalContractsModule new bindings', () => {
     expect(exports).toContain(TokenService);
     expect(exports).toContain(LimiterKeyStrategy);
     expect(exports).toContain(RuntimeLimitsProvider);
+    expect(exports).toContain(QuotaPolicyHook);
     expect(exports).toContain(WorkflowAuthorizationHook);
   });
 });

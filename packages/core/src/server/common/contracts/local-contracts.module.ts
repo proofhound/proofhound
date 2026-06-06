@@ -26,6 +26,7 @@ import { LocalProjectContextResolver } from './local-project-context.resolver';
 import { LocalUserTokenVerifier } from './local-user-token.verifier';
 import { McpAuthResolver } from './mcp-auth.resolver';
 import { ProjectContextResolver } from './project-context.resolver';
+import { LocalQuotaPolicyHook, QuotaPolicyHook } from './quota-policy.hook';
 import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from './runtime-limits.provider';
 import { TokenService } from './token.service';
 import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './workflow-authorization.hook';
@@ -45,6 +46,7 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     { provide: AccessControlService, useClass: LocalAccessControlService },
     { provide: LimiterKeyStrategy, useClass: LocalLimiterKeyStrategy },
     { provide: RuntimeLimitsProvider, useClass: LocalRuntimeLimitsProvider },
+    { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
     { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
   ],
   exports: [
@@ -56,6 +58,7 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     AccessControlService,
     LimiterKeyStrategy,
     RuntimeLimitsProvider,
+    QuotaPolicyHook,
     WorkflowAuthorizationHook,
     LocalUserTokenVerifier,
   ],

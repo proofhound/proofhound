@@ -1,7 +1,9 @@
+import { Buffer } from 'node:buffer';
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import type { LLMRunResultRecord, LLMRunResultWriter } from '@proofhound/llm-client';
+import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 
 // ph_runs.run_results is monthly-partitioned by created_at, so a UNIQUE constraint cannot be applied to a single id column;
@@ -10,7 +12,10 @@ import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 //  - Behaviorally equivalent to apps/worker/src/runners/run-result-writer.ts (the dual implementation will be reconciled when extracted into a package)
 @Injectable()
 export class DrizzleRunResultWriter implements LLMRunResultWriter {
-  constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
+  constructor(
+    @Inject(DATABASE_CLIENT) private readonly db: DbClient,
+    private readonly quotaPolicy: QuotaPolicyHook = new LocalQuotaPolicyHook(),
+  ) {}
 
   async writeRunResult(record: LLMRunResultRecord): Promise<void> {
     const sampleId = record.sampleId ?? null;
@@ -33,6 +38,11 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
     const bullmqJobId = record.bullmqJobId ?? null;
     const roundIndex = record.roundIndex ?? null;
     const releaseVariantId = record.releaseVariantId ?? null;
+    await this.quotaPolicy.assertCanStore({
+      bytes: estimateRunResultBytes(record),
+      project: { projectId: record.projectId, source: 'local' },
+      source: 'run_result',
+    });
 
     await this.db.execute(sql`
       INSERT INTO ph_runs.run_results (
@@ -61,4 +71,21 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
       )
     `);
   }
+}
+
+function estimateRunResultBytes(record: LLMRunResultRecord): number {
+  return (
+    utf8Bytes(record.renderedPrompt) +
+    utf8Bytes(record.inputVariables) +
+    utf8Bytes(record.rawResponse) +
+    utf8Bytes(record.parsedOutput) +
+    utf8Bytes(record.decisionOutput) +
+    utf8Bytes(record.expectedOutput) +
+    utf8Bytes(record.errorClass) +
+    utf8Bytes(record.errorMessage)
+  );
+}
+
+function utf8Bytes(value: unknown): number {
+  return Buffer.byteLength(typeof value === 'string' ? value : JSON.stringify(value ?? null), 'utf8');
 }

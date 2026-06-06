@@ -14,6 +14,7 @@ import { ModelService } from '../model.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 import { LimiterKeyStrategy } from '../../../common/contracts/limiter-key.strategy';
+import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../../common/contracts/runtime-limits.provider';
 import { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 
@@ -171,6 +172,7 @@ describe('ModelService', () => {
         { provide: LimiterKeyStrategy, useValue: limiterKeyStrategy },
         { provide: RuntimeLimitsProvider, useValue: runtimeLimitsProvider },
         { provide: WorkflowAuthorizationHook, useValue: workflowAuth },
+        { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
         ModelService,
       ],
     }).compile();

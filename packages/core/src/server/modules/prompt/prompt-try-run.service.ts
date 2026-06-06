@@ -27,6 +27,7 @@ import {
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
+import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../common/contracts/runtime-limits.provider';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
@@ -50,6 +51,7 @@ export class PromptTryRunService {
     private readonly accessControl: AccessControlService,
     private readonly limiterKeyStrategy: LimiterKeyStrategy,
     private readonly runtimeLimitsProvider: RuntimeLimitsProvider,
+    private readonly quotaPolicy: QuotaPolicyHook = new LocalQuotaPolicyHook(),
   ) {}
 
   async tryRun(
@@ -95,30 +97,32 @@ export class PromptTryRunService {
     const startedAt = Date.now();
     let result: Awaited<ReturnType<typeof invokeLLM>>;
     try {
-      result = await invokeLLM(
-        {
-          model: effectiveModel,
-          limiterKey: this.limiterKeyStrategy.buildModelKey(project, model.id),
-          messages: renderedPrompt.messages as LLMMessage[] | undefined,
-          prompt: renderedPrompt.prompt,
-          params: {
-            temperature: parsed.temperature,
-            maxTokens: parsed.maxTokens,
-            responseFormat: renderedPrompt.responseFormat,
-            imageRefs: renderedPrompt.imageRefs,
+      result = await this.quotaPolicy.withExecutionSlot({ project, source: 'prompt_try_run', modelId: model.id }, () =>
+        invokeLLM(
+          {
+            model: effectiveModel,
+            limiterKey: this.limiterKeyStrategy.buildModelKey(project, model.id),
+            messages: renderedPrompt.messages as LLMMessage[] | undefined,
+            prompt: renderedPrompt.prompt,
+            params: {
+              temperature: parsed.temperature,
+              maxTokens: parsed.maxTokens,
+              responseFormat: renderedPrompt.responseFormat,
+              imageRefs: renderedPrompt.imageRefs,
+            },
+            context: {
+              promptId,
+              promptVersionId: parsed.promptVersionId,
+              attempt: 1,
+            },
+            timeoutMs: parsed.timeoutSeconds ? parsed.timeoutSeconds * 1000 : undefined,
+            parseResponse: parseJsonResponseWithMarkdownFallback,
           },
-          context: {
-            promptId,
-            promptVersionId: parsed.promptVersionId,
-            attempt: 1,
+          {
+            limiter: this.limiter,
+            logger: this.llmLogger,
           },
-          timeoutMs: parsed.timeoutSeconds ? parsed.timeoutSeconds * 1000 : undefined,
-          parseResponse: parseJsonResponseWithMarkdownFallback,
-        },
-        {
-          limiter: this.limiter,
-          logger: this.llmLogger,
-        },
+        ),
       );
     } catch (error) {
       const latencyMs = Date.now() - startedAt;

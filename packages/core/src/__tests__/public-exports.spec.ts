@@ -12,8 +12,10 @@ import {
 } from '@proofhound/core/infra';
 import {
   LocalConnectorContextResolver,
+  LocalQuotaPolicyHook,
   LocalTokenService,
   LocalUserTokenVerifier,
+  QuotaPolicyHook,
   TokenRepository,
   TokenService,
   WebhookRepository,
@@ -41,6 +43,8 @@ describe('@proofhound/core public exports', () => {
     expect(LocalTokenService).toBeDefined();
     expect(LocalUserTokenVerifier).toBeDefined();
     expect(LocalConnectorContextResolver).toBeDefined();
+    expect(QuotaPolicyHook).toBeDefined();
+    expect(LocalQuotaPolicyHook).toBeDefined();
     expect(TokenRepository).toBeDefined();
     expect(WebhookRepository).toBeDefined();
   });

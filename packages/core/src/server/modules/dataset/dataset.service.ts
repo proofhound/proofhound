@@ -19,6 +19,7 @@ import type {
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { buildDatasetFieldSchema } from './dataset-field-schema.util';
 import {
   DatasetRepository,
@@ -40,6 +41,7 @@ export class DatasetService {
   constructor(
     private readonly repo: DatasetRepository,
     private readonly accessControl: AccessControlService,
+    private readonly quotaPolicy: QuotaPolicyHook,
   ) {}
 
   async listDatasets(
@@ -125,6 +127,12 @@ export class DatasetService {
     const externalIdFieldName = dto.fieldMappings.find((field) => field.role === 'id')?.name ?? null;
     const hasImages = fieldSchema.some((field) => ['image', 'image_url', 'image_base64'].includes(field.role));
     const storagePrefix = `datasets/${projectId}/raw/${datasetId}/${dto.uploadSource.fileName}`;
+    await this.quotaPolicy.assertCanStore({
+      actor: toActorContext(actor),
+      bytes: estimateDatasetCreateBytes(dto),
+      project: { projectId, source: 'local' },
+      source: 'dataset_upload',
+    });
 
     const row = await this.repo.createDatasetWithSamples({
       datasetId,
@@ -295,10 +303,12 @@ export class DatasetService {
 
   private async getCategoryDistributions(rows: DatasetRow[]) {
     const entries = await Promise.all(
-      rows.map(async (row): Promise<[string, DatasetCategoryDistributionDto]> => [
-        row.id,
-        await this.getCategoryDistribution(row),
-      ]),
+      rows.map(
+        async (row): Promise<[string, DatasetCategoryDistributionDto]> => [
+          row.id,
+          await this.getCategoryDistribution(row),
+        ],
+      ),
     );
     return new Map(entries);
   }
@@ -438,4 +448,16 @@ export class DatasetService {
 
     return `${safeName}.${format}`;
   }
+}
+
+function estimateDatasetCreateBytes(dto: CreateDatasetDto): number {
+  return nonnegativeInteger(dto.uploadSource.fileSizeBytes) + utf8JsonBytes(dto.samples);
+}
+
+function utf8JsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value ?? null), 'utf8');
+}
+
+function nonnegativeInteger(value: number | undefined): number {
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value ?? 0)) : 0;
 }

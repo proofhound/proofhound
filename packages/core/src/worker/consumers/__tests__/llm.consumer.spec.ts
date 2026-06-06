@@ -1,17 +1,11 @@
 import 'reflect-metadata';
-import {
-  llmJobPayloadSchema,
-  webhookAsyncCallKey,
-  type LlmJobPayload,
-} from '@proofhound/orchestration-shared';
+import { llmJobPayloadSchema, webhookAsyncCallKey, type LlmJobPayload } from '@proofhound/orchestration-shared';
 import type { Job } from 'bullmq';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  DEFAULT_WORKER_CONCURRENCY,
-  resolveWorkerConcurrency,
-} from '../../config/worker-concurrency';
+import { DEFAULT_WORKER_CONCURRENCY, resolveWorkerConcurrency } from '../../config/worker-concurrency';
 import type { LlmRunnerResult } from '../../runners/llm-runner';
 import { LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
+import { LocalQuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
 import { LocalRuntimeLimitsProvider } from '../../../server/common/contracts/runtime-limits.provider';
 import { LLM_WORKER_CONCURRENCY, LlmConsumer } from '../llm.consumer';
 
@@ -82,7 +76,15 @@ describe('LlmConsumer webhook async receipts', () => {
       ttl: vi.fn().mockResolvedValue(1200),
       set: vi.fn().mockResolvedValue('OK'),
     };
-    const consumer = new LlmConsumer({} as never, {} as never, {} as never, redis as never, new LocalLimiterKeyStrategy(), new LocalRuntimeLimitsProvider());
+    const consumer = new LlmConsumer(
+      {} as never,
+      {} as never,
+      {} as never,
+      redis as never,
+      new LocalLimiterKeyStrategy(),
+      new LocalQuotaPolicyHook(),
+      new LocalRuntimeLimitsProvider(),
+    );
     const result: LlmRunnerResult = {
       runResultId: validUuid('05555'),
       content: '{"label":"low"}',
@@ -121,7 +123,15 @@ describe('LlmConsumer webhook async receipts', () => {
       ttl: vi.fn().mockResolvedValue(900),
       set: vi.fn().mockResolvedValue('OK'),
     };
-    const consumer = new LlmConsumer({} as never, {} as never, {} as never, redis as never, new LocalLimiterKeyStrategy(), new LocalRuntimeLimitsProvider());
+    const consumer = new LlmConsumer(
+      {} as never,
+      {} as never,
+      {} as never,
+      redis as never,
+      new LocalLimiterKeyStrategy(),
+      new LocalQuotaPolicyHook(),
+      new LocalRuntimeLimitsProvider(),
+    );
     const writeRunResult = vi.fn().mockResolvedValue(undefined);
     (consumer as unknown as { runResultWriter: { writeRunResult: typeof writeRunResult } }).runResultWriter = {
       writeRunResult,
@@ -140,9 +150,7 @@ describe('LlmConsumer webhook async receipts', () => {
     );
 
     expect(writeRunResult).toHaveBeenCalledTimes(1);
-    expect(writeRunResult).toHaveBeenCalledWith(
-      expect.objectContaining({ webhookTokenId: validUuid('08888') }),
-    );
+    expect(writeRunResult).toHaveBeenCalledWith(expect.objectContaining({ webhookTokenId: validUuid('08888') }));
     expect(redis.set).toHaveBeenCalledTimes(1);
     const [, raw, ex, ttl] = redis.set.mock.calls[0]!;
     expect(ex).toBe('EX');

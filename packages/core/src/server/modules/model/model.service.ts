@@ -32,6 +32,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
+import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../common/contracts/runtime-limits.provider';
 import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import { isUniqueViolation } from '../../common/errors/db-error';
@@ -73,6 +74,7 @@ export class ModelService {
     private readonly limiterKeyStrategy: LimiterKeyStrategy,
     private readonly runtimeLimitsProvider: RuntimeLimitsProvider,
     private readonly workflowAuth: WorkflowAuthorizationHook,
+    private readonly quotaPolicy: QuotaPolicyHook = new LocalQuotaPolicyHook(),
   ) {}
 
   // -------------------------------------------------------------------------
@@ -556,17 +558,19 @@ export class ModelService {
       source: 'probe',
     });
     const effectiveModel = applyRuntimeLimits(model, mergedLimits);
-    return testModelConnectivity(
-      {
-        model: effectiveModel,
-        limiterKey: this.limiterKeyStrategy.buildModelKey(project, model.id),
-        requestId,
-        timeoutMs: 30_000,
-      },
-      {
-        limiter: this.limiter,
-        logger: this.logger,
-      },
+    return this.quotaPolicy.withExecutionSlot({ project, source: 'probe', modelId: model.id, requestId }, () =>
+      testModelConnectivity(
+        {
+          model: effectiveModel,
+          limiterKey: this.limiterKeyStrategy.buildModelKey(project, model.id),
+          requestId,
+          timeoutMs: 30_000,
+        },
+        {
+          limiter: this.limiter,
+          logger: this.logger,
+        },
+      ),
     );
   }
 

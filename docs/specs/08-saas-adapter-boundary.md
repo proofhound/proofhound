@@ -40,11 +40,11 @@ The OSS must guarantee the following contracts:
 
 DI tokens uniformly use abstract class form (e.g. `ProjectContextResolver`), not Symbol—cross-package shared Symbol token behavior is unstable. The `contracts` module passed to each runtime root's `forRoot({ contracts })` is the only edition-variable input, keeping OSS↔SaaS to a single assembly-time seam rather than a runtime branch. Any concrete local default, repository, or shared infra module that the SaaS repository needs to assemble that module must be exposed through a stable `@proofhound/core/*` subpath; SaaS must not deep-import `packages/core/src/*`.
 
-> Current state (2026-05): PR0 has landed — the reusable runtime lives in `packages/core` (`@proofhound/core`, internal layout `src/{shared,server,webhook,worker}`) and the OSS apps are thin process shells consuming it; `ProofHoundServerModule.forRoot({ contracts })`, `ProofHoundWebhookModule.forRoot({ contracts })`, and `ProofHoundWorkerModule.forRoot({ contracts })` are wired in the three OSS process shells. `@proofhound/core` is currently a **workspace-internal TS-source package** (`private: true`, `main`/`exports` point at `src/`, consumed via source like the other `@proofhound/*` packages — its `tsc` `dist/` is not the integration artifact and nothing consumes it yet). A formal published / tarball package build is a **separate future step**, not required for the workspace-link / local-tarball / local-registry consumption noted above. As of 2026-06 all ten extension points (§3.1–§3.10) have landed: each is an abstract-class DI token with an OSS `Local*` default. The extension-point tokens are bound in the `contracts` module supplied to each runtime root (OSS: `LocalContractsModule`, SaaS: `SaasContractsModule`); feature modules consume those providers and do not bind local defaults that would shadow them. The shared infra and local-default building blocks needed by an external contracts module are exported from `@proofhound/core/infra` and `@proofhound/core/contracts`, respectively. The remaining exception is `HttpActorGuard` (§3.9), an executable base class instantiated from `@UseGuards` metadata rather than a provider.
+> Current state (2026-06): PR0 has landed — the reusable runtime lives in `packages/core` (`@proofhound/core`, internal layout `src/{shared,server,webhook,worker}`) and the OSS apps are thin process shells consuming it; `ProofHoundServerModule.forRoot({ contracts })`, `ProofHoundWebhookModule.forRoot({ contracts })`, and `ProofHoundWorkerModule.forRoot({ contracts })` are wired in the three OSS process shells. `@proofhound/core` is currently a **workspace-internal TS-source package** (`private: true`, `main`/`exports` point at `src/`, consumed via source like the other `@proofhound/*` packages — its `tsc` `dist/` is not the integration artifact and nothing consumes it yet). A formal published / tarball package build is a **separate future step**, not required for the workspace-link / local-tarball / local-registry consumption noted above. As of 2026-06 all eleven extension points (§3.1–§3.11) have landed: each is an abstract-class DI token with an OSS `Local*` default. The extension-point tokens are bound in the `contracts` module supplied to each runtime root (OSS: `LocalContractsModule`, SaaS: `SaasContractsModule`); feature modules consume those providers and do not bind local defaults that would shadow them. The shared infra and local-default building blocks needed by an external contracts module are exported from `@proofhound/core/infra` and `@proofhound/core/contracts`, respectively. The remaining exception is `HttpActorGuard` (§3.9), an executable base class instantiated from `@UseGuards` metadata rather than a provider.
 
 ## 3. Extension point list
 
-The OSS trunk must land the following 10 extension points. Each extension point requires: interface (abstract class) + OSS default implementation + Nest module registration.
+The OSS trunk must land the following 11 extension points. Each extension point requires: interface (abstract class) + OSS default implementation + Nest module registration.
 
 | No.  | Extension point             | Entry channel                                             |
 | ---- | --------------------------- | --------------------------------------------------------- |
@@ -58,6 +58,7 @@ The OSS trunk must land the following 10 extension points. Each extension point 
 | 3.8  | `WorkflowAuthorizationHook` | Before starting a workflow / enqueuing a job              |
 | 3.9  | `HttpActorGuard`            | HTTP (guard shell; depends on §3.2)                       |
 | 3.10 | `RuntimeLimitsProvider`     | Per-call RPM / TPM / concurrency merge before LLM enqueue |
+| 3.11 | `QuotaPolicyHook`           | Storage writes and execution-slot admission               |
 
 ProofHound's entry credential system is divided into three categories by channel, mutually non-reusable and never parsing each other's credentials, corresponding to three parallel entry resolvers:
 
@@ -497,6 +498,48 @@ Caller constraints:
 - The OSS `LocalRuntimeLimitsProvider` MUST be a genuine pass-through so OSS behavior is byte-identical; the hook exists only so a SaaS override can clamp limits without forking the workflow. Together with `project.orgId` (§3.7) it lets a SaaS plan both isolate the rate-limit bucket and cap its concurrency.
 - This hook only sets the per-call ceiling fed into the existing `min(limits, model quota)` logic; it does **not** implement a whole-org shared concurrency pool (that would require a second limiter gate and is out of scope here).
 
+### 3.11 QuotaPolicyHook
+
+Validates hosted quota policy at the exact write / execution points that are otherwise deep inside OSS business flows. This hook carries no SaaS billing model in OSS: it receives project context, actor context when available, an operation source, and best-effort incoming byte estimates. OSS local behavior is a no-op.
+
+| Item                 | OSS default                | SaaS expectation                                                                                                      |
+| -------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Implementation class | `LocalQuotaPolicyHook`     | e.g. `SaasQuotaPolicyHook`                                                                                            |
+| Storage behavior     | Pass-through               | Checks organization storage quota before dataset uploads/import batches and run-result writes                         |
+| Execution behavior   | Runs the callback directly | Optionally gates / reserves an org execution slot around LLM and probe calls, using a distributed limiter when needed |
+
+Realized contract:
+
+```ts
+export type StorageQuotaSource = 'dataset_upload' | 'dataset_import' | 'dataset_import_batch' | 'run_result';
+
+export interface StorageQuotaInput {
+  project: ProjectContext;
+  source: StorageQuotaSource;
+  actor?: ActorContext;
+  bytes?: number; // best-effort incoming write size
+}
+
+export interface ExecutionSlotInput {
+  project: ProjectContext;
+  source: string;
+  modelId?: string;
+  requestId?: string;
+}
+
+export abstract class QuotaPolicyHook {
+  abstract assertCanStore(input: StorageQuotaInput): Promise<void>;
+  abstract withExecutionSlot<T>(input: ExecutionSlotInput, run: () => Promise<T>): Promise<T>;
+}
+```
+
+Caller constraints:
+
+- Dataset creation and dataset import session / batch append call `assertCanStore` before writing rows or objects. The byte estimate is intentionally best-effort and exists to prevent obvious limit overshoots; the authoritative used value remains database/object-storage usage aggregation.
+- Run-result writers call `assertCanStore` before inserting immutable run results. This covers worker LLM results and synchronous server-side LLM/probe result paths without making the `ph_runs` schema aware of plans.
+- LLM and model-probe runners wrap the actual provider call in `withExecutionSlot`. OSS local mode runs the callback directly; SaaS may use the hook to enforce org-level execution-slot admission in addition to the existing per-model limiter.
+- This hook must not introduce organizations, plan tables, or billing branches into OSS. SaaS semantics live in the replacement implementation and use `ProjectContext.orgId` or a SaaS-side project-to-org lookup.
+
 ## 4. Frontend reuse strategy
 
 The frontend reuse mechanism mirrors the backend `@proofhound/core` + `ProofHoundServerModule.forRoot({ contracts })` pattern: the OSS product UI is extracted into a shared package `@proofhound/web-ui`, and each app (OSS / SaaS) becomes a thin shell that wires the shared package through a single `<ProofHoundWebProvider contracts={WebContracts}>` entry point.
@@ -747,8 +790,9 @@ The OSS trunk migrates from its current state to an adapter-ready state, with PR
 | 9   | `LimiterKeyStrategy` integration **(landed)**                                                   | The core runtime builds the key via the strategy and passes it down as an **opaque string**; `packages/limiter` and `packages/llm-client` stay actor/project-unaware (§8). `packages/limiter` keeps being a pure counter — its key parameter is renamed `modelId`→`key` so the caller supplies the composed key. Worker assembly consumes the same contracts module and does not hard-bind the local limiter strategy                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | 10  | `WorkflowAuthorizationHook` integration **(landed)**                                            | Call the hook before starting a workflow / enqueuing a job, OSS no-op; core webhook runtime integrated in sync. `WorkflowKind` reconciled with [03-orchestration](03-orchestration.md): `experiment` / `optimization` / `release` / `llm` / `probe`. Release entry Services authorize before writing/resuming `running` release events; direct model / connector probes authorize before the probe execution path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 11  | API client transport **(landed)**                                                               | `packages/api-client` exposes `AuthSource` + `configureApiClient`; `ProofHoundWebProvider` calls `configureApiClient({ authSource, getProjectId, baseUrl })` before its children render to register a single request interceptor that adds `X-Project-Id` (§4.1) from the active `ProjectContext` and `Authorization` (§4.2) only when the token is non-null. OSS injects `LocalAuthSource` (returns null); SaaS injects `SupabaseAuthSource`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 12  | `QuotaPolicyHook` integration **(landed)**                                                      | Call the hook before dataset upload/import writes, immutable run-result inserts, and LLM/probe execution-slot admission points. OSS default is no-op; SaaS can enforce storage quota and whole-org execution slots without adding plan semantics to OSS business modules.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
-All PRs (0–11) have landed. The OSS authentication layer is production-usable across all three entries—HTTP / MCP / Webhook all perform real token validation, the HTTP entry's dual channels are channel-aware, and the MCP channel serves a real Streamable-HTTP server (see [09-mcp-server.md](09-mcp-server.md)). All ten extension points (§3.1–§3.10) are DI-ified with OSS `Local*` defaults, giving the SaaS repository a stable package import surface to override against. (§3.10 `RuntimeLimitsProvider` was added after the initial nine, following the same abstract-token + `Local*` default pattern.)
+All PRs (0–12) have landed. The OSS authentication layer is production-usable across all three entries—HTTP / MCP / Webhook all perform real token validation, the HTTP entry's dual channels are channel-aware, and the MCP channel serves a real Streamable-HTTP server (see [09-mcp-server.md](09-mcp-server.md)). All eleven extension points (§3.1–§3.11) are DI-ified with OSS `Local*` defaults, giving the SaaS repository a stable package import surface to override against. (§3.10 `RuntimeLimitsProvider` and §3.11 `QuotaPolicyHook` were added after the initial nine, following the same abstract-token + `Local*` default pattern.)
 
 PR 1 has a relatively large scope (8 extension points + decorator + module registration); at implementation time it can be split into eight independent PRs 1a-1h, one per extension point, starting from `ProjectContextResolver`. The specific split is decided by the implementer at their own pace.
 
