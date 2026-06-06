@@ -65,7 +65,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
   // Registration must happen before DBOS.launch(). NestJS instantiates all providers before invoking onModuleInit hooks;
   // DbosService.onModuleInit also runs before ExperimentModule.onModuleInit, so placing
   // registerStep / registerWorkflow in the constructor is the simplest way to guarantee register-before-launch.
-  readonly runWorkflow: (experimentId: string) => Promise<void>;
+  readonly runWorkflow: (experimentId: string, orgId?: string) => Promise<void>;
   private readonly loadPlanStep: (experimentId: string) => Promise<ExperimentPlan>;
   private readonly markStartedStep: (experimentId: string) => Promise<void>;
   private readonly readControlStateStep: (experimentId: string) => Promise<string | null>;
@@ -75,7 +75,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     cursorId: string | null,
     batchSize: number,
   ) => Promise<string[]>;
-  private readonly enqueueBatchStep: (experimentId: string, sampleIds: string[]) => Promise<string[]>;
+  private readonly enqueueBatchStep: (experimentId: string, sampleIds: string[], orgId?: string) => Promise<string[]>;
   private readonly pollUntilBatchDoneStep: (
     experimentId: string,
     runResultIds: string[],
@@ -116,7 +116,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     this.logger.info({}, 'experiment_workflow_registered');
   }
 
-  private async runImpl(experimentId: string): Promise<void> {
+  private async runImpl(experimentId: string, orgId?: string): Promise<void> {
     this.logger.debug({ experimentId }, 'workflow_run_start');
 
     try {
@@ -163,7 +163,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
         const sampleIds = await this.loadSampleIdBatchStep(plan.datasetId, cursorId, plan.batchSize);
         if (sampleIds.length === 0) break;
 
-        const runResultIds = await this.enqueueBatchStep(experimentId, sampleIds);
+        const runResultIds = await this.enqueueBatchStep(experimentId, sampleIds, orgId);
         const counts = await this.pollUntilBatchDoneStep(experimentId, runResultIds);
         totalTerminal += counts.terminalCount;
         totalFailed += counts.failedCount;
@@ -305,7 +305,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     return rows.map((r) => r.id);
   }
 
-  private async enqueueBatchImpl(experimentId: string, sampleIds: string[]): Promise<string[]> {
+  private async enqueueBatchImpl(experimentId: string, sampleIds: string[], orgId?: string): Promise<string[]> {
     const renderContext = await this.loadRenderContext(experimentId);
     const samples = await this.loadSampleDataByIds(sampleIds);
     const expectedField = readExpectedField(renderContext.judgmentRules);
@@ -330,6 +330,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
       const expectedOutput = sampleData[expectedField];
       const payload: LlmJobPayload = {
         projectId: renderContext.projectId,
+        orgId,
         source: 'experiment',
         sourceId: experimentId,
         promptVersionId: renderContext.promptVersionId,

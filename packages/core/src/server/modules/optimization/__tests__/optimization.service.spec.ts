@@ -1645,7 +1645,8 @@ describe('OptimizationService', () => {
           createdBy: actor.sub,
         }),
       );
-      expect(launcher.launch).toHaveBeenCalledWith('new-id-001');
+      // orgId is SaaS-only; the OSS test actor has none, so launch is invoked with orgId=undefined.
+      expect(launcher.launch).toHaveBeenCalledWith('new-id-001', undefined);
       expect(result.id).toBe('new-id-001');
       expect(result.status).toBe('running');
     });
@@ -1796,7 +1797,7 @@ describe('OptimizationService', () => {
           optimizationHint: null,
         }),
       );
-      expect(launcher.launch).toHaveBeenCalledWith('new-id-prompt-resolve');
+      expect(launcher.launch).toHaveBeenCalledWith('new-id-prompt-resolve', undefined);
     });
 
     it('throws BadRequest when prompt has no usable version for from_prompt_version', async () => {
@@ -1861,7 +1862,7 @@ describe('OptimizationService', () => {
           optimizationHint: '先生成简洁首版',
         }),
       );
-      expect(launcher.launch).toHaveBeenCalledWith('new-id-dataset');
+      expect(launcher.launch).toHaveBeenCalledWith('new-id-dataset', undefined);
     });
 
     it('rejects workflow authorization before creating placeholder prompts, inserting rows, or launching', async () => {
@@ -1996,7 +1997,8 @@ describe('OptimizationService', () => {
         baseRow().id,
         expect.objectContaining({ status: 'running', controlState: 'resume', finishedAt: null }),
       );
-      expect(launcher.resume).toHaveBeenCalledWith(baseRow().id);
+      // orgId is SaaS-only; the OSS test actor has none, so resume is invoked with orgId=undefined.
+      expect(launcher.resume).toHaveBeenCalledWith(baseRow().id, undefined);
     });
 
     it('cancel running → 抢占式终态化 status=cancelled + control_state=cancel + finishedAt', async () => {
@@ -2152,7 +2154,7 @@ describe('OptimizationService', () => {
       await service.controlOptimization(projectAccess().id, baseRow().id, 'resume', actor);
 
       expect(experimentService.controlExperiment).not.toHaveBeenCalled();
-      expect(launcher.resume).toHaveBeenCalledWith(baseRow().id);
+      expect(launcher.resume).toHaveBeenCalledWith(baseRow().id, undefined);
     });
   });
 

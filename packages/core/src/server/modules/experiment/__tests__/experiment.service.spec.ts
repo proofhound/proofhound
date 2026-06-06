@@ -263,7 +263,7 @@ describe('ExperimentService', () => {
         totalSamples: 598000,
       }),
     );
-    expect(launcher.launch).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222');
+    expect(launcher.launch).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222', undefined);
   });
 
   it('rejects workflow authorization before freezing, creating, or launching', async () => {
@@ -364,7 +364,7 @@ describe('ExperimentService', () => {
       actor,
     );
 
-    expect(launcher.resume).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222');
+    expect(launcher.resume).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222', undefined);
   });
 
   it('rejects resume unless the experiment is stopped', async () => {

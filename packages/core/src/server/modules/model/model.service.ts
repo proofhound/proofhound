@@ -75,13 +75,23 @@ export class ModelService {
   // -------------------------------------------------------------------------
   // Local in-process model
   // -------------------------------------------------------------------------
-  async listProjectModels(projectId: string, actor: CurrentUserPayload): Promise<ProjectModelListResponseDto> {
+  // orgId on the project-scoped read methods (SaaS-only; undefined in OSS) is sourced from the resolved
+  // ProjectContext — the project's org is the rate-limit bucket (SPEC 08 §3.7). It is threaded into
+  // toProjectModelListItem → fetchUsageSnapshot so the usage-snapshot READ key matches the worker's WRITE
+  // key under a SaaS strategy; OSS leaves it undefined so the key stays `model:<id>`.
+  async listProjectModels(
+    projectId: string,
+    actor: CurrentUserPayload,
+    orgId?: string,
+  ): Promise<ProjectModelListResponseDto> {
     await this.getAccessibleProject(projectId, actor);
     const rows = await this.repo.listProjectModels(projectId);
-    const data = await Promise.all(rows.map((row) => this.toProjectModelListItem(row)));
+    const data = await Promise.all(rows.map((row) => this.toProjectModelListItem(row, orgId)));
     return { data, total: data.length };
   }
 
+  // Quick-start option listing is not project-scoped (no @CurrentProject at the endpoint), so no org is
+  // threaded — usage is read with undefined org (key stays project/model-scoped). OSS-identical.
   async listQuickStartModelOptions(_actor: CurrentUserPayload): Promise<QuickStartModelOptionsResponseDto> {
     const rows = await this.repo.listQuickStartGlobalModels();
     const data = await Promise.all(rows.map((row) => this.toProjectModelListItem(row)));
@@ -100,11 +110,12 @@ export class ModelService {
     projectId: string,
     modelId: string,
     actor: CurrentUserPayload,
+    orgId?: string,
   ): Promise<ProjectModelListItemDto> {
     await this.getAccessibleProject(projectId, actor);
     const row = await this.repo.findModelAccessibleToProject(projectId, modelId);
     if (!row) throw new NotFoundException(`Model ${modelId} not found`);
-    return this.toProjectModelListItem(row);
+    return this.toProjectModelListItem(row, orgId);
   }
 
   // For sibling services that have already done project access checks (such as ExperimentService) to query model visibility directly,
@@ -118,6 +129,7 @@ export class ModelService {
     dto: CreateProjectModelDto,
     actor: CurrentUserPayload,
     source: ActionSource = 'api',
+    orgId?: string,
   ): Promise<ProjectModelListItemDto> {
     void source;
     await this.getWritableProject(projectId, actor);
@@ -125,7 +137,7 @@ export class ModelService {
     const insert = this.buildInsertRow(projectId, modelId, dto, actor.sub);
     const created = await this.createModelOrThrowNameConflict(insert);
 
-    return this.getProjectModelDetail(projectId, created.id, actor);
+    return this.getProjectModelDetail(projectId, created.id, actor, orgId);
   }
 
   async probeDraftProjectModel(
@@ -133,10 +145,11 @@ export class ModelService {
     dto: ProbeDraftProjectModelDto,
     actor: CurrentUserPayload,
     source: ActionSource = 'api',
+    orgId?: string,
   ): Promise<ProbeModelResponseDto> {
     void source;
     await this.getWritableProject(projectId, actor);
-    await this.assertProbeWorkflowStart({ projectId, source: 'local' }, actor);
+    await this.assertProbeWorkflowStart({ projectId, orgId, source: 'local' }, actor);
     const modelId = randomUUID();
     const model: ModelInvocationConfig = {
       id: modelId,
@@ -155,7 +168,9 @@ export class ModelService {
     };
 
     const result = await this.runConnectivityProbe(
-      { projectId, source: 'local' },
+      // orgId (SaaS-only; undefined in OSS) sourced from the resolved ProjectContext — the project's org
+      // is the rate-limit bucket (SPEC 08 §3.7), not the actor's org.
+      { projectId, orgId, source: 'local' },
       model,
       `probe-draft-${modelId}`,
     );
@@ -195,6 +210,8 @@ export class ModelService {
       extraBody: dto.extraBody ?? {},
     };
 
+    // Quick-start probe is not project-scoped (no @CurrentProject at the endpoint), so there is no project
+    // org to source — the rate-limit bucket is LOCAL_PROJECT_CONTEXT with undefined org. OSS-identical.
     const result = await this.runConnectivityProbe(
       LOCAL_PROJECT_CONTEXT,
       model,
@@ -218,6 +235,7 @@ export class ModelService {
     dto: UpdateProjectModelDto,
     actor: CurrentUserPayload,
     source: ActionSource = 'api',
+    orgId?: string,
   ): Promise<ProjectModelListItemDto> {
     void source;
     await this.getWritableProject(projectId, actor);
@@ -228,7 +246,7 @@ export class ModelService {
     const patch = this.buildUpdateRow(dto, existing);
     await this.updateModelOrThrowNameConflict(modelId, patch);
 
-    return this.getProjectModelDetail(projectId, modelId, actor);
+    return this.getProjectModelDetail(projectId, modelId, actor, orgId);
   }
 
   async deleteProjectModel(
@@ -254,6 +272,7 @@ export class ModelService {
     sourceModelId: string,
     actor: CurrentUserPayload,
     source: ActionSource = 'api',
+    orgId?: string,
   ): Promise<ProjectModelListItemDto> {
     void source;
     await this.getWritableProject(projectId, actor);
@@ -286,7 +305,7 @@ export class ModelService {
     };
     const created = await this.createModelOrThrowNameConflict(insert);
 
-    return this.getProjectModelDetail(projectId, created.id, actor);
+    return this.getProjectModelDetail(projectId, created.id, actor, orgId);
   }
 
   async revealProjectApiKey(
@@ -308,12 +327,15 @@ export class ModelService {
     modelId: string,
     actor: CurrentUserPayload,
     source: ActionSource = 'api',
+    orgId?: string,
   ): Promise<ProbeModelResponseDto> {
     await this.getAccessibleProject(projectId, actor);
     const row = await this.repo.findModelAccessibleToProject(projectId, modelId);
     if (!row) throw new NotFoundException(`Model ${modelId} not found`);
-    await this.assertProbeWorkflowStart({ projectId, source: 'local' }, actor);
-    return this.probeAndRecord({ projectId, source: 'local' }, row, actor.sub, source, 'local');
+    await this.assertProbeWorkflowStart({ projectId, orgId, source: 'local' }, actor);
+    // orgId (SaaS-only; undefined in OSS) sourced from the resolved ProjectContext — the project's org
+    // is the rate-limit bucket (SPEC 08 §3.7), not the actor's org.
+    return this.probeAndRecord({ projectId, orgId, source: 'local' }, row, actor.sub, source, 'local');
   }
 
   async probeQuickStartExistingModel(
@@ -326,6 +348,8 @@ export class ModelService {
       throw new NotFoundException(`Model ${modelId} not found`);
     }
     await this.assertProbeWorkflowStart(LOCAL_PROJECT_CONTEXT, actor);
+    // Quick-start probe is not project-scoped (no @CurrentProject at the endpoint), so there is no project
+    // org to source — the rate-limit bucket is LOCAL_PROJECT_CONTEXT with undefined org. OSS-identical.
     return this.probeAndRecord(LOCAL_PROJECT_CONTEXT, row, actor.sub, source, 'quick_start');
   }
 
@@ -340,8 +364,12 @@ export class ModelService {
     return this.toReferencesDto(await this.repo.getActiveReferenceCounts(modelId));
   }
 
-  async exportProjectModelsCsv(projectId: string, actor: CurrentUserPayload): Promise<ModelExportFile> {
-    const { data } = await this.listProjectModels(projectId, actor);
+  async exportProjectModelsCsv(
+    projectId: string,
+    actor: CurrentUserPayload,
+    orgId?: string,
+  ): Promise<ModelExportFile> {
+    const { data } = await this.listProjectModels(projectId, actor, orgId);
     const content = this.toProjectCsv(data);
     const buffer = Buffer.from(content, 'utf8');
     return {
@@ -544,8 +572,16 @@ export class ModelService {
   // -------------------------------------------------------------------------
   // Mapping: DB row → DTO
   // -------------------------------------------------------------------------
-  private async toProjectModelListItem(row: ProjectVisibleModelRow): Promise<ProjectModelListItemDto> {
-    const project = row.projectId ? { projectId: row.projectId, source: 'local' as const } : LOCAL_PROJECT_CONTEXT;
+  // orgId (SaaS-only; undefined in OSS) is the resolved project's org — the rate-limit bucket (SPEC 08
+  // §3.7). It is carried into the usage-snapshot READ key so it matches the worker's WRITE key under a
+  // SaaS strategy; OSS leaves it undefined so the key stays `model:<id>`.
+  private async toProjectModelListItem(
+    row: ProjectVisibleModelRow,
+    orgId?: string,
+  ): Promise<ProjectModelListItemDto> {
+    const project: ProjectContext = row.projectId
+      ? { projectId: row.projectId, source: 'local', orgId }
+      : LOCAL_PROJECT_CONTEXT;
     const usage = await this.fetchUsageSnapshot(row.id, project);
     const refs = await this.repo.getTotalReferenceCounts(row.id);
 

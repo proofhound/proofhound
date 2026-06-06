@@ -2,7 +2,7 @@
 
 The OSS Web UI is a single-workspace application. Users see business resources directly after entering the app; the data layer still keeps a single local project as the `project_id` boundary.
 
-The fixed top bar shows, on the left, the current work boundary, module, and current feature or object: in the OSS edition a module home page is fixed to `Default Project / current module`, a sub-feature to `Default Project / current module / current feature`, and a detail page to `Default Project / current module / object name`. The frontend provides no project selector; a future SaaS form can display organization name / project name / current module / current feature or object at the same hierarchy position.
+The fixed top bar shows, on the left, the ProofHound brand mark (linking to the dashboard) followed by a breadcrumb of the current module and current feature or object: in the OSS edition a module home page shows `current module`, a sub-feature `current module / current feature`, and a detail page `current module / object name`. The workspace name (`Default Project`) is surfaced on the dashboard rather than as a breadcrumb prefix, and the frontend provides no project selector; a future SaaS form can prepend organization name / project name at the same hierarchy position. The top bar carries the Quick Start entry and the theme / language controls on the right, and exposes the sidebar toggle on small screens.
 
 ## 1. Top-level navigation
 

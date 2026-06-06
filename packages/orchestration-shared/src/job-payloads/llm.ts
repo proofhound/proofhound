@@ -33,11 +33,13 @@ const inferenceSchema = z.object({
 
 // Experiment-level / optimization-level "self-throttling" cap: the worker takes min(this, model-level quota) before invokeLLM;
 // the model-level cap is always the ceiling (SPEC 21 §quota / SPEC 24 §4: all channels share the same model quota).
-const runtimeLimitsSchema = z.object({
+export const runtimeLimitsSchema = z.object({
   rpmLimit: z.number().int().positive().optional(),
   tpmLimit: z.number().int().positive().optional(),
   concurrency: z.number().int().positive().optional(),
 });
+// Per-call runtime caps a RuntimeLimitsProvider may merge before enqueue (SaaS org-plan ceilings); OSS leaves them untouched.
+export type RuntimeLimits = z.infer<typeof runtimeLimitsSchema>;
 
 // Per-sample LLM call internal retry cap; does not affect BullMQ job-level attempts.
 const runtimeRetrySchema = z.object({
@@ -53,6 +55,10 @@ export type LlmJudgmentContext = z.infer<typeof llmJudgmentContextSchema>;
 
 export const llmJobPayloadSchema = z.object({
   projectId: z.string().uuid(),
+  // SaaS-only org attribution: injected by the enqueue side (launcher → workflow → step) from the launching
+  // actor's org, passed through by the worker into the org-scoped rate-limit key. OSS leaves it undefined and the
+  // default LocalLimiterKeyStrategy ignores it. Same enqueue-inject / worker-passthrough pattern as webhookTokenId.
+  orgId: z.string().uuid().optional(),
   source: z.enum(LLM_SOURCES),
   sourceId: z.string().uuid(),
   releaseVariantId: z.string().uuid().nullable().optional(),

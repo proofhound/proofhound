@@ -40,11 +40,11 @@ The OSS must guarantee the following contracts:
 
 DI tokens uniformly use abstract class form (e.g. `ProjectContextResolver`), not Symbol—cross-package shared Symbol token behavior is unstable. The `contracts` module passed to each runtime root's `forRoot({ contracts })` is the only edition-variable input, keeping OSS↔SaaS to a single assembly-time seam rather than a runtime branch. Any concrete local default, repository, or shared infra module that the SaaS repository needs to assemble that module must be exposed through a stable `@proofhound/core/*` subpath; SaaS must not deep-import `packages/core/src/*`.
 
-> Current state (2026-05): PR0 has landed — the reusable runtime lives in `packages/core` (`@proofhound/core`, internal layout `src/{shared,server,webhook,worker}`) and the OSS apps are thin process shells consuming it; `ProofHoundServerModule.forRoot({ contracts })`, `ProofHoundWebhookModule.forRoot({ contracts })`, and `ProofHoundWorkerModule.forRoot({ contracts })` are wired in the three OSS process shells. `@proofhound/core` is currently a **workspace-internal TS-source package** (`private: true`, `main`/`exports` point at `src/`, consumed via source like the other `@proofhound/*` packages — its `tsc` `dist/` is not the integration artifact and nothing consumes it yet). A formal published / tarball package build is a **separate future step**, not required for the workspace-link / local-tarball / local-registry consumption noted above. As of 2026-06 all nine extension points (§3.1–§3.9) have landed: each is an abstract-class DI token with an OSS `Local*` default. The extension-point tokens are bound in the `contracts` module supplied to each runtime root (OSS: `LocalContractsModule`, SaaS: `SaasContractsModule`); feature modules consume those providers and do not bind local defaults that would shadow them. The shared infra and local-default building blocks needed by an external contracts module are exported from `@proofhound/core/infra` and `@proofhound/core/contracts`, respectively. The remaining exception is `HttpActorGuard` (§3.9), an executable base class instantiated from `@UseGuards` metadata rather than a provider.
+> Current state (2026-05): PR0 has landed — the reusable runtime lives in `packages/core` (`@proofhound/core`, internal layout `src/{shared,server,webhook,worker}`) and the OSS apps are thin process shells consuming it; `ProofHoundServerModule.forRoot({ contracts })`, `ProofHoundWebhookModule.forRoot({ contracts })`, and `ProofHoundWorkerModule.forRoot({ contracts })` are wired in the three OSS process shells. `@proofhound/core` is currently a **workspace-internal TS-source package** (`private: true`, `main`/`exports` point at `src/`, consumed via source like the other `@proofhound/*` packages — its `tsc` `dist/` is not the integration artifact and nothing consumes it yet). A formal published / tarball package build is a **separate future step**, not required for the workspace-link / local-tarball / local-registry consumption noted above. As of 2026-06 all ten extension points (§3.1–§3.10) have landed: each is an abstract-class DI token with an OSS `Local*` default. The extension-point tokens are bound in the `contracts` module supplied to each runtime root (OSS: `LocalContractsModule`, SaaS: `SaasContractsModule`); feature modules consume those providers and do not bind local defaults that would shadow them. The shared infra and local-default building blocks needed by an external contracts module are exported from `@proofhound/core/infra` and `@proofhound/core/contracts`, respectively. The remaining exception is `HttpActorGuard` (§3.9), an executable base class instantiated from `@UseGuards` metadata rather than a provider.
 
 ## 3. Extension point list
 
-The OSS trunk must land the following 9 extension points. Each extension point requires: interface (abstract class) + OSS default implementation + Nest module registration.
+The OSS trunk must land the following 10 extension points. Each extension point requires: interface (abstract class) + OSS default implementation + Nest module registration.
 
 | No. | Extension point | Entry channel |
 | -- | ------ | -------- |
@@ -57,6 +57,7 @@ The OSS trunk must land the following 9 extension points. Each extension point r
 | 3.7 | `LimiterKeyStrategy` | Rate limit before LLM calls |
 | 3.8 | `WorkflowAuthorizationHook` | Before starting a workflow / enqueuing a job |
 | 3.9 | `HttpActorGuard` | HTTP (guard shell; depends on §3.2) |
+| 3.10 | `RuntimeLimitsProvider` | Per-call RPM / TPM / concurrency merge before LLM enqueue |
 
 ProofHound's entry credential system is divided into three categories by channel, mutually non-reusable and never parsing each other's credentials, corresponding to three parallel entry resolvers:
 
@@ -393,6 +394,7 @@ Caller constraints:
 - The internals of `packages/limiter` are unaware of project, remaining a pure key/value counter; its public arg is renamed `modelId`→`key` so the caller supplies the composed key
 - Runtime callers assemble the key via the strategy and thread it as an OPAQUE `limiterKey` string through `@proofhound/llm-client` to the limiter (`@proofhound/llm-client` stays project-unaware, §8). This includes the BullMQ LLM runner (`payload.projectId + modelId`), model connectivity probes, prompt try-run, and optimization analysis/generation calls.
 - `packages/optimization-strategy` receives `analysisLimiterKey` from the core runtime and passes it to `invokeLLM`; it must not reconstruct `model:<modelId>` internally.
+- `ProjectContext` carries an optional, SaaS-only `orgId`. The enqueue / launch side seeds it from the resolved project context and threads it through the worker LLM / probe job payloads, the experiment / optimization workflow inputs, and the synchronous probe / prompt try-run paths, so a SaaS `OrgScopedLimiterKeyStrategy` reads `project.orgId` to compose `org:<orgId>:model:<modelId>` without re-querying. OSS leaves it undefined and `LocalLimiterKeyStrategy` ignores it.
 - Server-side and worker callers obtain `LimiterKeyStrategy` from the `contracts` module supplied to their runtime root. Worker assembly must not bind `LocalLimiterKeyStrategy` directly, otherwise SaaS cannot replace it consistently through the same `forRoot({ contracts })` seam.
 - The source of the rate limit quota configuration (RPM / TPM / concurrency cap) is also indirectly determined by the strategy in the SaaS form (the key prefix determines the counting space)
 - The autostate of auto-concurrency (latency / token EWMA + backoff multiplier) is also per-key state, reusing the same key counting space (`model:<modelId>:autostate` under OSS); changing the key prefix in the strategy naturally isolates it, and the `LimiterKeyStrategy` contract stays unchanged
@@ -466,6 +468,36 @@ export class XxxController { ... }
 ```
 
 The Controller directly uses `@UseGuards(HttpActorGuard)`. `HttpActorGuard` is **not registered as a provider in `ContractsModule`**—the route execution chain auto-instantiates it from the class reference in the `@UseGuards` metadata (resolving through the module's injectables set rather than the provider token, so a provider override cannot replace the guard in the metadata, hence it must be an executable base class). The guard's sole constructor dependency `ActorContextResolver` is provided by the global `ContractsModule`; its DB dependency chain (`LocalActorContextResolver → LocalUserTokenVerifier`) is encapsulated inside `ContractsModule`, so feature modules **do not need** to import `DatabaseModule` for the guard. SaaS replacing authentication only overrides `ActorContextResolver`. This is also why regression tests need to cover real HTTP routes.
+
+### 3.10 RuntimeLimitsProvider
+
+Folds deployment-level runtime caps into a job's per-call RPM / TPM / concurrency limits just before enqueue — e.g. a SaaS org plan's concurrency ceiling. It carries **no** billing semantics: it only translates an already-resolved `ProjectContext` (+ model id / source) into an optional `RuntimeLimits` override. The BullMQ LLM worker (`llm-runner`) invokes it once per job, just before taking `min(merged caps, model-level quota)` (SPEC 21 §quota) — so every job source (experiment, optimization child experiments, release, webhook) is capped uniformly at the single enforcement point, and the model-level cap remains the hard ceiling. (Optimization's synchronous analysis / generate calls run outside the job queue and use the model-level cap directly.)
+
+| Item | OSS default | SaaS expectation |
+| -- | -------- | --------- |
+| Implementation class | `LocalRuntimeLimitsProvider` | e.g. `PlanQuotaRuntimeLimitsProvider` |
+| Behavior | Pass-through: returns the caller's `limits` unchanged (no plan / quota awareness) | Reads the resolved `project.orgId` to look up the org plan and lower `concurrency` (and optionally RPM / TPM) to the plan ceiling |
+
+Realized contract:
+
+```ts
+export interface RuntimeLimitsInput {
+  project: ProjectContext;
+  modelId: string;
+  source: string; // enqueue source tag — OSS currently emits 'experiment' (optimization runs via child experiments); other LLM_SOURCES are reserved for future direct callers
+  limits?: RuntimeLimits;
+}
+
+export abstract class RuntimeLimitsProvider {
+  abstract mergeLlmLimits(input: RuntimeLimitsInput): Promise<RuntimeLimits | undefined>;
+}
+```
+
+Caller constraints:
+
+- The provider is invoked at the enqueue boundary (inside the DBOS step), never inside `@proofhound/limiter` or `@proofhound/llm-client`; those stay project / plan-unaware (§8).
+- The OSS `LocalRuntimeLimitsProvider` MUST be a genuine pass-through so OSS enqueue behavior is byte-identical; the hook exists only so a SaaS override can clamp limits without forking the workflow. Together with `project.orgId` (§3.7) it lets a SaaS plan both isolate the rate-limit bucket and cap its concurrency.
+- This hook only sets the per-call ceiling fed into the existing `min(limits, model quota)` logic; it does **not** implement a whole-org shared concurrency pool (that would require a second limiter gate and is out of scope here).
 
 ## 4. Frontend reuse strategy
 
@@ -709,7 +741,7 @@ The OSS trunk migrates from its current state to an adapter-ready state, with PR
 | 10 | `WorkflowAuthorizationHook` integration **(landed)** | Call the hook before starting a workflow / enqueuing a job, OSS no-op; core webhook runtime integrated in sync. `WorkflowKind` reconciled with [03-orchestration](03-orchestration.md): `experiment` / `optimization` / `release` / `llm` / `probe`. Release entry Services authorize before writing/resuming `running` release events; direct model / connector probes authorize before the probe execution path. |
 | 11 | API client transport **(landed)** | `packages/api-client` exposes `AuthSource` + `configureApiClient`; `ProofHoundWebProvider` calls `configureApiClient({ authSource, getProjectId, baseUrl })` before its children render to register a single request interceptor that adds `X-Project-Id` (§4.1) from the active `ProjectContext` and `Authorization` (§4.2) only when the token is non-null. OSS injects `LocalAuthSource` (returns null); SaaS injects `SupabaseAuthSource` |
 
-All PRs (0–11) have landed. The OSS authentication layer is production-usable across all three entries—HTTP / MCP / Webhook all perform real token validation, the HTTP entry's dual channels are channel-aware, and the MCP channel serves a real Streamable-HTTP server (see [09-mcp-server.md](09-mcp-server.md)). All nine extension points (§3.1–§3.9) are DI-ified with OSS `Local*` defaults, giving the SaaS repository a stable package import surface to override against.
+All PRs (0–11) have landed. The OSS authentication layer is production-usable across all three entries—HTTP / MCP / Webhook all perform real token validation, the HTTP entry's dual channels are channel-aware, and the MCP channel serves a real Streamable-HTTP server (see [09-mcp-server.md](09-mcp-server.md)). All ten extension points (§3.1–§3.10) are DI-ified with OSS `Local*` defaults, giving the SaaS repository a stable package import surface to override against. (§3.10 `RuntimeLimitsProvider` was added after the initial nine, following the same abstract-token + `Local*` default pattern.)
 
 PR 1 has a relatively large scope (8 extension points + decorator + module registration); at implementation time it can be split into eight independent PRs 1a-1h, one per extension point, starting from `ProjectContextResolver`. The specific split is decided by the implementer at their own pace.
 

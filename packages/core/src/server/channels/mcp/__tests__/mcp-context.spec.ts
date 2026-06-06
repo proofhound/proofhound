@@ -37,6 +37,15 @@ describe('mcp-context', () => {
     expect(resolveMcpProjectContext({ actorUserId: 'tok-1', actor })).toEqual({ projectId: 'p-9', source: 'local' });
   });
 
+  it('resolveMcpProjectContext carries orgId for org-pinned MCP actors (SaaS rate-limit bucket, SPEC 08 §3.7)', () => {
+    const orgActor: CurrentUserPayload = { ...actor, orgId: 'org-1' };
+    expect(resolveMcpProjectContext({ actorUserId: 'tok-1', actor: orgActor })).toEqual({
+      projectId: 'p-9',
+      source: 'local',
+      orgId: 'org-1',
+    });
+  });
+
   it('McpDispatchContextFactory authorizes the MCP channel before returning context', async () => {
     const authResolver = { resolveFromMcp: vi.fn().mockResolvedValue(actorContext) };
     const projectResolver = { resolve: vi.fn().mockResolvedValue(projectContext) };

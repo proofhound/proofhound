@@ -68,6 +68,7 @@ export class ExperimentService {
     dto: CreateExperimentDto,
     actor: CurrentUserPayload,
     source: AuditSource = 'api',
+    orgId?: string,
   ): Promise<ExperimentListItemDto> {
     await this.getWritableProject(projectId, actor);
     const parsed = createExperimentSchema.parse(dto);
@@ -77,7 +78,7 @@ export class ExperimentService {
     }
     const context = await this.loadAndValidateReferences(projectId, parsed);
 
-    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'experiment');
+    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, orgId, source: 'local' }, 'experiment');
 
     if (!context.promptVersion.isFrozen) {
       await this.freezePromptVersion(parsed.promptVersionId);
@@ -96,7 +97,7 @@ export class ExperimentService {
 
     let workflowId: string | null = null;
     try {
-      workflowId = await this.launcher.launch(experimentId);
+      workflowId = await this.launcher.launch(experimentId, orgId);
     } catch (error) {
       await this.repo.updateExperiment(projectId, experimentId, {
         status: 'failed',
@@ -154,6 +155,7 @@ export class ExperimentService {
     action: ExperimentControlActionDto,
     actor: CurrentUserPayload,
     source: AuditSource = 'api',
+    orgId?: string,
   ): Promise<ExperimentListItemDto> {
     await this.getWritableProject(projectId, actor);
     const parsedAction = experimentControlActionSchema.parse(action);
@@ -166,10 +168,10 @@ export class ExperimentService {
     await this.repo.updateExperiment(projectId, experimentId, nextValues);
 
     if (parsedAction === 'resume' || parsedAction === 'retry') {
-      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'experiment');
+      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, orgId, source: 'local' }, 'experiment');
       try {
-        if (parsedAction === 'resume') await this.launcher.resume(experimentId);
-        else await this.launcher.retry(experimentId);
+        if (parsedAction === 'resume') await this.launcher.resume(experimentId, orgId);
+        else await this.launcher.retry(experimentId, orgId);
       } catch (error) {
         // When the launcher throws, set status to failed directly (SPEC 24 §5)
         await this.repo.updateExperiment(projectId, experimentId, {

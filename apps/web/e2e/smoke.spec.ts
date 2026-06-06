@@ -3,6 +3,10 @@ import { expect, test } from '@playwright/test';
 test('home page opens the local dashboard workspace', async ({ page }) => {
   await page.goto('/');
   await page.waitForURL('**/dashboard');
+  const topBar = page.locator('header').first();
+  const brandLink = topBar.getByRole('link', { name: 'ProofHound' });
+  await expect(brandLink).toBeVisible();
+  await expect(brandLink).toHaveAttribute('href', '/dashboard');
   const sidebar = page.locator('[data-sidebar="sidebar"]');
   await expect(sidebar).toBeVisible();
   await expect(page.getByText('Observability')).toBeVisible();

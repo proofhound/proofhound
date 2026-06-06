@@ -95,6 +95,45 @@ describe('orchestration-shared contracts', () => {
     expect(llmJobPayloadSchema.safeParse({ ...base, webhookTokenId: 'nope' }).success).toBe(false);
   });
 
+  it('keeps an optional UUID orgId on LLM jobs, parses fine without it, and rejects a non-UUID (SaaS-only attribution)', () => {
+    const base = {
+      projectId: 'a1b2c3d4-e5f6-4789-a012-345678901111',
+      source: 'experiment' as const,
+      sourceId: 'a1b2c3d4-e5f6-4789-a012-345678902222',
+      promptVersionId: 'a1b2c3d4-e5f6-4789-a012-345678903333',
+      modelId: 'a1b2c3d4-e5f6-4789-a012-345678904444',
+      renderedPrompt: { prompt: 'hello' },
+    };
+    const orgId = 'a1b2c3d4-e5f6-4789-a012-3456789055aa';
+    const withOrg = llmJobPayloadSchema.safeParse({ ...base, orgId });
+    expect(withOrg.success).toBe(true);
+    if (withOrg.success) {
+      expect(withOrg.data.orgId).toBe(orgId);
+    }
+    const withoutOrg = llmJobPayloadSchema.safeParse(base);
+    expect(withoutOrg.success).toBe(true);
+    if (withoutOrg.success) {
+      expect(withoutOrg.data.orgId).toBeUndefined();
+    }
+    expect(llmJobPayloadSchema.safeParse({ ...base, orgId: 'not-a-uuid' }).success).toBe(false);
+  });
+
+  it('keeps an optional UUID orgId on probe jobs, parses fine without it, and rejects a non-UUID (SaaS-only attribution)', () => {
+    const base = { modelId: 'a1b2c3d4-e5f6-4789-a012-345678904444' };
+    const orgId = 'a1b2c3d4-e5f6-4789-a012-3456789055aa';
+    const withOrg = probeJobPayloadSchema.safeParse({ ...base, orgId });
+    expect(withOrg.success).toBe(true);
+    if (withOrg.success) {
+      expect(withOrg.data.orgId).toBe(orgId);
+    }
+    const withoutOrg = probeJobPayloadSchema.safeParse(base);
+    expect(withoutOrg.success).toBe(true);
+    if (withoutOrg.success) {
+      expect(withoutOrg.data.orgId).toBeUndefined();
+    }
+    expect(probeJobPayloadSchema.safeParse({ ...base, orgId: 'not-a-uuid' }).success).toBe(false);
+  });
+
   it('parses webhook async call context on LLM jobs', () => {
     const call = {
       callId: 'a1b2c3d4-e5f6-4789-a012-345678905555',

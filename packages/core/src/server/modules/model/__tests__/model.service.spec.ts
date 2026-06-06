@@ -150,8 +150,13 @@ describe('ModelService', () => {
     crypto = makeCrypto();
     limiter = makeLimiter();
     limiterKeyStrategy = {
-      buildModelKey: vi.fn(
-        (project: { projectId: string }, modelId: string) => `project:${project.projectId}:model:${modelId}`,
+      // A SaaS-shaped key strategy: derive the org-scoped bucket from the project (SPEC 08 §3.7) when an
+      // orgId is carried, otherwise fall back to the project key. Lets tests prove the project's orgId
+      // reaches buildModelKey. OSS LocalLimiterKeyStrategy ignores the project and returns `model:<id>`.
+      buildModelKey: vi.fn((project: { projectId: string; orgId?: string }, modelId: string) =>
+        project.orgId
+          ? `org:${project.orgId}:model:${modelId}`
+          : `project:${project.projectId}:model:${modelId}`,
       ),
     };
     workflowAuth = { assertCanStart: vi.fn().mockResolvedValue(undefined) };
@@ -529,6 +534,80 @@ describe('ModelService', () => {
 
     expect(testModelConnectivity).not.toHaveBeenCalled();
     expect(repo.updateProbeOutcome).not.toHaveBeenCalled();
+  });
+
+  // orgId (SaaS-only; undefined in OSS) is the resolved project's rate-limit bucket (SPEC 08 §3.7). It is
+  // sourced from the @CurrentProject ProjectContext at the controller and threaded all the way to
+  // buildModelKey — on the probe WRITE path and the usage-snapshot READ path — so both hit the same key.
+  it('threads the project orgId into the probe limiter key (SaaS bucket, SPEC 08 §3.7)', async () => {
+    repo.findModelAccessibleToProject.mockResolvedValue(fakeRow());
+    (testModelConnectivity as Mock).mockResolvedValue({
+      ok: true,
+      modelId: 'model-1',
+      providerType: 'openai',
+      providerModelId: 'gpt-4o',
+      endpoint: 'https://api.openai.com/v1',
+      durationMs: 120,
+      checkedAt: '2026-05-18T01:00:00.000Z',
+    });
+
+    await service.probeProjectModel(WORKSPACE_ID, 'model-1', ACTOR, 'api', 'org-7');
+
+    expect(testModelConnectivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limiterKey: 'org:org-7:model:00000000-0000-4000-8000-000000000101',
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('threads the project orgId into the usage-snapshot READ key on list (matches the worker WRITE key)', async () => {
+    repo.listProjectModels.mockResolvedValue([fakeRow()]);
+
+    await service.listProjectModels(WORKSPACE_ID, ACTOR, 'org-7');
+
+    expect(limiter.getUsage).toHaveBeenCalledWith('org:org-7:model:00000000-0000-4000-8000-000000000101');
+  });
+
+  it('threads the project orgId into the draft probe limiter key', async () => {
+    (testModelConnectivity as Mock).mockResolvedValue({
+      ok: true,
+      modelId: 'draft',
+      providerType: 'openai',
+      providerModelId: 'gpt-4o',
+      endpoint: 'https://api.openai.com/v1',
+      durationMs: 90,
+      checkedAt: '2026-05-18T01:00:00.000Z',
+    });
+
+    await service.probeDraftProjectModel(WORKSPACE_ID, draftProbeDto(), ACTOR, 'api', 'org-7');
+
+    expect(testModelConnectivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limiterKey: expect.stringMatching(/^org:org-7:model:/),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('keeps the OSS usage-snapshot key project-scoped when no orgId is supplied', async () => {
+    repo.listProjectModels.mockResolvedValue([fakeRow()]);
+
+    await service.listProjectModels(WORKSPACE_ID, ACTOR);
+
+    expect(limiter.getUsage).toHaveBeenCalledWith(`project:${WORKSPACE_ID}:model:00000000-0000-4000-8000-000000000101`);
+  });
+
+  it('reads quick-start option usage with no org (endpoint is not project-scoped)', async () => {
+    const globalRow = fakeRow({ id: '00000000-0000-4000-8000-000000000201' });
+    repo.findModelById.mockResolvedValue(globalRow);
+
+    await service.getQuickStartModelOption(globalRow.id, ACTOR);
+
+    // Quick-start has no @CurrentProject, so no org is threaded → falls back to the project key, never org:*.
+    expect(limiter.getUsage).toHaveBeenCalledWith(
+      `project:${WORKSPACE_ID}:model:00000000-0000-4000-8000-000000000201`,
+    );
   });
 
   it('handles context window dictionary operations', async () => {

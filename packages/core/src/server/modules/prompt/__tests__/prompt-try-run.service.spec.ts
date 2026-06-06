@@ -101,8 +101,10 @@ function buildService(overrides?: {
     limiter as never,
     new LocalAccessControlService(),
     {
-      buildModelKey: vi.fn(
-        (project: { projectId: string }, modelId: string) => `project:${project.projectId}:model:${modelId}`,
+      // SaaS-shaped key strategy: derive the org bucket from the project (SPEC 08 §3.7) when an orgId is
+      // carried. Lets the test prove the project's orgId reaches buildModelKey. OSS ignores it → `model:<id>`.
+      buildModelKey: vi.fn((project: { projectId: string; orgId?: string }, modelId: string) =>
+        project.orgId ? `org:${project.orgId}:model:${modelId}` : `project:${project.projectId}:model:${modelId}`,
       ),
     },
   );
@@ -176,6 +178,26 @@ describe('PromptTryRunService', () => {
       expect.objectContaining({
         limiterKey: `project:${PROJECT_ID}:model:${MODEL_ID}`,
       }),
+      expect.anything(),
+    );
+  });
+
+  it('threads the project orgId into the limiter key (SaaS rate-limit bucket, SPEC 08 §3.7)', async () => {
+    llmClient.invokeLLM.mockResolvedValue({
+      content: '{"answer":"hi"}',
+      rawResponse: {},
+      parsed: { answer: 'hi' },
+      usage: { inputTokens: 10, outputTokens: 4 },
+      costEstimate: 0.0005,
+      durationMs: 432,
+    });
+
+    const { service } = buildService();
+    // orgId is sourced from the resolved ProjectContext (controller passes @CurrentProject().orgId), not the actor.
+    await service.tryRun(PROJECT_ID, PROMPT_ID, validRequest(), actor, 'org-7');
+
+    expect(llmClient.invokeLLM).toHaveBeenCalledWith(
+      expect.objectContaining({ limiterKey: `org:org-7:model:${MODEL_ID}` }),
       expect.anything(),
     );
   });

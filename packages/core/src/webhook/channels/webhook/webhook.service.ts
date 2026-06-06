@@ -133,6 +133,7 @@ export class WebhookService {
         runResultId,
         webhookTokenId,
         asyncCall,
+        projectContext.orgId,
       );
       try {
         await this.bullmq.enqueueLlmJob(llmPayload, runResultId);
@@ -395,7 +396,10 @@ function buildLlmPayload(
   externalId: string,
   runResultId: string,
   webhookTokenId: string,
-  webhookAsyncCall?: WebhookAsyncCallContext,
+  webhookAsyncCall: WebhookAsyncCallContext | undefined,
+  // SaaS-only org attribution: the ConnectorContextResolver already resolved the project's org for this webhook,
+  // so thread it onto the release payload (OSS LocalConnectorContextResolver yields undefined → no behavior change).
+  orgId: string | undefined,
 ): LlmJobPayload {
   const { renderedPrompt } = renderPromptForSample(
     {
@@ -410,6 +414,7 @@ function buildLlmPayload(
 
   return {
     projectId: release.projectId,
+    orgId,
     source: 'release',
     sourceId: release.id,
     promptVersionId: release.promptVersionId,

@@ -208,6 +208,8 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
     }
 
     const runResultId = computeReleaseRunResultId(lane.id, messageId);
+    // orgId is unavailable here: this is a DB-row background poller with no connector/actor context in
+    // scope, so the payload's org is intentionally left undefined until a SaaS connector context supplies it.
     const llmPayload = buildReleaseLlmPayload({
       release: toRuntimeConfig(lane),
       inputVariables: mapped.inputVariables,

@@ -4,21 +4,19 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Sparkles } from 'lucide-react';
-import { SidebarInset, SidebarProvider, Button } from '@proofhound/ui';
+import { SidebarInset, SidebarProvider, SidebarTrigger, Button, cn } from '@proofhound/ui';
+import { ProofHoundLogo } from '@proofhound/ui/brand';
 import { AppSidebar, type SidebarCollapsible, type SidebarSide, type SidebarVariant } from './app-sidebar';
-import { Header } from './header';
-import { PreferenceControls, ThemeSettingsButton } from './preference-controls';
+import { PreferenceControls } from './preference-controls';
+import { CloudConsoleTopBar, CLOUD_CONSOLE_TOP_BAR_OFFSET_CLASS } from './cloud-console-top-bar';
 import {
   LAYOUT_COLLAPSIBLE_STORAGE_KEY,
   LAYOUT_VARIANT_STORAGE_KEY,
   SIDEBAR_SIDE_STORAGE_KEY,
-  type LayoutMode,
-  type LayoutPreferences,
 } from './layout-preferences';
 import { getMainNavGroups } from './sidebar-data';
 import { useI18n, type TranslationKey } from '@proofhound/web-ui/i18n';
 import { useProjectContext } from '@proofhound/web-ui/providers';
-import type { ProjectContext } from '@proofhound/shared';
 import { useCanaryReleaseList } from '@proofhound/web-ui/hooks';
 import { useConnector } from '@proofhound/web-ui/hooks';
 import { useDataset } from '@proofhound/web-ui/hooks';
@@ -36,11 +34,6 @@ const DEFAULT_SIDEBAR_VARIANT: SidebarVariant = 'sidebar';
 const DEFAULT_SIDEBAR_COLLAPSIBLE: SidebarCollapsible = 'icon';
 const DEFAULT_SIDEBAR_SIDE: SidebarSide = 'left';
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-
-type ProjectBreadcrumbContext = ProjectContext & {
-  organizationName?: string | null;
-  projectName?: string | null;
-};
 
 type BreadcrumbRoute = {
   moduleTitle: string;
@@ -105,11 +98,6 @@ function getStoredSidebarSide(): SidebarSide {
   if (typeof window === 'undefined') return DEFAULT_SIDEBAR_SIDE;
   const storedValue = window.localStorage.getItem(SIDEBAR_SIDE_STORAGE_KEY);
   return isSidebarSide(storedValue) ? storedValue : DEFAULT_SIDEBAR_SIDE;
-}
-
-function getLayoutMode(open: boolean, collapsible: SidebarCollapsible): LayoutMode {
-  if (open) return 'default';
-  return collapsible === 'offcanvas' ? 'full' : 'compact';
 }
 
 function normalizePathname(pathname: string) {
@@ -207,17 +195,6 @@ function getBreadcrumbEntityIds(pathname: string): BreadcrumbEntityIds {
   };
 }
 
-function getProjectBreadcrumbItems(projectContext: ProjectBreadcrumbContext, t: (key: TranslationKey) => string) {
-  const items: BreadcrumbItem[] = [];
-
-  if (isBreadcrumbSegment(projectContext.organizationName)) {
-    items.push({ label: projectContext.organizationName });
-  }
-
-  items.push({ label: projectContext.projectName ?? t('nav.defaultProject'), href: '/dashboard' });
-  return items;
-}
-
 function useBreadcrumbEntityTitle(pathname: string, projectId: string) {
   const entityIds = useMemo(() => getBreadcrumbEntityIds(pathname), [pathname]);
   const annotationQuery = useCanaryReleaseList(projectId, Boolean(entityIds.annotationTaskId));
@@ -279,86 +256,30 @@ export function AppShell({ children }: AppShellProps) {
     document.cookie = `sidebar_state=${nextOpen}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
   }, []);
 
-  const setSidebarVariant = useCallback((nextVariant: SidebarVariant) => {
-    setSidebarVariantState(nextVariant);
-    window.localStorage.setItem(LAYOUT_VARIANT_STORAGE_KEY, nextVariant);
-  }, []);
-
-  const setSidebarCollapsible = useCallback((nextCollapsible: SidebarCollapsible) => {
-    setSidebarCollapsibleState(nextCollapsible);
-    window.localStorage.setItem(LAYOUT_COLLAPSIBLE_STORAGE_KEY, nextCollapsible);
-  }, []);
-
-  const setSidebarSide = useCallback((nextSide: SidebarSide) => {
-    setSidebarSideState(nextSide);
-    window.localStorage.setItem(SIDEBAR_SIDE_STORAGE_KEY, nextSide);
-  }, []);
-
-  const setLayoutMode = useCallback(
-    (nextLayoutMode: LayoutMode) => {
-      if (nextLayoutMode === 'default') {
-        setSidebarOpenPreference(true);
-        setSidebarCollapsible(DEFAULT_SIDEBAR_COLLAPSIBLE);
-        return;
-      }
-
-      setSidebarOpenPreference(false);
-      setSidebarCollapsible(nextLayoutMode === 'full' ? 'offcanvas' : 'icon');
-    },
-    [setSidebarCollapsible, setSidebarOpenPreference],
-  );
-
-  const resetLayoutPreferences = useCallback(() => {
-    setSidebarOpenPreference(true);
-    setSidebarVariant(DEFAULT_SIDEBAR_VARIANT);
-    setSidebarCollapsible(DEFAULT_SIDEBAR_COLLAPSIBLE);
-    setSidebarSide(DEFAULT_SIDEBAR_SIDE);
-  }, [setSidebarCollapsible, setSidebarOpenPreference, setSidebarSide, setSidebarVariant]);
-
-  const layoutPreferences = useMemo<LayoutPreferences>(
-    () => ({
-      defaultLayoutMode: 'default',
-      defaultSidebarSide: DEFAULT_SIDEBAR_SIDE,
-      defaultSidebarVariant: DEFAULT_SIDEBAR_VARIANT,
-      layoutMode: getLayoutMode(sidebarOpen, sidebarCollapsible),
-      setLayoutMode,
-      resetLayoutPreferences,
-      setSidebarSide,
-      setSidebarVariant,
-      sidebarSide,
-      sidebarVariant,
-    }),
-    [
-      resetLayoutPreferences,
-      setLayoutMode,
-      setSidebarSide,
-      setSidebarVariant,
-      sidebarCollapsible,
-      sidebarOpen,
-      sidebarSide,
-      sidebarVariant,
-    ],
-  );
-
-  const breadcrumbItems = useMemo(
-    () => [...getProjectBreadcrumbItems(projectContext, t), ...getPageBreadcrumbItems(pathname, t, entityTitle)],
-    [entityTitle, pathname, projectContext, t],
+  const pageBreadcrumbItems = useMemo(
+    () => getPageBreadcrumbItems(pathname, t, entityTitle),
+    [entityTitle, pathname, t],
   );
 
   return (
     <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpenPreference}>
-      <AppSidebar
-        collapsible={sidebarCollapsible}
-        side={sidebarSide}
-        variant={sidebarVariant}
-      />
-      <SidebarInset>
-        <Header fixed sidebarSide={sidebarSide}>
-          <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+      <CloudConsoleTopBar>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          {/* Mobile only: the off-canvas sidebar starts closed, so the top bar must own a visible
+              toggle (the in-sidebar footer trigger is unreachable until the sheet is open). */}
+          <SidebarTrigger side={sidebarSide} className="-ml-1 shrink-0 md:hidden" />
+          <Link
+            href="/dashboard"
+            aria-label="ProofHound"
+            className="inline-flex shrink-0 rounded-md p-1 transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ProofHoundLogo size="nav" showWordmark={false} />
+          </Link>
+          {pageBreadcrumbItems.length > 0 ? (
             <nav aria-label={t('nav.breadcrumbLabel')} className="min-w-0 flex-1">
               <ol className="flex min-w-0 items-center gap-1 text-sm">
-                {breadcrumbItems.map((item, index) => {
-                  const isLast = index === breadcrumbItems.length - 1;
+                {pageBreadcrumbItems.map((item, index) => {
+                  const isLast = index === pageBreadcrumbItems.length - 1;
 
                   return (
                     <Fragment key={`${item.label}-${index}`}>
@@ -368,11 +289,11 @@ export function AppShell({ children }: AppShellProps) {
                         </li>
                       ) : null}
                       <li
-                        className={
+                        className={cn(
                           isLast
                             ? 'min-w-0 flex-1 truncate font-medium text-foreground'
-                            : 'min-w-0 max-w-[36vw] shrink truncate text-muted-foreground sm:max-w-72'
-                        }
+                            : 'min-w-0 max-w-[32vw] shrink truncate text-muted-foreground sm:max-w-72',
+                        )}
                         aria-current={isLast ? 'page' : undefined}
                       >
                         {isLast ? (
@@ -393,20 +314,26 @@ export function AppShell({ children }: AppShellProps) {
                 })}
               </ol>
             </nav>
-            <div className="flex shrink-0 items-center gap-1">
-              <Button asChild size="sm" className="h-8 px-2.5" aria-label={t('quickStart.title')}>
-                <Link href="/quick-start">
-                  <Sparkles className="size-4" />
-                  <span className="hidden sm:inline">{t('quickStart.title')}</span>
-                </Link>
-              </Button>
-              <PreferenceControls showThemeSettings={false} />
-              <ThemeSettingsButton layoutPreferences={layoutPreferences} />
-            </div>
-          </div>
-        </Header>
-        {children}
-      </SidebarInset>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button asChild size="sm" className="h-8 px-2.5" aria-label={t('quickStart.title')}>
+            <Link href="/quick-start">
+              <Sparkles className="size-4" />
+              <span className="hidden sm:inline">{t('quickStart.title')}</span>
+            </Link>
+          </Button>
+          <PreferenceControls showThemeSettings={false} />
+        </div>
+      </CloudConsoleTopBar>
+      <AppSidebar
+        collapsible={sidebarCollapsible}
+        offsetTop
+        showBrand={false}
+        side={sidebarSide}
+        variant={sidebarVariant}
+      />
+      <SidebarInset className={CLOUD_CONSOLE_TOP_BAR_OFFSET_CLASS}>{children}</SidebarInset>
     </SidebarProvider>
   );
 }

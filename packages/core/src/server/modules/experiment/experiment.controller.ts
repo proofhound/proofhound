@@ -42,7 +42,7 @@ export class ExperimentController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
     }
-    return this.experimentService.createExperiment(project.projectId, parsed.data, actor);
+    return this.experimentService.createExperiment(project.projectId, parsed.data, actor, 'api', project.orgId);
   }
 
   @Get()
@@ -127,6 +127,8 @@ export class ExperimentController {
       this.parseExperimentId(experimentId),
       parsedAction.data,
       actor,
+      'api',
+      project.orgId,
     );
   }
 

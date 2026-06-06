@@ -4,6 +4,7 @@ import { LocalConnectorContextResolver } from '../../../../webhook/channels/webh
 import { ConnectorContextResolver } from '../connector-context.resolver';
 import { LimiterKeyStrategy, LocalLimiterKeyStrategy } from '../limiter-key.strategy';
 import { LocalContractsModule } from '../local-contracts.module';
+import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from '../runtime-limits.provider';
 import { LocalTokenService } from '../../../modules/token/token.service';
 import { TokenService } from '../token.service';
 import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from '../workflow-authorization.hook';
@@ -33,6 +34,10 @@ describe('LocalContractsModule new bindings', () => {
     expect(providerFor(WorkflowAuthorizationHook)?.useClass).toBe(LocalWorkflowAuthorizationHook);
   });
 
+  it('binds RuntimeLimitsProvider -> LocalRuntimeLimitsProvider', () => {
+    expect(providerFor(RuntimeLimitsProvider)?.useClass).toBe(LocalRuntimeLimitsProvider);
+  });
+
   it('binds ConnectorContextResolver -> LocalConnectorContextResolver', () => {
     expect(providerFor(ConnectorContextResolver)?.useClass).toBe(LocalConnectorContextResolver);
   });
@@ -42,6 +47,7 @@ describe('LocalContractsModule new bindings', () => {
     expect(exports).toContain(ConnectorContextResolver);
     expect(exports).toContain(TokenService);
     expect(exports).toContain(LimiterKeyStrategy);
+    expect(exports).toContain(RuntimeLimitsProvider);
     expect(exports).toContain(WorkflowAuthorizationHook);
   });
 });

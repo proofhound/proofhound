@@ -54,6 +54,10 @@ export class PromptTryRunService {
     promptId: string,
     rawDto: unknown,
     actor: CurrentUserPayload,
+    // orgId (SaaS-only; undefined in OSS) is sourced from the resolved ProjectContext — the project's org
+    // is the rate-limit bucket (SPEC 08 §3.7), not the actor's org. OSS leaves it undefined so the
+    // LocalLimiterKeyStrategy key stays `model:<id>`.
+    orgId?: string,
   ): Promise<PromptTryRunResponseDto> {
     const parsed = promptTryRunRequestSchema.parse(rawDto);
     await this.assertAccessible(projectId, actor);
@@ -84,7 +88,10 @@ export class PromptTryRunService {
       result = await invokeLLM(
         {
           model,
-          limiterKey: this.limiterKeyStrategy.buildModelKey({ projectId, source: 'local' }, model.id),
+          limiterKey: this.limiterKeyStrategy.buildModelKey(
+            { projectId, orgId, source: 'local' },
+            model.id,
+          ),
           messages: renderedPrompt.messages as LLMMessage[] | undefined,
           prompt: renderedPrompt.prompt,
           params: {

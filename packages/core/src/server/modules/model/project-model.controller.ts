@@ -35,7 +35,8 @@ export class ProjectModelController {
 
   @Get()
   async list(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
-    return this.modelService.listProjectModels(project.projectId, actor);
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    return this.modelService.listProjectModels(project.projectId, actor, project.orgId);
   }
 
   @Get('export')
@@ -44,7 +45,7 @@ export class ProjectModelController {
     @CurrentProject() project: ProjectContext,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const file = await this.modelService.exportProjectModelsCsv(project.projectId, actor);
+    const file = await this.modelService.exportProjectModelsCsv(project.projectId, actor, project.orgId);
     response.set({
       'Content-Disposition': `attachment; filename="${file.fileName}"; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
       'Content-Length': String(file.byteLength),
@@ -59,7 +60,8 @@ export class ProjectModelController {
     @CurrentUser() actor: CurrentUserPayload,
     @CurrentProject() project: ProjectContext,
   ) {
-    return this.modelService.getProjectModelDetail(project.projectId, this.parseModelId(modelId), actor);
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    return this.modelService.getProjectModelDetail(project.projectId, this.parseModelId(modelId), actor, project.orgId);
   }
 
   @Get(':modelId/api-key')
@@ -88,7 +90,8 @@ export class ProjectModelController {
   ) {
     const parse = createProjectModelSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.modelService.createProjectModel(project.projectId, parse.data, actor);
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    return this.modelService.createProjectModel(project.projectId, parse.data, actor, 'api', project.orgId);
   }
 
   @Post('probe-draft')
@@ -99,7 +102,8 @@ export class ProjectModelController {
   ) {
     const parse = probeDraftProjectModelSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.modelService.probeDraftProjectModel(project.projectId, parse.data, actor);
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    return this.modelService.probeDraftProjectModel(project.projectId, parse.data, actor, 'api', project.orgId);
   }
 
   @Patch(':modelId')
@@ -111,7 +115,15 @@ export class ProjectModelController {
   ) {
     const parse = updateProjectModelSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.modelService.updateProjectModel(project.projectId, this.parseModelId(modelId), parse.data, actor);
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    return this.modelService.updateProjectModel(
+      project.projectId,
+      this.parseModelId(modelId),
+      parse.data,
+      actor,
+      'api',
+      project.orgId,
+    );
   }
 
   @Post(':modelId/probe')
@@ -120,7 +132,14 @@ export class ProjectModelController {
     @CurrentUser() actor: CurrentUserPayload,
     @CurrentProject() project: ProjectContext,
   ) {
-    return this.modelService.probeProjectModel(project.projectId, this.parseModelId(modelId), actor);
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    return this.modelService.probeProjectModel(
+      project.projectId,
+      this.parseModelId(modelId),
+      actor,
+      'api',
+      project.orgId,
+    );
   }
 
   @Post(':modelId/duplicate')
@@ -129,7 +148,14 @@ export class ProjectModelController {
     @CurrentUser() actor: CurrentUserPayload,
     @CurrentProject() project: ProjectContext,
   ) {
-    return this.modelService.duplicateProjectModel(project.projectId, this.parseModelId(modelId), actor);
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    return this.modelService.duplicateProjectModel(
+      project.projectId,
+      this.parseModelId(modelId),
+      actor,
+      'api',
+      project.orgId,
+    );
   }
 
   @Delete(':modelId')

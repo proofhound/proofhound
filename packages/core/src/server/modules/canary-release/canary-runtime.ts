@@ -130,6 +130,8 @@ export function buildReleaseLlmPayload(input: {
 
   return {
     projectId: input.release.projectId,
+    // orgId is unavailable here: this builds from a DB release row with no connector/actor context in scope,
+    // so it is intentionally left undefined until a SaaS connector context supplies the project's org.
     source: 'release',
     sourceId: input.release.id,
     releaseVariantId: input.release.releaseVariantId ?? null,

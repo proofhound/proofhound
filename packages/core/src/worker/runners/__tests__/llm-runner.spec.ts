@@ -3,8 +3,16 @@ import { encryptApiKey } from '@proofhound/crypto';
 import type { DbClient } from '@proofhound/db';
 import type { ModelInvocationConfig } from '@proofhound/llm-client';
 import { describe, expect, it, vi } from 'vitest';
+import type { ProjectContext } from '@proofhound/shared';
 import { applyExperimentLimits, createLlmRunner, loadModelInvocationConfig } from '../llm-runner';
-import { LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
+import {
+  LimiterKeyStrategy,
+  LocalLimiterKeyStrategy,
+} from '../../../server/common/contracts/limiter-key.strategy';
+import {
+  LocalRuntimeLimitsProvider,
+  RuntimeLimitsProvider,
+} from '../../../server/common/contracts/runtime-limits.provider';
 import { createModelSecretResolver } from '../model-secret';
 
 const invokeLLMMock = vi.hoisted(() => vi.fn());
@@ -94,6 +102,7 @@ describe('runLlmJob — webhook 入口归因透传', () => {
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
     });
     const webhookTokenId = '99999999-9999-4999-8999-999999999999';
 
@@ -117,6 +126,56 @@ describe('runLlmJob — webhook 入口归因透传', () => {
   });
 });
 
+describe('runLlmJob — orgId 透传至限流 key 的 ProjectContext', () => {
+  class SpyStrategy extends LimiterKeyStrategy {
+    seen?: ProjectContext;
+    buildModelKey(project: ProjectContext, modelId: string): string {
+      this.seen = project;
+      return `model:${modelId}`;
+    }
+  }
+
+  it('forwards payload.orgId (and projectId) into buildModelKey project arg', async () => {
+    invokeLLMMock.mockResolvedValue({
+      content: '{"ok":true}',
+      parsed: { ok: true },
+      decisionOutput: null,
+      isCorrect: null,
+      judgmentStatus: null,
+      usage: { inputTokens: 1, outputTokens: 1 },
+      costEstimate: 0,
+      durationMs: 1,
+    });
+    const spy = new SpyStrategy();
+    const projectId = '22222222-2222-4222-8222-222222222222';
+    const runLlmJob = createLlmRunner({
+      db: fakeDb(activeModel),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: spy,
+      logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
+    });
+
+    await runLlmJob(
+      {
+        projectId,
+        orgId: 'org-xyz',
+        source: 'experiment',
+        sourceId: '33333333-3333-4333-8333-333333333333',
+        promptVersionId: '44444444-4444-4444-8444-444444444444',
+        modelId: activeModel.id,
+        runResultId: '11111111-1111-4111-8111-111111111111',
+        renderedPrompt: { prompt: 'hi' },
+      } as never,
+      { bullmqJobId: 'job-1', bullmqQueue: 'llm', attempt: 1 },
+    );
+
+    expect(spy.seen?.orgId).toBe('org-xyz');
+    expect(spy.seen?.projectId).toBe(projectId);
+  });
+});
+
 function fakeDb(row: typeof activeModel | undefined): DbClient {
   return {
     select: () => ({
@@ -128,6 +187,52 @@ function fakeDb(row: typeof activeModel | undefined): DbClient {
     }),
   } as unknown as DbClient;
 }
+
+describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', () => {
+  class CapProvider extends RuntimeLimitsProvider {
+    async mergeLlmLimits(): Promise<{ concurrency: number }> {
+      return { concurrency: 1 };
+    }
+  }
+
+  it('applies min(model, planCap) before invokeLLM (SaaS RuntimeLimitsProvider lowers concurrency)', async () => {
+    invokeLLMMock.mockResolvedValue({
+      content: '{}',
+      parsed: {},
+      decisionOutput: null,
+      isCorrect: null,
+      judgmentStatus: null,
+      usage: { inputTokens: 1, outputTokens: 1 },
+      costEstimate: 0,
+      durationMs: 1,
+    });
+    const runLlmJob = createLlmRunner({
+      db: fakeDb(activeModel),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new LocalLimiterKeyStrategy(),
+      logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+      runtimeLimitsProvider: new CapProvider(),
+    });
+
+    await runLlmJob(
+      {
+        projectId: '22222222-2222-4222-8222-222222222222',
+        source: 'experiment',
+        sourceId: '33333333-3333-4333-8333-333333333333',
+        promptVersionId: '44444444-4444-4444-8444-444444444444',
+        modelId: activeModel.id,
+        runResultId: '11111111-1111-4111-8111-111111111111',
+        renderedPrompt: { prompt: 'hi' },
+      } as never,
+      { bullmqJobId: 'job-cap', bullmqQueue: 'llm', attempt: 1 },
+    );
+
+    // activeModel.concurrencyLimit is 2; the provider caps concurrency to 1 → effective min is 1.
+    const lastCall = invokeLLMMock.mock.calls.at(-1)!;
+    expect(lastCall[0].model.concurrencyLimit).toBe(1);
+  });
+});
 
 describe('applyExperimentLimits — 实验级与模型级取 min', () => {
   const base: ModelInvocationConfig = {

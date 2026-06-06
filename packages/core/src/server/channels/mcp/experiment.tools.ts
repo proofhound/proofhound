@@ -31,7 +31,7 @@ export function createExperimentTools(experimentService: ExperimentService): Mcp
         },
       },
       handler: async (input, ctx) => {
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const dto = createExperimentSchema.parse({
           name: input.name,
           promptVersionId: input.promptVersionId,
@@ -39,7 +39,7 @@ export function createExperimentTools(experimentService: ExperimentService): Mcp
           modelId: input.modelId,
           runConfig: input.runConfig,
         });
-        return experimentService.createExperiment(projectId, dto, getMcpActor(ctx), 'mcp');
+        return experimentService.createExperiment(projectId, dto, getMcpActor(ctx), 'mcp', orgId);
       },
     },
     {
@@ -87,10 +87,10 @@ export function createExperimentTools(experimentService: ExperimentService): Mcp
         },
       },
       handler: async (input, ctx) => {
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const experimentId = experimentIdParamSchema.parse(input.experimentId);
         const action = experimentControlActionSchema.parse(input.action);
-        return experimentService.controlExperiment(projectId, experimentId, action, getMcpActor(ctx), 'mcp');
+        return experimentService.controlExperiment(projectId, experimentId, action, getMcpActor(ctx), 'mcp', orgId);
       },
     },
     {

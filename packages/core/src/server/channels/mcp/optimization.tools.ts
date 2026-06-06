@@ -66,9 +66,9 @@ export function createOptimizationTools(optimizationService: OptimizationService
         },
       },
       handler: async (input, ctx) => {
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const body = createOptimizationSchema.parse(input.body);
-        return optimizationService.createOptimization(projectId, body, getMcpActor(ctx), 'mcp');
+        return optimizationService.createOptimization(projectId, body, getMcpActor(ctx), 'mcp', orgId);
       },
     },
     {
@@ -83,10 +83,10 @@ export function createOptimizationTools(optimizationService: OptimizationService
         },
       },
       handler: async (input, ctx) => {
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const optimizationId = optimizationIdParamSchema.parse(input.optimizationId);
         const action = optimizationControlActionSchema.parse(input.action);
-        return optimizationService.controlOptimization(projectId, optimizationId, action, getMcpActor(ctx), 'mcp');
+        return optimizationService.controlOptimization(projectId, optimizationId, action, getMcpActor(ctx), 'mcp', orgId);
       },
     },
     {

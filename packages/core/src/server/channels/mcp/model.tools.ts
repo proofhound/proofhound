@@ -72,8 +72,10 @@ export function createModelTools(modelService: ModelService): McpToolDefinition[
       name: 'model_list_models',
       description: '列出本地模型',
       inputSchema: { type: 'object', properties: {} },
-      handler: async (input, ctx) =>
-        modelService.listProjectModels(resolveMcpProjectContext(ctx).projectId, getMcpActor(ctx)),
+      handler: async (input, ctx) => {
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
+        return modelService.listProjectModels(projectId, getMcpActor(ctx), orgId);
+      },
     },
     {
       name: 'model_get_model',
@@ -85,21 +87,24 @@ export function createModelTools(modelService: ModelService): McpToolDefinition[
           modelId: { type: 'string', format: 'uuid' },
         },
       },
-      handler: async (input, ctx) =>
-        modelService.getProjectModelDetail(
-          resolveMcpProjectContext(ctx).projectId,
+      handler: async (input, ctx) => {
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
+        return modelService.getProjectModelDetail(
+          projectId,
           modelIdParamSchema.parse(input.modelId),
           getMcpActor(ctx),
-        ),
+          orgId,
+        );
+      },
     },
     {
       name: 'model_create_model',
       description: '创建模型',
       inputSchema: { type: 'object', properties: {} },
       handler: async (input, ctx) => {
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const dto = createProjectModelSchema.parse(input);
-        return modelService.createProjectModel(projectId, dto, getMcpActor(ctx), 'mcp');
+        return modelService.createProjectModel(projectId, dto, getMcpActor(ctx), 'mcp', orgId);
       },
     },
     {
@@ -107,9 +112,9 @@ export function createModelTools(modelService: ModelService): McpToolDefinition[
       description: '对尚未保存的模型草稿发起连通性测试',
       inputSchema: { type: 'object', properties: {} },
       handler: async (input, ctx) => {
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const dto = probeDraftProjectModelSchema.parse(input);
-        return modelService.probeDraftProjectModel(projectId, dto, getMcpActor(ctx), 'mcp');
+        return modelService.probeDraftProjectModel(projectId, dto, getMcpActor(ctx), 'mcp', orgId);
       },
     },
     {
@@ -124,10 +129,10 @@ export function createModelTools(modelService: ModelService): McpToolDefinition[
       },
       handler: async (input, ctx) => {
         const { modelId: rawModelId, ...rest } = input;
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const modelId = modelIdParamSchema.parse(rawModelId);
         const dto = updateProjectModelSchema.parse(rest);
-        return modelService.updateProjectModel(projectId, modelId, dto, getMcpActor(ctx), 'mcp');
+        return modelService.updateProjectModel(projectId, modelId, dto, getMcpActor(ctx), 'mcp', orgId);
       },
     },
     {
@@ -160,13 +165,16 @@ export function createModelTools(modelService: ModelService): McpToolDefinition[
           modelId: { type: 'string', format: 'uuid' },
         },
       },
-      handler: async (input, ctx) =>
-        modelService.duplicateProjectModel(
-          resolveMcpProjectContext(ctx).projectId,
+      handler: async (input, ctx) => {
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
+        return modelService.duplicateProjectModel(
+          projectId,
           modelIdParamSchema.parse(input.modelId),
           getMcpActor(ctx),
           'mcp',
-        ),
+          orgId,
+        );
+      },
     },
     {
       name: 'model_probe_model',
@@ -178,13 +186,16 @@ export function createModelTools(modelService: ModelService): McpToolDefinition[
           modelId: { type: 'string', format: 'uuid' },
         },
       },
-      handler: async (input, ctx) =>
-        modelService.probeProjectModel(
-          resolveMcpProjectContext(ctx).projectId,
+      handler: async (input, ctx) => {
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
+        return modelService.probeProjectModel(
+          projectId,
           modelIdParamSchema.parse(input.modelId),
           getMcpActor(ctx),
           'mcp',
-        ),
+          orgId,
+        );
+      },
     },
     {
       name: 'model_reveal_api_key',
@@ -226,10 +237,8 @@ export function createModelTools(modelService: ModelService): McpToolDefinition[
       description: '导出模型 CSV',
       inputSchema: { type: 'object', properties: {} },
       handler: async (input, ctx) => {
-        const file = await modelService.exportProjectModelsCsv(
-          resolveMcpProjectContext(ctx).projectId,
-          getMcpActor(ctx),
-        );
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
+        const file = await modelService.exportProjectModelsCsv(projectId, getMcpActor(ctx), orgId);
         return {
           fileName: file.fileName,
           contentType: file.contentType,

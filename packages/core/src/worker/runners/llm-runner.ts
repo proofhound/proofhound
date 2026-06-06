@@ -15,6 +15,7 @@ import {
 } from '@proofhound/llm-client';
 import type { LlmJobPayload } from '@proofhound/orchestration-shared';
 import { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
+import { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
 import type { ModelSecretResolver } from './model-secret';
 import { DrizzleRunResultWriter } from './run-result-writer';
 
@@ -22,6 +23,7 @@ export interface LlmRunnerDependencies {
   db: DbClient;
   limiter: RateLimiter;
   limiterKeyStrategy: LimiterKeyStrategy;
+  runtimeLimitsProvider: RuntimeLimitsProvider;
   logger: LLMCallLogger;
   modelSecretResolver: ModelSecretResolver;
 }
@@ -55,9 +57,18 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
   ): Promise<LlmRunnerResult> {
     const runResultId = input.runResultId ?? randomUUID();
     const model = await loadModelInvocationConfig(deps, input.modelId);
-    // Take min(experiment-level RPM/TPM/concurrency, model-level) (SPEC 21 §quota / SPEC 24 §4: model-level is the ceiling;
-    // experiment-level only self-throttles and cannot exceed). Each field has an independent fallback: missing one does not affect the others.
-    const effectiveModel = applyExperimentLimits(model, input.limits);
+    // Fold any deployment-level runtime caps (a SaaS org plan's ceiling, SPEC 08 §3.10) into the per-call limits at the
+    // single worker enforcement point, so every job source (experiment / optimization child / release / webhook) is
+    // capped uniformly. OSS LocalRuntimeLimitsProvider is a pass-through → mergedLimits === input.limits.
+    const mergedLimits = await deps.runtimeLimitsProvider.mergeLlmLimits({
+      project: { projectId: input.projectId, orgId: input.orgId, source: 'local' },
+      modelId: input.modelId,
+      source: input.source,
+      limits: input.limits,
+    });
+    // Take min(merged RPM/TPM/concurrency, model-level) (SPEC 21 §quota / SPEC 24 §4: model-level is the ceiling;
+    // the merged caps only self-throttle and cannot exceed). Each field has an independent fallback.
+    const effectiveModel = applyExperimentLimits(model, mergedLimits);
 
     const expectedOutput = input.judgment?.expectedOutput ?? null;
     const evaluateJudgmentHook = input.judgment
@@ -73,7 +84,7 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
 
     // Build the rate-limit key at the runtime layer (§3.7); llm-client/limiter stay project-unaware (§8).
     const limiterKey = deps.limiterKeyStrategy.buildModelKey(
-      { projectId: input.projectId, source: 'local' },
+      { projectId: input.projectId, orgId: input.orgId, source: 'local' },
       input.modelId,
     );
 

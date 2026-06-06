@@ -192,6 +192,10 @@ export class OptimizationService {
     body: CreateOptimizationDto,
     actor: CurrentUserPayload,
     source: AuditSource = 'api',
+    // orgId (SaaS-only; undefined in OSS) is sourced from the resolved ProjectContext — the project's org is the
+    // rate-limit bucket (SPEC 08 §3.7). Threaded into launcher.launch → runWorkflow → snapshot.orgId so the worker
+    // composes an org-scoped limiter key; child-experiment launches inside the workflow inherit it from the snapshot.
+    orgId?: string,
   ): Promise<OptimizationListItemDto> {
     await this.getWritableProject(projectId, actor);
     const existing = await this.repo.findOptimizationByProjectAndName(projectId, body.name);
@@ -205,7 +209,7 @@ export class OptimizationService {
     let workflowStartAuthorized = false;
     const assertWorkflowStart = async () => {
       if (workflowStartAuthorized) return;
-      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'optimization');
+      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, orgId, source: 'local' }, 'optimization');
       workflowStartAuthorized = true;
     };
 
@@ -284,7 +288,7 @@ export class OptimizationService {
 
     let workflowId: string | null = null;
     try {
-      workflowId = await this.launcher.launch(insertedId);
+      workflowId = await this.launcher.launch(insertedId, orgId);
     } catch (error) {
       const reason = `launch_failed: ${(error as Error).message}`;
       const now = new Date();
@@ -373,6 +377,9 @@ export class OptimizationService {
     action: OptimizationControlActionDto,
     actor: CurrentUserPayload,
     source: AuditSource = 'api',
+    // orgId (SaaS-only; undefined in OSS) sourced from the resolved ProjectContext — the project's org is the
+    // rate-limit bucket (SPEC 08 §3.7). Threaded into launcher.resume on the resume path.
+    orgId?: string,
   ): Promise<OptimizationListItemDto> {
     await this.getWritableProject(projectId, actor);
     const parsedAction = optimizationControlActionSchema.parse(action);
@@ -392,8 +399,8 @@ export class OptimizationService {
     }
 
     if (parsedAction === 'resume') {
-      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'optimization');
-      await this.launcher.resume(optimizationId);
+      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, orgId, source: 'local' }, 'optimization');
+      await this.launcher.resume(optimizationId, orgId);
     }
 
     const updated = await this.repo.findOptimizationById(projectId, optimizationId);

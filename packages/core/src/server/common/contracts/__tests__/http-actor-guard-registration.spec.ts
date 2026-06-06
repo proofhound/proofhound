@@ -87,6 +87,7 @@ describe('HttpActorGuard module registration', () => {
     expect(listProjectModels).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ actorId: 'local-test', actorKind: 'local_user' }),
+      undefined,
     );
     await app.close();
   });

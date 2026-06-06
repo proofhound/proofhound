@@ -26,7 +26,9 @@ export function createProbeRunner(deps: ProbeRunnerDependencies) {
     const model = await loadModelInvocationConfig(deps, input.modelId);
     // Same key as the LLM runner so a probe shares the model's rate-limit counting space (§3.7).
     const limiterKey = deps.limiterKeyStrategy.buildModelKey(
-      input.projectId ? { projectId: input.projectId, source: 'local' } : LOCAL_PROJECT_CONTEXT,
+      input.projectId
+        ? { projectId: input.projectId, orgId: input.orgId, source: 'local' }
+        : { ...LOCAL_PROJECT_CONTEXT, orgId: input.orgId },
       input.modelId,
     );
     const result = await testModelConnectivity(

@@ -234,7 +234,7 @@ export function createPromptTools(
         },
       },
       handler: async (input, ctx) => {
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const promptId = promptIdParamSchema.parse(input.promptId);
         const dto = promptTryRunRequestSchema.parse({
           promptVersionId: input.promptVersionId,
@@ -244,7 +244,7 @@ export function createPromptTools(
           maxTokens: input.maxTokens,
           timeoutSeconds: input.timeoutSeconds,
         });
-        return promptTryRunService.tryRun(projectId, promptId, dto, getMcpActor(ctx));
+        return promptTryRunService.tryRun(projectId, promptId, dto, getMcpActor(ctx), orgId);
       },
     },
     {

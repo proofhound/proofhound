@@ -215,6 +215,64 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
   });
 });
 
+describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
+  // Drive runWorkflow(experimentId, orgId) through the real enqueueBatchImpl (loadRenderContext /
+  // loadSampleDataByIds stubbed), capturing the LlmJobPayload handed to bullmq.enqueueLlmJob.
+  function buildEnqueueRegistrar() {
+    const enqueueLlmJob = vi.fn().mockResolvedValue(undefined);
+    const db = {} as never;
+    const bullmq = { enqueueLlmJob } as never;
+    const runResults = {} as never;
+    const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults);
+
+    const r = registrar as unknown as Record<string, unknown>;
+    r['finalizeStep'] = vi.fn().mockResolvedValue(undefined);
+    r['markStartedStep'] = vi.fn().mockResolvedValue(undefined);
+    r['aggregateMetricsStep'] = vi.fn().mockResolvedValue(undefined);
+    r['loadPlanStep'] = vi.fn().mockResolvedValue({ ...PLAN, totalSamples: 1, batchSize: 1 });
+    r['readControlStateStep'] = vi.fn().mockResolvedValue(null);
+    r['loadSampleIdBatchStep'] = vi.fn().mockResolvedValueOnce(['s1']);
+    r['pollUntilBatchDoneStep'] = vi.fn().mockResolvedValueOnce({ terminalCount: 1, failedCount: 0 });
+    r['loadRenderContext'] = vi.fn().mockResolvedValue({
+      projectId: 'prj-1',
+      promptVersionId: 'pv-1',
+      promptId: 'p-1',
+      modelId: 'm-1',
+      runConfig: {},
+      body: 'hello',
+      variables: [],
+      outputSchema: null,
+      judgmentRules: null,
+      promptLanguage: 'en-US',
+    });
+    r['loadSampleDataByIds'] = vi.fn().mockResolvedValue([{ id: 's1', data: {} }]);
+
+    return { registrar, enqueueLlmJob };
+  }
+
+  it('runWorkflow(id, org-x) → enqueued payload 携带 orgId=org-x', async () => {
+    const { registrar, enqueueLlmJob } = buildEnqueueRegistrar();
+
+    await (
+      registrar as unknown as { runWorkflow: (id: string, orgId?: string) => Promise<void> }
+    ).runWorkflow('exp-1', 'org-x');
+
+    expect(enqueueLlmJob).toHaveBeenCalledTimes(1);
+    expect(enqueueLlmJob.mock.calls[0]?.[0]).toMatchObject({ orgId: 'org-x', projectId: 'prj-1' });
+  });
+
+  it('OSS 默认无 orgId → enqueued payload.orgId 为 undefined', async () => {
+    const { registrar, enqueueLlmJob } = buildEnqueueRegistrar();
+
+    await (
+      registrar as unknown as { runWorkflow: (id: string, orgId?: string) => Promise<void> }
+    ).runWorkflow('exp-1');
+
+    expect(enqueueLlmJob).toHaveBeenCalledTimes(1);
+    expect(enqueueLlmJob.mock.calls[0]?.[0]?.orgId).toBeUndefined();
+  });
+});
+
 describe('readExpectedField', () => {
   it('reads prompt-editor rules array value as expected field', () => {
     expect(

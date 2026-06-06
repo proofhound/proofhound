@@ -5,6 +5,10 @@ import {
   type WebhookAsyncCallReceipt,
 } from '@proofhound/orchestration-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+  ConnectorContextResolver,
+  ConnectorResolveResult,
+} from '../../../../server/common/contracts/connector-context.resolver';
 import { LocalWorkflowAuthorizationHook } from '../../../../server/common/contracts/workflow-authorization.hook';
 import type { BullmqService } from '../../../infrastructure/orchestration/bullmq.service';
 import { LocalConnectorContextResolver } from '../local-connector-context.resolver';
@@ -21,6 +25,8 @@ const releaseLineEventId = '44444444-4444-4444-8444-444444444444';
 const promptVersionId = '55555555-5555-4555-8555-555555555555';
 const promptId = '66666666-6666-4666-8666-666666666666';
 const modelId = '77777777-7777-4777-8777-777777777777';
+// SaaS-only org attribution; OSS resolver never sets it (see ProjectContext.orgId).
+const orgId = '99999999-9999-4999-8999-999999999999';
 
 const connector = {
   id: connectorId,
@@ -124,10 +130,13 @@ describe('WebhookService', () => {
   function makeService(
     repo: ReturnType<typeof makeRepo>,
     workflowAuth = new LocalWorkflowAuthorizationHook(),
-  ) {
-    // The connector resolver delegates to the same repo, so the existing repo-call assertions
+    // Default resolver delegates to the same repo, so the existing repo-call assertions
     // (findConnectorWithValidToken / touchTokenLastUsed / invalid|expired_webhook_token) still hold.
-    const resolver = new LocalConnectorContextResolver(repo as unknown as WebhookRepository);
+    // Tests that need a SaaS-style org-scoped projectContext pass an override resolver.
+    resolver: ConnectorContextResolver = new LocalConnectorContextResolver(
+      repo as unknown as WebhookRepository,
+    ),
+  ) {
     return new WebhookService(
       repo as unknown as WebhookRepository,
       bullmq as BullmqService,
@@ -135,6 +144,20 @@ describe('WebhookService', () => {
       resolver,
       workflowAuth,
     );
+  }
+
+  // Stub resolver that returns a projectContext carrying an org id, mirroring how a SaaS
+  // RemoteConnectorContextResolver would resolve the webhook's project to its owning org.
+  function makeOrgResolver(resolvedOrgId: string | undefined): ConnectorContextResolver {
+    const result: ConnectorResolveResult = {
+      connector,
+      projectContext: { projectId, source: 'local', orgId: resolvedOrgId },
+      actorContext: { actorId: connector.id, actorKind: 'system_webhook' },
+      webhookTokenId: tokenId,
+    };
+    return {
+      resolveFromWebhookToken: vi.fn().mockResolvedValue(result),
+    } as unknown as ConnectorContextResolver;
   }
 
   it('authenticates a public webhook path and enqueues a release LLM job', async () => {
@@ -177,6 +200,43 @@ describe('WebhookService', () => {
       raw_response: '{"label":"positive"}',
     });
     expect(redis.set).not.toHaveBeenCalled();
+  });
+
+  it('threads the resolved project context org id onto the release LLM job payload', async () => {
+    const repo = makeRepo();
+    const service = makeService(repo, new LocalWorkflowAuthorizationHook(), makeOrgResolver(orgId));
+
+    await service.receive({
+      webhookSlug: 'wh-a3a1b2c3',
+      pathName: '',
+      body: { id: 'sample-1', text: 'hello' },
+      authorization: `Bearer ${TOKEN}`,
+      ipAddress: '127.0.0.1',
+      userAgent: 'vitest',
+    });
+
+    expect(bullmq.enqueueLlmJob).toHaveBeenCalledTimes(1);
+    const [payload] = vi.mocked(bullmq.enqueueLlmJob).mock.calls[0]!;
+    expect(payload.orgId).toBe(orgId);
+  });
+
+  it('leaves the release payload org id undefined for the OSS default (no org)', async () => {
+    const repo = makeRepo();
+    // Real LocalConnectorContextResolver → projectContext has no orgId, so the payload carries none.
+    const service = makeService(repo);
+
+    await service.receive({
+      webhookSlug: 'wh-a3a1b2c3',
+      pathName: '',
+      body: { id: 'sample-1', text: 'hello' },
+      authorization: `Bearer ${TOKEN}`,
+      ipAddress: '127.0.0.1',
+      userAgent: 'vitest',
+    });
+
+    expect(bullmq.enqueueLlmJob).toHaveBeenCalledTimes(1);
+    const [payload] = vi.mocked(bullmq.enqueueLlmJob).mock.calls[0]!;
+    expect(payload.orgId).toBeUndefined();
   });
 
   it('rejects an unknown slug / path / token combo with invalid_webhook_token', async () => {

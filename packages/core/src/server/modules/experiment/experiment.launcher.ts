@@ -13,27 +13,33 @@ export class ExperimentLauncher {
     private readonly repo: ExperimentRepository,
   ) {}
 
-  async launch(experimentId: string): Promise<string> {
-    return this.startWorkflowWithIdSuffix(experimentId, 'start');
+  // orgId (SaaS-only; undefined in OSS) is seeded from the resolved ProjectContext (the project's org is the
+  // rate-limit bucket, SPEC 08 §3.7) and threaded into the workflow run input, so the worker can compose an
+  // org-scoped rate-limit key without re-querying. Resume/retry/recovery paths that lack a project pass undefined.
+  async launch(experimentId: string, orgId?: string): Promise<string> {
+    return this.startWorkflowWithIdSuffix(experimentId, 'start', orgId);
   }
 
-  async resume(experimentId: string): Promise<string> {
-    return this.startWorkflowWithIdSuffix(experimentId, 'resume');
+  async resume(experimentId: string, orgId?: string): Promise<string> {
+    return this.startWorkflowWithIdSuffix(experimentId, 'resume', orgId);
   }
 
-  async retry(experimentId: string): Promise<string> {
-    return this.startWorkflowWithIdSuffix(experimentId, 'retry');
+  async retry(experimentId: string, orgId?: string): Promise<string> {
+    return this.startWorkflowWithIdSuffix(experimentId, 'retry', orgId);
   }
 
-  async startWithWorkflowId(experimentId: string, workflowId: string): Promise<string> {
-    const handle = await DBOS.startWorkflow(this.workflow.runWorkflow, { workflowID: workflowId })(experimentId);
+  async startWithWorkflowId(experimentId: string, workflowId: string, orgId?: string): Promise<string> {
+    const handle = await DBOS.startWorkflow(this.workflow.runWorkflow, { workflowID: workflowId })(
+      experimentId,
+      orgId,
+    );
     this.logger.info({ experimentId, workflowId, handleId: handle.workflowID }, 'experiment_workflow_started');
     return workflowId;
   }
 
-  private async startWorkflowWithIdSuffix(experimentId: string, kind: string): Promise<string> {
+  private async startWorkflowWithIdSuffix(experimentId: string, kind: string, orgId?: string): Promise<string> {
     const workflowId = `exp:${experimentId}:${kind}:${Date.now()}`;
-    await this.startWithWorkflowId(experimentId, workflowId);
+    await this.startWithWorkflowId(experimentId, workflowId, orgId);
     await this.repo.setDbosWorkflowId(experimentId, workflowId);
     return workflowId;
   }
