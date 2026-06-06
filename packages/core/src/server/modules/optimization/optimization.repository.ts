@@ -195,6 +195,7 @@ export interface OptimizationRoundLlmRow {
 
 export interface OptimizationActiveRunningRow {
   optimizationId: string;
+  projectId: string;
   dbosWorkflowId: string;
 }
 
@@ -470,6 +471,7 @@ export class OptimizationRepository {
     const rows = await this.db
       .select({
         optimizationId: optimizations.id,
+        projectId: optimizations.projectId,
         dbosWorkflowId: optimizations.dbosWorkflowId,
       })
       .from(optimizations)
@@ -481,7 +483,9 @@ export class OptimizationRepository {
           isNotNull(optimizations.dbosWorkflowId),
         ),
       );
-    return rows.filter((r): r is { optimizationId: string; dbosWorkflowId: string } => r.dbosWorkflowId !== null);
+    return rows.filter(
+      (r): r is { optimizationId: string; projectId: string; dbosWorkflowId: string } => r.dbosWorkflowId !== null,
+    );
   }
 
   async markStarted(optimizationId: string): Promise<void> {

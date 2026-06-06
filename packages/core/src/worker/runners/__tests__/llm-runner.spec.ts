@@ -190,8 +190,8 @@ function fakeDb(row: typeof activeModel | undefined): DbClient {
 
 describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', () => {
   class CapProvider extends RuntimeLimitsProvider {
-    async mergeLlmLimits(): Promise<{ concurrency: number }> {
-      return { concurrency: 1 };
+    async mergeLlmLimits(): Promise<{ rpmLimit: number; tpmLimit: number; concurrency: number }> {
+      return { rpmLimit: 100, tpmLimit: 10_000, concurrency: 1 };
     }
   }
 
@@ -231,6 +231,47 @@ describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', 
     // activeModel.concurrencyLimit is 2; the provider caps concurrency to 1 → effective min is 1.
     const lastCall = invokeLLMMock.mock.calls.at(-1)!;
     expect(lastCall[0].model.concurrencyLimit).toBe(1);
+  });
+
+  it('applies positive plan caps to unlimited model rpm/tpm before invokeLLM', async () => {
+    invokeLLMMock.mockResolvedValue({
+      content: '{}',
+      parsed: {},
+      decisionOutput: null,
+      isCorrect: null,
+      judgmentStatus: null,
+      usage: { inputTokens: 1, outputTokens: 1 },
+      costEstimate: 0,
+      durationMs: 1,
+    });
+    const runLlmJob = createLlmRunner({
+      db: fakeDb({ ...activeModel, rpmLimit: -1, tpmLimit: -1, concurrencyLimit: 4 }),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new LocalLimiterKeyStrategy(),
+      logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+      runtimeLimitsProvider: new CapProvider(),
+    });
+
+    await runLlmJob(
+      {
+        projectId: '22222222-2222-4222-8222-222222222222',
+        source: 'experiment',
+        sourceId: '33333333-3333-4333-8333-333333333333',
+        promptVersionId: '44444444-4444-4444-8444-444444444444',
+        modelId: activeModel.id,
+        runResultId: '11111111-1111-4111-8111-111111111112',
+        renderedPrompt: { prompt: 'hi' },
+      } as never,
+      { bullmqJobId: 'job-unlimited-cap', bullmqQueue: 'llm', attempt: 1 },
+    );
+
+    const lastCall = invokeLLMMock.mock.calls.at(-1)!;
+    expect(lastCall[0].model).toMatchObject({
+      rpmLimit: 100,
+      tpmLimit: 10_000,
+      concurrencyLimit: 1,
+    });
   });
 });
 

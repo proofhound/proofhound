@@ -1,6 +1,8 @@
 import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { createLogger } from '@proofhound/logger';
+import type { ActorContext } from '../../common/actor-context';
+import { ProjectContextResolver } from '../../common/contracts/project-context.resolver';
 import { ExperimentLauncher } from './experiment.launcher';
 import { ExperimentRepository } from './experiment.repository';
 
@@ -13,6 +15,7 @@ export class ExperimentRecoveryService implements OnApplicationBootstrap {
   constructor(
     private readonly repo: ExperimentRepository,
     private readonly launcher: ExperimentLauncher,
+    private readonly projectResolver: ProjectContextResolver,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -31,7 +34,7 @@ export class ExperimentRecoveryService implements OnApplicationBootstrap {
     }
 
     for (const candidate of candidates) {
-      const { experimentId, dbosWorkflowId } = candidate;
+      const { experimentId, projectId, dbosWorkflowId } = candidate;
       let stillActive = false;
       try {
         const status = await DBOS.getWorkflowStatus(dbosWorkflowId);
@@ -51,9 +54,12 @@ export class ExperimentRecoveryService implements OnApplicationBootstrap {
       }
 
       try {
-        const newWorkflowId = await this.launcher.resume(experimentId);
+        const project = await this.projectResolver.resolve(this.toRecoveryActor(experimentId, projectId), {
+          projectId,
+        });
+        const newWorkflowId = await this.launcher.resume(experimentId, project.orgId);
         this.logger.info(
-          { experimentId, dbosWorkflowId, newWorkflowId },
+          { experimentId, projectId, orgId: project.orgId, dbosWorkflowId, newWorkflowId },
           'experiment_workflow_recovered',
         );
       } catch (error) {
@@ -63,5 +69,9 @@ export class ExperimentRecoveryService implements OnApplicationBootstrap {
         );
       }
     }
+  }
+
+  private toRecoveryActor(experimentId: string, projectId: string): ActorContext {
+    return { actorId: experimentId, actorKind: 'system_workflow_recovery', projectId };
   }
 }

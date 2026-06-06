@@ -1,9 +1,11 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import type { ConsumeMessage } from '@proofhound/connector-client';
 import { createLogger } from '@proofhound/logger';
-import type { ConnectorConfigShape, ConnectorDirection, ConnectorType } from '@proofhound/shared';
+import type { ConnectorConfigShape, ConnectorDirection, ConnectorType, ProjectContext } from '@proofhound/shared';
 import { BullmqService } from '../../infrastructure/orchestration/bullmq.service';
 import { RedisMutexService, type RedisMutexLease } from '../../../shared/redis/redis-mutex.service';
+import type { ActorContext } from '../../common/actor-context';
+import { ProjectContextResolver } from '../../common/contracts/project-context.resolver';
 import { ConnectorDriverFactory } from '../connector/connector.driver-factory';
 import {
   buildReleaseLlmPayload,
@@ -52,6 +54,7 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
     private readonly driverFactory: ConnectorDriverFactory,
     private readonly bullmq: BullmqService,
     private readonly mutex: RedisMutexService,
+    private readonly projectResolver: ProjectContextResolver,
   ) {}
 
   onModuleInit(): void {
@@ -208,10 +211,9 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
     }
 
     const runResultId = computeReleaseRunResultId(lane.id, messageId);
-    // orgId is unavailable here: this is a DB-row background poller with no connector/actor context in
-    // scope, so the payload's org is intentionally left undefined until a SaaS connector context supplies it.
+    const project = await this.resolveRunnerProjectContext(lane);
     const llmPayload = buildReleaseLlmPayload({
-      release: toRuntimeConfig(lane),
+      release: toRuntimeConfig(lane, project.orgId),
       inputVariables: mapped.inputVariables,
       rawPayload: payload,
       externalId: mapped.externalId,
@@ -400,6 +402,18 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
     if (Number.isFinite(raw) && raw >= MIN_LOCK_TTL_MS) return Math.floor(raw);
     return DEFAULT_LOCK_TTL_MS;
   }
+
+  private async resolveRunnerProjectContext(lane: ReleaseRunnerLaneRow): Promise<ProjectContext> {
+    const actor: ActorContext = {
+      actorId: lane.releaseLineId,
+      actorKind: 'system_release_runner',
+      projectId: lane.projectId,
+    };
+    return this.projectResolver.resolve(actor, {
+      projectId: lane.projectId,
+      projectIdHeader: lane.projectId,
+    });
+  }
 }
 
 export function buildReleaseLineLockKey(releaseLineId: string): string {
@@ -424,10 +438,11 @@ function resolveRenewIntervalMs(ttlMs: number): number {
   return Math.max(1_000, Math.floor(ttlMs / 3));
 }
 
-function toRuntimeConfig(lane: ReleaseRunnerLaneRow): CanaryRuntimeConfig {
+function toRuntimeConfig(lane: ReleaseRunnerLaneRow, orgId?: string): CanaryRuntimeConfig {
   return {
     id: lane.id,
     projectId: lane.projectId,
+    ...(orgId ? { orgId } : {}),
     releaseVariantId: lane.releaseVariantId,
     promptVersionId: lane.promptVersionId,
     promptId: lane.promptId,

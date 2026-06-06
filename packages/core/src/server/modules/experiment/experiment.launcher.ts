@@ -15,7 +15,7 @@ export class ExperimentLauncher {
 
   // orgId (SaaS-only; undefined in OSS) is seeded from the resolved ProjectContext (the project's org is the
   // rate-limit bucket, SPEC 08 §3.7) and threaded into the workflow run input, so the worker can compose an
-  // org-scoped rate-limit key without re-querying. Resume/retry/recovery paths that lack a project pass undefined.
+  // org-scoped rate-limit key without re-querying. Recovery hydrates the row's project before resume.
   async launch(experimentId: string, orgId?: string): Promise<string> {
     return this.startWorkflowWithIdSuffix(experimentId, 'start', orgId);
   }
@@ -29,10 +29,7 @@ export class ExperimentLauncher {
   }
 
   async startWithWorkflowId(experimentId: string, workflowId: string, orgId?: string): Promise<string> {
-    const handle = await DBOS.startWorkflow(this.workflow.runWorkflow, { workflowID: workflowId })(
-      experimentId,
-      orgId,
-    );
+    const handle = await DBOS.startWorkflow(this.workflow.runWorkflow, { workflowID: workflowId })(experimentId, orgId);
     this.logger.info({ experimentId, workflowId, handleId: handle.workflowID }, 'experiment_workflow_started');
     return workflowId;
   }

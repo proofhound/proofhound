@@ -45,7 +45,7 @@ export class CanaryReleaseController {
   ) {
     const parse = createCanaryReleaseInputSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.create(project.projectId, parse.data, actor);
+    return this.service.create(project.projectId, parse.data, actor, project.orgId);
   }
 
   @Get(':canaryId')
@@ -63,7 +63,7 @@ export class CanaryReleaseController {
     @CurrentUser() actor: CurrentUserPayload,
     @CurrentProject() project: ProjectContext,
   ) {
-    return this.service.start(project.projectId, this.parseUuid(canaryId), actor);
+    return this.service.start(project.projectId, this.parseUuid(canaryId), actor, project.orgId);
   }
 
   @Post(':canaryId/stop')
@@ -87,7 +87,7 @@ export class CanaryReleaseController {
   ) {
     const parse = resumeCanaryReleaseInputSchema.safeParse(rawBody ?? {});
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.resume(project.projectId, this.parseUuid(canaryId), actor);
+    return this.service.resume(project.projectId, this.parseUuid(canaryId), actor, project.orgId);
   }
 
   @Post(':canaryId/cancel')

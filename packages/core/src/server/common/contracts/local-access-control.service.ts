@@ -10,8 +10,13 @@ import type { AccessAction } from '../access-control';
 import type { ActorContext, ActorKind, ProjectContext } from '../actor-context';
 import { AccessControlService } from './access-control.service';
 
-// Actors produced by system entry resolvers (MCP / Webhook ingress). In OSS these bypass all access checks.
-const SYSTEM_ACTOR_KINDS: ReadonlyArray<ActorKind> = ['system_mcp', 'system_webhook'];
+// Actors produced by system entry resolvers or internal runners. In OSS these bypass all access checks.
+const SYSTEM_ACTOR_KINDS: ReadonlyArray<ActorKind> = [
+  'system_mcp',
+  'system_webhook',
+  'system_release_runner',
+  'system_workflow_recovery',
+];
 
 @Injectable()
 export class LocalAccessControlService extends AccessControlService {

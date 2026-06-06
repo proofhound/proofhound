@@ -34,9 +34,11 @@ export interface McpRequestMetadataLike {
 /**
  * Hint for ProjectContextResolver.resolve.
  * The OSS default implementation ignores all hints and always returns LOCAL_PROJECT_CONTEXT;
- * SaaS RemoteProjectContextResolver reads projectIdHeader / mcpMetadata.
+ * SaaS RemoteProjectContextResolver reads projectId / projectIdHeader / mcpMetadata.
  */
 export interface ProjectContextHint {
+  /** Already-resolved project id from an internal row or trusted runtime boundary. */
+  projectId?: string;
   /** HTTP `X-Project-Id` header */
   projectIdHeader?: string;
   /** MCP metadata (same source as McpAuthResolver) */

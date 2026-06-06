@@ -27,7 +27,7 @@ export class ProductionReleaseController {
   ) {
     const parse = createProductionReleaseInputSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.service.create(project.projectId, parse.data, actor);
+    return this.service.create(project.projectId, parse.data, actor, project.orgId);
   }
 
   @Get(':eventId')

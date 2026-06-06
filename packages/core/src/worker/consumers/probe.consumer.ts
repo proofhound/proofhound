@@ -7,6 +7,7 @@ import { createLogger } from '@proofhound/logger';
 import { probeJobPayloadSchema, type ProbeJobPayload } from '@proofhound/orchestration-shared';
 import { DelayedError, type Job } from 'bullmq';
 import { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
+import { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
 import { DATABASE_CLIENT } from '../../shared/database/database.constants';
 import { MODEL_SECRET_RESOLVER } from '../infrastructure/llm/model-secret.provider';
 import { REDIS_LIMITER } from '../../shared/redis/redis.constants';
@@ -24,9 +25,17 @@ export class ProbeConsumer extends WorkerHost {
     @Inject(REDIS_LIMITER) limiter: RateLimiter,
     @Inject(MODEL_SECRET_RESOLVER) modelSecretResolver: ModelSecretResolver,
     limiterKeyStrategy: LimiterKeyStrategy,
+    runtimeLimitsProvider: RuntimeLimitsProvider,
   ) {
     super();
-    this.runProbeJob = createProbeRunner({ db, limiter, limiterKeyStrategy, logger: this.logger, modelSecretResolver });
+    this.runProbeJob = createProbeRunner({
+      db,
+      limiter,
+      limiterKeyStrategy,
+      runtimeLimitsProvider,
+      logger: this.logger,
+      modelSecretResolver,
+    });
   }
 
   async process(job: Job<unknown>, token?: string): Promise<ModelConnectivityProbeResult> {

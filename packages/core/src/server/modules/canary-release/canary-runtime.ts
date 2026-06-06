@@ -25,6 +25,7 @@ export class CanaryRuntimeInputError extends Error {
 export interface CanaryRuntimeConfig {
   id: string;
   projectId: string;
+  orgId?: string;
   releaseVariantId?: string | null;
   promptVersionId: string;
   promptId: string;
@@ -130,8 +131,7 @@ export function buildReleaseLlmPayload(input: {
 
   return {
     projectId: input.release.projectId,
-    // orgId is unavailable here: this builds from a DB release row with no connector/actor context in scope,
-    // so it is intentionally left undefined until a SaaS connector context supplies the project's org.
+    ...(input.release.orgId ? { orgId: input.release.orgId } : {}),
     source: 'release',
     sourceId: input.release.id,
     releaseVariantId: input.release.releaseVariantId ?? null,

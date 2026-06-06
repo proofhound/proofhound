@@ -13,6 +13,7 @@ const promptVersionId = '33333333-3333-4333-8333-333333333333';
 const modelId = '44444444-4444-4444-8444-444444444444';
 const inputConnectorId = '55555555-5555-4555-8555-555555555555';
 const actorId = '66666666-6666-4666-8666-666666666666';
+const orgId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const actor: CurrentUserPayload = {
   sub: actorId,
@@ -157,11 +158,11 @@ describe('ProductionReleaseService.create', () => {
       releaseLines as unknown as ReleaseLineService,
     );
 
-    const event = await service.create(projectId, createInput, actor);
+    const event = await service.create(projectId, createInput, actor, orgId);
 
     expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
       expect.objectContaining({ actorId, actorKind: 'local_user' }),
-      { projectId, source: 'local' },
+      { projectId, orgId, source: 'local' },
       'release',
     );
     expect(repo.freezePromptVersionIfNeeded).toHaveBeenCalledWith(promptVersionId);

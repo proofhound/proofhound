@@ -3,7 +3,7 @@
  * This preserves SPEC 00 §5 channel parity for the non-project onboarding path.
  */
 import { createQuickStartSchema, modelIdParamSchema, probeQuickStartDraftModelSchema } from '@proofhound/shared';
-import { getMcpActor } from './mcp-context';
+import { getMcpActor, resolveMcpProjectContext } from './mcp-context';
 import type { QuickStartService } from '../../modules/quick-start/quick-start.service';
 import type { McpToolDefinition } from './mcp.types';
 
@@ -41,7 +41,7 @@ export function createQuickStartTools(service: QuickStartService): McpToolDefini
       inputSchema: { type: 'object', properties: {} },
       handler: async (input, ctx) => {
         const dto = createQuickStartSchema.parse(input);
-        return service.createQuickStart(dto, getMcpActor(ctx), 'mcp');
+        return service.createQuickStart(dto, resolveMcpProjectContext(ctx), getMcpActor(ctx), 'mcp');
       },
     },
   ];

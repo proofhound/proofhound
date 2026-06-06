@@ -7,6 +7,7 @@ import type { CryptoService } from '../../../../shared/crypto/crypto.service';
 import type { PromptRepository } from '../prompt.repository';
 import { PromptTryRunService } from '../prompt-try-run.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import type { RuntimeLimitsProvider } from '../../../common/contracts/runtime-limits.provider';
 
 vi.mock('@proofhound/llm-client', async (importOriginal) => {
   const actual = await importOriginal<object>();
@@ -35,6 +36,7 @@ function buildService(overrides?: {
   promptRepo?: Partial<PromptRepository>;
   crypto?: Partial<CryptoService>;
   modelRow?: Record<string, unknown> | null;
+  runtimeLimitsProvider?: Partial<RuntimeLimitsProvider>;
 }) {
   const modelRow = overrides?.modelRow ?? {
     id: MODEL_ID,
@@ -107,6 +109,10 @@ function buildService(overrides?: {
         project.orgId ? `org:${project.orgId}:model:${modelId}` : `project:${project.projectId}:model:${modelId}`,
       ),
     },
+    {
+      mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits),
+      ...overrides?.runtimeLimitsProvider,
+    } as RuntimeLimitsProvider,
   );
 
   return { service, promptRepo, crypto };
@@ -198,6 +204,36 @@ describe('PromptTryRunService', () => {
 
     expect(llmClient.invokeLLM).toHaveBeenCalledWith(
       expect.objectContaining({ limiterKey: `org:org-7:model:${MODEL_ID}` }),
+      expect.anything(),
+    );
+  });
+
+  it('merges RuntimeLimitsProvider plan cap into prompt try-run model limits', async () => {
+    llmClient.invokeLLM.mockResolvedValue({
+      content: '{"answer":"hi"}',
+      rawResponse: {},
+      parsed: { answer: 'hi' },
+      usage: { inputTokens: 10, outputTokens: 4 },
+      costEstimate: 0.0005,
+      durationMs: 432,
+    });
+
+    const runtimeLimitsProvider = {
+      mergeLlmLimits: vi.fn().mockResolvedValue({ rpmLimit: 12, tpmLimit: 1200, concurrency: 3 }),
+    };
+    const { service } = buildService({ runtimeLimitsProvider });
+
+    await service.tryRun(PROJECT_ID, PROMPT_ID, validRequest(), actor, 'org-7');
+
+    expect(runtimeLimitsProvider.mergeLlmLimits).toHaveBeenCalledWith({
+      project: { projectId: PROJECT_ID, orgId: 'org-7', source: 'local' },
+      modelId: MODEL_ID,
+      source: 'prompt_try_run',
+    });
+    expect(llmClient.invokeLLM).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: expect.objectContaining({ rpmLimit: 12, tpmLimit: 1200, concurrencyLimit: 3 }),
+      }),
       expect.anything(),
     );
   });

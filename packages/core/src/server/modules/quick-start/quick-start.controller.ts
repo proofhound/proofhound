@@ -1,6 +1,12 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { createQuickStartSchema, modelIdParamSchema, probeQuickStartDraftModelSchema } from '@proofhound/shared';
+import {
+  createQuickStartSchema,
+  modelIdParamSchema,
+  probeQuickStartDraftModelSchema,
+  type ProjectContext,
+} from '@proofhound/shared';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
+import { CurrentProject } from '../../common/decorators/current-project.decorator';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
 import { QuickStartService } from './quick-start.service';
 
@@ -29,9 +35,13 @@ export class QuickStartController {
   }
 
   @Post()
-  async create(@Body() rawBody: unknown, @CurrentUser() actor: CurrentUserPayload) {
+  async create(
+    @Body() rawBody: unknown,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
     const parse = createQuickStartSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.quickStart.createQuickStart(parse.data, actor);
+    return this.quickStart.createQuickStart(parse.data, project, actor);
   }
 }

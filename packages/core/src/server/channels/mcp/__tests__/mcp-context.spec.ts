@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ActorContext } from '../../../common/actor-context';
 import type { AccessControlService } from '../../../common/contracts/access-control.service';
 import type { McpAuthResolver } from '../../../common/contracts/mcp-auth.resolver';
-import { ProjectAccessDeniedError, type ProjectContextResolver } from '../../../common/contracts/project-context.resolver';
+import {
+  ProjectAccessDeniedError,
+  type ProjectContextResolver,
+} from '../../../common/contracts/project-context.resolver';
 import type { McpRequestMetadataLike } from '../../../common/contracts/types';
 import type { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import { getMcpActor, McpDispatchContextFactory, resolveMcpProjectContext } from '../mcp-context';
@@ -46,6 +49,13 @@ describe('mcp-context', () => {
     });
   });
 
+  it('resolveMcpProjectContext prefers the resolved project orgId over the actor orgId', () => {
+    const orgActor: CurrentUserPayload = { ...actor, orgId: 'actor-org' };
+    const project: ProjectContext = { projectId: 'p-9', orgId: 'project-org', source: 'local' };
+
+    expect(resolveMcpProjectContext({ actorUserId: 'tok-1', actor: orgActor, project })).toEqual(project);
+  });
+
   it('McpDispatchContextFactory authorizes the MCP channel before returning context', async () => {
     const authResolver = { resolveFromMcp: vi.fn().mockResolvedValue(actorContext) };
     const projectResolver = { resolve: vi.fn().mockResolvedValue(projectContext) };
@@ -70,6 +80,7 @@ describe('mcp-context', () => {
       isSuperAdmin: false,
       isActive: true,
     });
+    expect(ctx.project).toEqual(projectContext);
   });
 
   it('McpDispatchContextFactory preserves orgId for org-pinned MCP actors', async () => {

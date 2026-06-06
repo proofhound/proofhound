@@ -1,5 +1,10 @@
 import { describe, expect, it, vi, type Mocked } from 'vitest';
-import { LOCAL_PROJECT_ID, createQuickStartSchema, type CreateProjectModelDto } from '@proofhound/shared';
+import {
+  LOCAL_PROJECT_ID,
+  createQuickStartSchema,
+  type CreateProjectModelDto,
+  type ProjectContext,
+} from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import type { OptimizationService } from '../../optimization/optimization.service';
 import type { DatasetService } from '../../dataset/dataset.service';
@@ -11,6 +16,11 @@ const actor: CurrentUserPayload = {
   email: 'ziqixiao@example.com',
   isSuperAdmin: false,
   isActive: true,
+};
+const project: ProjectContext = {
+  projectId: LOCAL_PROJECT_ID,
+  orgId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  source: 'local',
 };
 
 const draftModel: CreateProjectModelDto = {
@@ -85,7 +95,7 @@ describe('QuickStartService', () => {
       analysisModel: { kind: 'draft', model: draftModel },
     });
 
-    const result = await service.createQuickStart(input, actor);
+    const result = await service.createQuickStart(input, project, actor);
 
     expect(result).toEqual({
       projectId: LOCAL_PROJECT_ID,
@@ -99,6 +109,7 @@ describe('QuickStartService', () => {
       actor,
     );
     expect(models.createProjectModel).toHaveBeenCalledTimes(1);
+    expect(models.createProjectModel).toHaveBeenCalledWith(LOCAL_PROJECT_ID, draftModel, actor, 'api', project.orgId);
     expect(optimizations.createOptimization).toHaveBeenCalledWith(
       LOCAL_PROJECT_ID,
       expect.objectContaining({
@@ -113,6 +124,7 @@ describe('QuickStartService', () => {
       }),
       actor,
       'api',
+      project.orgId,
     );
   });
 });

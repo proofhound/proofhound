@@ -15,6 +15,7 @@ import { LocalAccessControlService } from '../../../common/contracts/local-acces
 import { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 
 const WORKSPACE_ID = '11111111-1111-4111-8111-000000000010';
+const ORG_ID = 'org-connector-probe';
 const CONNECTOR_ID = '22222222-2222-4222-8222-000000000010';
 const WEBHOOK_CONNECTOR_ID = '33333333-3333-4333-8333-000000000010';
 const TOKEN_ID = '44444444-4444-4444-8444-000000000010';
@@ -341,6 +342,18 @@ describe('ConnectorService', () => {
       CONNECTOR_ID,
       expect.any(Date),
       'kafka topic not found: risk-decisions',
+    );
+  });
+
+  it('passes orgId into connector probe workflow authorization when provided', async () => {
+    repo.findById.mockResolvedValue(fakeJoinRow());
+
+    await service.probe(WORKSPACE_ID, CONNECTOR_ID, ACTOR, 'api', ORG_ID);
+
+    expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: ACTOR.sub, actorKind: 'local_user' }),
+      { projectId: WORKSPACE_ID, orgId: ORG_ID, source: 'local' },
+      'probe',
     );
   });
 

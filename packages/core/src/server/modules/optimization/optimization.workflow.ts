@@ -51,6 +51,7 @@ import {
   type PromptLanguageDto,
   type PromptOutputSchemaDto,
   type PromptJudgmentRulesDto,
+  type ProjectContext,
   promptLanguageSchema,
   promptVariableSchema,
 } from '@proofhound/shared';
@@ -58,10 +59,12 @@ import { and, asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
+import { RuntimeLimitsProvider } from '../../common/contracts/runtime-limits.provider';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 import { DrizzleRunResultWriter } from '../../infrastructure/llm/run-result-writer';
 import { REDIS_LIMITER } from '../../../shared/redis/redis.constants';
+import { applyRuntimeLimits } from '../../../shared/llm/runtime-limits';
 import { ExperimentService } from '../experiment/experiment.service';
 import { ExperimentWorkflowRegistrar } from '../experiment/experiment.workflow';
 import { PromptRepository } from '../prompt/prompt.repository';
@@ -244,6 +247,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     @Inject(REDIS_LIMITER) private readonly limiter: RateLimiter,
     private readonly runResultWriter: DrizzleRunResultWriter,
     private readonly limiterKeyStrategy: LimiterKeyStrategy,
+    private readonly runtimeLimitsProvider: RuntimeLimitsProvider,
   ) {
     super('optimization-workflow');
     this.loadConfigStep = DBOS.registerStep(this.loadConfigImpl.bind(this), {
@@ -756,6 +760,19 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     await this.repo.markStarted(optimizationId);
   }
 
+  private async applySynchronousRuntimeLimits(
+    project: ProjectContext,
+    model: ModelInvocationConfig,
+    source: 'optimization_analysis' | 'optimization_generate',
+  ): Promise<ModelInvocationConfig> {
+    const mergedLimits = await this.runtimeLimitsProvider.mergeLlmLimits({
+      project,
+      modelId: model.id,
+      source,
+    });
+    return applyRuntimeLimits(model, mergedLimits);
+  }
+
   // SPEC 25 §2.1: first version generation for the from_dataset_only start.
   // 1) randomly sample initialSamplingRounds × initialSamplesPerRound items from the dataset
   // 2) call analysisModel to have the LLM induce the first prompt body / variables / outputSchema
@@ -818,6 +835,11 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         { projectId: ctx.projectId, orgId, source: 'local' },
         analysisModel.id,
       );
+      const effectiveAnalysisModel = await this.applySynchronousRuntimeLimits(
+        { projectId: ctx.projectId, ...(orgId ? { orgId } : {}), source: 'local' },
+        analysisModel,
+        'optimization_generate',
+      );
 
       // Load and randomly sample
       const allSamples = await this.repo.loadDatasetSamples(ctx.datasetId);
@@ -850,7 +872,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       const generated = await generateInitialVersion(
         {
           optimizationId,
-          analysisModel,
+          analysisModel: effectiveAnalysisModel,
           analysisLimiterKey,
           samples,
           goals: goalsParsed.data.map(toLoopGoal),
@@ -1352,11 +1374,20 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         dbosWorkflowId: dbosWorkflowIdForSteps,
       });
       try {
+        const analysisModel = await this.applySynchronousRuntimeLimits(
+          {
+            projectId: snapshot.projectId,
+            ...(snapshot.orgId ? { orgId: snapshot.orgId } : {}),
+            source: 'local',
+          },
+          snapshot.analysisModel,
+          'optimization_analysis',
+        );
         analysisFull = await analyzeFailures(
           {
             optimizationId,
             roundNumber,
-            analysisModel: snapshot.analysisModel,
+            analysisModel,
             analysisLimiterKey: snapshot.analysisLimiterKey,
             currentVersion: analysisVersion,
             previousVersion,
@@ -1449,11 +1480,20 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         dbosWorkflowId: dbosWorkflowIdForSteps,
       });
       try {
+        const analysisModel = await this.applySynchronousRuntimeLimits(
+          {
+            projectId: snapshot.projectId,
+            ...(snapshot.orgId ? { orgId: snapshot.orgId } : {}),
+            source: 'local',
+          },
+          snapshot.analysisModel,
+          'optimization_generate',
+        );
         const draft = await generateNextVersion(
           {
             optimizationId,
             roundNumber,
-            analysisModel: snapshot.analysisModel,
+            analysisModel,
             analysisLimiterKey: snapshot.analysisLimiterKey,
             currentVersion: baseVersionForRound,
             analysis: analysisFull,

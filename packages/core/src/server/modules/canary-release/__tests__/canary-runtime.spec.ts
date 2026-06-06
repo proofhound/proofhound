@@ -39,11 +39,13 @@ describe('release runtime helpers', () => {
     const mapped = mapCanaryVariables(release, payload);
     const runResultId = computeReleaseRunResultId(release.id, 'topic:0:42');
     const sameRunResultId = computeReleaseRunResultId(release.id, 'topic:0:42');
-    const llmPayload = buildReleaseLlmPayload({ release, ...mapped, runResultId });
+    const orgScopedRelease = { ...release, orgId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
+    const llmPayload = buildReleaseLlmPayload({ release: orgScopedRelease, ...mapped, runResultId });
 
     expect(runResultId).toBe(sameRunResultId);
     expect(llmPayload).toMatchObject({
       projectId: release.projectId,
+      orgId: orgScopedRelease.orgId,
       source: 'release',
       sourceId: release.id,
       runResultId,

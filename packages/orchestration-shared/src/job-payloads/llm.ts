@@ -1,12 +1,7 @@
 import { z } from 'zod';
 import { webhookAsyncCallContextSchema } from '../webhook-async-call';
 
-export const LLM_SOURCES = [
-  'experiment',
-  'optimization_analysis',
-  'optimization_generate',
-  'release',
-] as const;
+export const LLM_SOURCES = ['experiment', 'optimization_analysis', 'optimization_generate', 'release'] as const;
 export type LlmJobSource = (typeof LLM_SOURCES)[number];
 
 const llmMessageSchema = z.object({
@@ -55,8 +50,8 @@ export type LlmJudgmentContext = z.infer<typeof llmJudgmentContextSchema>;
 
 export const llmJobPayloadSchema = z.object({
   projectId: z.string().uuid(),
-  // SaaS-only org attribution: injected by the enqueue side (launcher → workflow → step) from the launching
-  // actor's org, passed through by the worker into the org-scoped rate-limit key. OSS leaves it undefined and the
+  // SaaS-only org attribution: injected by the enqueue side (launcher → workflow → step / release runner)
+  // from the resolved project's org, passed through by the worker into the org-scoped rate-limit key. OSS leaves it undefined and the
   // default LocalLimiterKeyStrategy ignores it. Same enqueue-inject / worker-passthrough pattern as webhookTokenId.
   orgId: z.string().uuid().optional(),
   source: z.enum(LLM_SOURCES),

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BullmqService } from '../../../infrastructure/orchestration/bullmq.service';
 import type { RedisMutexService } from '../../../../shared/redis/redis-mutex.service';
 import type { ConnectorDriverFactory } from '../../connector/connector.driver-factory';
+import type { ProjectContextResolver } from '../../../common/contracts/project-context.resolver';
 import { computeReleaseRunResultId, passesTrafficRatio } from '../../canary-release/canary-runtime';
 import {
   type ReleaseRunnerLaneRow,
@@ -13,6 +14,7 @@ import { buildReleaseLineLockKey, ReleaseRunnerService } from '../release-runner
 const releaseLineId = '11111111-1111-4111-8111-111111111111';
 const productionEventId = '22222222-2222-4222-8222-222222222222';
 const canaryEventId = '33333333-3333-4333-8333-333333333333';
+const orgId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 function lane(overrides: Partial<ReleaseRunnerLaneRow> = {}): ReleaseRunnerLaneRow {
   const laneType = overrides.laneType ?? 'production';
@@ -115,6 +117,16 @@ function driverFactoryMock() {
   };
 }
 
+function projectResolverMock() {
+  return {
+    resolve: vi.fn().mockResolvedValue({
+      projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      orgId,
+      source: 'local',
+    }),
+  };
+}
+
 async function flushPromises() {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -142,11 +154,13 @@ describe('ReleaseRunnerService', () => {
     const driverFactory = driverFactoryMock();
     const bullmq = { enqueueLlmJob: vi.fn().mockResolvedValue('job-1') };
     const { mutex, lease } = mutexMock();
+    const projectResolver = projectResolverMock();
     const service = new ReleaseRunnerService(
       repo as unknown as ReleaseRunnerRepository,
       driverFactory as unknown as ConnectorDriverFactory,
       bullmq as unknown as BullmqService,
       mutex as unknown as RedisMutexService,
+      projectResolver as unknown as ProjectContextResolver,
     );
 
     await service.scanOnce();
@@ -159,8 +173,17 @@ describe('ReleaseRunnerService', () => {
       expect.objectContaining({ consumerName: `release-line-${row.id}` }),
     );
     expect(repo.incrementReceived).toHaveBeenCalledWith(productionEventId);
+    expect(projectResolver.resolve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: releaseLineId,
+        actorKind: 'system_release_runner',
+        projectId: row.production?.projectId,
+      }),
+      { projectId: row.production?.projectId, projectIdHeader: row.production?.projectId },
+    );
     expect(bullmq.enqueueLlmJob).toHaveBeenCalledWith(
       expect.objectContaining({
+        orgId,
         source: 'release',
         sourceId: productionEventId,
         runResultId,
@@ -179,11 +202,13 @@ describe('ReleaseRunnerService', () => {
     const driverFactory = driverFactoryMock();
     const bullmq = { enqueueLlmJob: vi.fn().mockResolvedValue('job-1') };
     const { mutex } = mutexMock();
+    const projectResolver = projectResolverMock();
     const service = new ReleaseRunnerService(
       repo as unknown as ReleaseRunnerRepository,
       driverFactory as unknown as ConnectorDriverFactory,
       bullmq as unknown as BullmqService,
       mutex as unknown as RedisMutexService,
+      projectResolver as unknown as ProjectContextResolver,
     );
 
     await service.scanOnce();
@@ -210,11 +235,13 @@ describe('ReleaseRunnerService', () => {
     const driverFactory = driverFactoryMock();
     const bullmq = { enqueueLlmJob: vi.fn().mockResolvedValue('job-1') };
     const { mutex } = mutexMock();
+    const projectResolver = projectResolverMock();
     const service = new ReleaseRunnerService(
       repo as unknown as ReleaseRunnerRepository,
       driverFactory as unknown as ConnectorDriverFactory,
       bullmq as unknown as BullmqService,
       mutex as unknown as RedisMutexService,
+      projectResolver as unknown as ProjectContextResolver,
     );
 
     await service.scanOnce();
@@ -257,11 +284,13 @@ describe('ReleaseRunnerService', () => {
     };
     const bullmq = { enqueueLlmJob: vi.fn().mockResolvedValue('job-1') };
     const { mutex } = mutexMock();
+    const projectResolver = projectResolverMock();
     const service = new ReleaseRunnerService(
       repo as unknown as ReleaseRunnerRepository,
       driverFactory as unknown as ConnectorDriverFactory,
       bullmq as unknown as BullmqService,
       mutex as unknown as RedisMutexService,
+      projectResolver as unknown as ProjectContextResolver,
     );
 
     await service.scanOnce();

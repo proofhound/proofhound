@@ -7,7 +7,15 @@
 //                       overrides to use Supabase JWT sub as actorId
 //   - 'system_mcp':     MCP channel; actorId = user-token row id (OSS) or org-mcp-token id (SaaS)
 //   - 'system_webhook': Webhook channel; actorId = connectorId
-export type ActorKind = 'script' | 'local_user' | 'system_mcp' | 'system_webhook';
+//   - 'system_release_runner': Internal release runner tick; actorId = release line id
+//   - 'system_workflow_recovery': Internal DBOS recovery tick; actorId = workflow business row id
+export type ActorKind =
+  | 'script'
+  | 'local_user'
+  | 'system_mcp'
+  | 'system_webhook'
+  | 'system_release_runner'
+  | 'system_workflow_recovery';
 
 export interface ActorContext {
   actorId: string;

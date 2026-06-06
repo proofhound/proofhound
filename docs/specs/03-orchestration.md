@@ -23,11 +23,11 @@ DBOS workflow state is written to the same Postgres instance. After a server res
 
 ## 2. BullMQ Queues
 
-| Queue    | Who enqueues             | Who consumes        | Content                              |
-| -------- | ------------------------ | ------------------- | ------------------------------------ |
-| `llm`    | server workflow / runner | apps/worker         | A single LLM call                    |
-| `probe`  | server                   | server or worker    | Model / connector connectivity probe |
-| `export` | server                   | server              | CSV / JSONL export                   |
+| Queue    | Who enqueues             | Who consumes     | Content                              |
+| -------- | ------------------------ | ---------------- | ------------------------------------ |
+| `llm`    | server workflow / runner | apps/worker      | A single LLM call                    |
+| `probe`  | server                   | server or worker | Model / connector connectivity probe |
+| `export` | server                   | server           | CSV / JSONL export                   |
 
 Dataset import is not in this table: it is a client-driven synchronous batched write that is not enqueued (cleanup of abandoned sessions uses an in-server sweep tick, see [§3.5](#35-probe--export--dataset-import-cleanup)).
 
@@ -68,7 +68,7 @@ Releases do not enter DBOS; they are driven by an in-server runner service ticki
 - Write run results, push outputs to the corresponding lane's output connector, and accumulate the release event count snapshot.
 - Read the release event's `control_state` to respond to stop / resume / cancel / extend.
 - When a split canary reaches 100%, transactionally write a `promote_canary` production lane event and set the canary event to `completed`.
-- The runner does not re-authorize on each tick. Production release submission and canary release creation / resume call `WorkflowAuthorizationHook(workflow='release')` before writing or resuming a `running` release event; the runner trusts those authorized events because it has no actor context.
+- The runner does not re-authorize on each tick. Production release submission and canary release creation / resume call `WorkflowAuthorizationHook(workflow='release')` before writing or resuming a `running` release event; the runner trusts those authorized events. For SaaS org-scoped LLM buckets, the runner may hydrate the already-known project through `ProjectContextResolver` using an internal `system_release_runner` actor and the DB row's `project_id`, only to carry `orgId` into the LLM payload.
 
 ### 3.4 Release Event Stream
 
@@ -81,7 +81,7 @@ Release operation history is the `release_line_events` event stream:
 
 ### 3.5 Probe / Export / Dataset Import Cleanup
 
-- `probe`: model or connector connectivity probe. Direct probes call `WorkflowAuthorizationHook(workflow='probe')` before invoking the model LLM probe or connector driver. Model probes can be executed by the worker when queued because they trigger real LLM calls.
+- `probe`: model or connector connectivity probe. Direct probes call `WorkflowAuthorizationHook(workflow='probe')` with the resolved ProjectContext, including `orgId` when present, before invoking the model LLM probe or connector driver. Model probes can be executed by the worker when queued because they trigger real LLM calls; queued model probes apply `RuntimeLimitsProvider` before invoking the LLM client, the same as normal LLM jobs.
 - `export`: paginate over business data, write to Storage, and return a signed URL.
 - Dataset import cleanup: large-file import is a **client-driven synchronous batched write** that does not enter DBOS or the BullMQ queue (see [22 §3.1.2](22-datasets.md#312-large-file-streaming-batched-import)). Abandoned import sessions (the user leaves midway / loses connectivity / crashes without reaching `complete`) are cleaned up by an in-server **periodic sweep tick**: it scans `ph_assets.dataset_imports` for sessions where `status='importing'` and `updated_at` has exceeded the threshold with no heartbeat, and deletes the session rows (staged samples are cascade-removed via the `ON DELETE CASCADE` foreign key). This tick is an in-server periodic task like the [§3.3](#33-release-runner) release runner, not a queue job.
 
@@ -120,12 +120,12 @@ Current transition state: the existing `authorizeConnector` at `apps/webhook/src
 
 ProofHound does not rely on workflow engine signals. User controls are written to business-table state columns, which the orchestration layer reads periodically:
 
-| User action                                  | Landing point                                          | Who observes it      |
-| -------------------------------------------- | ------------------------------------------------------ | -------------------- |
-| Stop / resume / cancel an experiment         | `ph_runs.experiments.control_state`                    | ExperimentWorkflow   |
-| Stop / resume / cancel an optimization       | `ph_runs.optimizations.control_state`                  | OptimizationWorkflow |
-| Stop / resume / cancel / extend a canary     | `ph_releases.release_line_events.control_state`        | Release runner       |
-| Force-stop production                        | A new `force_stop` event in `ph_releases.release_line_events` | Release runner |
+| User action                              | Landing point                                                 | Who observes it      |
+| ---------------------------------------- | ------------------------------------------------------------- | -------------------- |
+| Stop / resume / cancel an experiment     | `ph_runs.experiments.control_state`                           | ExperimentWorkflow   |
+| Stop / resume / cancel an optimization   | `ph_runs.optimizations.control_state`                         | OptimizationWorkflow |
+| Stop / resume / cancel / extend a canary | `ph_releases.release_line_events.control_state`               | Release runner       |
+| Force-stop production                    | A new `force_stop` event in `ph_releases.release_line_events` | Release runner       |
 
 ## 6. Streaming Output
 
@@ -139,16 +139,16 @@ The current open-source schema does not keep a separate `ph_streaming` table; sh
 
 ## 7. Division of Responsibilities
 
-| Responsibility            | apps/server     | apps/worker |
-| ------------------------- | --------------- | ----------- |
-| REST / MCP param validation | ✓             | -           |
-| Start a DBOS workflow     | ✓               | -           |
-| Enqueue a BullMQ job      | ✓               | -           |
-| Release runner            | ✓               | -           |
-| Consume the `llm` queue   | -               | ✓           |
-| Call the LLM              | -               | ✓           |
-| Write run results         | ✓ or worker     | ✓           |
-| Redis rate limit          | ✓ or worker     | ✓           |
+| Responsibility              | apps/server | apps/worker |
+| --------------------------- | ----------- | ----------- |
+| REST / MCP param validation | ✓           | -           |
+| Start a DBOS workflow       | ✓           | -           |
+| Enqueue a BullMQ job        | ✓           | -           |
+| Release runner              | ✓           | -           |
+| Consume the `llm` queue     | -           | ✓           |
+| Call the LLM                | -           | ✓           |
+| Write run results           | ✓ or worker | ✓           |
+| Redis rate limit            | ✓ or worker | ✓           |
 
 Rate limiting has **two independent gates**; do not conflate them when configuring:
 
@@ -159,6 +159,8 @@ A job first passes worker process concurrency, then `limiter.acquire` (≤ effec
 
 ## 8. Integration Test Isolation
 
+When the server restarts, experiment / optimization recovery scans running rows with `dbos_workflow_id`. If DBOS no longer reports the workflow as active, recovery may resolve the row's already-known `project_id` through `ProjectContextResolver` using an internal `system_workflow_recovery` actor only to recover `ProjectContext.orgId`, then resume the workflow with that org attribution. This is not user re-authorization; the original start/resume entry already called `WorkflowAuthorizationHook`.
+
 DBOS integration tests must:
 
 - Use a dedicated `systemDatabaseSchemaName='dbos_test_<unique>'`.
@@ -168,10 +170,10 @@ DBOS integration tests must:
 
 ## 9. Mapping to Business SPECs
 
-| SPEC                             | Orchestration carrier                                   |
-| -------------------------------- | ------------------------------------------------------- |
-| [24 Experiments](24-experiments.md) | DBOS `ExperimentWorkflow` + `llm` queue              |
-| [25 Optimizations](25-optimizations.md) | DBOS `OptimizationWorkflow` + sub-experiment workflow |
-| [26 Connectors](26-connectors.md) | probe job / runner service                             |
-| [27 Releases](27-releases.md)    | server release runner + `llm` queue + production event stream |
-| [30 Run Results](30-run-results.md) | worker / service writes `ph_runs.run_results`         |
+| SPEC                                    | Orchestration carrier                                         |
+| --------------------------------------- | ------------------------------------------------------------- |
+| [24 Experiments](24-experiments.md)     | DBOS `ExperimentWorkflow` + `llm` queue                       |
+| [25 Optimizations](25-optimizations.md) | DBOS `OptimizationWorkflow` + sub-experiment workflow         |
+| [26 Connectors](26-connectors.md)       | probe job / runner service                                    |
+| [27 Releases](27-releases.md)           | server release runner + `llm` queue + production event stream |
+| [30 Run Results](30-run-results.md)     | worker / service writes `ph_runs.run_results`                 |

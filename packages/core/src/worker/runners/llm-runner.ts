@@ -14,8 +14,9 @@ import {
   type ModelInvocationConfig,
 } from '@proofhound/llm-client';
 import type { LlmJobPayload } from '@proofhound/orchestration-shared';
-import { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
-import { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
+import type { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
+import type { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
+import { applyRuntimeLimits } from '../../shared/llm/runtime-limits';
 import type { ModelSecretResolver } from './model-secret';
 import { DrizzleRunResultWriter } from './run-result-writer';
 
@@ -51,10 +52,7 @@ export interface LlmRunnerResult {
 export function createLlmRunner(deps: LlmRunnerDependencies) {
   const runResultWriter = new DrizzleRunResultWriter(deps.db);
 
-  return async function runLlmJob(
-    input: LlmJobPayload,
-    jobContext: LlmRunnerJobContext,
-  ): Promise<LlmRunnerResult> {
+  return async function runLlmJob(input: LlmJobPayload, jobContext: LlmRunnerJobContext): Promise<LlmRunnerResult> {
     const runResultId = input.runResultId ?? randomUUID();
     const model = await loadModelInvocationConfig(deps, input.modelId);
     // Fold any deployment-level runtime caps (a SaaS org plan's ceiling, SPEC 08 §3.10) into the per-call limits at the
@@ -66,8 +64,8 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
       source: input.source,
       limits: input.limits,
     });
-    // Take min(merged RPM/TPM/concurrency, model-level) (SPEC 21 §quota / SPEC 24 §4: model-level is the ceiling;
-    // the merged caps only self-throttle and cannot exceed). Each field has an independent fallback.
+    // Fold runtime caps into the model before invokeLLM. A model RPM/TPM of -1 only means "no model-layer cap";
+    // a positive runtime cap still applies. Concurrency remains a positive min(model, runtime) value.
     const effectiveModel = applyExperimentLimits(model, mergedLimits);
 
     const expectedOutput = input.judgment?.expectedOutput ?? null;
@@ -191,22 +189,7 @@ export function applyExperimentLimits(
   model: ModelInvocationConfig,
   limits: LlmJobPayload['limits'],
 ): ModelInvocationConfig {
-  if (!limits) return model;
-  return {
-    ...model,
-    rpmLimit:
-      typeof limits.rpmLimit === 'number'
-        ? Math.min(model.rpmLimit, limits.rpmLimit)
-        : model.rpmLimit,
-    tpmLimit:
-      typeof limits.tpmLimit === 'number'
-        ? Math.min(model.tpmLimit, limits.tpmLimit)
-        : model.tpmLimit,
-    concurrencyLimit:
-      typeof limits.concurrency === 'number'
-        ? Math.min(model.concurrencyLimit, limits.concurrency)
-        : model.concurrencyLimit,
-  };
+  return applyRuntimeLimits(model, limits);
 }
 
 function normalizeRenderedPrompt(input: LlmJobPayload['renderedPrompt']): Record<string, unknown> {

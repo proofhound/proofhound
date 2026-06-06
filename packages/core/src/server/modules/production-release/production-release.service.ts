@@ -116,6 +116,7 @@ export class ProductionReleaseService {
     projectId: string,
     input: CreateProductionReleaseInputDto,
     actor: CurrentUserPayload,
+    orgId?: string,
   ): Promise<ProductionReleaseEventDto> {
     await this.assertWriteAccess(projectId, actor);
 
@@ -154,7 +155,7 @@ export class ProductionReleaseService {
     // Source ID consistency
     this.assertSourceConsistency(input);
 
-    await this.assertReleaseWorkflowStart(projectId, actor);
+    await this.assertReleaseWorkflowStart(projectId, actor, orgId);
 
     if (!version.isFrozen) {
       await this.repo.freezePromptVersionIfNeeded(input.promptVersionId);
@@ -290,8 +291,16 @@ export class ProductionReleaseService {
     return this.assertReadAccess(projectId, actor);
   }
 
-  private async assertReleaseWorkflowStart(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'release');
+  private async assertReleaseWorkflowStart(
+    projectId: string,
+    actor: CurrentUserPayload,
+    orgId?: string,
+  ): Promise<void> {
+    await this.workflowAuth.assertCanStart(
+      toActorContext(actor),
+      { projectId, ...(orgId ? { orgId } : {}), source: 'local' },
+      'release',
+    );
   }
 
   private assertSourceConsistency(input: CreateProductionReleaseInputDto): void {

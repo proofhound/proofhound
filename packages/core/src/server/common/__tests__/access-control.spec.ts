@@ -31,12 +31,16 @@ describe('LocalAccessControlService', () => {
     await expect(svc.assertCan(actor, project, 'platform_manage')).rejects.toThrow(ForbiddenException);
   });
 
-  it('system_mcp / system_webhook 系统 actor 在 OSS 下全部 action 通过', async () => {
+  it('system actors 在 OSS 下全部 action 通过', async () => {
     const mcp: ActorContext = { actorId: 'mcp-1', actorKind: 'system_mcp' };
     const webhook: ActorContext = { actorId: 'conn-1', actorKind: 'system_webhook' };
+    const releaseRunner: ActorContext = { actorId: 'line-1', actorKind: 'system_release_runner' };
+    const workflowRecovery: ActorContext = { actorId: 'workflow-row-1', actorKind: 'system_workflow_recovery' };
 
     await expect(svc.assertCan(mcp, project, 'platform_manage')).resolves.toBeUndefined();
     await expect(svc.assertCan(webhook, project, 'project_write')).resolves.toBeUndefined();
+    await expect(svc.assertCan(releaseRunner, project, 'project_read')).resolves.toBeUndefined();
+    await expect(svc.assertCan(workflowRecovery, project, 'project_read')).resolves.toBeUndefined();
   });
 
   it('未知 actorKind 一律 forbidden', async () => {

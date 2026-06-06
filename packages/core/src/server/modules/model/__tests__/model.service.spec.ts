@@ -14,6 +14,7 @@ import { ModelService } from '../model.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 import { LimiterKeyStrategy } from '../../../common/contracts/limiter-key.strategy';
+import { RuntimeLimitsProvider } from '../../../common/contracts/runtime-limits.provider';
 import { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 
 vi.mock('@proofhound/llm-client', () => ({
@@ -142,6 +143,7 @@ describe('ModelService', () => {
   let crypto: Mocked<CryptoService>;
   let limiter: Mocked<RateLimiter>;
   let limiterKeyStrategy: { buildModelKey: Mock };
+  let runtimeLimitsProvider: { mergeLlmLimits: Mock };
   let workflowAuth: { assertCanStart: Mock };
 
   beforeEach(async () => {
@@ -154,11 +156,10 @@ describe('ModelService', () => {
       // orgId is carried, otherwise fall back to the project key. Lets tests prove the project's orgId
       // reaches buildModelKey. OSS LocalLimiterKeyStrategy ignores the project and returns `model:<id>`.
       buildModelKey: vi.fn((project: { projectId: string; orgId?: string }, modelId: string) =>
-        project.orgId
-          ? `org:${project.orgId}:model:${modelId}`
-          : `project:${project.projectId}:model:${modelId}`,
+        project.orgId ? `org:${project.orgId}:model:${modelId}` : `project:${project.projectId}:model:${modelId}`,
       ),
     };
+    runtimeLimitsProvider = { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) };
     workflowAuth = { assertCanStart: vi.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -168,6 +169,7 @@ describe('ModelService', () => {
         { provide: REDIS_LIMITER, useValue: limiter },
         { provide: AccessControlService, useClass: LocalAccessControlService },
         { provide: LimiterKeyStrategy, useValue: limiterKeyStrategy },
+        { provide: RuntimeLimitsProvider, useValue: runtimeLimitsProvider },
         { provide: WorkflowAuthorizationHook, useValue: workflowAuth },
         ModelService,
       ],
@@ -383,11 +385,7 @@ describe('ModelService', () => {
       errorClass: 'auth',
     });
 
-    const result = await service.probeDraftProjectModel(
-      WORKSPACE_ID,
-      draftProbeDto(),
-      ACTOR,
-    );
+    const result = await service.probeDraftProjectModel(WORKSPACE_ID, draftProbeDto(), ACTOR);
 
     expect(result.status).toBe('failed');
     expect(result.error).toBe('invalid_api_key');
@@ -561,6 +559,36 @@ describe('ModelService', () => {
     );
   });
 
+  it('merges RuntimeLimitsProvider plan cap into model probe limits', async () => {
+    repo.findModelAccessibleToProject.mockResolvedValue(
+      fakeRow({ rpmLimit: 60, tpmLimit: 100000, concurrencyLimit: 10 }),
+    );
+    runtimeLimitsProvider.mergeLlmLimits.mockResolvedValueOnce({ rpmLimit: 30, tpmLimit: 2000, concurrency: 2 });
+    (testModelConnectivity as Mock).mockResolvedValue({
+      ok: true,
+      modelId: 'model-1',
+      providerType: 'openai',
+      providerModelId: 'gpt-4o',
+      endpoint: 'https://api.openai.com/v1',
+      durationMs: 120,
+      checkedAt: '2026-05-18T01:00:00.000Z',
+    });
+
+    await service.probeProjectModel(WORKSPACE_ID, 'model-1', ACTOR, 'api', 'org-7');
+
+    expect(runtimeLimitsProvider.mergeLlmLimits).toHaveBeenCalledWith({
+      project: { projectId: WORKSPACE_ID, orgId: 'org-7', source: 'local' },
+      modelId: '00000000-0000-4000-8000-000000000101',
+      source: 'probe',
+    });
+    expect(testModelConnectivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: expect.objectContaining({ rpmLimit: 30, tpmLimit: 2000, concurrencyLimit: 2 }),
+      }),
+      expect.anything(),
+    );
+  });
+
   it('threads the project orgId into the usage-snapshot READ key on list (matches the worker WRITE key)', async () => {
     repo.listProjectModels.mockResolvedValue([fakeRow()]);
 
@@ -605,9 +633,7 @@ describe('ModelService', () => {
     await service.getQuickStartModelOption(globalRow.id, ACTOR);
 
     // Quick-start has no @CurrentProject, so no org is threaded → falls back to the project key, never org:*.
-    expect(limiter.getUsage).toHaveBeenCalledWith(
-      `project:${WORKSPACE_ID}:model:00000000-0000-4000-8000-000000000201`,
-    );
+    expect(limiter.getUsage).toHaveBeenCalledWith(`project:${WORKSPACE_ID}:model:00000000-0000-4000-8000-000000000201`);
   });
 
   it('handles context window dictionary operations', async () => {

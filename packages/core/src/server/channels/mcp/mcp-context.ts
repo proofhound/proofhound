@@ -28,6 +28,7 @@ export function getMcpActor(ctx: McpToolContext): CurrentUserPayload {
 
 /** The ProjectContext carried by the validated actor (resolved by ProjectContextResolver at dispatch). */
 export function resolveMcpProjectContext(ctx: McpToolContext): ProjectContext {
+  if (ctx.project) return ctx.project;
   const actor = getMcpActor(ctx);
   const project: ProjectContext = {
     projectId: actor.projectId ?? LOCAL_PROJECT_CONTEXT.projectId,
@@ -68,6 +69,7 @@ export class McpDispatchContextFactory {
     return {
       actorUserId: actor.actorId,
       actor: payload,
+      project,
       email: payload.email,
       isSuperAdmin: payload.isSuperAdmin,
     };

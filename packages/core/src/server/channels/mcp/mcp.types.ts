@@ -1,8 +1,10 @@
+import type { ProjectContext } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 
 export interface McpToolContext {
   actorUserId: string;
   actor?: CurrentUserPayload;
+  project?: ProjectContext;
   email?: string;
   isSuperAdmin?: boolean;
 }

@@ -235,17 +235,19 @@ export class ExperimentRepository {
       .where(eq(experiments.id, experimentId));
   }
 
-  async findActiveRunningWithWorkflow(): Promise<Array<{ experimentId: string; dbosWorkflowId: string }>> {
+  async findActiveRunningWithWorkflow(): Promise<
+    Array<{ experimentId: string; projectId: string; dbosWorkflowId: string }>
+  > {
     const rows = await this.db
-      .select({ id: experiments.id, dbosWorkflowId: experiments.dbosWorkflowId })
+      .select({ id: experiments.id, projectId: experiments.projectId, dbosWorkflowId: experiments.dbosWorkflowId })
       .from(experiments)
       .where(and(eq(experiments.status, 'running'), isNull(experiments.deletedAt)));
     return rows
       .filter(
-        (r): r is { id: string; dbosWorkflowId: string } =>
+        (r): r is { id: string; projectId: string; dbosWorkflowId: string } =>
           typeof r.dbosWorkflowId === 'string' && r.dbosWorkflowId.length > 0,
       )
-      .map((r) => ({ experimentId: r.id, dbosWorkflowId: r.dbosWorkflowId }));
+      .map((r) => ({ experimentId: r.id, projectId: r.projectId, dbosWorkflowId: r.dbosWorkflowId }));
   }
 }
 

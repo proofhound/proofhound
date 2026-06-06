@@ -6,6 +6,10 @@ import { LOCAL_PROJECT_ID } from '@proofhound/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { createProbeRunner } from '../probe-runner';
 import { LimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
+import {
+  LocalRuntimeLimitsProvider,
+  RuntimeLimitsProvider,
+} from '../../../server/common/contracts/runtime-limits.provider';
 import { createModelSecretResolver } from '../model-secret';
 
 const testModelConnectivityMock = vi.hoisted(() => vi.fn());
@@ -57,6 +61,7 @@ describe('runProbeJob — orgId 透传至限流 key 的 ProjectContext', () => {
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: spy,
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
     });
@@ -82,6 +87,7 @@ describe('runProbeJob — orgId 透传至限流 key 的 ProjectContext', () => {
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: spy,
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
     });
@@ -90,6 +96,55 @@ describe('runProbeJob — orgId 透传至限流 key 的 ProjectContext', () => {
 
     expect(spy.seen?.projectId).toBe(LOCAL_PROJECT_ID);
     expect(spy.seen?.orgId).toBeUndefined();
+  });
+});
+
+describe('runProbeJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', () => {
+  class CapProvider extends RuntimeLimitsProvider {
+    async mergeLlmLimits(): Promise<{ rpmLimit: number; tpmLimit: number; concurrency: number }> {
+      return { rpmLimit: 100, tpmLimit: 10_000, concurrency: 2 };
+    }
+  }
+
+  it('applies positive plan caps to unlimited model rpm/tpm before testModelConnectivity', async () => {
+    testModelConnectivityMock.mockResolvedValue({
+      ok: true,
+      modelId: activeModel.id,
+      providerType: 'openai',
+      providerModelId: 'gpt-test',
+      endpoint: activeModel.endpoint,
+      durationMs: 1,
+      checkedAt: '2026-05-21T00:00:00.000Z',
+    });
+    const runProbeJob = createProbeRunner({
+      db: fakeDb({ ...activeModel, rpmLimit: -1, tpmLimit: -1, concurrencyLimit: 4 }),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new (class extends LimiterKeyStrategy {
+        buildModelKey(): string {
+          return 'model:test';
+        }
+      })(),
+      runtimeLimitsProvider: new CapProvider(),
+      logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+    });
+
+    await runProbeJob({
+      modelId: activeModel.id,
+      projectId: '22222222-2222-4222-8222-222222222222',
+      orgId: '33333333-3333-4333-8333-333333333333',
+    });
+
+    expect(testModelConnectivityMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: expect.objectContaining({
+          rpmLimit: 100,
+          tpmLimit: 10_000,
+          concurrencyLimit: 2,
+        }),
+      }),
+      expect.any(Object),
+    );
   });
 });
 

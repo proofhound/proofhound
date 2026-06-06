@@ -1,6 +1,8 @@
 import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { createLogger } from '@proofhound/logger';
+import type { ActorContext } from '../../common/actor-context';
+import { ProjectContextResolver } from '../../common/contracts/project-context.resolver';
 import { OptimizationLauncher } from './optimization.launcher';
 import { OptimizationRepository } from './optimization.repository';
 
@@ -13,16 +15,14 @@ export class OptimizationRecoveryService implements OnApplicationBootstrap {
   constructor(
     private readonly repo: OptimizationRepository,
     private readonly launcher: OptimizationLauncher,
+    private readonly projectResolver: ProjectContextResolver,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
     try {
       await this.recoverActiveOptimizations();
     } catch (error) {
-      this.logger.error(
-        { error: (error as Error).message },
-        'optimization_recovery_bootstrap_failed',
-      );
+      this.logger.error({ error: (error as Error).message }, 'optimization_recovery_bootstrap_failed');
     }
   }
 
@@ -34,7 +34,7 @@ export class OptimizationRecoveryService implements OnApplicationBootstrap {
     }
 
     for (const candidate of candidates) {
-      const { optimizationId, dbosWorkflowId } = candidate;
+      const { optimizationId, projectId, dbosWorkflowId } = candidate;
       let stillActive = false;
       try {
         const status = await DBOS.getWorkflowStatus(dbosWorkflowId);
@@ -49,17 +49,17 @@ export class OptimizationRecoveryService implements OnApplicationBootstrap {
       }
 
       if (stillActive) {
-        this.logger.info(
-          { optimizationId, dbosWorkflowId },
-          'optimization_recovery_workflow_still_active',
-        );
+        this.logger.info({ optimizationId, dbosWorkflowId }, 'optimization_recovery_workflow_still_active');
         continue;
       }
 
       try {
-        const newWorkflowId = await this.launcher.resume(optimizationId);
+        const project = await this.projectResolver.resolve(this.toRecoveryActor(optimizationId, projectId), {
+          projectId,
+        });
+        const newWorkflowId = await this.launcher.resume(optimizationId, project.orgId);
         this.logger.info(
-          { optimizationId, dbosWorkflowId, newWorkflowId },
+          { optimizationId, projectId, orgId: project.orgId, dbosWorkflowId, newWorkflowId },
           'optimization_workflow_recovered',
         );
       } catch (error) {
@@ -69,5 +69,9 @@ export class OptimizationRecoveryService implements OnApplicationBootstrap {
         );
       }
     }
+  }
+
+  private toRecoveryActor(optimizationId: string, projectId: string): ActorContext {
+    return { actorId: optimizationId, actorKind: 'system_workflow_recovery', projectId };
   }
 }

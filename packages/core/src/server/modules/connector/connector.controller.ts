@@ -116,7 +116,7 @@ export class ConnectorController {
     @CurrentUser() actor: CurrentUserPayload,
     @CurrentProject() project: ProjectContext,
   ) {
-    return this.service.probe(project.projectId, this.parseConnectorId(connectorId), actor);
+    return this.service.probe(project.projectId, this.parseConnectorId(connectorId), actor, 'api', project.orgId);
   }
 
   @Post(':connectorId/peek')

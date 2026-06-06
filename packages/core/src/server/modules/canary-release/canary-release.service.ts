@@ -92,6 +92,7 @@ export class CanaryReleaseService {
     projectId: string,
     input: CreateCanaryReleaseInputDto,
     actor: CurrentUserPayload,
+    orgId?: string,
   ): Promise<CanaryReleaseDto> {
     await this.assertWriteAccess(projectId, actor);
 
@@ -141,7 +142,7 @@ export class CanaryReleaseService {
       );
     }
 
-    await this.assertReleaseWorkflowStart(projectId, actor);
+    await this.assertReleaseWorkflowStart(projectId, actor, orgId);
 
     const snapshots = buildPromptSnapshots(version);
     const now = new Date();
@@ -196,14 +197,19 @@ export class CanaryReleaseService {
     return this.getDetail(projectId, eventId, actor);
   }
 
-  async start(projectId: string, canaryId: string, actor: CurrentUserPayload): Promise<CanaryReleaseDto> {
+  async start(
+    projectId: string,
+    canaryId: string,
+    actor: CurrentUserPayload,
+    orgId?: string,
+  ): Promise<CanaryReleaseDto> {
     await this.assertWriteAccess(projectId, actor);
     const current = await this.getCanaryRow(projectId, canaryId);
     if (current.status === 'running') return this.getDetail(projectId, current.id, actor);
     if (current.status !== 'stopped') {
       throw new ConflictException(`Canary ${canaryId} cannot start from status ${current.status}`);
     }
-    await this.assertReleaseWorkflowStart(projectId, actor);
+    await this.assertReleaseWorkflowStart(projectId, actor, orgId);
     const eventId = await this.recordCanaryOperation(current, 'resume_lane', 'running', null, actor);
     return this.getDetail(projectId, eventId, actor);
   }
@@ -218,8 +224,13 @@ export class CanaryReleaseService {
     return this.getDetail(projectId, eventId, actor);
   }
 
-  async resume(projectId: string, canaryId: string, actor: CurrentUserPayload): Promise<CanaryReleaseDto> {
-    return this.start(projectId, canaryId, actor);
+  async resume(
+    projectId: string,
+    canaryId: string,
+    actor: CurrentUserPayload,
+    orgId?: string,
+  ): Promise<CanaryReleaseDto> {
+    return this.start(projectId, canaryId, actor, orgId);
   }
 
   async cancel(projectId: string, canaryId: string, actor: CurrentUserPayload): Promise<CanaryReleaseDto> {
@@ -346,8 +357,16 @@ export class CanaryReleaseService {
     return this.assertReadAccess(projectId, actor);
   }
 
-  private async assertReleaseWorkflowStart(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'release');
+  private async assertReleaseWorkflowStart(
+    projectId: string,
+    actor: CurrentUserPayload,
+    orgId?: string,
+  ): Promise<void> {
+    await this.workflowAuth.assertCanStart(
+      toActorContext(actor),
+      { projectId, ...(orgId ? { orgId } : {}), source: 'local' },
+      'release',
+    );
   }
 
   private async getCanaryRow(projectId: string, canaryId: string): Promise<CanaryReleaseRowWithJoins> {

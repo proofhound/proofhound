@@ -32,10 +32,12 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
+import { RuntimeLimitsProvider } from '../../common/contracts/runtime-limits.provider';
 import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { REDIS_LIMITER } from '../../../shared/redis/redis.constants';
+import { applyRuntimeLimits } from '../../../shared/llm/runtime-limits';
 import {
   ModelRepository,
   type ModelContextWindowRow,
@@ -69,6 +71,7 @@ export class ModelService {
     @Inject(REDIS_LIMITER) private readonly limiter: RateLimiter,
     private readonly accessControl: AccessControlService,
     private readonly limiterKeyStrategy: LimiterKeyStrategy,
+    private readonly runtimeLimitsProvider: RuntimeLimitsProvider,
     private readonly workflowAuth: WorkflowAuthorizationHook,
   ) {}
 
@@ -212,11 +215,7 @@ export class ModelService {
 
     // Quick-start probe is not project-scoped (no @CurrentProject at the endpoint), so there is no project
     // org to source — the rate-limit bucket is LOCAL_PROJECT_CONTEXT with undefined org. OSS-identical.
-    const result = await this.runConnectivityProbe(
-      LOCAL_PROJECT_CONTEXT,
-      model,
-      `probe-quick-start-draft-${modelId}`,
-    );
+    const result = await this.runConnectivityProbe(LOCAL_PROJECT_CONTEXT, model, `probe-quick-start-draft-${modelId}`);
     const probedAt = new Date(result.checkedAt);
     const probeError = result.ok ? null : (result.errorMessage ?? result.errorClass ?? 'unknown');
 
@@ -364,11 +363,7 @@ export class ModelService {
     return this.toReferencesDto(await this.repo.getActiveReferenceCounts(modelId));
   }
 
-  async exportProjectModelsCsv(
-    projectId: string,
-    actor: CurrentUserPayload,
-    orgId?: string,
-  ): Promise<ModelExportFile> {
+  async exportProjectModelsCsv(projectId: string, actor: CurrentUserPayload, orgId?: string): Promise<ModelExportFile> {
     const { data } = await this.listProjectModels(projectId, actor, orgId);
     const content = this.toProjectCsv(data);
     const buffer = Buffer.from(content, 'utf8');
@@ -554,10 +549,16 @@ export class ModelService {
     };
   }
 
-  private runConnectivityProbe(project: ProjectContext, model: ModelInvocationConfig, requestId: string) {
+  private async runConnectivityProbe(project: ProjectContext, model: ModelInvocationConfig, requestId: string) {
+    const mergedLimits = await this.runtimeLimitsProvider.mergeLlmLimits({
+      project,
+      modelId: model.id,
+      source: 'probe',
+    });
+    const effectiveModel = applyRuntimeLimits(model, mergedLimits);
     return testModelConnectivity(
       {
-        model,
+        model: effectiveModel,
         limiterKey: this.limiterKeyStrategy.buildModelKey(project, model.id),
         requestId,
         timeoutMs: 30_000,
@@ -575,10 +576,7 @@ export class ModelService {
   // orgId (SaaS-only; undefined in OSS) is the resolved project's org — the rate-limit bucket (SPEC 08
   // §3.7). It is carried into the usage-snapshot READ key so it matches the worker's WRITE key under a
   // SaaS strategy; OSS leaves it undefined so the key stays `model:<id>`.
-  private async toProjectModelListItem(
-    row: ProjectVisibleModelRow,
-    orgId?: string,
-  ): Promise<ProjectModelListItemDto> {
+  private async toProjectModelListItem(row: ProjectVisibleModelRow, orgId?: string): Promise<ProjectModelListItemDto> {
     const project: ProjectContext = row.projectId
       ? { projectId: row.projectId, source: 'local', orgId }
       : LOCAL_PROJECT_CONTEXT;

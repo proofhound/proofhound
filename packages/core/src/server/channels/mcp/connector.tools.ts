@@ -141,13 +141,16 @@ export function createConnectorTools(service: ConnectorService): McpToolDefiniti
       name: 'connector_probe',
       description: '对连接器发起健康探测(本期 stub,返回 driver not implemented)',
       inputSchema: connectorIdInputSchema,
-      handler: async (input, ctx) =>
-        service.probe(
-          resolveMcpProjectContext(ctx).projectId,
+      handler: async (input, ctx) => {
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
+        return service.probe(
+          projectId,
           connectorIdParamSchema.parse(input.connectorId),
           getMcpActor(ctx),
           'mcp',
-        ),
+          orgId,
+        );
+      },
     },
     {
       name: 'connector_list_webhook_tokens',

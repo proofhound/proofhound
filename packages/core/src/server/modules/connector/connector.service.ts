@@ -30,6 +30,7 @@ import type {
   PeekConnectorMessageDto,
   PeekConnectorResponseDto,
   ProbeConnectorResponseDto,
+  ProjectContext,
   RedisConnectionConfig,
   UpdateConnectorDto,
 } from '@proofhound/shared';
@@ -383,12 +384,13 @@ export class ConnectorService {
     connectorId: string,
     actor: CurrentUserPayload,
     source: ActionSource = 'api',
+    orgId?: string,
   ): Promise<ProbeConnectorResponseDto> {
     void source;
     await this.getAccessibleProject(projectId, actor);
     const row = await this.repo.findById(projectId, connectorId);
     if (!row) throw new NotFoundException(`Connector ${connectorId} not found`);
-    await this.assertProbeWorkflowStart(projectId, actor);
+    await this.assertProbeWorkflowStart(projectId, actor, orgId);
 
     const startedAt = Date.now();
     const driverResult = await this.driverFactory.probe({
@@ -497,8 +499,9 @@ export class ConnectorService {
     return createHash('sha256').update(plaintext).digest('hex');
   }
 
-  private async assertProbeWorkflowStart(projectId: string, actor: CurrentUserPayload): Promise<void> {
-    await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, source: 'local' }, 'probe');
+  private async assertProbeWorkflowStart(projectId: string, actor: CurrentUserPayload, orgId?: string): Promise<void> {
+    const project: ProjectContext = orgId ? { projectId, orgId, source: 'local' } : { projectId, source: 'local' };
+    await this.workflowAuth.assertCanStart(toActorContext(actor), project, 'probe');
   }
 
   private async loadWebhookTokenSummaries(row: ConnectorRowWithJoins): Promise<ConnectorWebhookTokenSummaryDto[]> {

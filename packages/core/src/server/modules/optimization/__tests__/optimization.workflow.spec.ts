@@ -559,6 +559,7 @@ describe('OptimizationWorkflow.loadConfigImpl — orgId 透传 analysisLimiterKe
       {} as never, // limiter
       {} as never, // runResultWriter
       limiterKeyStrategy,
+      { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) } as never,
     );
 
     const r = registrar as unknown as Record<string, unknown>;
@@ -641,6 +642,62 @@ describe('OptimizationWorkflow.loadConfigImpl — orgId 透传 analysisLimiterKe
   });
 });
 
+describe('OptimizationWorkflow.applySynchronousRuntimeLimits — plan cap', () => {
+  it('merges RuntimeLimitsProvider caps before synchronous optimization LLM calls', async () => {
+    const runtimeLimitsProvider = {
+      mergeLlmLimits: vi.fn().mockResolvedValue({ rpmLimit: 30, tpmLimit: 2000, concurrency: 2 }),
+    };
+    const registrar = new OptimizationWorkflowRegistrar(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      runtimeLimitsProvider as never,
+    );
+
+    const model = {
+      id: 'analysis-model',
+      providerType: 'openai',
+      providerModelId: 'gpt-4o',
+      endpoint: 'https://api.openai.com/v1',
+      apiKey: 'sk-test',
+      capabilities: { image: 'none' as const },
+      rpmLimit: 60,
+      tpmLimit: 100000,
+      concurrencyLimit: 10,
+      autoConcurrency: false,
+      inputTokenPricePerMillion: '0',
+      outputTokenPricePerMillion: '0',
+      extraBody: {},
+    };
+    const effective = await (
+      registrar as unknown as {
+        applySynchronousRuntimeLimits: (
+          project: { projectId: string; orgId?: string; source: 'local' },
+          inputModel: typeof model,
+          source: 'optimization_analysis' | 'optimization_generate',
+        ) => Promise<typeof model>;
+      }
+    ).applySynchronousRuntimeLimits(
+      { projectId: 'prj-1', orgId: 'org-x', source: 'local' },
+      model,
+      'optimization_analysis',
+    );
+
+    expect(runtimeLimitsProvider.mergeLlmLimits).toHaveBeenCalledWith({
+      project: { projectId: 'prj-1', orgId: 'org-x', source: 'local' },
+      modelId: 'analysis-model',
+      source: 'optimization_analysis',
+    });
+    expect(effective).toMatchObject({ rpmLimit: 30, tpmLimit: 2000, concurrencyLimit: 2 });
+  });
+});
+
 // orgId (SaaS-only; undefined in OSS) threads runWorkflow(optimizationId, orgId) → loadConfigStep → snapshot.orgId,
 // and runImpl must forward that snapshot.orgId as the 2nd arg of the child experiment launch
 // DBOS.startWorkflow(this.experimentWorkflow.runWorkflow, { workflowID })(experimentId, snapshot.orgId).
@@ -666,6 +723,7 @@ describe('OptimizationWorkflow.runImpl — child experiment inherits snapshot.or
       {} as never, // limiter
       {} as never, // runResultWriter
       {} as never, // limiterKeyStrategy
+      { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) } as never,
     );
 
     // Stub the internal DBOS steps on the instance (registerStep was identity, so these props hold the bound impls).

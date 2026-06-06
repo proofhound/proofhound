@@ -15,6 +15,7 @@ const inputConnectorId = '55555555-5555-4555-8555-555555555555';
 const actorId = '66666666-6666-4666-8666-666666666666';
 const canaryEventId = '77777777-7777-4777-8777-777777777777';
 const releaseLineId = '99999999-9999-4999-8999-999999999999';
+const orgId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const actor: CurrentUserPayload = {
   sub: actorId,
@@ -181,11 +182,11 @@ describe('CanaryReleaseService.create', () => {
       workflowAuth,
     );
 
-    const canary = await service.create(projectId, createInput, actor);
+    const canary = await service.create(projectId, createInput, actor, orgId);
 
     expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
       expect.objectContaining({ actorId, actorKind: 'local_user' }),
-      { projectId, source: 'local' },
+      { projectId, orgId, source: 'local' },
       'release',
     );
     expect(releaseLines.recordCanaryEvent).toHaveBeenCalledWith(
@@ -247,11 +248,11 @@ describe('CanaryReleaseService.start', () => {
       workflowAuth as unknown as WorkflowAuthorizationHook,
     );
 
-    await expect(service.start(projectId, canaryEventId, actor)).rejects.toThrow('workflow_denied');
+    await expect(service.start(projectId, canaryEventId, actor, orgId)).rejects.toThrow('workflow_denied');
 
     expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
       expect.objectContaining({ actorId, actorKind: 'local_user' }),
-      { projectId, source: 'local' },
+      { projectId, orgId, source: 'local' },
       'release',
     );
     expect(releaseLines.recordCanaryEvent).not.toHaveBeenCalled();

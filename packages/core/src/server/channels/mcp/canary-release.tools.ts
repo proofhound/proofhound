@@ -85,9 +85,9 @@ export function createCanaryReleaseTools(service: CanaryReleaseService): McpTool
         },
       },
       handler: async (input, ctx) => {
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const dto = createCanaryReleaseInputSchema.parse(input);
-        return service.create(projectId, dto, getMcpActor(ctx));
+        return service.create(projectId, dto, getMcpActor(ctx), orgId);
       },
     },
     {
@@ -101,9 +101,9 @@ export function createCanaryReleaseTools(service: CanaryReleaseService): McpTool
         },
       },
       handler: async (input, ctx) => {
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const canaryId = uuidParam.parse(input.canaryId);
-        return service.start(projectId, canaryId, getMcpActor(ctx));
+        return service.start(projectId, canaryId, getMcpActor(ctx), orgId);
       },
     },
     {
@@ -134,10 +134,10 @@ export function createCanaryReleaseTools(service: CanaryReleaseService): McpTool
         },
       },
       handler: async (input, ctx) => {
-        const { projectId } = resolveMcpProjectContext(ctx);
+        const { projectId, orgId } = resolveMcpProjectContext(ctx);
         const canaryId = uuidParam.parse(input.canaryId);
         resumeCanaryReleaseInputSchema.parse({});
-        return service.resume(projectId, canaryId, getMcpActor(ctx));
+        return service.resume(projectId, canaryId, getMcpActor(ctx), orgId);
       },
     },
     {
