@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+export type AutoRefreshInterval = number | false;
+
 export interface UseAutoRefreshOptions {
-  intervalMs?: number;
+  intervalMs?: AutoRefreshInterval;
   enabled: boolean;
   onTick: () => void | Promise<void>;
   trackCountdown?: boolean;
@@ -30,6 +32,21 @@ export interface AutoRefreshTicker {
   isRunning(): boolean;
 }
 
+export function getBackoffDelay(baseMs: number, failureCount: number) {
+  const intervalMs = Math.max(0, baseMs);
+  if (failureCount <= 0) return intervalMs;
+  return Math.min(intervalMs * 2 ** failureCount, 30_000);
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'then' in value &&
+    typeof (value as { then?: unknown }).then === 'function'
+  );
+}
+
 export function createAutoRefreshTicker(options: AutoRefreshTickerOptions): AutoRefreshTicker {
   const intervalMs = Math.max(0, options.intervalMs);
   const setTimeoutFn = options.setTimeoutImpl ?? ((cb, ms) => setTimeout(cb, ms));
@@ -39,14 +56,16 @@ export function createAutoRefreshTicker(options: AutoRefreshTickerOptions): Auto
   let handle: unknown = null;
   let nextTickAt: number | null = null;
   let running = false;
+  let inFlight = false;
+  let failureCount = 0;
 
-  const schedule = () => {
-    nextTickAt = now() + intervalMs;
+  const schedule = (delayMs = getBackoffDelay(intervalMs, failureCount)) => {
+    const nextDelayMs = Math.max(0, delayMs);
+    nextTickAt = now() + nextDelayMs;
     handle = setTimeoutFn(() => {
       handle = null;
-      void options.onTick();
-      if (running) schedule();
-    }, intervalMs);
+      void runTick();
+    }, nextDelayMs);
   };
 
   const cancel = () => {
@@ -55,6 +74,21 @@ export function createAutoRefreshTicker(options: AutoRefreshTickerOptions): Auto
       handle = null;
     }
     nextTickAt = null;
+  };
+
+  const runTick = async () => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const result = options.onTick();
+      if (isPromiseLike(result)) await result;
+      failureCount = 0;
+    } catch {
+      failureCount += 1;
+    } finally {
+      inFlight = false;
+      if (running) schedule();
+    }
   };
 
   return {
@@ -69,8 +103,7 @@ export function createAutoRefreshTicker(options: AutoRefreshTickerOptions): Auto
     },
     tickNow() {
       cancel();
-      void options.onTick();
-      if (running) schedule();
+      void runTick();
     },
     remainingMs() {
       if (nextTickAt === null) return intervalMs;
@@ -91,7 +124,9 @@ export function useAutoRefresh({
   onTick,
   trackCountdown = false,
 }: UseAutoRefreshOptions): UseAutoRefreshReturn {
-  const [countdownMs, setCountdownMs] = useState(intervalMs);
+  const effectiveIntervalMs = intervalMs === false ? AUTO_REFRESH_INTERVAL_MS : intervalMs;
+  const shouldRun = enabled && intervalMs !== false;
+  const [countdownMs, setCountdownMs] = useState(effectiveIntervalMs);
   const onTickRef = useRef(onTick);
   const tickerRef = useRef<AutoRefreshTicker | null>(null);
   const frameRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,20 +158,20 @@ export function useAutoRefresh({
 
   useEffect(() => {
     const ticker = createAutoRefreshTicker({
-      intervalMs,
+      intervalMs: effectiveIntervalMs,
       onTick: () => onTickRef.current(),
     });
     tickerRef.current = ticker;
 
-    if (enabled) {
-      void onTickRef.current();
+    if (shouldRun) {
       ticker.start();
+      ticker.tickNow();
       if (trackCountdown) {
         setCountdownMs(ticker.remainingMs());
         startFrame();
       }
     } else {
-      if (trackCountdown) setCountdownMs(intervalMs);
+      if (trackCountdown) setCountdownMs(effectiveIntervalMs);
     }
 
     return () => {
@@ -144,7 +179,7 @@ export function useAutoRefresh({
       stopFrame();
       tickerRef.current = null;
     };
-  }, [enabled, intervalMs, startFrame, stopFrame, trackCountdown]);
+  }, [effectiveIntervalMs, shouldRun, startFrame, stopFrame, trackCountdown]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -154,7 +189,7 @@ export function useAutoRefresh({
       if (document.hidden) {
         ticker.stop();
         stopFrame();
-      } else if (enabled) {
+      } else if (shouldRun) {
         ticker.start();
         ticker.tickNow();
         if (trackCountdown) {
@@ -165,7 +200,7 @@ export function useAutoRefresh({
     };
     document.addEventListener('visibilitychange', handle);
     return () => document.removeEventListener('visibilitychange', handle);
-  }, [enabled, startFrame, stopFrame, trackCountdown]);
+  }, [shouldRun, startFrame, stopFrame, trackCountdown]);
 
   const refreshNow = useCallback(() => {
     const ticker = tickerRef.current;

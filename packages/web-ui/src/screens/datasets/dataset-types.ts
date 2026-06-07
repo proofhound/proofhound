@@ -48,6 +48,8 @@ export interface ProjectDataset {
   references: DatasetReferences;
   createdAt: string;
   updatedAt: string;
+  createdAtRaw: string;
+  updatedAtRaw: string;
   fields: DatasetField[];
 }
 

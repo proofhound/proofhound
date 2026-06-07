@@ -21,6 +21,7 @@ import { composePromptPreview } from '../prompts/prompt-preview';
 // replace with a dynamic value computed by the selected prompt / dataset once a real estimation endpoint lands.
 export const AVG_TOKENS_IN_PER_SAMPLE = 400;
 export const AVG_TOKENS_OUT_PER_SAMPLE = 80;
+type DateTimeFormatter = (value: string | null | undefined) => string;
 
 const IMAGE_PROMPT_VARIABLE_TYPES = new Set<PromptVariableTypeDto>(['image', 'image_url', 'image_base64']);
 const IMAGE_DATASET_FIELD_ROLES = new Set<DatasetFieldSchemaDto['role']>(['image', 'image_url', 'image_base64']);
@@ -83,7 +84,11 @@ export function getModelImageEncodings(capability: ModelImageCapability | undefi
 
 export type EncodingMode = 'url' | 'base64';
 
-export function mapDatasetToOption(dto: DatasetListItemDto): ExperimentDatasetOption {
+function formatOptionDateTime(value: string | null | undefined, formatter?: DateTimeFormatter) {
+  return formatter ? formatter(value) : formatDateTime(value);
+}
+
+export function mapDatasetToOption(dto: DatasetListItemDto, formatter?: DateTimeFormatter): ExperimentDatasetOption {
   const expectedField = dto.fieldSchema.find((field) => field.role === 'expected_output')?.name;
   const inputFieldCount = dto.fieldSchema.filter(
     (field) => field.role !== 'expected_output' && field.role !== 'metadata',
@@ -95,7 +100,7 @@ export function mapDatasetToOption(dto: DatasetListItemDto): ExperimentDatasetOp
     description: dto.description ?? '',
     expectedField,
     inputFieldCount,
-    updatedAgo: formatDateTime(dto.updatedAt),
+    updatedAgo: formatOptionDateTime(dto.updatedAt, formatter),
     allFieldsOk: true,
   };
 }
@@ -128,7 +133,11 @@ export type PromptForOption = Pick<
   'name' | 'latestVersionNumber' | 'defaultDatasetId'
 >;
 
-export function mapPromptVersionToOption(prompt: PromptForOption, version: PromptVersionDto): ExperimentPromptOption {
+export function mapPromptVersionToOption(
+  prompt: PromptForOption,
+  version: PromptVersionDto,
+  formatter?: DateTimeFormatter,
+): ExperimentPromptOption {
   const promptLanguage = version.promptLanguage ?? DEFAULT_PROMPT_LANGUAGE;
 
   return {
@@ -137,7 +146,7 @@ export function mapPromptVersionToOption(prompt: PromptForOption, version: Promp
     version: `v${version.versionNumber}`,
     isLatest: version.versionNumber === prompt.latestVersionNumber,
     ownerHandle: version.createdByDisplayName ? `@${version.createdByDisplayName}` : '@unknown',
-    updatedAgo: formatDateTime(version.createdAt),
+    updatedAgo: formatOptionDateTime(version.createdAt, formatter),
     variableCount: version.variables.length,
     defaultDatasetId: prompt.defaultDatasetId ?? '',
     promptLanguage,

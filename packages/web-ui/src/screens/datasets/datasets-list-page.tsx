@@ -48,6 +48,7 @@ import {
 import type { TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useDatasets, useDeleteDataset, useDownloadDataset, useUpdateDataset } from '../../hooks';
+import { useDateTimeFormatter } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage } from '../../lib';
@@ -105,7 +106,7 @@ function sortDatasets(datasets: ProjectDataset[], sortMode: SortMode) {
   return [...datasets].sort((a, b) => {
     if (sortMode === 'samples') return b.sampleCount - a.sampleCount;
     if (sortMode === 'name') return a.name.localeCompare(b.name);
-    return b.updatedAt.localeCompare(a.updatedAt);
+    return b.updatedAtRaw.localeCompare(a.updatedAtRaw);
   });
 }
 
@@ -273,6 +274,7 @@ function DatasetTable({
   onToggleSelected: (datasetId: string) => void;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
 
   return (
@@ -355,10 +357,14 @@ function DatasetTable({
                 <ReferenceText dataset={dataset} />
               </TableCell>
               <TableCell column="createdAt">
-                <span className="font-mono text-[11.5px] text-muted-foreground">{dataset.createdAt}</span>
+                <span className="font-mono text-[11.5px] text-muted-foreground" data-testid={`dataset-created-at-${dataset.id}`}>
+                  {formatDateTime(dataset.createdAtRaw)}
+                </span>
               </TableCell>
               <TableCell column="updatedAt">
-                <span className="font-mono text-[11.5px] text-muted-foreground">{dataset.updatedAt}</span>
+                <span className="font-mono text-[11.5px] text-muted-foreground">
+                  {formatDateTime(dataset.updatedAtRaw)}
+                </span>
               </TableCell>
               <TableCell column="actions" className="text-right">
                 {deleted ? (

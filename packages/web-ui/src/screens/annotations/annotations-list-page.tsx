@@ -1,9 +1,8 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, ListChecks, Plus, Search } from 'lucide-react';
 import { AnnotationClaimDialog } from '../../components';
 import { Main } from '@proofhound/ui/layout';
@@ -22,9 +21,8 @@ import {
   cn,
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
-import { useAnnotationTaskList, useClaimAnnotationSamples } from '../../hooks';
+import { useAnnotationTaskList, useClaimAnnotationSamples, useDateTimeFormatter } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
-import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import {
   buildAnnotationTasks,
@@ -62,8 +60,8 @@ const TASK_COLUMNS: TableColumn[] = [
 
 export function AnnotationsListPage({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const tasksQuery = useAnnotationTaskList(projectId);
   const tasksLoading = useDelayedLoading(tasksQuery.isLoading);
   const [search, setSearch] = useState('');
@@ -81,16 +79,6 @@ export function AnnotationsListPage({ projectId }: { projectId: string }) {
     submitted: tasks.filter((task) => task.submitted > 0).length,
     completed: tasks.filter((task) => task.status === 'completed').length,
   };
-
-  const onTick = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['annotation-tasks', projectId] });
-  }, [projectId, queryClient]);
-
-  useAutoRefresh({
-    intervalMs: AUTO_REFRESH_INTERVAL_MS,
-    enabled: true,
-    onTick,
-  });
 
   const openClaimDialog = (task: AnnotationTaskView) => {
     setClaimTarget(task);
@@ -240,7 +228,7 @@ export function AnnotationsListPage({ projectId }: { projectId: string }) {
                     </TableCell>
                     <TableCell column="updatedAt">
                       <span className="font-mono text-[12px] text-muted-foreground">
-                        {formatDateTimeOrDash(task.updatedAt)}
+                        {formatDateTimeOrDash(task.updatedAt, formatDateTime)}
                       </span>
                     </TableCell>
                     <TableCell column="actions" className="text-right">

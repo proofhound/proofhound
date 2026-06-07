@@ -4,6 +4,7 @@ import { type ReactNode, useState } from 'react';
 import { configureApiClient } from '@proofhound/api-client';
 import { UiStringsProvider } from '@proofhound/ui/strings';
 import { I18nProvider, useI18n, type Language } from '../i18n';
+import { DisplayPreferencesProvider } from './display-preferences-provider';
 import { ProjectContextProvider } from './project-context-provider';
 import { RefineProvider } from './refine-provider';
 import type { WebContracts } from '../contracts';
@@ -37,11 +38,13 @@ export function ProofHoundWebProvider({
 
   return (
     <I18nProvider defaultLanguage={defaultLanguage} extend={contracts.i18nExtend}>
-      <UiStringsBridge>
-        <ProjectContextProvider value={contracts.projectContext}>
-          <RefineProvider>{children}</RefineProvider>
-        </ProjectContextProvider>
-      </UiStringsBridge>
+      <DisplayPreferencesProvider value={contracts.displayPreferences}>
+        <UiStringsBridge>
+          <ProjectContextProvider value={contracts.projectContext}>
+            <RefineProvider>{children}</RefineProvider>
+          </ProjectContextProvider>
+        </UiStringsBridge>
+      </DisplayPreferencesProvider>
     </I18nProvider>
   );
 }

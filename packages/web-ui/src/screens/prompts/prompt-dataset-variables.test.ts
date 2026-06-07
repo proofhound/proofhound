@@ -17,8 +17,10 @@ function makeDataset(fields: ProjectDataset['fields']): ProjectDataset {
     fieldCount: fields.length,
     categoryProfile: { slices: [] },
     references: { experiments: 0, optimizations: 0 },
-    createdAt: '2026/05/18 00:00:00',
-    updatedAt: '2026/05/18 00:00:00',
+  createdAt: '2026/05/18 00:00:00',
+  updatedAt: '2026/05/18 00:00:00',
+  createdAtRaw: '2026-05-18T00:00:00.000Z',
+  updatedAtRaw: '2026-05-18T00:00:00.000Z',
     fields,
   };
 }

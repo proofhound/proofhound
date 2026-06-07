@@ -16,8 +16,11 @@ export function formatPercent(value: number | null | undefined, digits = 0) {
   return `${(value * 100).toFixed(digits)}%`;
 }
 
-export function formatDateTimeOrDash(value: string | null | undefined) {
-  return value ? formatDateTime(value) : '-';
+export function formatDateTimeOrDash(
+  value: string | null | undefined,
+  formatter: (value: string | null | undefined) => string = formatDateTime,
+) {
+  return value ? formatter(value) : '-';
 }
 
 export function AnnotationMetricCard({

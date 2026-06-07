@@ -30,10 +30,11 @@ import {
   SelectValue,
   cn,
 } from '@proofhound/ui';
+import { useDateTimeFormatter } from '../../hooks';
 import { useI18n } from '../../i18n';
 import { getApiErrorMessage } from '../../lib';
 import type { ReleaseLineView } from '../../lib';
-import { ReleasePill, formatDateTimeOrDash, formatPercent } from './release-line-ui';
+import { ReleasePill, formatPercent } from './release-line-ui';
 
 type ReleaseTopologyTone = 'neutral' | 'production' | 'canary' | 'muted';
 
@@ -52,6 +53,7 @@ type ReleaseTopologyNodeData = {
 type ReleaseTopologyNode = Node<ReleaseTopologyNodeData, 'releaseTopology'>;
 type ReleaseTopologyEdge = Edge;
 type ReleaseTopologyNodeId = 'upstream' | 'input-route' | 'production' | 'canary' | 'output-route' | `output-${string}`;
+type DateTimeOrDashFormatter = (value: string | null | undefined) => string;
 
 interface InspectorRow {
   label: string;
@@ -1113,6 +1115,7 @@ function buildInspectorDetail({
   line,
   selectedNodeId,
   labels,
+  formatDateTimeOrDash,
   onUpdateTrafficRatio,
   trafficRatioPending,
   onUpdateRunConfig,
@@ -1124,6 +1127,7 @@ function buildInspectorDetail({
   line: ReleaseLineView;
   selectedNodeId: ReleaseTopologyNodeId;
   labels: ReturnType<typeof useTopologyLabels>;
+  formatDateTimeOrDash: DateTimeOrDashFormatter;
   onUpdateTrafficRatio?: (canary: CanaryReleaseListItemDto, trafficRatio: number) => Promise<unknown>;
   trafficRatioPending: boolean;
   onUpdateRunConfig?: (input: UpdateReleaseLineRunConfigInputDto) => Promise<unknown>;
@@ -1404,6 +1408,11 @@ export function ReleaseTopologyCanvas({
   runConfigPending?: boolean;
 }) {
   const labels = useTopologyLabels(line);
+  const { formatDateTime } = useDateTimeFormatter();
+  const formatDateTimeOrDash = useMemo<DateTimeOrDashFormatter>(
+    () => (value) => (value ? formatDateTime(value, { fallback: '—' }) : '—'),
+    [formatDateTime],
+  );
   const topology = useMemo(() => buildTopology(line, labels), [labels, line]);
   const [rawSelectedNodeId, setSelectedNodeId] = useState<ReleaseTopologyNodeId>('input-route');
   const selectedNodeId = topology.nodes.some((node) => node.id === rawSelectedNodeId)
@@ -1423,6 +1432,7 @@ export function ReleaseTopologyCanvas({
         line,
         selectedNodeId,
         labels,
+        formatDateTimeOrDash,
         onUpdateTrafficRatio,
         trafficRatioPending,
         onUpdateRunConfig,
@@ -1433,6 +1443,7 @@ export function ReleaseTopologyCanvas({
       }),
     [
       labels,
+      formatDateTimeOrDash,
       line,
       onAddCanary,
       onUpdateRunConfig,

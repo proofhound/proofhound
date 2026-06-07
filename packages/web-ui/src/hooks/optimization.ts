@@ -7,6 +7,7 @@ import type {
   CreateOptimizationDto,
 } from '@proofhound/shared';
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AUTO_REFRESH_INTERVAL_MS } from './use-auto-refresh';
 
 interface ControlOptimizationVariables {
   optimizationId: string;
@@ -51,6 +52,9 @@ export function useOptimization(projectId: string, optimizationId: string) {
     queryKey: getOptimizationDetailQueryKey(projectId, optimizationId),
     queryFn: () => optimizationClient.getOptimization(projectId, optimizationId),
     enabled: projectId.length > 0 && optimizationId.length > 0,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'running' ? AUTO_REFRESH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
     retry: false,
   });
 }

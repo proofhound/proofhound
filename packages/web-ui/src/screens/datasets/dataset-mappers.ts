@@ -1,5 +1,4 @@
 import { deriveDatasetModalities, type DatasetFieldSchemaDto, type DatasetListItemDto } from '@proofhound/shared';
-import { formatDateTime } from '../../lib';
 import type { DatasetFieldRole, ProjectDataset } from './dataset-types';
 
 function isIdLikeField(name: string) {
@@ -74,7 +73,9 @@ export function toProjectDataset(dataset: DatasetListItemDto): ProjectDataset {
       experiments: dataset.references?.experiments ?? 0,
       optimizations: dataset.references?.optimizations ?? 0,
     },
-    createdAt: formatDateTime(dataset.createdAt),
-    updatedAt: formatDateTime(dataset.updatedAt),
+    createdAt: dataset.createdAt,
+    updatedAt: dataset.updatedAt,
+    createdAtRaw: dataset.createdAt,
+    updatedAtRaw: dataset.updatedAt,
   };
 }

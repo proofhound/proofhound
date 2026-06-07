@@ -10,6 +10,7 @@ import { Main } from '@proofhound/ui/layout';
 import { PromptVersionPickerRow, PromptVersionPickerTag } from '../../components';
 import { useDatasets } from '../../hooks';
 import { useCreateExperiment, useExperiments } from '../../hooks';
+import { useDateTimeFormatter } from '../../hooks';
 import { useProjectModels } from '../../hooks';
 import { usePrompt, usePrompts } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
@@ -209,6 +210,7 @@ function PromptNameRow({
   testId?: string;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const latestVersion = `v${prompt.latestVersionNumber}`;
   return (
     <button
@@ -241,7 +243,7 @@ function PromptNameRow({
           </Tag>
           <Tag>
             {prompt.createdByDisplayName ? `@${prompt.createdByDisplayName}` : '@unknown'} ·{' '}
-            {new Date(prompt.updatedAt).toLocaleString()}
+            {formatDateTime(prompt.updatedAt)}
           </Tag>
         </div>
       </div>
@@ -545,6 +547,7 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
     initialImageEncoding,
   } = props;
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
   const promptsQuery = usePrompts(projectId);
   const datasetsQuery = useDatasets(projectId);
@@ -553,7 +556,10 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
   const createExperiment = useCreateExperiment(projectId);
 
   const prompts = useMemo(() => promptsQuery.data?.data ?? [], [promptsQuery.data]);
-  const datasets = useMemo(() => (datasetsQuery.data?.data ?? []).map(mapDatasetToOption), [datasetsQuery.data]);
+  const datasets = useMemo(
+    () => (datasetsQuery.data?.data ?? []).map((dataset) => mapDatasetToOption(dataset, formatDateTime)),
+    [datasetsQuery.data, formatDateTime],
+  );
   const models = useMemo(() => (modelsQuery.data?.data ?? []).map(mapProjectModelToOption), [modelsQuery.data]);
   const experiments = useMemo(() => experimentsQuery.data?.data ?? [], [experimentsQuery.data]);
   const datasetDtos = useMemo(() => datasetsQuery.data?.data ?? [], [datasetsQuery.data]);
@@ -590,9 +596,11 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
   const promptVersions = useMemo(
     () =>
       promptDetailQuery.data
-        ? promptDetailQuery.data.versions.map((version) => mapPromptVersionToOption(promptDetailQuery.data, version))
+        ? promptDetailQuery.data.versions.map((version) =>
+            mapPromptVersionToOption(promptDetailQuery.data, version, formatDateTime),
+          )
         : [],
-    [promptDetailQuery.data],
+    [formatDateTime, promptDetailQuery.data],
   );
   const selectedPrompt = useMemo(
     () => promptVersions.find((option) => option.id === selectedPromptVersionId) ?? null,

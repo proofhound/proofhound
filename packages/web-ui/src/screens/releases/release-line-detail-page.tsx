@@ -41,6 +41,7 @@ import {
   Button,
   DateRangeSegmented,
   resolveDateRangePreset,
+  resolveRollingDateRangeValue,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -78,7 +79,7 @@ import {
   useUpdateReleaseLineTrafficRatio,
 } from '../../hooks';
 import { useReleaseRunResults } from '../../hooks';
-import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
+import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh, useDateTimeFormatter } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getReleaseLineId, getReleaseStopConfirmationName } from '../../lib';
 import type { ReleaseLineLatestEvent, ReleaseLineView } from '../../lib';
@@ -87,7 +88,6 @@ import {
   ReleaseEventPill,
   ReleaseMetricCard,
   formatCount,
-  formatDateTimeOrDash,
   formatPercent,
 } from './release-line-ui';
 import { ReleaseTopologyCanvas } from './release-topology-canvas';
@@ -142,6 +142,15 @@ type ReleaseVariantDetail = {
 const EMPTY_BY_SOURCE: Record<SourceBucket, number> = { prod: 0, canary: 0, iter: 0, exp: 0 };
 const EMPTY_TIMESERIES_POINTS: ProjectMonitoringTimeseriesDto['points'] = [];
 const RELEASE_MONITORING_SOURCE_KEYS = ['prod', 'canary'] as const;
+type MonitoringTickFormatter = ReturnType<typeof useDateTimeFormatter>['formatMonitoringTick'];
+
+function useDateTimeOrDash() {
+  const { formatDateTime } = useDateTimeFormatter();
+  return useCallback(
+    (value: string | null | undefined) => (value ? formatDateTime(value, { fallback: '—' }) : '—'),
+    [formatDateTime],
+  );
+}
 
 type ReleaseTimeseriesMetric =
   | 'errors'
@@ -221,6 +230,17 @@ function createDefaultMonitoringRange(): DateRangeValue {
     from: new Date(now.getTime() - 60 * 60_000).toISOString(),
     to: now.toISOString(),
   };
+}
+
+function getMonitoringRefreshInterval(preset: DateRangeValue['preset']): number | false {
+  if (preset === 'h1') return AUTO_REFRESH_INTERVAL_MS;
+  if (preset === 'h24') return 30_000;
+  if (preset === 'd7') return 60_000;
+  return false;
+}
+
+function hasRunningRelease(line: ReleaseLineView | null) {
+  return line?.production?.currentEvent?.status === 'running' || line?.canary?.status === 'running';
 }
 
 function formatBigNumber(value: number): string {
@@ -347,21 +367,14 @@ function maxFailureRatePercent(points: ProjectMonitoringTimeseriesDto['points'])
   }, 0);
 }
 
-function formatXLabel(iso: string, granularity: ProjectMonitoringTimeseriesDto['granularity']): string {
-  const date = new Date(iso);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  if (granularity === 'day') return `${date.getMonth() + 1}/${date.getDate()}`;
-  if (granularity === 'hour') return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:00`;
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 function pickReleaseTimeseries(
   points: ProjectMonitoringTimeseriesDto['points'],
   granularity: ProjectMonitoringTimeseriesDto['granularity'],
   metric: ReleaseTimeseriesMetric,
+  formatMonitoringTick: MonitoringTickFormatter,
 ) {
   return points.map((point) => ({
-    x: formatXLabel(point.bucketAt, granularity),
+    x: formatMonitoringTick(point.bucketAt, granularity),
     prod: point[metric].prod,
     canary: point[metric].canary,
     iter: point[metric].iter,
@@ -372,11 +385,12 @@ function pickReleaseTimeseries(
 function pickReleaseFailureRateTimeseries(
   points: ProjectMonitoringTimeseriesDto['points'],
   granularity: ProjectMonitoringTimeseriesDto['granularity'],
+  formatMonitoringTick: MonitoringTickFormatter,
 ) {
   return points.map((point) => {
     const requestCount = sourceBucketTotal(point.requests);
     return {
-      x: formatXLabel(point.bucketAt, granularity),
+      x: formatMonitoringTick(point.bucketAt, granularity),
       prod: failureRateContributionPercent(point.errors.prod, requestCount),
       canary: failureRateContributionPercent(point.errors.canary, requestCount),
       iter: failureRateContributionPercent(point.errors.iter, requestCount),
@@ -488,15 +502,18 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
   const productionReleaseName = useMemo(() => getReleaseStopConfirmationName(line), [line]);
   const canConfirmStopProduction = stopConfirmationText === productionReleaseName && productionReleaseName.length > 0;
   const canAddCanary = Boolean(line && line.production?.currentEvent?.status === 'running' && !line.canary);
-  const onAutoRefreshTick = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
-    void queryClient.invalidateQueries({ queryKey: ['production-releases', projectId] });
-    void queryClient.invalidateQueries({ queryKey: ['canary-releases', projectId] });
+  const isLive = hasRunningRelease(line);
+  const onAutoRefreshTick = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] }),
+      queryClient.invalidateQueries({ queryKey: ['production-releases', projectId] }),
+      queryClient.invalidateQueries({ queryKey: ['canary-releases', projectId] }),
+    ]);
   }, [projectId, queryClient]);
 
   useAutoRefresh({
     intervalMs: AUTO_REFRESH_INTERVAL_MS,
-    enabled: true,
+    enabled: isLive,
     onTick: onAutoRefreshTick,
   });
 
@@ -741,6 +758,8 @@ function MonitoringPane({
   releaseEvents: ReleaseLineEventDto[];
 }) {
   const { t, language } = useI18n();
+  const { formatMonitoringTick } = useDateTimeFormatter();
+  const queryClient = useQueryClient();
   const [dateRange, setDateRange] = useState<DateRangeValue>(() => createDefaultMonitoringRange());
   const sourceIds = useMemo(() => getReleaseLineEventSourceIds(line, releaseEvents), [line, releaseEvents]);
   const sources = useMemo<SourceBucket[]>(() => getReleaseLineEventSources(line, releaseEvents), [line, releaseEvents]);
@@ -756,6 +775,26 @@ function MonitoringPane({
   );
   const statsQuery = useProjectMonitoringStats(projectId, filter, sourceIds.length > 0);
   const timeseriesQuery = useProjectMonitoringTimeseries(projectId, filter, sourceIds.length > 0);
+  const monitoringRefreshInterval = getMonitoringRefreshInterval(dateRange.preset);
+  const refreshMonitoring = useCallback(async () => {
+    const nextDateRange = resolveRollingDateRangeValue(dateRange);
+    if (
+      nextDateRange.preset !== dateRange.preset ||
+      nextDateRange.from !== dateRange.from ||
+      nextDateRange.to !== dateRange.to
+    ) {
+      setDateRange(nextDateRange);
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ['project-monitoring', projectId] });
+  }, [dateRange, projectId, queryClient]);
+
+  useAutoRefresh({
+    intervalMs: monitoringRefreshInterval,
+    enabled: hasRunningRelease(line) && sourceIds.length > 0 && monitoringRefreshInterval !== false,
+    onTick: refreshMonitoring,
+  });
+
   const stats = statsQuery.data;
   const timeseriesPoints = timeseriesQuery.data?.points ?? EMPTY_TIMESERIES_POINTS;
   const timeseriesGranularity = timeseriesQuery.data?.granularity ?? 'hour';
@@ -797,11 +836,11 @@ function MonitoringPane({
   );
 
   function pickTimeseries(metric: ReleaseTimeseriesMetric) {
-    return pickReleaseTimeseries(timeseriesPoints, timeseriesGranularity, metric);
+    return pickReleaseTimeseries(timeseriesPoints, timeseriesGranularity, metric, formatMonitoringTick);
   }
 
   function pickFailureRateTimeseries() {
-    return pickReleaseFailureRateTimeseries(timeseriesPoints, timeseriesGranularity);
+    return pickReleaseFailureRateTimeseries(timeseriesPoints, timeseriesGranularity, formatMonitoringTick);
   }
 
   const dateRangePresetLabels = useMemo<ReadonlyArray<DateRangePresetOption>>(
@@ -1083,6 +1122,7 @@ function VariantsPane({
   loading: boolean;
 }) {
   const { t } = useI18n();
+  const formatDateTimeOrDash = useDateTimeOrDash();
   const details = useMemo(() => buildReleaseVariantDetails(line, releaseEvents), [line, releaseEvents]);
   const showLoader = useDelayedLoading(loading);
 
@@ -1251,6 +1291,7 @@ function ResultsPane({
   initialReleaseVariantId?: string;
 }) {
   const { t } = useI18n();
+  const formatDateTimeOrDash = useDateTimeOrDash();
   const [sourceFilter, setSourceFilter] = useState<ResultSourceFilter>('all');
   const [releaseVariantFilter, setReleaseVariantFilter] = useState(initialReleaseVariantId ?? 'all');
   const [promptVersionFilter, setPromptVersionFilter] = useState('all');
@@ -1966,6 +2007,7 @@ function QualityChartTooltip({
   submittedLabel: string;
 }) {
   const { t } = useI18n();
+  const formatDateTimeOrDash = useDateTimeOrDash();
   if (!active || !payload || payload.length === 0) return null;
   const point = payload[0]?.payload as AnnotationQualityPoint | undefined;
   if (!point) return null;
@@ -2044,6 +2086,7 @@ function HistoryPane({
   loading: boolean;
 }) {
   const { t } = useI18n();
+  const formatDateTimeOrDash = useDateTimeOrDash();
   const items = useMemo<TimelineItem[]>(() => {
     if (releaseEvents.length > 0) {
       return releaseEvents.map((event) => ({

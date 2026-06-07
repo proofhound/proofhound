@@ -36,6 +36,7 @@ import { Main } from '@proofhound/ui/layout';
 import { useOptimizations, useControlOptimization, useDeleteOptimization } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
+import { useDateTimeFormatter } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage } from '../../lib';
 import {
@@ -54,7 +55,6 @@ import {
   OriginBadge,
   SelectionBox,
   SparkLine,
-  formatDateTime,
   formatTemplate,
   hitCount,
   renderRichInline,
@@ -297,6 +297,7 @@ function OptimizationsTable({
   rowHandlers: RowActionHandlers;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
 
   return (
@@ -556,7 +557,7 @@ export function OptimizationsListPage({ projectId }: { projectId: string }) {
 
   useAutoRefresh({
     intervalMs: AUTO_REFRESH_INTERVAL_MS,
-    enabled: true,
+    enabled: liveItems.length > 0,
     onTick: onAutoRefreshTick,
   });
 

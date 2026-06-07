@@ -20,7 +20,7 @@ import {
   cn,
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
-import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
+import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh, useDateTimeFormatter } from '../../hooks';
 import { useReleaseLineList } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
@@ -31,7 +31,6 @@ import {
   ReleaseMetricCard,
   ReleaseTrafficBar,
   formatCount,
-  formatDateTimeOrDash,
   formatPercent,
 } from './release-line-ui';
 
@@ -54,28 +53,40 @@ const RELEASE_COLUMNS: TableColumn[] = [
   { key: 'actions', width: 'narrow', sticky: 'right' },
 ];
 
+function hasRunningRelease(line: ReleaseLineView) {
+  return line.production?.currentEvent?.status === 'running' || line.canary?.status === 'running';
+}
+
 export function ReleasesListPage({ projectId }: { projectId: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const releaseLineQuery = useReleaseLineList(projectId);
   const releaseLineLoading = useDelayedLoading(releaseLineQuery.isLoading);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ReleaseLineFilter>('all');
+  const lines = releaseLineQuery.data;
+  const formatReleaseDateTime = useCallback(
+    (value: string | null | undefined) => (value ? formatDateTime(value, { fallback: '—' }) : '—'),
+    [formatDateTime],
+  );
+  const hasLiveReleases = useMemo(() => lines.some(hasRunningRelease), [lines]);
 
-  const onTick = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
-    void queryClient.invalidateQueries({ queryKey: ['production-releases', projectId] });
-    void queryClient.invalidateQueries({ queryKey: ['canary-releases', projectId] });
+  const onTick = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] }),
+      queryClient.invalidateQueries({ queryKey: ['production-releases', projectId] }),
+      queryClient.invalidateQueries({ queryKey: ['canary-releases', projectId] }),
+    ]);
   }, [projectId, queryClient]);
 
   useAutoRefresh({
     intervalMs: AUTO_REFRESH_INTERVAL_MS,
-    enabled: true,
+    enabled: hasLiveReleases,
     onTick,
   });
 
-  const lines = releaseLineQuery.data;
   const summary = useMemo(() => summarizeReleaseLines(lines), [lines]);
   const filtered = useMemo(() => filterReleaseLines(lines, filter, search), [filter, lines, search]);
   const counts: Record<ReleaseLineFilter, number> = {
@@ -202,12 +213,12 @@ export function ReleasesListPage({ projectId }: { projectId: string }) {
                     </TableCell>
                     <TableCell column="createdAt">
                       <span className="font-mono text-[12px] text-muted-foreground">
-                        {formatDateTimeOrDash(line.createdAt)}
+                        {formatReleaseDateTime(line.createdAt)}
                       </span>
                     </TableCell>
                     <TableCell column="updatedAt">
                       <span className="font-mono text-[12px] text-muted-foreground">
-                        {formatDateTimeOrDash(line.updatedAt)}
+                        {formatReleaseDateTime(line.updatedAt)}
                       </span>
                     </TableCell>
                     <TableCell column="actions" className="text-right">

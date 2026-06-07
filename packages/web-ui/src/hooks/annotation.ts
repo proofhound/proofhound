@@ -6,6 +6,7 @@ import type {
   SubmitAnnotationSampleInputDto,
 } from '@proofhound/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AutoRefreshInterval } from './use-auto-refresh';
 
 const ROOT_KEY = 'annotation-tasks' as const;
 
@@ -35,12 +36,18 @@ export function useAnnotationTask(projectId: string, taskId: string) {
   });
 }
 
-export function useAnnotationSamples(projectId: string, taskId: string, query?: AnnotationSampleListQuery) {
+export function useAnnotationSamples(
+  projectId: string,
+  taskId: string,
+  query?: AnnotationSampleListQuery,
+  refetchInterval: AutoRefreshInterval = false,
+) {
   return useQuery({
     queryKey: [ROOT_KEY, projectId, 'samples', taskId, query],
     queryFn: () => annotationClient.listSamples(projectId, taskId, query),
     enabled: projectId.length > 0 && taskId.length > 0,
-    refetchInterval: 5_000,
+    refetchInterval,
+    refetchIntervalInBackground: false,
   });
 }
 

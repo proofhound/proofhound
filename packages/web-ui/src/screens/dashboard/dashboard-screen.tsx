@@ -26,9 +26,9 @@ import { useProjectModels } from '../../hooks';
 import { useOptimizations } from '../../hooks';
 import { usePrompts } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
+import { useDateTimeFormatter } from '../../hooks';
 import { useReleaseLineList } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { formatDateTime } from '../../lib';
 import type { ReleaseLineView } from '../../lib';
 
 const DEFAULT_VISIBLE_FEED_ITEMS = 10;
@@ -529,6 +529,7 @@ function ActivityFeed({
   onLoadMore: () => void;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<FeedTabKey>('all');
   const renderedTabs = useMemo(

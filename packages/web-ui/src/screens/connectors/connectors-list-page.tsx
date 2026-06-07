@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import {
   Button,
@@ -31,10 +30,10 @@ import {
 import type { TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useBulkDeleteConnectors, useConnectors, useDeleteConnector } from '../../hooks';
+import { useDateTimeFormatter } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
-import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { getApiErrorMessage, formatDateTime } from '../../lib';
+import { getApiErrorMessage } from '../../lib';
 import {
   type ConnectorFilter,
   type ConnectorListItem,
@@ -97,19 +96,10 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const connectorsQuery = useConnectors(projectId);
   const deleteMutation = useDeleteConnector(projectId);
   const bulkDeleteMutation = useBulkDeleteConnectors(projectId);
-
-  const queryClient = useQueryClient();
-  const onTick = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['connectors', projectId], exact: false });
-  }, [queryClient, projectId]);
-  useAutoRefresh({
-    intervalMs: AUTO_REFRESH_INTERVAL_MS,
-    enabled: true,
-    onTick,
-  });
 
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ConnectorFilter>({ kind: 'all' });
@@ -317,7 +307,6 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
           <>
             {view === 'list' ? (
               <ListView
-                projectId={projectId}
                 items={paginated}
                 allSelected={paginated.every((item) => selection.has(item.id))}
                 onToggleAll={selectAllOnPage}
@@ -327,7 +316,6 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
               />
             ) : (
               <CardView
-                projectId={projectId}
                 items={paginated}
                 isSelected={(id) => selection.has(id)}
                 onToggle={toggleSelection}
@@ -420,7 +408,6 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
   );
 
   function ListView({
-    projectId,
     items,
     allSelected,
     onToggleAll,
@@ -428,7 +415,6 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
     onToggle,
     onDelete,
   }: {
-    projectId: string;
     items: ConnectorListItem[];
     allSelected: boolean;
     onToggleAll: (checked: boolean) => void;
@@ -537,13 +523,11 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
   }
 
   function CardView({
-    projectId,
     items,
     isSelected,
     onToggle,
     onDelete,
   }: {
-    projectId: string;
     items: ConnectorListItem[];
     isSelected: (id: string) => boolean;
     onToggle: (id: string) => void;
@@ -618,6 +602,7 @@ function isSameFilter(left: ConnectorFilter, right: ConnectorFilter): boolean {
 
 function ProbeSummary({ item, compact = false }: { item: ConnectorListItem; compact?: boolean }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const status = item.lastProbedAt ? (item.lastProbeError ? 'failed' : 'success') : 'pending';
   const label =
     status === 'success'

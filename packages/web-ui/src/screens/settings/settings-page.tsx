@@ -30,12 +30,13 @@ import {
   useCreateToken,
   useDelayedLoading,
   useDeleteToken,
+  useDateTimeFormatter,
   useRevealToken,
   useTokens,
   useUpdateToken,
 } from '../../hooks';
 import { useI18n } from '../../i18n';
-import { getApiErrorMessage, formatDateTime } from '../../lib';
+import { getApiErrorMessage } from '../../lib';
 type TokenExpiryPreset = 'never' | '7d' | '30d' | '90d' | 'custom';
 
 interface TokenCreateState {
@@ -150,6 +151,7 @@ function deleteSetValue<T>(current: Set<T>, value: T): Set<T> {
 
 export function SettingsPage() {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const tokensQuery = useTokens();
   const createTokenMutation = useCreateToken();
   const revealTokenMutation = useRevealToken();

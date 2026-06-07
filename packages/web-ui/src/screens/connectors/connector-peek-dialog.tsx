@@ -12,9 +12,8 @@ import {
   Input,
   Label,
 } from '@proofhound/ui';
-import { usePeekConnector } from '../../hooks';
+import { useDateTimeFormatter, usePeekConnector } from '../../hooks';
 import { useI18n } from '../../i18n';
-import { formatDateTime } from '../../lib';
 import type { PeekConnectorResponseDto } from '@proofhound/shared';
 import type { ConnectorListItem } from './connector-types';
 
@@ -30,6 +29,7 @@ export function ConnectorPeekDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const [limit, setLimit] = useState(5);
   const [result, setResult] = useState<PeekConnectorResponseDto | null>(null);
   const peekMutation = usePeekConnector(projectId);

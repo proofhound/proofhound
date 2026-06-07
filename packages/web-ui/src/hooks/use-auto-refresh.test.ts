@@ -1,6 +1,25 @@
+import { act, cleanup, render } from '@testing-library/react';
+import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createAutoRefreshTicker } from './use-auto-refresh';
+import { createAutoRefreshTicker, getBackoffDelay, useAutoRefresh } from './use-auto-refresh';
+
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function AutoRefreshProbe({ onTick }: { onTick: () => void | Promise<void> }) {
+  useAutoRefresh({ intervalMs: 5000, enabled: true, onTick });
+  return null;
+}
+
+function setDocumentHidden(hidden: boolean) {
+  Object.defineProperty(document, 'hidden', {
+    configurable: true,
+    get: () => hidden,
+  });
+}
 
 describe('createAutoRefreshTicker', () => {
   beforeEach(() => {
@@ -9,6 +28,7 @@ describe('createAutoRefreshTicker', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    cleanup();
   });
 
   it('does not call onTick before start', () => {
@@ -100,5 +120,93 @@ describe('createAutoRefreshTicker', () => {
 
     vi.advanceTimersByTime(5000);
     expect(onTick).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not overlap ticks while an async onTick is still running', async () => {
+    let resolveTick: () => void = () => {
+      throw new Error('expected the first tick to be pending');
+    };
+    const onTick = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveTick = resolve;
+        }),
+    );
+    const ticker = createAutoRefreshTicker({ intervalMs: 5000, onTick });
+    ticker.start();
+
+    vi.advanceTimersByTime(5000);
+    expect(onTick).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(60_000);
+    expect(onTick).toHaveBeenCalledTimes(1);
+
+    resolveTick();
+    await flushPromises();
+    vi.advanceTimersByTime(5000);
+    expect(onTick).toHaveBeenCalledTimes(2);
+  });
+
+  it('backs off after failures and resets to the base interval after success', async () => {
+    const onTick = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValue(undefined);
+    const ticker = createAutoRefreshTicker({ intervalMs: 5000, onTick });
+    ticker.start();
+
+    vi.advanceTimersByTime(5000);
+    expect(onTick).toHaveBeenCalledTimes(1);
+    await flushPromises();
+
+    vi.advanceTimersByTime(9999);
+    expect(onTick).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(onTick).toHaveBeenCalledTimes(2);
+    await flushPromises();
+
+    vi.advanceTimersByTime(5000);
+    expect(onTick).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('getBackoffDelay', () => {
+  it('caps exponential backoff at 30 seconds', () => {
+    expect(getBackoffDelay(5000, 0)).toBe(5000);
+    expect(getBackoffDelay(5000, 1)).toBe(10_000);
+    expect(getBackoffDelay(5000, 2)).toBe(20_000);
+    expect(getBackoffDelay(5000, 3)).toBe(30_000);
+  });
+});
+
+describe('useAutoRefresh', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    setDocumentHidden(false);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+    setDocumentHidden(false);
+  });
+
+  it('pauses while hidden and ticks immediately when visible again', () => {
+    const onTick = vi.fn();
+    render(createElement(AutoRefreshProbe, { onTick }));
+    expect(onTick).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setDocumentHidden(true);
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(onTick).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setDocumentHidden(false);
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(onTick).toHaveBeenCalledTimes(2);
   });
 });

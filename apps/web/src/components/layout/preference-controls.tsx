@@ -16,6 +16,7 @@ import {
   TooltipTrigger,
 } from '@proofhound/ui';
 import { LANGUAGE_OPTIONS, isLanguage, useI18n } from '@proofhound/web-ui/i18n';
+import { TimeZonePreferenceMenu } from '@proofhound/web-ui/components';
 import { type LayoutPreferences } from './layout-preferences';
 import { useThemePreference } from './theme-preference';
 import { ThemeSettingsDrawer, ThemeSwatch } from './theme-settings-drawer';
@@ -67,6 +68,8 @@ export function PreferenceControls({
         </DropdownMenu>
 
         {showThemeSwitch && <ThemeSwitchButton />}
+
+        <TimeZonePreferenceMenu />
 
         {showThemeSettings && <ThemeSettingsButton layoutPreferences={layoutPreferences} />}
       </div>

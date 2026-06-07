@@ -12,14 +12,6 @@ export function formatLargeNumber(value: number): string {
   return String(value);
 }
 
-export function formatProjectModelDateTime(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
 function formatJsonInput(value: Record<string, unknown> | undefined): string {
   const entries = Object.keys(value ?? {});
   return entries.length > 0 ? JSON.stringify(value, null, 2) : '';
@@ -35,7 +27,7 @@ export function dtoToProjectModel(dto: ProjectModelListItemDto): ProjectModel {
     source: 'local',
     status: dto.status as ModelStatus,
     probeStatus: dto.probeStatus as ProbeStatus,
-    lastProbedAt: formatProjectModelDateTime(dto.lastProbedAt),
+    lastProbedAt: dto.lastProbedAt ?? '',
     lastProbeError: dto.lastProbeError,
     owner: dto.createdByDisplayName ?? undefined,
     apiKey: '',
@@ -70,6 +62,6 @@ export function dtoToProjectModel(dto: ProjectModelListItemDto): ProjectModel {
     imageCapability: dto.capabilities.image as ImageCapability,
     references: dto.references,
     readonly: false,
-    lastUpdated: formatProjectModelDateTime(dto.updatedAt),
+    lastUpdated: dto.updatedAt,
   };
 }

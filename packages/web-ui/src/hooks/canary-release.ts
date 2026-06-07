@@ -7,6 +7,7 @@ import type {
   UpdateCanaryTrafficRatioInputDto,
 } from '@proofhound/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AutoRefreshInterval } from './use-auto-refresh';
 
 const ROOT_KEY = 'canary-releases' as const;
 
@@ -32,12 +33,14 @@ export function useCanaryAnnotations(
   projectId: string,
   canaryId: string,
   query?: CanaryAnnotationListQuery,
+  refetchInterval: AutoRefreshInterval = false,
 ) {
   return useQuery({
     queryKey: [ROOT_KEY, projectId, 'annotations', canaryId, query],
     queryFn: () => canaryReleaseClient.listAnnotations(projectId, canaryId, query),
     enabled: projectId.length > 0 && canaryId.length > 0,
-    refetchInterval: 5_000,
+    refetchInterval,
+    refetchIntervalInBackground: false,
   });
 }
 

@@ -6,7 +6,7 @@
     "build": {
       "dependsOn": ["^build"],
       "env": ["DATABASE_URL", "NEXT_PUBLIC_SERVER_URL", "NEXT_PUBLIC_API_URL"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**", "tsconfig.tsbuildinfo"]
     },
     "typecheck": {
       "dependsOn": ["^build"]

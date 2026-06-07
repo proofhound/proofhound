@@ -1,8 +1,7 @@
 import { productionReleaseClient } from '@proofhound/api-client';
 import type { CreateProductionReleaseInputDto, StopProductionReleaseInputDto } from '@proofhound/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-
-const PRODUCTION_RELEASE_REFETCH_INTERVAL_MS = 5_000;
+import { AUTO_REFRESH_INTERVAL_MS, type AutoRefreshInterval } from './use-auto-refresh';
 
 interface StopProductionReleaseVariables {
   eventId: string;
@@ -23,15 +22,22 @@ export function useProductionRelease(projectId: string, eventId: string) {
     queryKey: ['production-releases', projectId, 'detail', eventId],
     queryFn: () => productionReleaseClient.get(projectId, eventId),
     enabled: projectId.length > 0 && eventId.length > 0,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'running' ? AUTO_REFRESH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
   });
 }
 
-export function useProductionReleaseHistory(projectId: string, promptId: string) {
+export function useProductionReleaseHistory(
+  projectId: string,
+  promptId: string,
+  refetchInterval: AutoRefreshInterval = false,
+) {
   return useQuery({
     queryKey: ['production-releases', projectId, 'history', promptId],
     queryFn: () => productionReleaseClient.getHistory(projectId, promptId),
     enabled: projectId.length > 0 && promptId.length > 0,
-    refetchInterval: PRODUCTION_RELEASE_REFETCH_INTERVAL_MS,
+    refetchInterval,
     refetchIntervalInBackground: false,
   });
 }

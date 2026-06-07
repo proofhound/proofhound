@@ -34,13 +34,14 @@ import type { ModalityKind } from '@proofhound/ui';
 import { PromptVersionPickerRow, PromptVersionPickerTag } from '../../components';
 import { useConnector, useConnectors } from '../../hooks';
 import { useCreateCanaryRelease, useStartCanaryRelease } from '../../hooks';
+import { useDateTimeFormatter } from '../../hooks';
 import { useProjectModels } from '../../hooks';
 import { useCreateProductionRelease } from '../../hooks';
 import { usePrompt, usePrompts } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useReleaseLineList } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { getApiErrorMessage, formatDateTime, getReleaseLineId } from '../../lib';
+import { getApiErrorMessage, getReleaseLineId } from '../../lib';
 import { composePromptPreview } from '../prompts/prompt-preview';
 import { renderPromptPreviewParts } from '../prompts/prompt-preview-parts';
 import { VARIABLE_TONE_CLASSES } from '../prompts/prompt-ui';
@@ -308,7 +309,11 @@ function normalizeInheritedFilterRules(value: CreateProductionReleaseInputDto['f
   return parsed.success ? parsed.data : null;
 }
 
-function mapPromptVersionToOption(prompt: PromptListItemDto, version: PromptVersionDto): PromptVersionOption {
+function mapPromptVersionToOption(
+  prompt: PromptListItemDto,
+  version: PromptVersionDto,
+  formatDateTime: (value: string | null | undefined) => string,
+): PromptVersionOption {
   const promptLanguage = version.promptLanguage ?? DEFAULT_PROMPT_LANGUAGE;
   return {
     id: version.id,
@@ -502,6 +507,7 @@ function PromptRow({
   onSelect: () => void;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   return (
     <button
       type="button"
@@ -1361,6 +1367,7 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const initialPromptId = searchParams.get('promptId') ?? '';
   const initialPromptVersionId = searchParams.get('promptVersionId') ?? '';
   const initialModelId = searchParams.get('modelId') ?? '';
@@ -1447,10 +1454,10 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
     () =>
       selectedPrompt && selectedPromptQuery.data
         ? selectedPromptQuery.data.versions
-            .map((version) => mapPromptVersionToOption(selectedPrompt, version))
+            .map((version) => mapPromptVersionToOption(selectedPrompt, version, formatDateTime))
             .sort((left, right) => Number(right.version.slice(1)) - Number(left.version.slice(1)))
         : [],
-    [selectedPrompt, selectedPromptQuery.data],
+    [formatDateTime, selectedPrompt, selectedPromptQuery.data],
   );
   const availablePromptVersions = useMemo(
     () =>

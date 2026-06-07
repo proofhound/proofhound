@@ -55,6 +55,7 @@ import { useI18n } from '../../i18n';
 import { getApiErrorMessage, toIntegerInputValue, buildProviderTypeOptions, isProjectNameTaken } from '../../lib';
 import {
   useCreateProjectModel,
+  useDateTimeFormatter,
   useDelayedLoading,
   useProbeProjectModel,
   useProbeDraftProjectModel,
@@ -1444,6 +1445,7 @@ export function ModelFormPage({
   copyFromId?: string;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
   const isNew = mode === 'new';
   const modelQuery = useProjectModel(projectId, isNew ? '' : (modelId ?? ''));
@@ -1821,7 +1823,8 @@ export function ModelFormPage({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <SourceAndStatus model={model} />
                 <span className="font-mono text-xs text-muted-foreground">
-                  {model.provider} · {model.providerModelId} · {t('models.form.updated')} {model.lastUpdated}
+                  {model.provider} · {model.providerModelId} · {t('models.form.updated')}{' '}
+                  {formatDateTime(model.lastUpdated)}
                 </span>
               </div>
             )}

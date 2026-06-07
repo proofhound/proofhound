@@ -56,9 +56,15 @@ import type { ModalityKind, TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage } from '../../lib';
-import { useDeleteProjectModel, useProbeProjectModel, useProjectModels, useUpdateProjectModel } from '../../hooks';
+import {
+  useDateTimeFormatter,
+  useDeleteProjectModel,
+  useProbeProjectModel,
+  useProjectModels,
+  useUpdateProjectModel,
+} from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
-import { dtoToProjectModel, formatProjectModelDateTime } from './project-model-adapter';
+import { dtoToProjectModel } from './project-model-adapter';
 import {
   MODEL_SOURCE_LABEL_KEYS,
   MODEL_STATUS_CLASSES,
@@ -321,7 +327,6 @@ function PricingCell({ model, compact = false }: { model: ProjectModel; compact?
 
 function ModelActions({
   model,
-  projectId,
   onDelete,
   onCopy,
   onToggleStatus,
@@ -329,7 +334,6 @@ function ModelActions({
   testing,
 }: {
   model: ProjectModel;
-  projectId: string;
   onDelete: (model: ProjectModel) => void;
   onCopy: (model: ProjectModel) => void;
   onToggleStatus: (model: ProjectModel) => void;
@@ -412,7 +416,6 @@ function ModelActions({
 
 function ModelTable({
   models,
-  projectId,
   selectedIds,
   onToggleSelected,
   onDelete,
@@ -422,7 +425,6 @@ function ModelTable({
   testingIds,
 }: {
   models: ProjectModel[];
-  projectId: string;
   selectedIds: string[];
   onToggleSelected: (modelId: string) => void;
   onDelete: (model: ProjectModel) => void;
@@ -432,6 +434,7 @@ function ModelTable({
   testingIds: string[];
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
 
   return (
@@ -498,13 +501,14 @@ function ModelTable({
               <TableCell column="probe">
                 <div className="space-y-1">
                   <ProbeBadge status={model.probeStatus ?? 'pending'} testing={testingIds.includes(model.id)} />
-                  <div className="font-mono text-[10px] text-muted-foreground">{model.lastProbedAt || '--'}</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">
+                    {model.lastProbedAt ? formatDateTime(model.lastProbedAt) : '--'}
+                  </div>
                 </div>
               </TableCell>
               <TableCell column="actions" className="text-right">
                 <ModelActions
                   model={model}
-                  projectId={projectId}
                   onDelete={onDelete}
                   onCopy={onCopy}
                   onToggleStatus={onToggleStatus}
@@ -522,7 +526,6 @@ function ModelTable({
 
 function ModelCards({
   models,
-  projectId,
   selectedIds,
   onToggleSelected,
   onDelete,
@@ -532,7 +535,6 @@ function ModelCards({
   testingIds,
 }: {
   models: ProjectModel[];
-  projectId: string;
   selectedIds: string[];
   onToggleSelected: (modelId: string) => void;
   onDelete: (model: ProjectModel) => void;
@@ -570,7 +572,6 @@ function ModelCards({
                 </div>
                 <ModelActions
                   model={model}
-                  projectId={projectId}
                   onDelete={onDelete}
                   onCopy={onCopy}
                   onToggleStatus={onToggleStatus}
@@ -787,7 +788,7 @@ export function ModelsListPage({ projectId }: { projectId: string }) {
         const testedModel = {
           ...pendingModel,
           probeStatus: status,
-          lastProbedAt: formatProjectModelDateTime(result.probedAt),
+          lastProbedAt: result.probedAt,
           lastProbeError: result.error,
         };
         setConnectivityDurationMs(result.durationMs);
@@ -982,10 +983,9 @@ export function ModelsListPage({ projectId }: { projectId: string }) {
               <PlatformLoaderOverlay />
             </div>
           ) : viewMode === 'table' ? (
-            <ModelTable
-              models={pagedModels}
-              projectId={projectId}
-              selectedIds={selectedIds}
+              <ModelTable
+                models={pagedModels}
+                selectedIds={selectedIds}
               onToggleSelected={toggleSelected}
               onDelete={requestDeleteModel}
               onCopy={copyModel}
@@ -994,10 +994,9 @@ export function ModelsListPage({ projectId }: { projectId: string }) {
               testingIds={testingIds}
             />
           ) : (
-            <ModelCards
-              models={pagedModels}
-              projectId={projectId}
-              selectedIds={selectedIds}
+              <ModelCards
+                models={pagedModels}
+                selectedIds={selectedIds}
               onToggleSelected={toggleSelected}
               onDelete={requestDeleteModel}
               onCopy={copyModel}

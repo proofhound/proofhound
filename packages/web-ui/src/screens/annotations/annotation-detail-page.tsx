@@ -38,6 +38,7 @@ import type { TableColumn } from '@proofhound/ui';
 import {
   useAnnotationSamples,
   useAnnotationTask,
+  useDateTimeFormatter,
   useClaimAnnotationSamples,
   useReleaseAnnotationSample,
   useSubmitAnnotationSample,
@@ -125,6 +126,7 @@ export function AnnotationDetailPage({ projectId, annotationTaskId }: { projectI
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const taskQuery = useAnnotationTask(projectId, annotationTaskId);
   const task = useMemo(
     () => (taskQuery.data ? (buildAnnotationTasks([taskQuery.data])[0] ?? null) : null),
@@ -385,7 +387,7 @@ export function AnnotationDetailPage({ projectId, annotationTaskId }: { projectI
                           </TableCell>
                           <TableCell column="createdAt">
                             <span className="font-mono text-[11px] text-muted-foreground">
-                              {formatDateTimeOrDash(annotation.createdAt)}
+                              {formatDateTimeOrDash(annotation.createdAt, formatDateTime)}
                             </span>
                           </TableCell>
                         </TableRow>

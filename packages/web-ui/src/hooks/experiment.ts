@@ -6,6 +6,7 @@ import type {
   ExperimentListQueryDto,
 } from '@proofhound/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AUTO_REFRESH_INTERVAL_MS } from './use-auto-refresh';
 
 interface ControlExperimentVariables {
   experimentId: string;
@@ -31,6 +32,9 @@ export function useExperiment(projectId: string, experimentId: string) {
     queryKey: ['experiments', projectId, experimentId],
     queryFn: () => experimentClient.getExperiment(projectId, experimentId),
     enabled: projectId.length > 0 && experimentId.length > 0,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'running' ? AUTO_REFRESH_INTERVAL_MS : false,
+    refetchIntervalInBackground: false,
   });
 }
 

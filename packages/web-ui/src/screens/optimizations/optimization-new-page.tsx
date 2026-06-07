@@ -23,13 +23,13 @@ import { Button, Input, cn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { PromptVersionPickerRow, PromptVersionPickerTag, PromptLanguageSelect } from '../../components';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { formatDateTime, formatLatencySeconds, getApiErrorMessage, isProjectNameTaken } from '../../lib';
+import { formatLatencySeconds, getApiErrorMessage, isProjectNameTaken } from '../../lib';
 import { useOptimizations, useCreateOptimization } from '../../hooks';
 import { useDatasets } from '../../hooks';
 import { useExperiments } from '../../hooks';
 import { useProjectModels } from '../../hooks';
 import { usePrompt, usePrompts } from '../../hooks';
-import { useDelayedLoading } from '../../hooks';
+import { useDateTimeFormatter, useDelayedLoading } from '../../hooks';
 import { composePromptPreview } from '../prompts/prompt-preview';
 import { renderPromptPreviewParts } from '../prompts/prompt-preview-parts';
 import { VARIABLE_TONE_CLASSES } from '../prompts/prompt-ui';
@@ -135,7 +135,11 @@ function formatPrice(value: number): string {
   return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-function mapPromptVersionToOption(prompt: PromptListItemDto, version: PromptVersionDto): PromptVersionOption {
+function mapPromptVersionToOption(
+  prompt: PromptListItemDto,
+  version: PromptVersionDto,
+  formatDateTime: (value: string | null | undefined) => string,
+): PromptVersionOption {
   const promptLanguage = version.promptLanguage ?? DEFAULT_PROMPT_LANGUAGE;
 
   return {
@@ -525,6 +529,7 @@ function ExperimentDetailPanel({
   modelMissing: boolean;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
 
   if (!experiment) {
     return (
@@ -706,6 +711,7 @@ function ExperimentRow({
   onSelect: () => void;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   return (
     <button
       type="button"
@@ -744,6 +750,7 @@ function PromptRow({
   onSelect: () => void;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const statusKey = PROMPT_STATUS_LABEL_KEY[prompt.latestVersionStatus];
   return (
     <button
@@ -994,6 +1001,7 @@ export function OptimizationNewPage({
   initialSourceExperimentId?: string | null;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
 
   // basic
   const [name, setName] = useState<string>(defaultName);
@@ -1093,9 +1101,11 @@ export function OptimizationNewPage({
   const promptVersions = useMemo(
     () =>
       selectedPrompt && promptDetailQuery.data
-        ? promptDetailQuery.data.versions.map((version) => mapPromptVersionToOption(selectedPrompt, version))
+        ? promptDetailQuery.data.versions.map((version) =>
+            mapPromptVersionToOption(selectedPrompt, version, formatDateTime),
+          )
         : [],
-    [promptDetailQuery.data, selectedPrompt],
+    [formatDateTime, promptDetailQuery.data, selectedPrompt],
   );
   const preferredPromptVersion = useMemo(() => {
     if (promptVersions.length === 0) return null;

@@ -58,6 +58,7 @@ import { useDatasets } from '../../hooks';
 import {
   useCreatePromptDraftVersion,
   useDeletePromptDraftVersion,
+  useDateTimeFormatter,
   usePrompt,
   usePromptMetrics,
   usePromptVersionDeleteImpact,
@@ -68,7 +69,6 @@ import {
 import { useDelayedLoading } from '../../hooks';
 import { PromptLanguageSelect, type PromptLanguage } from '../../components';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { formatDateTime } from '../../lib';
 import {
   DATASET_MODALITY_LABEL_KEYS,
   type DatasetModality,
@@ -1018,6 +1018,7 @@ function VersionSidebar({
   initialVersionId?: string | null;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const [selectedVersions, setSelectedVersions] = useState<number[]>([]);
   const [initialVersionAppliedId, setInitialVersionAppliedId] = useState<string | null>(null);
   const [diffDialogOpen, setDiffDialogOpen] = useState(false);
@@ -1153,7 +1154,9 @@ function VersionSidebar({
                           ))}
                         </div>
                       )}
-                      <div className="mt-2 truncate text-[11.5px] text-muted-foreground">{version.createdAt}</div>
+                      <div className="mt-2 truncate text-[11.5px] text-muted-foreground">
+                        {formatDateTime(version.createdAt)}
+                      </div>
                     </div>
                     <div onClick={stopRowClick}>
                       <TableActionRow
@@ -1396,6 +1399,7 @@ function MetricSummaryCard({ label, value, sub }: { label: string; value: string
 
 function PromptMetricsTab({ projectId, promptId }: { projectId: string; promptId: string }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const metricsQuery = usePromptMetrics(projectId, promptId);
   const metrics = metricsQuery.data;
 
@@ -1514,6 +1518,7 @@ function PromptMetricsTab({ projectId, promptId }: { projectId: string; promptId
 
 export function PromptDetailPage({ projectId, promptId }: { projectId: string; promptId: string }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -2245,7 +2250,7 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
       `v${prompt.versions[0]?.parentVersion ?? prompt.latestVersion - 1}`,
     ),
     prompt.owner,
-    prompt.updatedAt,
+    formatDateTime(prompt.updatedAt),
   ].filter(Boolean);
 
   return (

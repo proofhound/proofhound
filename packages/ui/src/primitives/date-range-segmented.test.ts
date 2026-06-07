@@ -4,6 +4,7 @@ import {
   buildCalendarDays,
   localDateTimePartsToIso,
   resolveDateRangePreset,
+  resolveRollingDateRangeValue,
   toLocalDateTimeParts,
 } from './date-range-segmented';
 
@@ -16,6 +17,30 @@ describe('resolveDateRangePreset', () => {
       to: '2026-05-20T12:00:00.000Z',
     });
     expect(resolveDateRangePreset('custom', now)).toBeNull();
+  });
+
+  it('refreshes rolling values from a new clock', () => {
+    const value = {
+      preset: 'h1' as const,
+      from: '2026-05-20T11:00:00.000Z',
+      to: '2026-05-20T12:00:00.000Z',
+    };
+
+    expect(resolveRollingDateRangeValue(value, new Date('2026-05-20T12:30:00.000Z'))).toEqual({
+      preset: 'h1',
+      from: '2026-05-20T11:30:00.000Z',
+      to: '2026-05-20T12:30:00.000Z',
+    });
+  });
+
+  it('keeps custom values fixed when refreshed', () => {
+    const value = {
+      preset: 'custom' as const,
+      from: '2026-05-18T08:00:00.000Z',
+      to: '2026-05-20T12:00:00.000Z',
+    };
+
+    expect(resolveRollingDateRangeValue(value, new Date('2026-05-20T12:30:00.000Z'))).toBe(value);
   });
 });
 

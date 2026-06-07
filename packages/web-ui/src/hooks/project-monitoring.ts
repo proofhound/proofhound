@@ -5,8 +5,7 @@ import type {
   PromptMonitoringRankingResponseDto,
 } from '@proofhound/shared';
 import { useQuery } from '@tanstack/react-query';
-
-const REFETCH_MS = 5_000;
+import type { AutoRefreshInterval } from './use-auto-refresh';
 
 function filterKey(filter: ProjectMonitoringFilterDto): string {
   return JSON.stringify([
@@ -21,23 +20,33 @@ function filterKey(filter: ProjectMonitoringFilterDto): string {
   ]);
 }
 
-export function useProjectMonitoringStats(projectId: string, filter: ProjectMonitoringFilterDto, enabled = true) {
+export function useProjectMonitoringStats(
+  projectId: string,
+  filter: ProjectMonitoringFilterDto,
+  enabled = true,
+  refetchInterval: AutoRefreshInterval = false,
+) {
   return useQuery({
     queryKey: ['project-monitoring', projectId, 'stats', filterKey(filter)],
     queryFn: () => projectMonitoringClient.getStats(projectId, filter),
     enabled: enabled && projectId.length > 0,
-    refetchInterval: REFETCH_MS,
+    refetchInterval,
     refetchIntervalInBackground: false,
     placeholderData: (previousData) => previousData,
   });
 }
 
-export function useProjectMonitoringTimeseries(projectId: string, filter: ProjectMonitoringFilterDto, enabled = true) {
+export function useProjectMonitoringTimeseries(
+  projectId: string,
+  filter: ProjectMonitoringFilterDto,
+  enabled = true,
+  refetchInterval: AutoRefreshInterval = false,
+) {
   return useQuery({
     queryKey: ['project-monitoring', projectId, 'timeseries', filterKey(filter)],
     queryFn: () => projectMonitoringClient.getTimeseries(projectId, filter),
     enabled: enabled && projectId.length > 0,
-    refetchInterval: REFETCH_MS,
+    refetchInterval,
     refetchIntervalInBackground: false,
     placeholderData: (previousData) => previousData,
   });
@@ -48,12 +57,13 @@ export function usePromptMonitoringRanking(
   filter: ProjectMonitoringFilterDto,
   sortBy: PromptMonitoringRankingResponseDto['sortBy'],
   enabled = true,
+  refetchInterval: AutoRefreshInterval = false,
 ) {
   return useQuery({
     queryKey: ['project-monitoring', projectId, 'prompts-ranking', filterKey(filter), sortBy],
     queryFn: () => projectMonitoringClient.getPromptsRanking(projectId, filter, sortBy),
     enabled: enabled && projectId.length > 0,
-    refetchInterval: REFETCH_MS,
+    refetchInterval,
     refetchIntervalInBackground: false,
     placeholderData: (previousData) => previousData,
   });
@@ -64,12 +74,13 @@ export function useProjectModelMonitoringRanking(
   filter: ProjectMonitoringFilterDto,
   sortBy: ModelMonitoringRankingResponseDto['sortBy'],
   enabled = true,
+  refetchInterval: AutoRefreshInterval = false,
 ) {
   return useQuery({
     queryKey: ['project-monitoring', projectId, 'models-ranking', filterKey(filter), sortBy],
     queryFn: () => projectMonitoringClient.getModelsRanking(projectId, filter, sortBy),
     enabled: enabled && projectId.length > 0,
-    refetchInterval: REFETCH_MS,
+    refetchInterval,
     refetchIntervalInBackground: false,
     placeholderData: (previousData) => previousData,
   });

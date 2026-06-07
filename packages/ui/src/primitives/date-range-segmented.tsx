@@ -94,6 +94,14 @@ export function resolveDateRangePreset(
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
+export function resolveRollingDateRangeValue(
+  value: DateRangeValue,
+  now: Date = new Date(),
+): DateRangeValue {
+  const resolved = resolveDateRangePreset(value.preset, now);
+  return resolved ? { preset: value.preset, ...resolved } : value;
+}
+
 export function DateRangeSegmented({
   value,
   onChange,

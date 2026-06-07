@@ -30,6 +30,7 @@ import type { TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useCreatePrompt, useDeletePrompt, usePromptDeleteImpact, usePrompts } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
+import { useDateTimeFormatter } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage, isProjectNameTaken } from '../../lib';
 import {
@@ -256,6 +257,7 @@ function PromptsTable({
   onToggleSelected: (promptId: string) => void;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
 
   return (
@@ -312,10 +314,14 @@ function PromptsTable({
                 <CustomLabelsCell labels={prompt.customLabels} />
               </TableCell>
               <TableCell column="createdAt">
-                <span className="font-mono text-[11.5px] text-muted-foreground">{prompt.createdAt}</span>
+                <span className="font-mono text-[11.5px] text-muted-foreground">
+                  {formatDateTime(prompt.createdAt)}
+                </span>
               </TableCell>
               <TableCell column="updatedAt">
-                <span className="font-mono text-[11.5px] text-muted-foreground">{prompt.updatedAt}</span>
+                <span className="font-mono text-[11.5px] text-muted-foreground">
+                  {formatDateTime(prompt.updatedAt)}
+                </span>
               </TableCell>
               <TableCell column="actions" className="text-right">
                 <PromptActions prompt={prompt} onDelete={onDelete} />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Activity, AlertTriangle, CircleDollarSign, Coins, Gauge, LineChart, RefreshCcw } from 'lucide-react';
 import type {
@@ -13,14 +13,19 @@ import type {
 } from '@proofhound/shared';
 import {
   DateRangeSegmented,
+  type DateRangePreset,
   type DateRangePresetOption,
   type DateRangeSegmentedLabels,
   type DateRangeValue,
   resolveDateRangePreset,
+  resolveRollingDateRangeValue,
 } from '@proofhound/ui';
 import { useProjectModels } from '../../hooks';
 import {
+  AUTO_REFRESH_INTERVAL_MS,
   useDelayedLoading,
+  useAutoRefresh,
+  useDateTimeFormatter,
   useProjectModelMonitoringRanking,
   useProjectMonitoringStats,
   useProjectMonitoringTimeseries,
@@ -35,6 +40,7 @@ import { ProjectModelRankingCard, PromptRankingCard } from './ranking-cards';
 
 const DEFAULT_SOURCES: ReadonlyArray<SourceBucket> = ['prod', 'canary', 'iter', 'exp'];
 const EMPTY_BY_SOURCE: Record<SourceBucket, number> = { prod: 0, canary: 0, iter: 0, exp: 0 };
+type MonitoringTickFormatter = ReturnType<typeof useDateTimeFormatter>['formatMonitoringTick'];
 
 type ProjectMonitoringPageProps = {
   testId: string;
@@ -42,9 +48,17 @@ type ProjectMonitoringPageProps = {
   subtitleKey: TranslationKey;
 };
 
+function getMonitoringRefreshInterval(preset: DateRangePreset): number | false {
+  if (preset === 'h1') return AUTO_REFRESH_INTERVAL_MS;
+  if (preset === 'h24') return 30_000;
+  if (preset === 'd7') return 60_000;
+  return false;
+}
+
 export function ProjectMonitoringPage({ testId, titleKey, subtitleKey }: ProjectMonitoringPageProps) {
   const { projectId } = useProjectContext();
   const { t, language } = useI18n();
+  const { formatMonitoringTick } = useDateTimeFormatter();
   const queryClient = useQueryClient();
 
   const [dateRange, setDateRange] = useState<DateRangeValue>(() => {
@@ -131,14 +145,18 @@ export function ProjectMonitoringPage({ testId, titleKey, subtitleKey }: Project
     [modelsList],
   );
 
-  const filter: ProjectMonitoringFilterDto = {
-    from: dateRange.from,
-    to: dateRange.to,
-    promptIds: selectedPromptIds.length ? selectedPromptIds : undefined,
-    modelIds: selectedModelIds.length ? selectedModelIds : undefined,
-    sources: sources.length === DEFAULT_SOURCES.length ? undefined : sources,
-    granularity: 'auto',
-  };
+  const filter: ProjectMonitoringFilterDto = useMemo(
+    () => ({
+      from: dateRange.from,
+      to: dateRange.to,
+      promptIds: selectedPromptIds.length ? selectedPromptIds : undefined,
+      modelIds: selectedModelIds.length ? selectedModelIds : undefined,
+      sources: sources.length === DEFAULT_SOURCES.length ? undefined : sources,
+      granularity: 'auto',
+    }),
+    [dateRange.from, dateRange.to, selectedModelIds, selectedPromptIds, sources],
+  );
+  const monitoringRefreshInterval = getMonitoringRefreshInterval(dateRange.preset);
 
   const statsQuery = useProjectMonitoringStats(projectId, filter);
   const timeseriesQuery = useProjectMonitoringTimeseries(projectId, filter);
@@ -162,13 +180,28 @@ export function ProjectMonitoringPage({ testId, titleKey, subtitleKey }: Project
   const rpmThreshold = totalRpmLimit > 0 ? { value: totalRpmLimit, label: t('monitoring.metric.rpmLimit') } : null;
   const stats = statsQuery.data;
 
-  function refreshAll() {
-    void queryClient.invalidateQueries({ queryKey: ['project-monitoring', projectId] });
-  }
+  const refreshAll = useCallback(async () => {
+    const nextDateRange = resolveRollingDateRangeValue(dateRange);
+    if (
+      nextDateRange.preset !== dateRange.preset ||
+      nextDateRange.from !== dateRange.from ||
+      nextDateRange.to !== dateRange.to
+    ) {
+      setDateRange(nextDateRange);
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ['project-monitoring', projectId] });
+  }, [dateRange, projectId, queryClient]);
+
+  useAutoRefresh({
+    intervalMs: monitoringRefreshInterval,
+    enabled: monitoringRefreshInterval !== false,
+    onTick: refreshAll,
+  });
 
   function pickTimeseries(metric: 'requests' | 'errors' | 'rpm' | 'tpm' | 'tokens' | 'cost') {
     return timeseriesPoints.map((point) => ({
-      x: formatXLabel(point.bucketAt, timeseriesQuery.data?.granularity ?? 'hour'),
+      x: formatMonitoringTick(point.bucketAt, timeseriesQuery.data?.granularity ?? 'hour'),
       prod: point[metric].prod,
       canary: point[metric].canary,
       iter: point[metric].iter,
@@ -177,7 +210,11 @@ export function ProjectMonitoringPage({ testId, titleKey, subtitleKey }: Project
   }
 
   function pickFailureRateTimeseries() {
-    return pickFailureRateContributionTimeseries(timeseriesPoints, timeseriesQuery.data?.granularity ?? 'hour');
+    return pickFailureRateContributionTimeseries(
+      timeseriesPoints,
+      timeseriesQuery.data?.granularity ?? 'hour',
+      formatMonitoringTick,
+    );
   }
 
   return (
@@ -201,7 +238,9 @@ export function ProjectMonitoringPage({ testId, titleKey, subtitleKey }: Project
           />
           <button
             type="button"
-            onClick={refreshAll}
+            onClick={() => {
+              void refreshAll();
+            }}
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border bg-background px-3.5 text-[13px] font-medium hover:bg-accent"
           >
             <RefreshCcw className="size-4" />
@@ -471,11 +510,12 @@ function failureRateBySourcePercent(stats: ProjectMonitoringStatsDto | undefined
 function pickFailureRateContributionTimeseries(
   points: ProjectMonitoringTimeseriesDto['points'],
   granularity: ProjectMonitoringTimeseriesDto['granularity'],
+  formatMonitoringTick: MonitoringTickFormatter,
 ) {
   return points.map((point) => {
     const requestCount = sourceBucketTotal(point.requests);
     return {
-      x: formatXLabel(point.bucketAt, granularity),
+      x: formatMonitoringTick(point.bucketAt, granularity),
       prod: failureRateContributionPercent(point.errors.prod, requestCount),
       canary: failureRateContributionPercent(point.errors.canary, requestCount),
       iter: failureRateContributionPercent(point.errors.iter, requestCount),
@@ -490,12 +530,4 @@ function failureRateContributionPercent(errors: number, totalRequests: number): 
 
 function sourceBucketTotal(values: Record<SourceBucket, number>): number {
   return values.prod + values.canary + values.iter + values.exp;
-}
-
-function formatXLabel(iso: string, granularity: 'minute' | 'hour' | 'day'): string {
-  const date = new Date(iso);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  if (granularity === 'day') return `${date.getMonth() + 1}/${date.getDate()}`;
-  if (granularity === 'hour') return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:00`;
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

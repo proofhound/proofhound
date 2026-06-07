@@ -5,6 +5,7 @@ import { releaseLineClient } from '@proofhound/api-client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UpdateReleaseLineRunConfigInputDto, UpdateReleaseLineTrafficRatioInputDto } from '@proofhound/shared';
 import { mapReleaseLineDtos } from '../lib';
+import type { AutoRefreshInterval } from './use-auto-refresh';
 
 export function useReleaseLineList(projectId: string, enabled = true) {
   const releaseLineQuery = useQuery({
@@ -25,12 +26,16 @@ export function useReleaseLineList(projectId: string, enabled = true) {
   };
 }
 
-export function useReleaseLineEvents(projectId: string, releaseLineId: string) {
+export function useReleaseLineEvents(
+  projectId: string,
+  releaseLineId: string,
+  refetchInterval: AutoRefreshInterval = false,
+) {
   return useQuery({
     queryKey: ['release-lines', projectId, 'detail', releaseLineId, 'events'],
     queryFn: () => releaseLineClient.listEvents(projectId, releaseLineId),
     enabled: projectId.length > 0 && releaseLineId.length > 0,
-    refetchInterval: 5_000,
+    refetchInterval,
     refetchIntervalInBackground: false,
     placeholderData: (previous) => previous,
   });

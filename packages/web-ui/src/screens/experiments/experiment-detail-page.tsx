@@ -57,8 +57,9 @@ import {
 import type { ModalityKind, TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { formatDateTime, formatLatencySeconds } from '../../lib';
+import { formatLatencySeconds } from '../../lib';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
+import { useDateTimeFormatter } from '../../hooks';
 import { useControlExperiment, useDownloadExperiment, useExperiment } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useExperimentRunResults } from '../../hooks';
@@ -101,28 +102,10 @@ function formatDurationMs(value: number | null | undefined) {
   return `${seconds < 10 ? seconds.toFixed(1) : seconds.toFixed(0)} s`;
 }
 
-function formatDatePart(date: Date) {
-  const pad = (part: number) => String(part).padStart(2, '0');
-  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
-}
-
-function formatTimePart(date: Date) {
-  const pad = (part: number) => String(part).padStart(2, '0');
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
 function parseDate(value: string | null | undefined) {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function isSameLocalDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
 }
 
 function getExperimentDurationSeconds(
@@ -171,23 +154,27 @@ function getDurationParts(totalSeconds: number | null) {
 }
 
 function TimePoint({ date, includeDate }: { date: Date | null; includeDate: boolean }) {
+  const { formatDate, formatTime } = useDateTimeFormatter();
   if (!date) return <span className="font-mono text-[10.5px] text-muted-foreground">—</span>;
 
   return (
     <span className="inline-flex items-baseline gap-1 font-mono tabular-nums">
-      {includeDate && <span className="text-[10px] text-muted-foreground">{formatDatePart(date)}</span>}
-      <span className="text-[10.5px] font-semibold text-foreground sm:text-[11px]">{formatTimePart(date)}</span>
+      {includeDate && <span className="text-[10px] text-muted-foreground">{formatDate(date)}</span>}
+      <span className="text-[10.5px] font-semibold text-foreground sm:text-[11px]">{formatTime(date)}</span>
     </span>
   );
 }
 
 function ExperimentTimingSubtitle({ detail, className }: { detail: ExperimentListItemDto; className?: string }) {
+  const { formatDate } = useDateTimeFormatter();
   const startDate = parseDate(detail.startedAt ?? detail.createdAt);
   const finishedDate = parseDate(detail.finishedAt);
   const durationSeconds = getExperimentDurationSeconds(detail);
   const duration = getDurationParts(durationSeconds);
   const comparisonEndDate = finishedDate ?? (detail.status === 'running' ? new Date() : parseDate(detail.updatedAt));
-  const includeDate = Boolean(startDate && comparisonEndDate && !isSameLocalDay(startDate, comparisonEndDate));
+  const includeDate = Boolean(
+    startDate && comparisonEndDate && formatDate(startDate) !== formatDate(comparisonEndDate),
+  );
 
   return (
     <div className={cn('flex w-fit max-w-full flex-col items-center gap-0.5', className)}>
@@ -584,6 +571,7 @@ function SampleResultsSection({
   onOpenDetail: (runResultId: string) => void;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const [filter, setFilter] = useState<'all' | 'ok' | 'bad' | 'error'>('all');
   const [search, setSearch] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
@@ -908,14 +896,16 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
   const downloadExperiment = useDownloadExperiment(projectId);
 
   const queryClient = useQueryClient();
-  const onTick = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['experiments', projectId, experimentId] });
-    void queryClient.invalidateQueries({ queryKey: ['experiments', projectId], exact: false });
-    void queryClient.invalidateQueries({ queryKey: ['run-results', projectId, experimentId], exact: false });
+  const isLive = detail?.status === 'running';
+  const onTick = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['experiments', projectId], exact: false }),
+      queryClient.invalidateQueries({ queryKey: ['run-results', projectId, experimentId], exact: false }),
+    ]);
   }, [queryClient, projectId, experimentId]);
   useAutoRefresh({
     intervalMs: AUTO_REFRESH_INTERVAL_MS,
-    enabled: true,
+    enabled: isLive,
     onTick,
   });
 

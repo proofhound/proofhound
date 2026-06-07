@@ -38,9 +38,10 @@ import {
   useRevokeConnectorWebhookToken,
   useUpdateConnector,
 } from '../../hooks';
+import { useDateTimeFormatter } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type Language, type TranslationKey } from '../../i18n';
-import { getApiErrorMessage, formatDateTime, isCanonicalUuid } from '../../lib';
+import { getApiErrorMessage, isCanonicalUuid } from '../../lib';
 import type {
   ConnectorDetailDto,
   ConnectorDirection,
@@ -168,6 +169,7 @@ const EMPTY_TOKEN_CREATE: TokenCreateState = {
 
 export function ConnectorDetailPage({ projectId, connectorId }: { projectId: string; connectorId: string }) {
   const { t, language } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const defaultWebhookSchema = useMemo(() => getDefaultWebhookSchema(language), [language]);
   const canUseApi = isCanonicalUuid(projectId) && isCanonicalUuid(connectorId);
   const query = useConnector(canUseApi ? projectId : '', canUseApi ? connectorId : '');
@@ -1164,6 +1166,7 @@ function RedisConfigSection({
 
 function LatestQueueProbePanel({ connector }: { connector: ConnectorDetailDto }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const config: Record<string, unknown> = isRecord(connector.config) ? connector.config : {};
   const message = readLatestPeekMessage(config['lastPeekMessage']);
   const payloadSchema = isRecord(config['lastPeekPayloadSchema']) ? config['lastPeekPayloadSchema'] : null;
@@ -1316,6 +1319,7 @@ function WebhookSection({
   revokingToken: boolean;
 }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   return (
     <>
       <Section title={t('connectors.section.webhook')}>

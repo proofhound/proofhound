@@ -16,7 +16,7 @@ import {
 } from '@proofhound/ui';
 import { useI18n } from '../../i18n';
 import { useRunResult } from '../../hooks';
-import { formatDateTime } from '../../lib';
+import { useDateTimeFormatter } from '../../hooks';
 import { experimentTone } from './experiment-theme';
 import {
   formatRunResultFailureReason,
@@ -43,6 +43,7 @@ interface Props {
 
 export function RunResultDetailSheet({ projectId, experimentId, runResultId, onClose }: Props) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const open = Boolean(runResultId);
   const { data: detail, isLoading, error } = useRunResult(projectId, experimentId, runResultId);
   const [imagePreview, setImagePreview] = useState<{ field: string; value: string } | null>(null);

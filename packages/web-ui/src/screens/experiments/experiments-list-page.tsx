@@ -27,6 +27,7 @@ import {
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
+import { useDateTimeFormatter } from '../../hooks';
 import { useControlExperiment, useDeleteExperiment, useExperiments } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
@@ -117,14 +118,6 @@ function formatDuration(totalSeconds: number | null | undefined) {
   return restMinutes ? `${hours}h ${restMinutes}m` : `${hours}h`;
 }
 
-function formatDateTimeDisplay(value: string | null | undefined) {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  const pad = (part: number) => String(part).padStart(2, '0');
-  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
 function formatCompactNumber(value: number) {
   if (!Number.isFinite(value)) return '—';
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -152,7 +145,10 @@ function estimateRemainingSeconds(experiment: ExperimentListItemDto) {
   return Math.round((getDurationSeconds(experiment) / experiment.processedSamples) * remaining);
 }
 
-function toExperimentSummary(experiment: ExperimentListItemDto): ExperimentSummary {
+function toExperimentSummary(
+  experiment: ExperimentListItemDto,
+  formatDateTime: (value: string | null | undefined, options?: { fallback?: string }) => string,
+): ExperimentSummary {
   const durationSeconds = getDurationSeconds(experiment);
   const remainingSeconds = estimateRemainingSeconds(experiment);
   const ownerHandle = experiment.createdByUsername
@@ -186,7 +182,7 @@ function toExperimentSummary(experiment: ExperimentListItemDto): ExperimentSumma
     elapsedLabel: formatDuration(durationSeconds),
     remainingLabel: remainingSeconds === null ? undefined : formatDuration(remainingSeconds),
     durationLabel: experiment.finishedAt ? formatDuration(durationSeconds) : undefined,
-    agoLabel: formatDateTimeDisplay(experiment.finishedAt ?? experiment.updatedAt),
+    agoLabel: formatDateTime(experiment.finishedAt ?? experiment.updatedAt, { fallback: '—' }),
     failureReason: experiment.failureReason ?? undefined,
     failureKind: experiment.failureKind ?? undefined,
     failedSamples: experiment.failedSamples,
@@ -244,6 +240,7 @@ function getHeaderStats(stats?: ExperimentListStatsDto) {
 
 export function ExperimentsListPage({ projectId }: { projectId: string }) {
   const { t } = useI18n();
+  const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -264,18 +261,22 @@ export function ExperimentsListPage({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
 
   const experiments = useMemo(
-    () => (experimentsQuery.data?.data ?? []).map((item) => toExperimentSummary(item)),
-    [experimentsQuery.data?.data],
+    () => (experimentsQuery.data?.data ?? []).map((item) => toExperimentSummary(item, formatDateTime)),
+    [experimentsQuery.data?.data, formatDateTime],
   );
   const headerStats = useMemo(() => getHeaderStats(experimentsQuery.data?.stats), [experimentsQuery.data?.stats]);
+  const hasLiveExperiments = useMemo(
+    () => experiments.some((experiment) => experiment.status === 'running'),
+    [experiments],
+  );
 
-  const onAutoRefreshTick = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['experiments', projectId], exact: false });
+  const onAutoRefreshTick = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['experiments', projectId], exact: false });
   }, [queryClient, projectId]);
 
   useAutoRefresh({
     intervalMs: AUTO_REFRESH_INTERVAL_MS,
-    enabled: true,
+    enabled: hasLiveExperiments,
     onTick: onAutoRefreshTick,
   });
 
