@@ -36,7 +36,7 @@ import {
   useUpdateToken,
 } from '../../hooks';
 import { useI18n } from '../../i18n';
-import { getApiErrorMessage } from '../../lib';
+import { formatDateTimeLocalInput, getApiErrorMessage, parseDateTimeLocalInput } from '../../lib';
 type TokenExpiryPreset = 'never' | '7d' | '30d' | '90d' | 'custom';
 
 interface TokenCreateState {
@@ -83,11 +83,11 @@ const TOKEN_COLUMNS: TableColumn[] = [
 
 function resolveExpiresAt(
   state: Pick<TokenCreateState, 'expiryPreset' | 'customExpiresAt'>,
+  timeZone: string,
 ): string | null | undefined {
   if (state.expiryPreset === 'never') return null;
   if (state.expiryPreset === 'custom') {
-    const date = new Date(state.customExpiresAt);
-    return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+    return parseDateTimeLocalInput(state.customExpiresAt, timeZone) ?? undefined;
   }
 
   const days = state.expiryPreset === '7d' ? 7 : state.expiryPreset === '30d' ? 30 : 90;
@@ -102,24 +102,16 @@ function parseIpWhitelist(value: string): string[] | undefined {
   return entries.length > 0 ? entries : undefined;
 }
 
-function toDatetimeLocalValue(value: string | null | undefined): string {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = (part: number) => part.toString().padStart(2, '0');
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}`
-  );
-}
-
-function createEditState(token: Pick<UserTokenSummaryDto, 'id' | 'name' | 'expiresAt'>): TokenEditState {
+function createEditState(
+  token: Pick<UserTokenSummaryDto, 'id' | 'name' | 'expiresAt'>,
+  timeZone: string,
+): TokenEditState {
   return {
     open: true,
     tokenId: token.id,
     name: token.name,
     expiryPreset: token.expiresAt ? 'custom' : 'never',
-    customExpiresAt: toDatetimeLocalValue(token.expiresAt),
+    customExpiresAt: formatDateTimeLocalInput(token.expiresAt, timeZone),
   };
 }
 
@@ -151,7 +143,7 @@ function deleteSetValue<T>(current: Set<T>, value: T): Set<T> {
 
 export function SettingsPage() {
   const { t } = useI18n();
-  const { formatDateTime } = useDateTimeFormatter();
+  const { formatDateTime, resolvedTimeZone } = useDateTimeFormatter();
   const tokensQuery = useTokens();
   const createTokenMutation = useCreateToken();
   const revealTokenMutation = useRevealToken();
@@ -192,7 +184,7 @@ export function SettingsPage() {
   }
 
   async function submitCreateToken() {
-    const expiresAt = resolveExpiresAt(createState);
+    const expiresAt = resolveExpiresAt(createState, resolvedTimeZone);
     if (expiresAt === undefined) {
       showError(t('settings.token.invalidExpiresAt'));
       return;
@@ -240,7 +232,7 @@ export function SettingsPage() {
   }
 
   async function submitUpdateToken() {
-    const expiresAt = resolveExpiresAt(editState);
+    const expiresAt = resolveExpiresAt(editState, resolvedTimeZone);
     if (expiresAt === undefined) {
       showError(t('settings.token.invalidExpiresAt'));
       return;
@@ -367,7 +359,7 @@ export function SettingsPage() {
                           <div className="flex items-center justify-end gap-0.5">
                             <TableActionIconButton
                               label={t('settings.token.edit')}
-                              onClick={() => setEditState(createEditState(token))}
+                              onClick={() => setEditState(createEditState(token, resolvedTimeZone))}
                               disabled={updateTokenMutation.isPending}
                             >
                               <Pencil className="h-4 w-4" />

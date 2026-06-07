@@ -41,7 +41,7 @@ import {
 import { useDateTimeFormatter } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type Language, type TranslationKey } from '../../i18n';
-import { getApiErrorMessage, isCanonicalUuid } from '../../lib';
+import { getApiErrorMessage, isCanonicalUuid, parseDateTimeLocalInput } from '../../lib';
 import type {
   ConnectorDetailDto,
   ConnectorDirection,
@@ -169,7 +169,7 @@ const EMPTY_TOKEN_CREATE: TokenCreateState = {
 
 export function ConnectorDetailPage({ projectId, connectorId }: { projectId: string; connectorId: string }) {
   const { t, language } = useI18n();
-  const { formatDateTime } = useDateTimeFormatter();
+  const { formatDateTime, resolvedTimeZone } = useDateTimeFormatter();
   const defaultWebhookSchema = useMemo(() => getDefaultWebhookSchema(language), [language]);
   const canUseApi = isCanonicalUuid(projectId) && isCanonicalUuid(connectorId);
   const query = useConnector(canUseApi ? projectId : '', canUseApi ? connectorId : '');
@@ -393,7 +393,7 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
       setError(t('connectors.token.nameRequired'));
       return;
     }
-    const expiresAt = resolveTokenExpiresAt(tokenCreate);
+    const expiresAt = resolveTokenExpiresAt(tokenCreate, resolvedTimeZone);
     if (expiresAt === 'invalid') {
       setError(t('connectors.token.invalidExpiresAt'));
       return;
@@ -2083,11 +2083,10 @@ function buildGeneratedTokenName(connectorName: string): string {
   return `${base}-token-${timestamp}`;
 }
 
-function resolveTokenExpiresAt(state: TokenCreateState): string | null | 'invalid' {
+function resolveTokenExpiresAt(state: TokenCreateState, timeZone: string): string | null | 'invalid' {
   if (state.expiryPreset === 'never') return null;
   if (state.expiryPreset === 'custom') {
-    const date = new Date(state.customExpiresAt);
-    return Number.isNaN(date.getTime()) ? 'invalid' : date.toISOString();
+    return parseDateTimeLocalInput(state.customExpiresAt, timeZone) ?? 'invalid';
   }
   const days = Number.parseInt(state.expiryPreset, 10);
   if (!Number.isFinite(days)) return 'invalid';

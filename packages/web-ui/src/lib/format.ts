@@ -1,4 +1,5 @@
 import type { Language } from '../i18n';
+import { getTimeZoneOffsetMinutes, isValidTimeZone } from './time-zone';
 
 export interface DateTimeFormatOptions {
   timeZone?: string;
@@ -84,6 +85,77 @@ export function formatTime(
   } catch {
     return fallback;
   }
+}
+
+const DATETIME_LOCAL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+/**
+ * Both datetime-local helpers below fall back to UTC for a missing or invalid
+ * zone so that {@link formatDateTimeLocalInput} and {@link parseDateTimeLocalInput}
+ * stay exact inverses and never silently leak the browser's system zone. In
+ * practice callers always pass `resolveDisplayTimeZone` output, which is already
+ * a valid IANA zone.
+ */
+function resolveInputTimeZone(timeZone?: string): string {
+  return timeZone && isValidTimeZone(timeZone) ? timeZone : 'UTC';
+}
+
+/**
+ * Render an instant as the `YYYY-MM-DDTHH:mm` wall-clock string that an
+ * `<input type="datetime-local">` expects, interpreted in `timeZone` (the
+ * resolved display time zone) rather than the browser's system time zone.
+ * Returns '' for empty/invalid values so it can feed an input value directly.
+ */
+export function formatDateTimeLocalInput(
+  value: string | number | Date | null | undefined,
+  timeZone?: string,
+): string {
+  const date = parseDate(value);
+  if (!date) return '';
+  const parts = getZonedParts(date, resolveInputTimeZone(timeZone));
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+/**
+ * Inverse of {@link formatDateTimeLocalInput}: read a zone-less
+ * `YYYY-MM-DDTHH:mm[:ss]` value from a `datetime-local` input, interpret its
+ * wall-clock components as being in `timeZone`, and return the corresponding
+ * UTC ISO instant. Returns null for empty or malformed input. The two-pass
+ * offset lookup keeps the result correct across daylight-saving boundaries.
+ */
+export function parseDateTimeLocalInput(
+  value: string | null | undefined,
+  timeZone?: string,
+): string | null {
+  if (!value) return null;
+  const match = DATETIME_LOCAL_PATTERN.exec(value.trim());
+  if (!match) return null;
+  const [, y, mo, d, h, mi, s] = match;
+  const year = Number(y);
+  const month = Number(mo);
+  const day = Number(d);
+  const hour = Number(h);
+  const minute = Number(mi);
+  const second = s === undefined ? 0 : Number(s);
+
+  const wallAsUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+  const probe = new Date(wallAsUtcMs);
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== day ||
+    probe.getUTCHours() !== hour ||
+    probe.getUTCMinutes() !== minute ||
+    probe.getUTCSeconds() !== second
+  ) {
+    return null;
+  }
+
+  const zone = resolveInputTimeZone(timeZone);
+  const offsetAt = (ms: number) => getTimeZoneOffsetMinutes(zone, new Date(ms));
+  const firstGuessOffset = offsetAt(wallAsUtcMs);
+  const resolvedOffset = offsetAt(wallAsUtcMs - firstGuessOffset * 60_000);
+  return new Date(wallAsUtcMs - resolvedOffset * 60_000).toISOString();
 }
 
 export function formatMonitoringTick(
