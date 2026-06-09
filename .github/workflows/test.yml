@@ -1,4 +1,4 @@
-name: ci
+name: test
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -62,7 +62,7 @@ jobs:
       LOG_LEVEL: info
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/proofhound
       REDIS_URL: redis://localhost:6379
-      # CI-only throwaway secrets (NOT real). base64 of 32 bytes for the model-key encryption.
+      # Test-only throwaway secrets (NOT real). base64 of 32 bytes for the model-key encryption.
       MODEL_API_KEY_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       SERVER_PORT: '4000'
       WEB_PUBLIC_URL: http://localhost:3000

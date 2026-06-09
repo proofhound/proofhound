@@ -19,7 +19,7 @@
     "seed:dev": "SEED_PROFILE=dev tsx src/seed-dev.ts",
     "clean-test-residue": "tsx src/clean-test-residue.ts",
     "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-migrations.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental false",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run --passWithNoTests",
     "test:unit": "vitest run --passWithNoTests",

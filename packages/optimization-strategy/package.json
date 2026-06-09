@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-prompt-assets.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental false",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run --config vitest.config.ts --passWithNoTests",
     "test:unit": "vitest run --config vitest.config.ts --passWithNoTests",

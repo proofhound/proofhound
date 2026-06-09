@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=true CHOKIDAR_INTERVAL=1000 nest start --watch --webpack 2>&1 | tee /tmp/proofhound-server.log | pino-pretty --colorize --translateTime \"SYS:yyyy-mm-dd HH:MM:ss.l\" --ignore \"pid,hostname,service,version,env,host,namespace\"",
     "build": "nest build --webpack",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental false",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
     "test:unit": "vitest run",

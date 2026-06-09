@@ -18,7 +18,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental false",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "test": "vitest run --passWithNoTests",
     "test:unit": "vitest run --passWithNoTests",
