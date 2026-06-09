@@ -12,18 +12,18 @@ This repository carries only OSS self-hosted capabilities. Future SaaS / control
 
 ## 1. Tech Stack
 
-| Layer    | Choice                                                                     |
-| -------- | -------------------------------------------------------------------------- |
-| Frontend | Next.js + TypeScript + Refine + shadcn/ui + Tailwind                       |
-| Backend  | NestJS + TypeScript monolith, split along Module boundaries               |
-| Database | Native PostgreSQL + Drizzle ORM, schema prefix `ph_*`                      |
-| Auth     | Dual-channel HTTP entry (API `Authorization: Bearer ph_*` user token / UI deployment-layer trusted header or LOCAL_ACTOR fallback); MCP entry user token; Webhook entry per-connector webhook token; OSS ships no built-in login system, deployment forms A/B/C detailed in [08](docs/specs/08-saas-adapter-boundary.md) |
-| Storage  | Current OSS main path stores datasets / results in PostgreSQL; object storage is reserved until a real consumer exists |
-| Realtime | React Query polling + NestJS SSE (business orchestration streaming)        |
-| Orchestration | DBOS + BullMQ + Node.js LLM Worker                                    |
-| Rate limit | Redis centralized rate limiting (RPM / TPM / concurrency)               |
-| Logging  | Pino stdout JSON                                                           |
-| Testing  | Vitest + Playwright                                                        |
+| Layer         | Choice                                                                                                                                                                                                                                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Frontend      | Next.js + TypeScript + Refine + shadcn/ui + Tailwind                                                                                                                                                                                                                                                                     |
+| Backend       | NestJS + TypeScript monolith, split along Module boundaries                                                                                                                                                                                                                                                              |
+| Database      | Native PostgreSQL + Drizzle ORM, schema prefix `ph_*`                                                                                                                                                                                                                                                                    |
+| Auth          | Dual-channel HTTP entry (API `Authorization: Bearer ph_*` user token / UI deployment-layer trusted header or LOCAL_ACTOR fallback); MCP entry user token; Webhook entry per-connector webhook token; OSS ships no built-in login system, deployment forms A/B/C detailed in [08](docs/specs/08-saas-adapter-boundary.md) |
+| Storage       | Current OSS main path stores datasets / results in PostgreSQL; object storage is reserved until a real consumer exists                                                                                                                                                                                                   |
+| Realtime      | React Query polling + NestJS SSE (business orchestration streaming)                                                                                                                                                                                                                                                      |
+| Orchestration | DBOS + BullMQ + Node.js LLM Worker                                                                                                                                                                                                                                                                                       |
+| Rate limit    | Redis centralized rate limiting (RPM / TPM / concurrency)                                                                                                                                                                                                                                                                |
+| Logging       | Pino stdout JSON                                                                                                                                                                                                                                                                                                         |
+| Testing       | Vitest + Playwright                                                                                                                                                                                                                                                                                                      |
 
 ## 2. Code Layout and Commands
 
@@ -42,16 +42,16 @@ proofhound/
 
 Common commands (pnpm@10 + turbo orchestration):
 
-| Purpose                                  | Command                                                       |
-| ---------------------------------------- | ------------------------------------------------------------- |
-| Start full-stack local dev (docker + migrate + 5 services) | `pnpm dev`                                  |
-| Single service                           | `pnpm dev:server` / `dev:web` / `dev:worker` / `dev:webhook`  |
-| Type check / Lint                        | `pnpm typecheck` / `pnpm lint` (`lint:fix` auto-fixes)        |
-| Test                                     | `pnpm test` (= test:unit) / `pnpm test:e2e`                   |
-| Migration                                | `pnpm db:generate` (generate) / `pnpm db:migrate` (apply)     |
-| Reset / seed database                    | `pnpm db:reset` / `pnpm db:seed`                              |
-| Full gate                                | `pnpm verify` = `typecheck + lint + test + deps:check + spec:terms` |
-| Circular deps / terminology check        | `pnpm deps:check` (madge) / `pnpm spec:terms`                 |
+| Purpose                                                    | Command                                                             |
+| ---------------------------------------------------------- | ------------------------------------------------------------------- |
+| Start full-stack local dev (docker + migrate + 5 services) | `pnpm dev`                                                          |
+| Single service                                             | `pnpm dev:server` / `dev:web` / `dev:worker` / `dev:webhook`        |
+| Type check / Lint                                          | `pnpm typecheck` / `pnpm lint` (`lint:fix` auto-fixes)              |
+| Test                                                       | `pnpm test` (= test:unit) / `pnpm test:e2e`                         |
+| Migration                                                  | `pnpm db:generate` (generate) / `pnpm db:migrate` (apply)           |
+| Reset / seed database                                      | `pnpm db:reset` / `pnpm db:seed`                                    |
+| Full gate                                                  | `pnpm verify` = `typecheck + lint + test + deps:check + spec:terms` |
+| Circular deps / terminology check                          | `pnpm deps:check` (madge) / `pnpm spec:terms`                       |
 
 > First run: after `cp .env.example .env`, fill in `DATABASE_URL` / `REDIS_URL`; `MODEL_API_KEY_ENCRYPTION_KEY` (@proofhound/crypto encrypts/decrypts the API Key) is an application-managed secret, and its absence will cause startup / invocation failures.
 
@@ -62,22 +62,23 @@ Common commands (pnpm@10 + turbo orchestration):
 - The primary working directory stays on `master` by default. Unless explicitly told otherwise, do not check out a feature branch in the primary checkout — create a worktree (below) for any non-`master` development, so the primary tree always reflects `master`.
 - Worktrees: the repo-root `worktrees/` directory is the designated home for branch-development worktrees. It is deliberately excluded from every root tool — `.gitignore` (`/worktrees/`), `.dockerignore` (`worktrees`), `pnpm-workspace.yaml` (`!worktrees/**`), and `.prettierignore` (`worktrees`) — so a nested checkout there is never tracked, copied into a Docker build context, treated as a pnpm workspace package, or rewritten by `pnpm format`. Always create worktrees under it, never elsewhere in the tree.
 - Create with `mkdir -p worktrees && git worktree add worktrees/<name> -b <type>/<kebab> master` (a fresh `<type>/<kebab>` branch off `master`). Do not rely on tooling that forces a `worktree-` prefix or rewrites `/` to `+`; rename the branch to conform if it does.
-- After creating a worktree, before working in it: (1) copy the local secrets from the primary worktree so the new tree can boot — `cp .env worktrees/<name>/.env` (`.env` is gitignored, so a fresh worktree starts without it); (2) build its own CodeGraph index with `cd worktrees/<name> && codegraph init -i` (`.codegraph` state is gitignored and per-worktree, so the index does not carry over).
+- Local-only files or documents that are intentionally gitignored but useful across worktrees must be shared by relative symlink from the primary checkout instead of copied, so updates stay in one place and branch cleanup does not lose local state. This includes `.env`, `.env.local`, `.cloud.env`, `docs/notes/`, and similar local secrets / notes.
+- After creating a worktree, before working in it: (1) link local secrets / notes from the primary worktree so the new tree can boot and keep local docs available — e.g. `ln -s ../../.env worktrees/<name>/.env` and `mkdir -p worktrees/<name>/docs && ln -s ../../../docs/notes worktrees/<name>/docs/notes` when those sources exist; (2) build its own CodeGraph index with `cd worktrees/<name> && codegraph init -i` (`.codegraph` state is gitignored and per-worktree, so the index does not carry over).
 - Keep the VS Code multi-root workspace in step with the live worktrees. The single workspace file lives at the main checkout's `.vscode/proofhound.code-workspace` (under the gitignored `.vscode/`, so it is per-machine and never committed; its `folders` paths are relative to `.vscode/`). When you **add** a worktree, append `{ "path": "../worktrees/<name>" }` to its `folders` array — create the file if it is missing, always keeping `{ "path": ".." }` (the main checkout) as the first entry, e.g. `{ "folders": [{ "path": ".." }, { "path": "../worktrees/<name>" }], "settings": {} }`. When you **remove** a worktree, delete the matching `folders` entry.
 
 ## 3. What to Read Before Starting
 
-| What you want to do                      | Required SPEC                                                                                                                                                                  |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Understand the overall loop / navigation | [00](docs/specs/00-overview.md) + [01](docs/specs/01-navigation.md)                                                                                                            |
-| Unsure where code goes / package deps    | [07 Code structure](docs/specs/07-code-structure.md)                                                                                                                          |
-| Change PostgreSQL / DB schema            | [04](docs/specs/04-postgresql.md) + [06](docs/specs/06-database-schema.md)                                                                                                     |
-| Change DBOS / BullMQ / runner            | [03](docs/specs/03-orchestration.md) + the corresponding business SPEC                                                                                                        |
-| Change logging / LLM invocation logs     | [05](docs/specs/05-logging.md) + [21](docs/specs/21-models.md)                                                                                                                 |
-| Change models / datasets / prompts / experiments / optimizations | [21](docs/specs/21-models.md) + [22](docs/specs/22-datasets.md) + [23](docs/specs/23-prompts.md) + [24](docs/specs/24-experiments.md) + [25](docs/specs/25-optimizations.md) |
-| Change connectors / releases / run results | [26](docs/specs/26-connectors.md) + [27](docs/specs/27-releases.md) + [30](docs/specs/30-run-results.md)                                                                     |
-| Change quick start / settings page       | [33](docs/specs/33-quick-start.md) + [34](docs/specs/34-settings.md)                                                                                                          |
-| Change entry authentication / token system / SaaS adapter interfaces | [08](docs/specs/08-saas-adapter-boundary.md)                                                                                                  |
+| What you want to do                                                  | Required SPEC                                                                                                                                                                |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Understand the overall loop / navigation                             | [00](docs/specs/00-overview.md) + [01](docs/specs/01-navigation.md)                                                                                                          |
+| Unsure where code goes / package deps                                | [07 Code structure](docs/specs/07-code-structure.md)                                                                                                                         |
+| Change PostgreSQL / DB schema                                        | [04](docs/specs/04-postgresql.md) + [06](docs/specs/06-database-schema.md)                                                                                                   |
+| Change DBOS / BullMQ / runner                                        | [03](docs/specs/03-orchestration.md) + the corresponding business SPEC                                                                                                       |
+| Change logging / LLM invocation logs                                 | [05](docs/specs/05-logging.md) + [21](docs/specs/21-models.md)                                                                                                               |
+| Change models / datasets / prompts / experiments / optimizations     | [21](docs/specs/21-models.md) + [22](docs/specs/22-datasets.md) + [23](docs/specs/23-prompts.md) + [24](docs/specs/24-experiments.md) + [25](docs/specs/25-optimizations.md) |
+| Change connectors / releases / run results                           | [26](docs/specs/26-connectors.md) + [27](docs/specs/27-releases.md) + [30](docs/specs/30-run-results.md)                                                                     |
+| Change quick start / settings page                                   | [33](docs/specs/33-quick-start.md) + [34](docs/specs/34-settings.md)                                                                                                         |
+| Change entry authentication / token system / SaaS adapter interfaces | [08](docs/specs/08-saas-adapter-boundary.md)                                                                                                                                 |
 
 ## 4. OSS / SaaS Boundary
 
@@ -119,13 +120,13 @@ Common commands (pnpm@10 + turbo orchestration):
 
 ## 7. Skill Routing
 
-| Task                   | SKILL                           |
-| ---------------------- | ------------------------------- |
-| Unsure where to start  | `proofhound-overview`           |
-| NestJS Module          | `proofhound-backend-module`     |
-| DBOS / BullMQ / runner | `proofhound-dbos-workflow`      |
-| LLM invocation         | `proofhound-llm-invocation`     |
-| DB schema / migration  | `proofhound-database-migration` |
+| Task                       | SKILL                           |
+| -------------------------- | ------------------------------- |
+| Unsure where to start      | `proofhound-overview`           |
+| NestJS Module              | `proofhound-backend-module`     |
+| DBOS / BullMQ / runner     | `proofhound-dbos-workflow`      |
+| LLM invocation             | `proofhound-llm-invocation`     |
+| DB schema / migration      | `proofhound-database-migration` |
 | Refine / frontend resource | `proofhound-frontend-resource`  |
 
 ## 8. What Not to Do

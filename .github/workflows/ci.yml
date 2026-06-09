@@ -17,9 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -64,16 +64,16 @@ jobs:
       REDIS_URL: redis://localhost:6379
       # CI-only throwaway secrets (NOT real). base64 of 32 bytes for the model-key encryption.
       MODEL_API_KEY_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
-      SERVER_PORT: "4000"
+      SERVER_PORT: '4000'
       WEB_PUBLIC_URL: http://localhost:3000
       NEXT_PUBLIC_SERVER_URL: http://localhost:4000
       WEBHOOK_BODY_LIMIT: 1mb
-      WORKER_CONCURRENCY: "16"
-      RELEASE_RUNNER_SCAN_INTERVAL_MS: "2000"
+      WORKER_CONCURRENCY: '16'
+      RELEASE_RUNNER_SCAN_INTERVAL_MS: '2000'
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm

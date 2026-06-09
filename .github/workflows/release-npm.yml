@@ -36,9 +36,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -61,9 +61,9 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -95,7 +95,10 @@ jobs:
       - run: pnpm run packages:pack:check
       - run: pnpm run packages:pack
       - run: pnpm run packages:consumer:tarball -- "${{ inputs.version }}"
-      - run: pnpm run packages:publish:packed -- .npm-packages "${{ inputs.dist_tag }}"
+      - name: Publish packed packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm run packages:publish:packed -- .npm-packages "${{ inputs.dist_tag }}"
       - run: pnpm run packages:consumer:registry -- "${{ inputs.version }}" "https://registry.npmjs.org/"
       - run: pnpm run packages:release-notes -- "${{ inputs.version }}" "${{ inputs.dist_tag }}" .npm-packages/release-notes.md
 
