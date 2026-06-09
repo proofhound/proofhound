@@ -67,6 +67,7 @@
     "packages:consumer:tarball": "node scripts/test-package-consumer.mjs tarball",
     "packages:publish:check": "node scripts/check-package-publish-ready.mjs",
     "packages:publish:packed": "node scripts/publish-packed-packages.mjs",
+    "packages:release:check": "node scripts/check-package-release-state.mjs",
     "packages:release-notes": "node scripts/generate-package-release-notes.mjs",
     "packages:version:set": "node scripts/set-package-versions.mjs",
     "packages:version:check": "node scripts/check-package-versions.mjs",

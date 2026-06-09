@@ -46,6 +46,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm run packages:version:check -- "${{ inputs.version }}"
+      - run: pnpm run packages:release:check -- "${{ inputs.version }}"
       - run: pnpm run verify
       - run: pnpm run build
       - run: pnpm run packages:pack:check
@@ -74,6 +75,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm run packages:version:check -- "${{ inputs.version }}"
+      - run: pnpm run packages:release:check -- "${{ inputs.version }}"
       - run: pnpm run packages:publish:check -- "${{ inputs.version }}" "https://registry.npmjs.org/"
 
       - name: Check GitHub release tag is unused

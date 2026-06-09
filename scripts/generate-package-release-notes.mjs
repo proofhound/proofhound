@@ -22,12 +22,43 @@ function readUnifiedPackageVersion() {
   return [...versions][0];
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function readChangelogSection(targetVersion) {
+  const changelog = readFileSync('CHANGELOG.md', 'utf8');
+  const headingPattern = new RegExp(`^## \\[?${escapeRegExp(targetVersion)}\\]?\\b.*$`, 'm');
+  const headingMatch = headingPattern.exec(changelog);
+
+  if (!headingMatch) {
+    throw new Error(`CHANGELOG.md does not contain a release heading for ${targetVersion}`);
+  }
+
+  const sectionStart = headingMatch.index + headingMatch[0].length;
+  const rest = changelog.slice(sectionStart);
+  const nextHeadingMatch = /^##\s+/m.exec(rest);
+  const section = rest.slice(0, nextHeadingMatch?.index ?? rest.length).trim();
+
+  if (!section) {
+    throw new Error(`CHANGELOG.md release section for ${targetVersion} is empty`);
+  }
+
+  return section;
+}
+
+const changelogSection = readChangelogSection(version);
+
 const notes = [
   `# ProofHound OSS v${version}`,
   '',
   `npm dist-tag: \`${distTag}\``,
   '',
-  'Published npm packages:',
+  '## Changes',
+  '',
+  changelogSection,
+  '',
+  '## Published npm packages',
   '',
   ...publishablePackages.map((packageName) => `- \`${packageName}@${version}\``),
   '',
