@@ -1,10 +1,18 @@
 const { builtinModules } = require('node:module');
 const path = require('node:path');
+const { createTsconfigPathAliases } = require('../../scripts/tsconfig-path-aliases.cjs');
 
 const builtins = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)]);
 
 module.exports = (options) => ({
   ...options,
+  resolve: {
+    ...options.resolve,
+    alias: {
+      ...(options.resolve?.alias ?? {}),
+      ...createTsconfigPathAliases(),
+    },
+  },
   externals: [
     ({ request }, callback) => {
       if (!request || request.startsWith('.') || path.isAbsolute(request)) {
