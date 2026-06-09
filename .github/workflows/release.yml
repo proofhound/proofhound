@@ -1,0 +1,167 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Prepare the Release PR, dry run publish checks, or publish npm + GitHub Release.
+        required: true
+        default: prepare
+        type: choice
+        options:
+          - prepare
+          - dry_run
+          - publish
+      version:
+        description: Optional exact version guard for dry_run/publish, for example 0.1.6. Ignored for prepare.
+        required: false
+        type: string
+      dist_tag:
+        description: npm dist-tag for publish mode. Ignored for prepare/dry_run.
+        required: true
+        default: latest
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: ${{ inputs.mode == 'prepare' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Ensure release runs on master
+        run: |
+          if [ "$GITHUB_REF_NAME" != "master" ]; then
+            echo "Release workflow must run on master, not $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true
+
+  dry_run:
+    if: ${{ inputs.mode == 'dry_run' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Ensure release runs on master
+        run: |
+          if [ "$GITHUB_REF_NAME" != "master" ]; then
+            echo "Release workflow must run on master, not $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org/
+
+      - run: pnpm install --frozen-lockfile
+      - name: Resolve release version
+        id: release_version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="$(pnpm --silent run packages:version:check -- "${{ inputs.version }}")"
+          else
+            VERSION="$(pnpm --silent run packages:version:check)"
+          fi
+          pnpm --silent run packages:release:check -- "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - run: pnpm run verify
+      - run: pnpm run build
+      - run: pnpm run packages:pack:check
+      - run: pnpm run packages:pack
+      - run: pnpm run packages:consumer:tarball -- "${{ steps.release_version.outputs.version }}"
+
+  publish:
+    if: ${{ inputs.mode == 'publish' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: npm-production
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Ensure release runs on master
+        run: |
+          if [ "$GITHUB_REF_NAME" != "master" ]; then
+            echo "Release workflow must run on master, not $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org/
+
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@^11.5.1
+
+      - run: pnpm install --frozen-lockfile
+      - name: Resolve release version
+        id: release_version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="$(pnpm --silent run packages:version:check -- "${{ inputs.version }}")"
+          else
+            VERSION="$(pnpm --silent run packages:version:check)"
+          fi
+          pnpm --silent run packages:release:check -- "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - run: pnpm run packages:publish:check -- "${{ steps.release_version.outputs.version }}" "https://registry.npmjs.org/"
+      - name: Check GitHub release tag is unused
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.release_version.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${VERSION} already exists"
+            exit 1
+          fi
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            echo "GitHub Release v${VERSION} already exists"
+            exit 1
+          fi
+
+      - run: pnpm run verify
+      - run: pnpm run build
+      - run: pnpm run packages:pack:check
+      - run: pnpm run packages:pack
+      - run: pnpm run packages:consumer:tarball -- "${{ steps.release_version.outputs.version }}"
+      - name: Publish packed packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm run packages:publish:packed -- .npm-packages "${{ inputs.dist_tag }}"
+      - run: pnpm run packages:consumer:registry -- "${{ steps.release_version.outputs.version }}" "https://registry.npmjs.org/"
+      - run: pnpm run packages:release-notes -- "${{ steps.release_version.outputs.version }}" "${{ inputs.dist_tag }}" .npm-packages/release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.release_version.outputs.version }}"
+          gh release create "v${VERSION}" \
+            --target "$GITHUB_SHA" \
+            --title "ProofHound OSS v${VERSION}" \
+            --notes-file .npm-packages/release-notes.md

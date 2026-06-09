@@ -32,7 +32,7 @@ for (const packageName of publishablePackages) {
 }
 
 if (!existsSync('CHANGELOG.md')) {
-  throw new Error('CHANGELOG.md is missing; run release-please and merge its Release PR before release-npm');
+  throw new Error('CHANGELOG.md is missing; run release mode=prepare and merge its Release PR before publishing');
 }
 
 const changelog = readFileSync('CHANGELOG.md', 'utf8');
