@@ -1,14 +1,13 @@
 {
   "name": "@proofhound/db",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.6",
   "description": "Drizzle ORM schema + migrations（schema 前缀 ph_*）",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts",
-    "./schema/*": "./src/schema/*"
+    ".": "./dist/index.js",
+    "./schema": "./dist/schema/index.js",
+    "./schema/*": "./dist/schema/*"
   },
   "scripts": {
     "generate": "drizzle-kit generate",
@@ -19,7 +18,7 @@
     "seed": "tsx src/seed.ts",
     "seed:dev": "SEED_PROFILE=dev tsx src/seed-dev.ts",
     "clean-test-residue": "tsx src/clean-test-residue.ts",
-    "build": "tsc",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-migrations.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run --passWithNoTests",
@@ -40,5 +39,22 @@
     "tsx": "^4.21.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/proofhound/proofhound",
+    "directory": "packages/db"
+  },
+  "homepage": "https://github.com/proofhound/proofhound/tree/master/packages/db#readme",
+  "files": [
+    "dist",
+    "migrations",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

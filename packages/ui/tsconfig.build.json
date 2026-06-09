@@ -5,18 +5,11 @@
     "rootDir": "./src",
     "noEmit": false,
     "paths": {},
-    "module": "Node16",
-    "moduleResolution": "Node16",
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "useDefineForClassFields": false,
-    "types": [
-      "node"
-    ],
     "incremental": false
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "src/**/*.tsx"
   ],
   "exclude": [
     "dist",

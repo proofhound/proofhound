@@ -1,15 +1,14 @@
 {
   "name": "@proofhound/optimization-strategy",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.6",
   "description": "优化策略（扩展点）— V1: error_pattern_analysis；可注册新策略，无需 DB CHECK 改动",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc && node scripts/copy-prompt-assets.mjs",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/copy-prompt-assets.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run --config vitest.config.ts --passWithNoTests",
@@ -33,5 +32,21 @@
     "tsx": "^4.21.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/proofhound/proofhound",
+    "directory": "packages/optimization-strategy"
+  },
+  "homepage": "https://github.com/proofhound/proofhound/tree/master/packages/optimization-strategy#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

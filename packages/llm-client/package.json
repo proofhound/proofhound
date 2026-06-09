@@ -1,15 +1,14 @@
 {
   "name": "@proofhound/llm-client",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.6",
   "description": "LLM 调用包装 — 含 docs/specs/05-logging.md §5.6 日志契约 + 限流前置",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
@@ -27,5 +26,21 @@
     "@types/node": "^24.12.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/proofhound/proofhound",
+    "directory": "packages/llm-client"
+  },
+  "homepage": "https://github.com/proofhound/proofhound/tree/master/packages/llm-client#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

@@ -10,6 +10,7 @@ dist/
 build/
 .next/
 .turbo/
+.npm-packages/
 *.tsbuildinfo
 packages/**/src/**/*.js
 packages/**/src/**/*.js.map

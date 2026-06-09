@@ -1,21 +1,20 @@
 {
   "name": "@proofhound/core",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.6",
   "description": "ProofHound reusable backend runtime: server / webhook / worker NestJS modules, contracts, local defaults, Services, Repositories",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./server": "./src/server/index.ts",
-    "./webhook": "./src/webhook/index.ts",
-    "./worker": "./src/worker/index.ts",
-    "./worker/config": "./src/worker/config/worker-concurrency.ts",
-    "./contracts": "./src/server/common/contracts/index.ts",
-    "./infra": "./src/infra/index.ts"
+    ".": "./dist/index.js",
+    "./server": "./dist/server/index.js",
+    "./webhook": "./dist/webhook/index.js",
+    "./worker": "./dist/worker/index.js",
+    "./worker/config": "./dist/worker/config/worker-concurrency.js",
+    "./contracts": "./dist/server/common/contracts/index.js",
+    "./infra": "./dist/infra/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
@@ -74,5 +73,21 @@
     "unplugin-swc": "^1.5.7",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^4.1.6"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/proofhound/proofhound",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/proofhound/proofhound/tree/master/packages/core#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

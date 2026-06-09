@@ -25,6 +25,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run verify
+      - run: pnpm run build
+      - run: pnpm run packages:pack:check
 
   # Functional end-to-end suite against a real server/worker/webhook + ephemeral Postgres/Redis,
   # with the LLM faked (Playwright starts the fake server + the web dev server itself).

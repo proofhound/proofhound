@@ -1,21 +1,20 @@
 {
   "name": "@proofhound/ui",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.6",
   "description": "设计系统：shadcn 原子件 + cn + Main + 纯 UI hooks + UiStringsContext（被 @proofhound/web-ui 与 apps/web 复用）",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./strings": "./src/strings/index.ts",
-    "./primitives": "./src/primitives/index.ts",
-    "./lib": "./src/lib/index.ts",
-    "./layout": "./src/layout/index.ts",
-    "./hooks": "./src/hooks/index.ts",
-    "./brand": "./src/brand/index.ts"
+    ".": "./dist/index.js",
+    "./strings": "./dist/strings/index.js",
+    "./primitives": "./dist/primitives/index.js",
+    "./lib": "./dist/lib/index.js",
+    "./layout": "./dist/layout/index.js",
+    "./hooks": "./dist/hooks/index.js",
+    "./brand": "./dist/brand/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "test": "vitest run --passWithNoTests",
@@ -54,5 +53,22 @@
     "react-dom": "^19.2.6",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
-  }
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/proofhound/proofhound",
+    "directory": "packages/ui"
+  },
+  "homepage": "https://github.com/proofhound/proofhound/tree/master/packages/ui#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "type": "module"
 }

@@ -23,8 +23,8 @@ import {
 
 describe('@proofhound/core public exports', () => {
   it('declares the stable infra subpath in package exports', () => {
-    expect(packageJson.exports['./infra']).toBe('./src/infra/index.ts');
-    expect(packageJson.exports['./contracts']).toBe('./src/server/common/contracts/index.ts');
+    expect(packageJson.exports['./infra']).toBe('./dist/infra/index.js');
+    expect(packageJson.exports['./contracts']).toBe('./dist/server/common/contracts/index.js');
   });
 
   it('exports shared infra modules through @proofhound/core/infra', () => {

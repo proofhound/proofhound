@@ -1,15 +1,14 @@
 {
   "name": "@proofhound/crypto",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.6",
   "description": "共享对称加密 util — AES-256-GCM 加解密 API KEY / 凭证密文，server / worker / seed 唯一事实标准",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
@@ -20,5 +19,21 @@
     "@types/node": "^24.12.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/proofhound/proofhound",
+    "directory": "packages/crypto"
+  },
+  "homepage": "https://github.com/proofhound/proofhound/tree/master/packages/crypto#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

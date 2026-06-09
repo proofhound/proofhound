@@ -1,18 +1,17 @@
 {
   "name": "@proofhound/shared",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.6",
   "description": "前后端共享的 Zod schema / DTO / 枚举 / 类型",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./dto/*": "./src/dto/*.ts",
-    "./enums/*": "./src/enums/*.ts",
-    "./types/*": "./src/types/*.ts"
+    ".": "./dist/index.js",
+    "./dto/*": "./dist/dto/*.js",
+    "./enums/*": "./dist/enums/*.js",
+    "./types/*": "./dist/types/*.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run --passWithNoTests",
@@ -26,5 +25,21 @@
     "@types/node": "^24.12.4",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/proofhound/proofhound",
+    "directory": "packages/shared"
+  },
+  "homepage": "https://github.com/proofhound/proofhound/tree/master/packages/shared#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
