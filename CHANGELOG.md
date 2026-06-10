@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.7](https://github.com/proofhound/proofhound/compare/v0.1.6...v0.1.7) (2026-06-10)
+
+
+### Bug Fixes
+
+* **release:** title GitHub Releases with the plain version tag ([#31](https://github.com/proofhound/proofhound/issues/31)) ([65b4dac](https://github.com/proofhound/proofhound/commit/65b4dacc321894cbfc62b40ca73e1ce1c8522f15))
+
 ## [0.1.6](https://github.com/proofhound/proofhound/compare/proofhound-v0.1.5...proofhound-v0.1.6) (2026-06-09)
 
 
