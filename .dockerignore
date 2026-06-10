@@ -18,6 +18,7 @@ coverage
 infra
 supabase
 docs
+assets
 .github
 .vscode
 .idea

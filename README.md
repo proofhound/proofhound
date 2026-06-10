@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/proofhound-logo.svg" alt="ProofHound Logo" width="96" height="96" />
+  <img src="assets/proofhound-logo.svg" alt="ProofHound Logo" width="96" height="96" />
 </p>
 
 <h1 align="center">ProofHound</h1>
