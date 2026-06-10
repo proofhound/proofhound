@@ -210,6 +210,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -265,3 +266,21 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "v${VERSION}" \
             --notes-file .npm-packages/release-notes.md
+
+      # With skip-github-release, release-please never flips the merged Release
+      # PR off "autorelease: pending" itself — and it refuses to open the next
+      # Release PR while one is still pending ("untagged, merged release PRs
+      # outstanding"). Mark it tagged now that the release exists.
+      - name: Mark Release PR as tagged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.checks.outputs.version }}"
+          PR_NUMBER="$(gh pr list --state merged --label 'autorelease: pending' \
+            --search "release ${VERSION} in:title" --json number --jq '.[0].number // empty')"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No pending Release PR found for ${VERSION}; nothing to mark"
+            exit 0
+          fi
+          gh pr edit "$PR_NUMBER" --remove-label 'autorelease: pending' --add-label 'autorelease: tagged'
+          echo "Marked Release PR #${PR_NUMBER} as tagged"
