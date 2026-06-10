@@ -1,7 +1,7 @@
 {
   "name": "@proofhound/limiter",
   "version": "0.1.6",
-  "description": "Redis 集中限流（RPM / TPM 滑动窗口 + Lua 原子脚本）— RPM / TPM / 并发",
+  "description": "Redis centralized rate limiting (RPM / TPM sliding window + atomic Lua scripts) — RPM / TPM / concurrency",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

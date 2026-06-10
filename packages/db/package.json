@@ -1,7 +1,7 @@
 {
   "name": "@proofhound/db",
   "version": "0.1.6",
-  "description": "Drizzle ORM schema + migrations（schema 前缀 ph_*）",
+  "description": "Drizzle ORM schema + migrations (schema prefix ph_*)",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

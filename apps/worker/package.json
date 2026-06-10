@@ -2,7 +2,7 @@
   "name": "@proofhound/worker",
   "version": "0.0.0",
   "private": true,
-  "description": "ProofHound LLM Worker — NestJS BullMQ Consumer（消费 llm / probe queue）",
+  "description": "ProofHound LLM Worker — NestJS BullMQ consumer (consumes the llm / probe queues)",
   "main": "dist/main.js",
   "scripts": {
     "dev": "WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=true CHOKIDAR_INTERVAL=1000 nest start --watch --webpack | pino-pretty --colorize --translateTime \"SYS:yyyy-mm-dd HH:MM:ss.l\" --ignore \"pid,hostname,service,version,env,host,namespace\"",

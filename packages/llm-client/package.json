@@ -1,7 +1,7 @@
 {
   "name": "@proofhound/llm-client",
   "version": "0.1.6",
-  "description": "LLM 调用包装 — 含 docs/specs/05-logging.md §5.6 日志契约 + 限流前置",
+  "description": "LLM invocation wrapper — carries the docs/specs/05-logging.md §5.6 logging contract + upfront rate limiting",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

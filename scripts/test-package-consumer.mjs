@@ -59,21 +59,41 @@ function dependencySpec(packageName) {
   return `file:${findTarball(packageName, resolve(source))}`;
 }
 
+// Registry mode mimics an anonymous consumer: ignore any ambient npm auth
+// (for example the .npmrc + NODE_AUTH_TOKEN that actions/setup-node injects).
+function consumerInstallEnv(consumerDir) {
+  if (mode !== 'registry') return process.env;
+
+  const env = { ...process.env };
+  delete env.NODE_AUTH_TOKEN;
+  delete env.NPM_TOKEN;
+  const anonymousUserConfig = join(consumerDir, '.npmrc-anonymous');
+  writeFileSync(anonymousUserConfig, '');
+  env.NPM_CONFIG_USERCONFIG = anonymousUserConfig;
+  return env;
+}
+
 function installConsumer(consumerDir) {
   const installArgs = ['install', '--ignore-scripts'];
   if (mode === 'registry') {
     installArgs.push('--registry', source);
   }
 
-  const maxAttempts = mode === 'registry' ? 6 : 1;
+  // Freshly published packages can take minutes to propagate through the npm
+  // registry read path, so give registry mode a generous retry budget.
+  const maxAttempts = mode === 'registry' ? 40 : 1;
+  const retryDelayMs = 15_000;
+  const env = consumerInstallEnv(consumerDir);
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      run('pnpm', installArgs, { cwd: consumerDir });
+      run('pnpm', installArgs, { cwd: consumerDir, env });
       return;
     } catch (error) {
       if (attempt === maxAttempts) throw error;
-      process.stderr.write(`Consumer install failed, retrying in 10s (${attempt}/${maxAttempts})...\n`);
-      sleep(10_000);
+      process.stderr.write(
+        `Consumer install failed, retrying in ${retryDelayMs / 1000}s (${attempt}/${maxAttempts})...\n`,
+      );
+      sleep(retryDelayMs);
     }
   }
 }

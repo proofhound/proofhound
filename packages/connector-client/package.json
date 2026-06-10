@@ -1,7 +1,7 @@
 {
   "name": "@proofhound/connector-client",
   "version": "0.1.6",
-  "description": "连接器驱动 — Redis List / Stream / Kafka / Webhook（输入 + 输出 + 探测）",
+  "description": "Connector drivers — Redis List / Stream / Kafka / Webhook (input + output + probing)",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

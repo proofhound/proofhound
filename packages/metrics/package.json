@@ -1,7 +1,7 @@
 {
   "name": "@proofhound/metrics",
   "version": "0.1.6",
-  "description": "指标聚合策略（扩展点）— V1: classification；预留 generative / agent",
+  "description": "Metrics aggregation strategies (extension point) — V1: classification; generative / agent reserved",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

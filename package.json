@@ -3,7 +3,7 @@
   "version": "0.1.6",
   "private": true,
   "license": "Apache-2.0",
-  "description": "ProofHound — Prompt 全生命周期治理平台",
+  "description": "ProofHound — prompt lifecycle governance platform",
   "packageManager": "pnpm@10.33.4",
   "engines": {
     "node": "24.x",

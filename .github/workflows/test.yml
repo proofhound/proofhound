@@ -24,6 +24,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Start test summary
+        run: echo "### Unit tests by package" >> "$GITHUB_STEP_SUMMARY"
       - run: pnpm run verify
       - run: pnpm run build
       - run: pnpm run packages:pack:check

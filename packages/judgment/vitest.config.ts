@@ -5,7 +5,5 @@ import { ciReporterConfig } from '../../scripts/vitest-ci-reporters';
 export default defineConfig({
   test: {
     ...ciReporterConfig(),
-    include: ['src/**/*.integration.test.ts'],
-    exclude: ['dist/**', 'node_modules/**'],
   },
 });

@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 import swc from 'unplugin-swc';
 import tsconfigPaths from 'vite-tsconfig-paths';
 
+import { ciReporterConfig } from '../../scripts/vitest-ci-reporters';
+
 export default defineConfig({
   plugins: [
     tsconfigPaths(),
@@ -14,6 +16,7 @@ export default defineConfig({
     }),
   ],
   test: {
+    ...ciReporterConfig(),
     globals: true,
     environment: 'node',
     include: ['src/**/*.spec.ts'],

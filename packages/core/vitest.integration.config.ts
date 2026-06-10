@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 import swc from 'unplugin-swc';
 import tsconfigPaths from 'vite-tsconfig-paths';
 
+import { ciReporterConfig } from '../../scripts/vitest-ci-reporters';
+
 // DBOS workflow integration test config —
 //   - DBOS.launch() is a global singleton + setup.ts beforeAll scans dangling dbos_test_* schemas;
 //     parallel workers would step on each other; singleFork + fileParallelism:false serializes them,
@@ -22,6 +24,7 @@ export default defineConfig({
     }),
   ],
   test: {
+    ...ciReporterConfig(),
     globals: true,
     environment: 'node',
     include: ['test/dbos/**/*.spec.ts'],

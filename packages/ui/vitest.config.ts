@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vitest/config';
 
+import { ciReporterConfig } from '../../scripts/vitest-ci-reporters';
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -9,6 +11,7 @@ export default defineConfig({
     },
   },
   test: {
+    ...ciReporterConfig(),
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],

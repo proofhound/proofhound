@@ -1,7 +1,7 @@
 {
   "name": "@proofhound/crypto",
   "version": "0.1.6",
-  "description": "共享对称加密 util — AES-256-GCM 加解密 API KEY / 凭证密文，server / worker / seed 唯一事实标准",
+  "description": "Shared symmetric encryption util — AES-256-GCM encryption/decryption of API keys / credential ciphertexts, the single source of truth for server / worker / seed",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

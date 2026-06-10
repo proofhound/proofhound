@@ -1,7 +1,7 @@
 {
   "name": "@proofhound/optimization-strategy",
   "version": "0.1.6",
-  "description": "优化策略（扩展点）— V1: error_pattern_analysis；可注册新策略，无需 DB CHECK 改动",
+  "description": "Optimization strategies (extension point) — V1: error_pattern_analysis; new strategies can be registered without DB CHECK changes",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

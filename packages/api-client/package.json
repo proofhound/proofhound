@@ -1,7 +1,7 @@
 {
   "name": "@proofhound/api-client",
   "version": "0.1.6",
-  "description": "前端 C1 层：HTTP 客户端，按资源拆分",
+  "description": "Frontend C1 layer: HTTP client, split by resource",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
