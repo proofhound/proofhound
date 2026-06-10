@@ -275,11 +275,23 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
           VERSION="${{ needs.checks.outputs.version }}"
-          PR_NUMBER="$(gh pr list --state merged --label 'autorelease: pending' \
-            --search "release ${VERSION} in:title" --json number --jq '.[0].number // empty')"
+          PENDING="$(gh pr list --state merged --label 'autorelease: pending' --json number,title)"
+          PR_NUMBER="$(jq -r --arg needle "release ${VERSION}" \
+            '[.[] | select(.title | contains($needle))][0].number // empty' <<<"$PENDING")"
           if [ -z "$PR_NUMBER" ]; then
-            echo "No pending Release PR found for ${VERSION}; nothing to mark"
-            exit 0
+            COUNT="$(jq 'length' <<<"$PENDING")"
+            if [ "$COUNT" -eq 0 ]; then
+              echo "No merged Release PR is pending; nothing to mark"
+              exit 0
+            elif [ "$COUNT" -eq 1 ]; then
+              PR_NUMBER="$(jq -r '.[0].number' <<<"$PENDING")"
+              echo "No title match for ${VERSION}; falling back to the only pending Release PR #${PR_NUMBER}"
+            else
+              echo "Multiple merged Release PRs are still pending and none matches ${VERSION}."
+              echo "release-please will refuse to open the next Release PR until they are marked tagged:"
+              jq -r '.[] | "  #\(.number) \(.title)"' <<<"$PENDING"
+              exit 1
+            fi
           fi
           gh pr edit "$PR_NUMBER" --remove-label 'autorelease: pending' --add-label 'autorelease: tagged'
           echo "Marked Release PR #${PR_NUMBER} as tagged"
