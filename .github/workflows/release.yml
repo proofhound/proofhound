@@ -191,12 +191,15 @@ jobs:
       - run: pnpm run packages:consumer:tarball -- "${{ steps.release_version.outputs.version }}"
 
       # The publish job releases exactly these checked tarballs.
-      - uses: actions/upload-artifact@v4
+      # include-hidden-files: the dot-prefixed .npm-packages dir counts as
+      # hidden and upload-artifact v4 skips hidden paths by default.
+      - uses: actions/upload-artifact@v7
         with:
           name: npm-packages
           path: .npm-packages
           retention-days: 7
           if-no-files-found: error
+          include-hidden-files: true
 
   publish:
     needs: [plan, checks]
@@ -244,7 +247,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: npm-packages
           path: .npm-packages
