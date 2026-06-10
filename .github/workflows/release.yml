@@ -170,7 +170,7 @@ jobs:
       - name: Check GitHub release tag is unused
         if: needs.plan.outputs.publish == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
           VERSION="${{ steps.release_version.outputs.version }}"
           if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
@@ -210,7 +210,6 @@ jobs:
     permissions:
       contents: write
       id-token: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -233,7 +232,7 @@ jobs:
         run: pnpm run packages:publish:check -- "${{ needs.checks.outputs.version }}" "https://registry.npmjs.org/"
       - name: Check GitHub release tag is unused
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
           VERSION="${{ needs.checks.outputs.version }}"
           if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" >/dev/null 2>&1; then
@@ -259,7 +258,7 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
           VERSION="${{ needs.checks.outputs.version }}"
           gh release create "v${VERSION}" \
@@ -273,7 +272,7 @@ jobs:
       # outstanding"). Mark it tagged now that the release exists.
       - name: Mark Release PR as tagged
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
           VERSION="${{ needs.checks.outputs.version }}"
           PR_NUMBER="$(gh pr list --state merged --label 'autorelease: pending' \
