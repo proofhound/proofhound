@@ -263,5 +263,5 @@ jobs:
           VERSION="${{ needs.checks.outputs.version }}"
           gh release create "v${VERSION}" \
             --target "$GITHUB_SHA" \
-            --title "ProofHound OSS v${VERSION}" \
+            --title "v${VERSION}" \
             --notes-file .npm-packages/release-notes.md
