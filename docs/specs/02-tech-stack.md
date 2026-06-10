@@ -39,7 +39,7 @@ Entry-point authentication is uniformly constrained by SPEC 08 §3 / §3.2.1: th
 - shadcn/ui + Tailwind carry the UI.
 - React Query carries caching, polling, and mutations.
 - Runtime pages poll every 5 seconds by default; long text streams or high-frequency progress can use NestJS SSE.
-- All user-facing strings go through `apps/web/src/i18n`, supporting only `zh-CN` / `en-US`.
+- All user-facing strings go through `packages/web-ui/src/i18n` (`@proofhound/web-ui`), supporting only `zh-CN` / `en-US`.
 
 ## 3. Backend
 

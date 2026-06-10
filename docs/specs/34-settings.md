@@ -178,7 +178,7 @@ The Web UI calls the Token REST interfaces as the Local admin app identity.
 
 ## 8. Frontend interaction requirements
 
-- User-facing strings go through `apps/web/src/i18n`, kept in sync across `zh-CN` / `en-US`.
+- User-facing strings go through `packages/web-ui/src/i18n` (`@proofhound/web-ui`), kept in sync across `zh-CN` / `en-US`.
 - Token names, action buttons, and error messages must distinguish between "API token" and "Global MCP token".
 - The plaintext Token is displayed in a monospace font and supports one-click copy.
 - The plaintext must not be written into the URL, localStorage, sessionStorage, or a persisted React Query cache.

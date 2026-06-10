@@ -66,10 +66,9 @@ function walk(dir) {
       const rel = relative(ROOT, p);
       // Skip the SPECs themselves (00-32 are the source of truth, possibly mentioning legacy terms in historical change notes)
       if (rel.startsWith('docs/specs/')) continue;
-      // Skip internal superpowers planning docs — working artifacts (not user-facing product strings) that
-      // legitimately quote framework API names like `overrideProvider` / `llmConsumerProviders` and code
-      // identifiers like *Provider verbatim.
-      if (rel.startsWith('docs/superpowers/')) continue;
+      // Skip gitignored local dev docs (AGENTS.md → Git workflow: docs/notes/, docs/superpowers/) — never
+      // tracked nor user-facing; notes/plans there legitimately quote code identifiers like *Provider verbatim.
+      if (rel.startsWith('docs/notes/') || rel.startsWith('docs/superpowers/')) continue;
       // Skip the constraint description files and this script itself (they need to list the forbidden words verbatim)
       if (EXCLUDE_FILES.has(rel)) continue;
 
