@@ -3,13 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import sharp from 'sharp';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  invokeLLM,
-  normalizeLLMError,
-  testModelConnectivity,
-  type InvokeLLMArgs,
-  type LLMAdapter,
-} from './invoke';
+import { invokeLLM, normalizeLLMError, testModelConnectivity, type InvokeLLMArgs, type LLMAdapter } from './invoke';
 import { LLMAdapterHttpError } from './providers/openai.adapter';
 
 const model = {
@@ -112,14 +106,7 @@ describe('invokeLLM', () => {
       })(),
     });
 
-    expect(order).toEqual([
-      'acquire',
-      'llm_call_request_sent',
-      'provider',
-      'llm_call_completed',
-      'write',
-      'release',
-    ]);
+    expect(order).toEqual(['acquire', 'llm_call_request_sent', 'provider', 'llm_call_completed', 'write', 'release']);
     expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
     expect(result.costEstimate).toBe(0.00004);
     expect(logger.info).toHaveBeenCalledWith(
@@ -290,9 +277,7 @@ describe('invokeLLM', () => {
       adapters: [adapter],
     });
 
-    expect(writeRunResult).toHaveBeenCalledWith(
-      expect.objectContaining({ roundIndex: null }),
-    );
+    expect(writeRunResult).toHaveBeenCalledWith(expect.objectContaining({ roundIndex: null }));
   });
 
   it('logs failed invocations and rethrows WITHOUT writing run_result (consumer writes final error on attempts exhausted)', async () => {
@@ -324,9 +309,9 @@ describe('invokeLLM', () => {
       }),
     };
 
-    await expect(
-      invokeLLM(baseArgs(), { limiter, logger, runResultWriter, adapters: [adapter] }),
-    ).rejects.toThrow('provider is down');
+    await expect(invokeLLM(baseArgs(), { limiter, logger, runResultWriter, adapters: [adapter] })).rejects.toThrow(
+      'provider is down',
+    );
 
     // Critical: on failure, only log; do NOT write a run_result; otherwise after BullMQ retries succeed, they cannot overwrite the first failed error row
     expect(order).toEqual(['acquire', 'provider', 'log_failed', 'release']);
@@ -364,6 +349,43 @@ describe('invokeLLM', () => {
     expect(logger.error).not.toHaveBeenCalled();
     // Critical: when acquire throws, do NOT call release (otherwise the concurrency count goes negative)
     expect(limiter.release).not.toHaveBeenCalled();
+  });
+
+  it('falls back to logger.error when the limiter-acquired callback fails and warn is unavailable', async () => {
+    const adapter: LLMAdapter = {
+      providerType: 'fake',
+      async invoke() {
+        return {
+          content: 'ok',
+          rawResponse: {},
+          finishReason: 'stop',
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    };
+    const limiter = {
+      acquire: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    const logger = { info: vi.fn(), error: vi.fn() };
+
+    const result = await invokeLLM(baseArgs(), {
+      limiter,
+      logger,
+      adapters: [adapter],
+      onLimiterAcquired: async () => {
+        throw new Error('metering unavailable');
+      },
+    });
+
+    expect(result.content).toBe('ok');
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        key: `model:${model.id}`,
+        error: 'metering unavailable',
+      },
+      'limiter_acquired_callback_failed',
+    );
   });
 
   it('resizes oversized OpenAI-style image data URLs before sending to the provider', async () => {
@@ -685,7 +707,8 @@ describe('testModelConnectivity', () => {
   it('uses provider error.message as the probe error message when available', async () => {
     const providerBody = JSON.stringify({
       error: {
-        message: 'Incorrect API key provided. For details, see: https://help.aliyun.com/zh/model-studio/error-code#apikey-error',
+        message:
+          'Incorrect API key provided. For details, see: https://help.aliyun.com/zh/model-studio/error-code#apikey-error',
         type: 'invalid_request_error',
         code: 'invalid_api_key',
       },
@@ -713,14 +736,16 @@ describe('testModelConnectivity', () => {
         ok: false,
         httpStatus: 401,
         providerErrorBody: providerBody,
-        errorMessage: 'Incorrect API key provided. For details, see: https://help.aliyun.com/zh/model-studio/error-code#apikey-error',
+        errorMessage:
+          'Incorrect API key provided. For details, see: https://help.aliyun.com/zh/model-studio/error-code#apikey-error',
       }),
     );
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
         httpStatus: 401,
         providerErrorBody: providerBody,
-        errorMessage: 'Incorrect API key provided. For details, see: https://help.aliyun.com/zh/model-studio/error-code#apikey-error',
+        errorMessage:
+          'Incorrect API key provided. For details, see: https://help.aliyun.com/zh/model-studio/error-code#apikey-error',
       }),
       'model_connectivity_probe_failed',
     );
@@ -760,7 +785,11 @@ describe('testModelConnectivity', () => {
     const logger = { info: vi.fn(), error: vi.fn() };
 
     const result = await testModelConnectivity(
-      { model: { ...model, capabilities: { image: 'both' } }, limiterKey: `model:${model.id}`, requestId: 'probe-image-1' },
+      {
+        model: { ...model, capabilities: { image: 'both' } },
+        limiterKey: `model:${model.id}`,
+        requestId: 'probe-image-1',
+      },
       { limiter, logger, adapters: [adapter] },
     );
 
@@ -831,10 +860,7 @@ describe('invokeLLM — maxRetries 内部重试', () => {
     };
     const logger = { info: vi.fn(), error: vi.fn() };
 
-    const result = await invokeLLM(
-      { ...baseArgs(), maxRetries: 2 },
-      { limiter, logger, adapters: [adapter] },
-    );
+    const result = await invokeLLM({ ...baseArgs(), maxRetries: 2 }, { limiter, logger, adapters: [adapter] });
 
     expect(invokeMock).toHaveBeenCalledTimes(3);
     expect(result.content).toBe('ok');
@@ -851,9 +877,7 @@ describe('invokeLLM — maxRetries 内部重试', () => {
   });
 
   it('401 不可重试 → 立即抛出，provider 只调 1 次', async () => {
-    const invokeMock = vi
-      .fn()
-      .mockRejectedValueOnce(new LLMAdapterHttpError('unauthorized', 401, '{}'));
+    const invokeMock = vi.fn().mockRejectedValueOnce(new LLMAdapterHttpError('unauthorized', 401, '{}'));
     const adapter: LLMAdapter = { providerType: 'fake', invoke: invokeMock };
     const limiter = {
       acquire: vi.fn(async () => undefined),
@@ -871,9 +895,7 @@ describe('invokeLLM — maxRetries 内部重试', () => {
   });
 
   it('maxRetries 用尽仍失败 → 透传最后一次错误', async () => {
-    const invokeMock = vi
-      .fn()
-      .mockRejectedValue(new LLMAdapterHttpError('upstream 503', 503, '{}'));
+    const invokeMock = vi.fn().mockRejectedValue(new LLMAdapterHttpError('upstream 503', 503, '{}'));
     const adapter: LLMAdapter = { providerType: 'fake', invoke: invokeMock };
     const limiter = {
       acquire: vi.fn(async () => undefined),
@@ -898,9 +920,7 @@ describe('invokeLLM — maxRetries 内部重试', () => {
     };
     const logger = { info: vi.fn(), error: vi.fn() };
 
-    await expect(invokeLLM(baseArgs(), { limiter, logger, adapters: [adapter] })).rejects.toThrow(
-      'boom',
-    );
+    await expect(invokeLLM(baseArgs(), { limiter, logger, adapters: [adapter] })).rejects.toThrow('boom');
     expect(invokeMock).toHaveBeenCalledTimes(1);
   });
 });

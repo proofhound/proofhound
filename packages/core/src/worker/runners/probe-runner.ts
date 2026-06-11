@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
-import type { RateLimiter } from '@proofhound/limiter';
+import { RateLimitExceededError, type RateLimiter } from '@proofhound/limiter';
 import { testModelConnectivity, type LLMCallLogger, type ModelConnectivityProbeResult } from '@proofhound/llm-client';
 import { LOCAL_PROJECT_CONTEXT, type ProjectContext } from '@proofhound/shared';
 import type { ProbeJobPayload } from '@proofhound/orchestration-shared';
@@ -87,6 +87,7 @@ export function createProbeRunner(deps: ProbeRunnerDependencies) {
           ),
       );
     } catch (error) {
+      if (error instanceof RateLimitExceededError) throw error;
       await recordJobEvent('job.failed', {
         status: 'failed',
         errorKind: error instanceof Error ? error.name : 'Error',

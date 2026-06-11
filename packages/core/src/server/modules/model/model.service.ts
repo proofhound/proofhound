@@ -270,7 +270,10 @@ export class ModelService {
     }
     await this.assertNotActivelyReferenced(modelId);
     await this.repo.softDeleteModel(modelId);
-    await this.recordModelEvent('model.deleted', existing, actor.sub, { actionSource: source });
+    const deletedAt = new Date();
+    await this.recordModelEvent('model.deleted', { ...existing, updatedAt: deletedAt, deletedAt }, actor.sub, {
+      actionSource: source,
+    });
   }
 
   async duplicateProjectModel(

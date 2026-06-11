@@ -98,6 +98,33 @@ describe('DrizzleRunResultWriter', () => {
     );
   });
 
+  it('records run_result.created when drizzle returns rows on the result object', async () => {
+    const db = {
+      execute: vi.fn(async () => ({ rows: [{ id: '11111111-1111-4111-8111-111111111111' }] })),
+    };
+    const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
+    const writer = new DrizzleRunResultWriter(db as never, new LocalQuotaPolicyHook(), usageMetering);
+
+    await writer.writeRunResult({
+      id: '11111111-1111-4111-8111-111111111111',
+      projectId: '22222222-2222-4222-8222-222222222222',
+      source: 'optimization_generate',
+      sourceId: '33333333-3333-4333-8333-333333333333',
+      promptVersionId: '44444444-4444-4444-8444-444444444444',
+      modelId: '55555555-5555-4555-8555-555555555555',
+      renderedPrompt: { prompt: 'hello' },
+      status: 'success',
+      attempt: 1,
+    });
+
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'run_result.created',
+        idempotencyKey: 'run_result:11111111-1111-4111-8111-111111111111:created',
+      }),
+    );
+  });
+
   it('does not record run_result.created when the idempotent insert is skipped', async () => {
     const db = {
       execute: vi.fn(async () => []),

@@ -49,7 +49,7 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
       source: 'run_result',
     });
 
-    const insertedRows = await this.db.execute<{ id: string }>(sql`
+    const insertResult = await this.db.execute<{ id: string }>(sql`
       INSERT INTO ph_runs.run_results (
         id, project_id, source, source_id, release_variant_id, prompt_version_id, model_id,
         sample_id, external_id, rendered_prompt, input_variables,
@@ -77,7 +77,7 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
       RETURNING id
     `);
 
-    if (insertedRows.length > 0 && this.usageMetering) {
+    if (unwrapRows<{ id: string }>(insertResult).length > 0 && this.usageMetering) {
       const occurredAt = new Date();
       await safeRecordUsageEvent(
         this.usageMetering,
@@ -123,4 +123,12 @@ function estimateRunResultBytes(record: LLMRunResultRecord): number {
 
 function utf8Bytes(value: unknown): number {
   return Buffer.byteLength(typeof value === 'string' ? value : JSON.stringify(value ?? null), 'utf8');
+}
+
+function unwrapRows<T = unknown>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  if (result && typeof result === 'object' && 'rows' in (result as Record<string, unknown>)) {
+    return ((result as { rows?: T[] }).rows ?? []) as T[];
+  }
+  return [];
 }

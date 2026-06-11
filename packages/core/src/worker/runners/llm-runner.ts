@@ -186,7 +186,7 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
       );
     } catch (error) {
       if (error instanceof RateLimitExceededError) throw error;
-      await recordJobEvent('job.failed', {
+      await recordJobEvent('job.attempt_failed', {
         status: 'failed',
         errorKind: error instanceof Error ? error.name : 'Error',
       });

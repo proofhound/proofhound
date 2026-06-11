@@ -583,7 +583,7 @@ Caller constraints:
 - High-volume events such as `run_result.created` carry enough payload (`status`, token counts, cost estimate, latency, source ids) for incremental rollups. Full detail-table scans are reserved for hourly/daily reconciliation over touched projects, bounded time windows, or shards.
 - Hook failures are best-effort only. Callers must use the safe wrapper around `UsageMeteringHook.record()` and log a warning without changing the original success / failure behavior.
 - OSS emits only `projectId` and optional flat `actorId`; SaaS resolves any organization or billing ownership inside the replacement hook by looking up the project. OSS event payloads must not include organization, plan, billing, tenant, quota tier, or control-plane fields.
-- Current emitters cover worker job lifecycle (`job.started` / `job.completed` / `job.failed` / `job.rate_limited`), immutable run-result creation (`run_result.created`), release line / event / run attachment facts, dataset and import dirty facts, and model configuration changes. These events are generic domain observations; the OSS UI does not expose a usage ledger or billing page.
+- Current emitters cover worker job lifecycle (`job.started` / `job.completed` / `job.attempt_failed` / `job.failed` / `job.rate_limited`), immutable run-result creation (`run_result.created`), release line / event / run attachment facts, dataset and import dirty facts, and model configuration changes. These events are generic domain observations; the OSS UI does not expose a usage ledger or billing page.
 
 ## 4. Frontend reuse strategy
 

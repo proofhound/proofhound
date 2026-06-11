@@ -393,13 +393,15 @@ async function notifyLimiterAcquired(deps: InvokeLLMDependencies, context: Limit
   try {
     await deps.onLimiterAcquired(context);
   } catch (error) {
-    deps.logger.warn?.(
-      {
-        key: context.key,
-        error: (error as Error).message,
-      },
-      'limiter_acquired_callback_failed',
-    );
+    const payload = {
+      key: context.key,
+      error: (error as Error).message,
+    };
+    if (deps.logger.warn) {
+      deps.logger.warn(payload, 'limiter_acquired_callback_failed');
+    } else {
+      deps.logger.error(payload, 'limiter_acquired_callback_failed');
+    }
   }
 }
 

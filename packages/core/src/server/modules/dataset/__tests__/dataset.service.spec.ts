@@ -365,6 +365,9 @@ describe('DatasetService', () => {
   });
 
   it('hard deletes a dataset', async () => {
+    vi.useFakeTimers();
+    const deletedAt = new Date('2026-05-19T08:30:00.000Z');
+    vi.setSystemTime(deletedAt);
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.findDatasetById.mockResolvedValue(datasetRow());
     repo.countDatasetReferences.mockResolvedValue(
@@ -372,19 +375,28 @@ describe('DatasetService', () => {
     );
     repo.hardDeleteDataset.mockResolvedValue(1);
 
-    await service.deleteDataset('77777777-7777-4777-8777-777777777777', '22222222-2222-4222-8222-222222222222', actor);
+    try {
+      await service.deleteDataset(
+        '77777777-7777-4777-8777-777777777777',
+        '22222222-2222-4222-8222-222222222222',
+        actor,
+      );
 
-    expect(repo.hardDeleteDataset).toHaveBeenCalledWith(
-      '77777777-7777-4777-8777-777777777777',
-      '22222222-2222-4222-8222-222222222222',
-    );
-    expect(usageMetering.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dimension: 'storage',
-        eventType: 'dataset.deleted',
-        idempotencyKey: expect.stringContaining('storage:dataset.deleted:22222222-2222-4222-8222-222222222222'),
-      }),
-    );
+      expect(repo.hardDeleteDataset).toHaveBeenCalledWith(
+        '77777777-7777-4777-8777-777777777777',
+        '22222222-2222-4222-8222-222222222222',
+      );
+      expect(usageMetering.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dimension: 'storage',
+          eventType: 'dataset.deleted',
+          occurredAt: deletedAt,
+          idempotencyKey: `storage:dataset.deleted:22222222-2222-4222-8222-222222222222:${deletedAt.toISOString()}`,
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects deleting a dataset referenced by experiments or optimizations', async () => {

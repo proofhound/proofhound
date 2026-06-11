@@ -548,19 +548,28 @@ describe('ModelService', () => {
   });
 
   it('records model.deleted when a local model is removed', async () => {
+    vi.useFakeTimers();
     const row = fakeRow();
-    repo.findModelById.mockResolvedValue(row);
+    const deletedAt = new Date('2026-05-19T08:30:00.000Z');
+    vi.setSystemTime(deletedAt);
+    try {
+      repo.findModelById.mockResolvedValue(row);
 
-    await service.deleteProjectModel(WORKSPACE_ID, row.id, { force: false }, ACTOR);
+      await service.deleteProjectModel(WORKSPACE_ID, row.id, { force: false }, ACTOR);
 
-    expect(repo.softDeleteModel).toHaveBeenCalledWith(row.id);
-    expect(usageMetering.record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dimension: 'model',
-        eventType: 'model.deleted',
-        projectId: WORKSPACE_ID,
-      }),
-    );
+      expect(repo.softDeleteModel).toHaveBeenCalledWith(row.id);
+      expect(usageMetering.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dimension: 'model',
+          eventType: 'model.deleted',
+          projectId: WORKSPACE_ID,
+          occurredAt: deletedAt,
+          idempotencyKey: `model:${row.id}:model.deleted:${deletedAt.toISOString()}`,
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('records probe outcome on existing model probe failure', async () => {

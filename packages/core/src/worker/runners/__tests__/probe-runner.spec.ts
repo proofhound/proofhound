@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { encryptApiKey } from '@proofhound/crypto';
 import type { DbClient } from '@proofhound/db';
+import { RateLimitExceededError } from '@proofhound/limiter';
 import type { ProjectContext } from '@proofhound/shared';
 import { LOCAL_PROJECT_ID } from '@proofhound/shared';
 import { describe, expect, it, vi } from 'vitest';
@@ -263,6 +264,39 @@ describe('runProbeJob — usage metering job lifecycle', () => {
         idempotencyKey: 'job:probe:probe-job-1:1:job.failed',
         eventType: 'job.failed',
         payload: expect.objectContaining({ status: 'failed', errorKind: 'Error' }),
+      }),
+    );
+  });
+
+  it('rethrows rate-limit rejections without recording them as job.failed', async () => {
+    const rateLimitError = new RateLimitExceededError('rpm', 1500);
+    testModelConnectivityMock.mockRejectedValue(rateLimitError);
+    const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
+    const runProbeJob = createProbeRunner({
+      db: fakeDb(activeModel),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new (class extends LimiterKeyStrategy {
+        buildModelKey(): string {
+          return 'model:test';
+        }
+      })(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
+      usageMetering,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+    });
+
+    await expect(
+      runProbeJob(
+        { modelId: activeModel.id, projectId: '22222222-2222-4222-8222-222222222222' },
+        { bullmqJobId: 'probe-job-1', bullmqQueue: 'probe', attempt: 1 },
+      ),
+    ).rejects.toBe(rateLimitError);
+
+    expect(usageMetering.record).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'job.failed',
       }),
     );
   });

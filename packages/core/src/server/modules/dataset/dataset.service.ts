@@ -254,7 +254,8 @@ export class DatasetService {
     if (deleted === 0) {
       throw new NotFoundException(`Dataset ${datasetId} not found`);
     }
-    await this.recordDatasetStorageEvents(row, actor.sub, 'dataset.deleted', {
+    const deletedAt = new Date();
+    await this.recordDatasetStorageEvents({ ...row, updatedAt: deletedAt, deletedAt }, actor.sub, 'dataset.deleted', {
       sampleCount: row.sampleCount,
       storagePrefix: row.storagePrefix,
     });

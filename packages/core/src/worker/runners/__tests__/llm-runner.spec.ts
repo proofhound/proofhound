@@ -295,8 +295,8 @@ describe('runLlmJob — usage metering job lifecycle', () => {
 
     expect(usageMetering.record).toHaveBeenCalledWith(
       expect.objectContaining({
-        idempotencyKey: 'job:llm:job-1:1:job.failed',
-        eventType: 'job.failed',
+        idempotencyKey: 'job:llm:job-1:1:job.attempt_failed',
+        eventType: 'job.attempt_failed',
         payload: expect.objectContaining({
           status: 'failed',
           errorKind: 'Error',
