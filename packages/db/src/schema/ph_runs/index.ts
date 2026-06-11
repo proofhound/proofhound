@@ -50,7 +50,10 @@ export const optimizationRoundSteps = phRuns.table(
   },
   (t) => [
     check('optimization_round_steps_step_check', sql`${t.step} IN ('error_analysis', 'generate_prompt', 'experiment')`),
-    check('optimization_round_steps_status_check', sql`${t.status} IN ('pending', 'running', 'success', 'failed', 'skipped')`),
+    check(
+      'optimization_round_steps_status_check',
+      sql`${t.status} IN ('pending', 'running', 'success', 'failed', 'skipped')`,
+    ),
     uniqueIndex('optimization_round_steps_uq').on(t.optimizationId, t.roundIndex, t.step),
     index('idx_optimization_round_steps_by_iter').on(t.optimizationId, t.roundIndex),
   ],
@@ -98,13 +101,23 @@ export const runResults = phRuns.table(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    // Drizzle does not expose PostgreSQL partition DDL; the migration owns
+    // PARTITION BY RANGE (created_at) and the monthly partition creation.
     primaryKey({ columns: [t.id, t.createdAt], name: 'run_results_pkey' }),
-    check('run_results_source_check', sql`${t.source} IN ('experiment', 'optimization_analysis', 'optimization_generate', 'release', 'canary', 'online')`),
-    check('run_results_judgment_status_check', sql`${t.judgmentStatus} IN ('correct', 'incorrect', 'parse_error', 'judge_error') OR ${t.judgmentStatus} IS NULL`),
+    check(
+      'run_results_source_check',
+      sql`${t.source} IN ('experiment', 'optimization_analysis', 'optimization_generate', 'release', 'canary', 'online')`,
+    ),
+    check(
+      'run_results_judgment_status_check',
+      sql`${t.judgmentStatus} IN ('correct', 'incorrect', 'parse_error', 'judge_error') OR ${t.judgmentStatus} IS NULL`,
+    ),
     check('run_results_status_check', sql`${t.status} IN ('success', 'error', 'timeout', 'rate_limited')`),
-    index('idx_run_results_project_source_time').on(t.projectId, t.source, t.sourceId, t.createdAt),
+    index('idx_run_results_source_source_time').on(t.source, t.sourceId, t.createdAt.desc()),
+    index('idx_run_results_project_time').on(t.projectId, t.createdAt.desc()),
+    index('idx_run_results_project_source_time').on(t.projectId, t.source, t.createdAt.desc()),
     index('idx_run_results_release_variant_time')
-      .on(t.projectId, t.releaseVariantId, t.createdAt)
+      .on(t.projectId, t.releaseVariantId, t.createdAt.desc())
       .where(sql`${t.releaseVariantId} IS NOT NULL`),
     index('idx_run_results_external_id')
       .on(t.externalId)
@@ -115,10 +128,10 @@ export const runResults = phRuns.table(
     index('idx_run_results_bullmq_job')
       .on(t.bullmqJobId)
       .where(sql`${t.bullmqJobId} IS NOT NULL`),
-    index('idx_run_results_prompt_version').on(t.promptVersionId, t.createdAt),
+    index('idx_run_results_prompt_version_time').on(t.promptVersionId, t.createdAt.desc()),
     index('idx_run_results_id_lookup').on(t.id),
-    index('idx_run_results_webhook_token')
-      .on(t.webhookTokenId, t.createdAt)
+    index('idx_run_results_webhook_token_time')
+      .on(t.webhookTokenId, t.createdAt.desc())
       .where(sql`${t.webhookTokenId} IS NOT NULL`),
   ],
 );
