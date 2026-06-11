@@ -3,9 +3,10 @@ import { eq } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { evaluateJudgment } from '@proofhound/judgment';
-import type { RateLimiter } from '@proofhound/limiter';
+import { RateLimitExceededError, type RateLimiter } from '@proofhound/limiter';
 import {
   invokeLLM,
+  type LimiterAcquiredContext,
   parseJsonResponseWithMarkdownFallback,
   type LLMCallLogger,
   type LLMJudgmentOutcome,
@@ -17,6 +18,7 @@ import type { LlmJobPayload } from '@proofhound/orchestration-shared';
 import type { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
 import type { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 import type { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
+import { safeRecordUsageEvent, type UsageMeteringHook } from '../../server/common/contracts/usage-metering.hook';
 import { applyRuntimeLimits } from '../../shared/llm/runtime-limits';
 import type { ModelSecretResolver } from './model-secret';
 import { DrizzleRunResultWriter } from './run-result-writer';
@@ -27,6 +29,7 @@ export interface LlmRunnerDependencies {
   limiterKeyStrategy: LimiterKeyStrategy;
   quotaPolicy: QuotaPolicyHook;
   runtimeLimitsProvider: RuntimeLimitsProvider;
+  usageMetering: UsageMeteringHook;
   logger: LLMCallLogger;
   modelSecretResolver: ModelSecretResolver;
 }
@@ -52,10 +55,32 @@ export interface LlmRunnerResult {
 }
 
 export function createLlmRunner(deps: LlmRunnerDependencies) {
-  const runResultWriter = new DrizzleRunResultWriter(deps.db, deps.quotaPolicy);
+  const runResultWriter = new DrizzleRunResultWriter(deps.db, deps.quotaPolicy, deps.usageMetering);
 
   return async function runLlmJob(input: LlmJobPayload, jobContext: LlmRunnerJobContext): Promise<LlmRunnerResult> {
     const runResultId = input.runResultId ?? randomUUID();
+    const basePayload = {
+      queue: jobContext.bullmqQueue,
+      jobId: jobContext.bullmqJobId,
+      attempt: jobContext.attempt,
+      runResultId,
+      modelId: input.modelId,
+      source: input.source,
+    };
+    const recordJobEvent = (eventType: string, payload: Record<string, unknown>) =>
+      safeRecordUsageEvent(
+        deps.usageMetering,
+        {
+          idempotencyKey: `job:${jobContext.bullmqQueue}:${jobContext.bullmqJobId}:${jobContext.attempt}:${eventType}`,
+          dimension: 'job',
+          eventType,
+          projectId: input.projectId,
+          occurredAt: new Date(),
+          source: 'worker',
+          payload: { ...basePayload, ...payload },
+        },
+        deps.logger,
+      );
     const model = await loadModelInvocationConfig(deps, input.modelId);
     // Fold any deployment-level runtime caps (a SaaS org plan's ceiling, SPEC 08 §3.10) into the per-call limits at the
     // single worker enforcement point, so every job source (experiment / optimization child / release / webhook) is
@@ -86,67 +111,95 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
     const project = { projectId: input.projectId, orgId: input.orgId, source: 'local' as const };
     const limiterKey = deps.limiterKeyStrategy.buildModelKey(project, input.modelId);
 
-    const result = await deps.quotaPolicy.withExecutionSlot(
-      { project, source: input.source, modelId: input.modelId, requestId: input.requestId },
-      () =>
-        invokeLLM(
-          {
-            model: effectiveModel,
-            limiterKey,
-            messages: input.renderedPrompt.messages as LLMMessage[] | undefined,
-            prompt: input.renderedPrompt.prompt,
-            params: {
-              temperature: input.inference?.temperature,
-              maxTokens: input.inference?.maxTokens,
-              topP: input.inference?.topP,
-              tools: input.renderedPrompt.tools,
-              responseFormat: input.renderedPrompt.responseFormat,
-              imageRefs: input.renderedPrompt.imageRefs,
-              apiVersion: input.inference?.apiVersion,
+    let result: Awaited<ReturnType<typeof invokeLLM>>;
+    try {
+      result = await deps.quotaPolicy.withExecutionSlot(
+        { project, source: input.source, modelId: input.modelId, requestId: input.requestId },
+        () =>
+          invokeLLM(
+            {
+              model: effectiveModel,
+              limiterKey,
+              messages: input.renderedPrompt.messages as LLMMessage[] | undefined,
+              prompt: input.renderedPrompt.prompt,
+              params: {
+                temperature: input.inference?.temperature,
+                maxTokens: input.inference?.maxTokens,
+                topP: input.inference?.topP,
+                tools: input.renderedPrompt.tools,
+                responseFormat: input.renderedPrompt.responseFormat,
+                imageRefs: input.renderedPrompt.imageRefs,
+                apiVersion: input.inference?.apiVersion,
+              },
+              maxRetries: input.retry?.maxRetries,
+              context: {
+                requestId: input.requestId,
+                dbosWorkflowId: jobContext.dbosWorkflowId,
+                bullmqJobId: jobContext.bullmqJobId,
+                bullmqQueue: jobContext.bullmqQueue,
+                stepName: jobContext.stepName,
+                runResultId,
+                promptId: input.promptId,
+                promptVersionId: input.promptVersionId,
+                source: input.source,
+                attempt: jobContext.attempt,
+              },
+              runResult: {
+                id: runResultId,
+                projectId: input.projectId,
+                source: input.source,
+                sourceId: input.sourceId,
+                releaseVariantId: input.releaseVariantId ?? null,
+                promptVersionId: input.promptVersionId,
+                modelId: input.modelId,
+                sampleId: input.sampleId ?? null,
+                externalId: input.externalId ?? null,
+                renderedPrompt: normalizeRenderedPrompt(input.renderedPrompt),
+                inputVariables: input.inputVariables,
+                expectedOutput: expectedOutputAsString(expectedOutput),
+                dbosWorkflowId: jobContext.dbosWorkflowId,
+                bullmqJobId: jobContext.bullmqJobId,
+                attempt: jobContext.attempt,
+                webhookTokenId: input.webhookTokenId ?? null,
+              },
+              // The judgment strategy expects a parsed[expected_field]-style structure; when parseResponse is not provided, parsed=undefined,
+              // and the whole metrics is unreliable. Parse strict JSON first; on failure, fall back to parsing a Markdown JSON fence.
+              parseResponse: parseJsonResponseWithMarkdownFallback,
+              evaluateJudgment: evaluateJudgmentHook,
             },
-            maxRetries: input.retry?.maxRetries,
-            context: {
-              requestId: input.requestId,
-              dbosWorkflowId: jobContext.dbosWorkflowId,
-              bullmqJobId: jobContext.bullmqJobId,
-              bullmqQueue: jobContext.bullmqQueue,
-              stepName: jobContext.stepName,
-              runResultId,
-              promptId: input.promptId,
-              promptVersionId: input.promptVersionId,
-              source: input.source,
-              attempt: jobContext.attempt,
+            {
+              limiter: deps.limiter,
+              logger: deps.logger,
+              runResultWriter,
+              onLimiterAcquired: (context: LimiterAcquiredContext) => {
+                const acquireResult =
+                  context.acquireResult && typeof context.acquireResult === 'object' ? context.acquireResult : null;
+                return recordJobEvent('job.started', {
+                  status: 'started',
+                  limiterKey: context.key,
+                  estimatedTokens: context.estimatedTokens,
+                  effectiveConcurrency: acquireResult?.effectiveConcurrency ?? null,
+                });
+              },
             },
-            runResult: {
-              id: runResultId,
-              projectId: input.projectId,
-              source: input.source,
-              sourceId: input.sourceId,
-              releaseVariantId: input.releaseVariantId ?? null,
-              promptVersionId: input.promptVersionId,
-              modelId: input.modelId,
-              sampleId: input.sampleId ?? null,
-              externalId: input.externalId ?? null,
-              renderedPrompt: normalizeRenderedPrompt(input.renderedPrompt),
-              inputVariables: input.inputVariables,
-              expectedOutput: expectedOutputAsString(expectedOutput),
-              dbosWorkflowId: jobContext.dbosWorkflowId,
-              bullmqJobId: jobContext.bullmqJobId,
-              attempt: jobContext.attempt,
-              webhookTokenId: input.webhookTokenId ?? null,
-            },
-            // The judgment strategy expects a parsed[expected_field]-style structure; when parseResponse is not provided, parsed=undefined,
-            // and the whole metrics is unreliable. Parse strict JSON first; on failure, fall back to parsing a Markdown JSON fence.
-            parseResponse: parseJsonResponseWithMarkdownFallback,
-            evaluateJudgment: evaluateJudgmentHook,
-          },
-          {
-            limiter: deps.limiter,
-            logger: deps.logger,
-            runResultWriter,
-          },
-        ),
-    );
+          ),
+      );
+    } catch (error) {
+      if (error instanceof RateLimitExceededError) throw error;
+      await recordJobEvent('job.attempt_failed', {
+        status: 'failed',
+        errorKind: error instanceof Error ? error.name : 'Error',
+      });
+      throw error;
+    }
+
+    await recordJobEvent('job.completed', {
+      status: 'completed',
+      latencyMs: result.durationMs,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      costEstimate: result.costEstimate,
+    });
 
     return {
       runResultId,

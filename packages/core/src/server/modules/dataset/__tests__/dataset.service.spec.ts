@@ -5,7 +5,8 @@ import { DatasetService } from '../dataset.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
-import { vi, type Mocked } from 'vitest';
+import { UsageMeteringHook } from '../../../common/contracts/usage-metering.hook';
+import { vi, type Mock, type Mocked } from 'vitest';
 
 const actor = {
   sub: '11111111-1111-4111-8111-111111111111',
@@ -60,15 +61,18 @@ function makeRepo(): Mocked<DatasetRepository> {
 describe('DatasetService', () => {
   let service: DatasetService;
   let repo: Mocked<DatasetRepository>;
+  let usageMetering: UsageMeteringHook & { record: Mock };
 
   beforeEach(async () => {
     repo = makeRepo();
+    usageMetering = { record: vi.fn(async () => undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         { provide: DatasetRepository, useValue: repo },
         { provide: AccessControlService, useClass: LocalAccessControlService },
         { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
+        { provide: UsageMeteringHook, useValue: usageMetering },
         DatasetService,
       ],
     }).compile();
@@ -122,6 +126,20 @@ describe('DatasetService', () => {
         { label: 'block', count: 1 },
       ],
     });
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'storage',
+        eventType: 'dataset.created',
+        projectId: '77777777-7777-4777-8777-777777777777',
+      }),
+    );
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'storage',
+        eventType: 'storage.dirty',
+        projectId: '77777777-7777-4777-8777-777777777777',
+      }),
+    );
   });
 
   it('infers image URL arrays and multiple image fields as image dataset fields', async () => {
@@ -347,6 +365,9 @@ describe('DatasetService', () => {
   });
 
   it('hard deletes a dataset', async () => {
+    vi.useFakeTimers();
+    const deletedAt = new Date('2026-05-19T08:30:00.000Z');
+    vi.setSystemTime(deletedAt);
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.findDatasetById.mockResolvedValue(datasetRow());
     repo.countDatasetReferences.mockResolvedValue(
@@ -354,12 +375,28 @@ describe('DatasetService', () => {
     );
     repo.hardDeleteDataset.mockResolvedValue(1);
 
-    await service.deleteDataset('77777777-7777-4777-8777-777777777777', '22222222-2222-4222-8222-222222222222', actor);
+    try {
+      await service.deleteDataset(
+        '77777777-7777-4777-8777-777777777777',
+        '22222222-2222-4222-8222-222222222222',
+        actor,
+      );
 
-    expect(repo.hardDeleteDataset).toHaveBeenCalledWith(
-      '77777777-7777-4777-8777-777777777777',
-      '22222222-2222-4222-8222-222222222222',
-    );
+      expect(repo.hardDeleteDataset).toHaveBeenCalledWith(
+        '77777777-7777-4777-8777-777777777777',
+        '22222222-2222-4222-8222-222222222222',
+      );
+      expect(usageMetering.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dimension: 'storage',
+          eventType: 'dataset.deleted',
+          occurredAt: deletedAt,
+          idempotencyKey: `storage:dataset.deleted:22222222-2222-4222-8222-222222222222:${deletedAt.toISOString()}`,
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects deleting a dataset referenced by experiments or optimizations', async () => {
@@ -401,6 +438,13 @@ describe('DatasetService', () => {
       '22222222-2222-4222-8222-222222222222',
       { name: 'risk-eval-renamed', description: 'renamed samples' },
     );
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'storage',
+        eventType: 'dataset.updated',
+        idempotencyKey: expect.stringContaining('storage:dataset.updated:22222222-2222-4222-8222-222222222222'),
+      }),
+    );
   });
 
   it('rejects metadata updates when the target name is already used', async () => {
@@ -438,6 +482,13 @@ describe('DatasetService', () => {
       expect(result).toEqual({ deleted: 2 });
       expect(repo.hardDeleteSamples).toHaveBeenCalledWith(DATASET_ID, SAMPLE_IDS);
       expect(repo.decrementDatasetSampleCount).toHaveBeenCalledWith(DATASET_ID, 2);
+      expect(usageMetering.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dimension: 'storage',
+          eventType: 'dataset.updated',
+          idempotencyKey: expect.stringContaining(`storage:dataset.updated:${DATASET_ID}`),
+        }),
+      );
     });
 
     it('rejects deletion when dataset is referenced by experiments', async () => {

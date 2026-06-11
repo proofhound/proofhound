@@ -21,6 +21,7 @@ import type {
   LLMInferenceParams,
   LLMJudgmentOutcome,
   LLMMessage,
+  LimiterAcquiredContext,
   ModelConnectivityProbeArgs,
   ModelConnectivityProbeResult,
 } from './types';
@@ -50,6 +51,7 @@ export type {
   LLMRunResultWriter,
   LLMRunStatus,
   LLMSource,
+  LimiterAcquiredContext,
   ModelConnectivityProbeArgs,
   ModelConnectivityProbeResult,
   ModelInvocationConfig,
@@ -97,6 +99,11 @@ export async function invokeLLM(args: InvokeLLMArgs, deps: InvokeLLMDependencies
       autoConcurrency: invocationArgs.model.autoConcurrency,
     });
     acquired = true;
+    await notifyLimiterAcquired(deps, {
+      key: invocationArgs.limiterKey,
+      estimatedTokens: estimated.totalTokens,
+      acquireResult,
+    });
     if (invocationArgs.model.autoConcurrency && acquireResult) {
       deps.logger.debug?.(
         {
@@ -126,18 +133,14 @@ export async function invokeLLM(args: InvokeLLMArgs, deps: InvokeLLMDependencies
       args.maxRetries ?? 0,
     );
 
-    const providerResult = await invokeProviderWithRetry(
-      provider,
-      providerInvokeArgs,
-      {
-        maxRetries: args.maxRetries ?? 0,
-        signal: controller.signal,
-        logger: deps.logger,
-        context: invocationArgs.context,
-        modelId: invocationArgs.model.id,
-        providerModelId: invocationArgs.model.providerModelId,
-      },
-    );
+    const providerResult = await invokeProviderWithRetry(provider, providerInvokeArgs, {
+      maxRetries: args.maxRetries ?? 0,
+      signal: controller.signal,
+      logger: deps.logger,
+      context: invocationArgs.context,
+      modelId: invocationArgs.model.id,
+      providerModelId: invocationArgs.model.providerModelId,
+    });
     const durationMs = (deps.now?.() ?? Date.now()) - startedAt;
     const parsed = args.parseResponse ? args.parseResponse(providerResult.content) : undefined;
     const usage = {
@@ -263,6 +266,10 @@ export async function testModelConnectivity(
       autoConcurrency: args.model.autoConcurrency,
     });
     acquired = true;
+    await notifyLimiterAcquired(deps, {
+      key: args.limiterKey,
+      estimatedTokens: estimated.totalTokens,
+    });
 
     const providerInvokeArgs: AdapterInvokeArgs = {
       model: args.model,
@@ -313,6 +320,10 @@ export async function testModelConnectivity(
       responsePreview: result.content.slice(0, 200),
     };
   } catch (error) {
+    if (deps.rethrowRateLimit && error instanceof RateLimitExceededError) {
+      throw error;
+    }
+
     const durationMs = (deps.now?.() ?? Date.now()) - startedAt;
     const normalized = normalizeError(error);
 
@@ -375,6 +386,23 @@ export function resolveLLMAdapter(providerType: string, adapters = defaultLLMAda
   }
 
   return adapter;
+}
+
+async function notifyLimiterAcquired(deps: InvokeLLMDependencies, context: LimiterAcquiredContext): Promise<void> {
+  if (!deps.onLimiterAcquired) return;
+  try {
+    await deps.onLimiterAcquired(context);
+  } catch (error) {
+    const payload = {
+      key: context.key,
+      error: (error as Error).message,
+    };
+    if (deps.logger.warn) {
+      deps.logger.warn(payload, 'limiter_acquired_callback_failed');
+    } else {
+      deps.logger.error(payload, 'limiter_acquired_callback_failed');
+    }
+  }
 }
 
 type ConnectivityProbeType = 'text' | 'image_url' | 'image_base64';

@@ -69,11 +69,7 @@ import {
 import { useDelayedLoading } from '../../hooks';
 import { PromptLanguageSelect, type PromptLanguage } from '../../components';
 import { useI18n, type TranslationKey } from '../../i18n';
-import {
-  DATASET_MODALITY_LABEL_KEYS,
-  type DatasetModality,
-  type ProjectDataset,
-} from '../datasets/dataset-types';
+import { DATASET_MODALITY_LABEL_KEYS, type DatasetModality, type ProjectDataset } from '../datasets/dataset-types';
 import { toProjectDataset } from '../datasets/dataset-mappers';
 import {
   deriveJudgmentField,
@@ -1415,7 +1411,7 @@ function PromptMetricsTab({ projectId, promptId }: { projectId: string; promptId
           </div>
           <Skeleton className="h-64 rounded-lg" />
         </div>
-        <PlatformLoaderOverlay />
+        <PlatformLoaderOverlay placement="container" />
       </div>
     );
   }

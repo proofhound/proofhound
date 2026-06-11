@@ -7,6 +7,7 @@ import type { LlmRunnerResult } from '../../runners/llm-runner';
 import { LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
 import { LocalQuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
 import { LocalRuntimeLimitsProvider } from '../../../server/common/contracts/runtime-limits.provider';
+import { NoopUsageMeteringHook } from '../../../server/common/contracts/usage-metering.hook';
 import { LLM_WORKER_CONCURRENCY, LlmConsumer } from '../llm.consumer';
 
 const validUuid = (suffix: string) => `a1b2c3d4-e5f6-4789-a012-3456789${suffix}`;
@@ -84,6 +85,7 @@ describe('LlmConsumer webhook async receipts', () => {
       new LocalLimiterKeyStrategy(),
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
+      new NoopUsageMeteringHook(),
     );
     const result: LlmRunnerResult = {
       runResultId: validUuid('05555'),
@@ -131,6 +133,7 @@ describe('LlmConsumer webhook async receipts', () => {
       new LocalLimiterKeyStrategy(),
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
+      new NoopUsageMeteringHook(),
     );
     const writeRunResult = vi.fn().mockResolvedValue(undefined);
     (consumer as unknown as { runResultWriter: { writeRunResult: typeof writeRunResult } }).runResultWriter = {

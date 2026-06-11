@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { createLogger } from '@proofhound/logger';
 import type {
   CreateDatasetDto,
   DatasetCategoryDistributionDto,
@@ -20,6 +21,7 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
+import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
 import { buildDatasetFieldSchema } from './dataset-field-schema.util';
 import {
   DatasetRepository,
@@ -38,10 +40,13 @@ export interface DatasetExportFile {
 
 @Injectable()
 export class DatasetService {
+  private readonly logger = createLogger('dataset.service', { service: 'server' });
+
   constructor(
     private readonly repo: DatasetRepository,
     private readonly accessControl: AccessControlService,
     private readonly quotaPolicy: QuotaPolicyHook,
+    @Optional() private readonly usageMetering?: UsageMeteringHook,
   ) {}
 
   async listDatasets(
@@ -144,6 +149,11 @@ export class DatasetService {
       storagePrefix,
       externalIdFieldName,
     });
+    await this.recordDatasetStorageEvents(row, actor.sub, 'dataset.created', {
+      sampleCount: dto.samples.length,
+      uploadFileName: dto.uploadSource.fileName,
+      uploadFileSizeBytes: dto.uploadSource.fileSizeBytes ?? null,
+    });
 
     return {
       dataset: this.toDatasetListItem(
@@ -180,6 +190,10 @@ export class DatasetService {
     const deleted = await this.repo.hardDeleteSamples(datasetId, dto.sampleIds);
     if (deleted > 0) {
       await this.repo.decrementDatasetSampleCount(datasetId, deleted);
+      await this.recordDatasetStorageEvents(row, actor.sub, 'dataset.updated', {
+        deletedSamples: deleted,
+        reason: 'samples_deleted',
+      });
     }
 
     return { deleted };
@@ -215,6 +229,10 @@ export class DatasetService {
 
     const distribution = await this.getCategoryDistribution(updated);
     const references = await this.repo.countDatasetReferences([datasetId]);
+    await this.recordDatasetStorageEvents(updated, actor.sub, 'dataset.updated', {
+      previousName: row.name,
+      previousDescription: row.description,
+    });
     return this.toDatasetListItem(updated, distribution, references.get(datasetId) ?? this.emptyReferences());
   }
 
@@ -236,6 +254,32 @@ export class DatasetService {
     if (deleted === 0) {
       throw new NotFoundException(`Dataset ${datasetId} not found`);
     }
+    const deletedAt = new Date();
+    await this.recordDatasetStorageEvents({ ...row, updatedAt: deletedAt, deletedAt }, actor.sub, 'dataset.deleted', {
+      sampleCount: row.sampleCount,
+      storagePrefix: row.storagePrefix,
+    });
+  }
+
+  async recordDatasetImportCompleted(input: {
+    projectId: string;
+    datasetId: string;
+    importId: string;
+    actorId: string;
+    sampleCount: number;
+  }): Promise<void> {
+    if (!this.usageMetering) return;
+    await this.recordStorageEvent('dataset_import.completed', input.projectId, input.actorId, input.datasetId, {
+      importId: input.importId,
+      datasetId: input.datasetId,
+      sampleCount: input.sampleCount,
+    });
+    await this.recordStorageEvent('storage.dirty', input.projectId, input.actorId, input.datasetId, {
+      reason: 'dataset_import.completed',
+      importId: input.importId,
+      datasetId: input.datasetId,
+      sampleCount: input.sampleCount,
+    });
   }
 
   private async getAccessibleProject(projectId: string, actor: CurrentUserPayload): Promise<DatasetProjectAccessRow> {
@@ -250,6 +294,63 @@ export class DatasetService {
   private async getWritableProject(projectId: string, actor: CurrentUserPayload): Promise<DatasetProjectAccessRow> {
     await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     return this.getAccessibleProject(projectId, actor);
+  }
+
+  private async recordDatasetStorageEvents(
+    row: DatasetRow,
+    actorId: string,
+    eventType: 'dataset.created' | 'dataset.updated' | 'dataset.deleted',
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.usageMetering) return;
+    await this.recordStorageEvent(eventType, row.projectId, actorId, row.id, {
+      datasetId: row.id,
+      name: row.name,
+      sampleCount: row.sampleCount,
+      hasImages: row.hasImages,
+      storagePrefix: row.storagePrefix,
+      updatedAt: row.updatedAt.toISOString(),
+      ...payload,
+    });
+    await this.recordStorageEvent('storage.dirty', row.projectId, actorId, row.id, {
+      reason: eventType,
+      datasetId: row.id,
+      sampleCount: row.sampleCount,
+      storagePrefix: row.storagePrefix,
+      updatedAt: row.updatedAt.toISOString(),
+      ...payload,
+    });
+  }
+
+  private async recordStorageEvent(
+    eventType: 'storage.dirty' | 'dataset.created' | 'dataset.updated' | 'dataset.deleted' | 'dataset_import.completed',
+    projectId: string,
+    actorId: string,
+    subjectId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.usageMetering) return;
+    const suffix =
+      typeof payload['updatedAt'] === 'string'
+        ? payload['updatedAt']
+        : typeof payload['importId'] === 'string'
+          ? payload['importId']
+          : new Date().toISOString();
+    const occurredAt = typeof payload['updatedAt'] === 'string' ? new Date(payload['updatedAt']) : new Date();
+    await safeRecordUsageEvent(
+      this.usageMetering,
+      {
+        idempotencyKey: `storage:${eventType}:${subjectId}:${suffix}`,
+        dimension: 'storage',
+        eventType,
+        projectId,
+        actorId,
+        occurredAt,
+        source: 'server',
+        payload,
+      },
+      this.logger,
+    );
   }
 
   private assertConsistentMappings(dto: CreateDatasetDto) {

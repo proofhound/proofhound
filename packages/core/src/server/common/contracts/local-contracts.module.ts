@@ -29,6 +29,7 @@ import { ProjectContextResolver } from './project-context.resolver';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from './quota-policy.hook';
 import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from './runtime-limits.provider';
 import { TokenService } from './token.service';
+import { NoopUsageMeteringHook, UsageMeteringHook } from './usage-metering.hook';
 import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './workflow-authorization.hook';
 
 @Global()
@@ -47,6 +48,7 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     { provide: LimiterKeyStrategy, useClass: LocalLimiterKeyStrategy },
     { provide: RuntimeLimitsProvider, useClass: LocalRuntimeLimitsProvider },
     { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
+    { provide: UsageMeteringHook, useClass: NoopUsageMeteringHook },
     { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
   ],
   exports: [
@@ -59,6 +61,7 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     LimiterKeyStrategy,
     RuntimeLimitsProvider,
     QuotaPolicyHook,
+    UsageMeteringHook,
     WorkflowAuthorizationHook,
     LocalUserTokenVerifier,
   ],

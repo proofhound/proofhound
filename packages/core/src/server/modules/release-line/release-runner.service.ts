@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import type { ConsumeMessage } from '@proofhound/connector-client';
 import { createLogger } from '@proofhound/logger';
 import type { ConnectorConfigShape, ConnectorDirection, ConnectorType, ProjectContext } from '@proofhound/shared';
@@ -6,6 +6,7 @@ import { BullmqService } from '../../infrastructure/orchestration/bullmq.service
 import { RedisMutexService, type RedisMutexLease } from '../../../shared/redis/redis-mutex.service';
 import type { ActorContext } from '../../common/actor-context';
 import { ProjectContextResolver } from '../../common/contracts/project-context.resolver';
+import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
 import { ConnectorDriverFactory } from '../connector/connector.driver-factory';
 import {
   buildReleaseLlmPayload,
@@ -55,6 +56,7 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
     private readonly bullmq: BullmqService,
     private readonly mutex: RedisMutexService,
     private readonly projectResolver: ProjectContextResolver,
+    @Optional() private readonly usageMetering?: UsageMeteringHook,
   ) {}
 
   onModuleInit(): void {
@@ -240,9 +242,47 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
           { releaseLineEventId: lane.id, lane: lane.laneType, completed: attached.length },
           'release_runner_results_collected',
         );
+        await this.recordRunResultAttachments(lane, attached);
         if (lane.outputConnectorIds.length > 0) await this.pushCompletedResults(lane, attached);
       }
     }
+  }
+
+  private async recordRunResultAttachments(
+    lane: ReleaseRunnerLaneRow,
+    runResults: ReleaseCompletedRunResultRow[],
+  ): Promise<void> {
+    if (!this.usageMetering || runResults.length === 0) return;
+
+    await Promise.all(
+      runResults.map((runResult) =>
+        safeRecordUsageEvent(
+          this.usageMetering!,
+          {
+            idempotencyKey: `release_run:${lane.id}:${runResult.id}:attached`,
+            dimension: 'release',
+            eventType: 'release_run.attached',
+            projectId: lane.projectId,
+            occurredAt: runResult.createdAt,
+            source: 'release-runner',
+            payload: {
+              releaseLineId: lane.releaseLineId,
+              releaseLineEventId: lane.id,
+              laneType: lane.laneType,
+              releaseVariantId: lane.releaseVariantId,
+              runResultId: runResult.id,
+              externalId: runResult.externalId,
+              status: runResult.status,
+              inputTokens: runResult.inputTokens,
+              outputTokens: runResult.outputTokens,
+              costEstimate: runResult.costEstimate,
+              latencyMs: runResult.latencyMs,
+            },
+          },
+          this.logger,
+        ),
+      ),
+    );
   }
 
   private async pushCompletedResults(

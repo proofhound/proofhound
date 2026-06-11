@@ -15,13 +15,16 @@ export class StubLimiter implements RateLimiter {
   }
 
   async getUsage(key: string): Promise<UsageSnapshot> {
+    const sampledAt = new Date().toISOString();
     return {
       key,
       rpmUsed: 0,
       tpmUsed: 0,
       concurrencyInUse: 0,
+      concurrencyPeakInMinute: 0,
       windowMs: 60_000,
-      windowEndsAt: new Date().toISOString(),
+      sampledAt,
+      windowEndsAt: sampledAt,
     };
   }
 }

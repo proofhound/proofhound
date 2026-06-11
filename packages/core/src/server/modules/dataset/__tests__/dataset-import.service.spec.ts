@@ -59,6 +59,7 @@ function buildService() {
 
   const datasetService = {
     getDataset: vi.fn(),
+    recordDatasetImportCompleted: vi.fn().mockResolvedValue(undefined),
   } as unknown as Mocked<DatasetService>;
 
   const service = new DatasetImportService(
@@ -177,6 +178,13 @@ describe('DatasetImportService.complete', () => {
     expect(promoteArgs?.fieldSchema).toEqual([{ name: 'label', role: 'expected_output', type: 'string' }]);
     expect(promoteArgs?.hasImages).toBe(false);
     expect(datasetService.getDataset).toHaveBeenCalledWith(PROJECT_ID, promoteArgs?.datasetId, ACTOR);
+    expect(datasetService.recordDatasetImportCompleted).toHaveBeenCalledWith({
+      projectId: PROJECT_ID,
+      datasetId: promoteArgs?.datasetId,
+      importId: IMPORT_ID,
+      actorId: ACTOR.sub,
+      sampleCount: 3,
+    });
   });
 });
 

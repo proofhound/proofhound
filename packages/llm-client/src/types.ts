@@ -1,10 +1,6 @@
 import type { PromptLanguageDto } from '@proofhound/shared';
 
-export type LLMSource =
-  | 'experiment'
-  | 'optimization_analysis'
-  | 'optimization_generate'
-  | 'release';
+export type LLMSource = 'experiment' | 'optimization_analysis' | 'optimization_generate' | 'release';
 export type LLMRunStatus = 'success' | 'error' | 'timeout' | 'rate_limited';
 
 export interface LLMMessage {
@@ -222,9 +218,16 @@ export interface RateLimiterLike {
   }): Promise<void>;
 }
 
+export interface LimiterAcquiredContext {
+  key: string;
+  estimatedTokens: number;
+  acquireResult?: RateLimiterAcquireResult | void;
+}
+
 export interface LLMCallLogger {
   debug?(payload: Record<string, unknown>, message: string): void;
   info(payload: Record<string, unknown>, message: string): void;
+  warn?(payload: Record<string, unknown>, message: string): void;
   error(payload: Record<string, unknown>, message: string): void;
 }
 
@@ -234,6 +237,8 @@ export interface InvokeLLMDependencies {
   runResultWriter?: LLMRunResultWriter;
   adapters?: LLMAdapter[];
   now?: () => number;
+  onLimiterAcquired?(context: LimiterAcquiredContext): Promise<void> | void;
+  rethrowRateLimit?: boolean;
 }
 
 export interface InvokeLLMResult {

@@ -16,6 +16,7 @@ import { LocalAccessControlService } from '../../../common/contracts/local-acces
 import { LimiterKeyStrategy } from '../../../common/contracts/limiter-key.strategy';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../../common/contracts/runtime-limits.provider';
+import { UsageMeteringHook } from '../../../common/contracts/usage-metering.hook';
 import { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 
 vi.mock('@proofhound/llm-client', () => ({
@@ -146,6 +147,7 @@ describe('ModelService', () => {
   let limiterKeyStrategy: { buildModelKey: Mock };
   let runtimeLimitsProvider: { mergeLlmLimits: Mock };
   let workflowAuth: { assertCanStart: Mock };
+  let usageMetering: UsageMeteringHook & { record: Mock };
 
   beforeEach(async () => {
     (testModelConnectivity as Mock).mockReset();
@@ -162,6 +164,7 @@ describe('ModelService', () => {
     };
     runtimeLimitsProvider = { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) };
     workflowAuth = { assertCanStart: vi.fn().mockResolvedValue(undefined) };
+    usageMetering = { record: vi.fn(async () => undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -173,6 +176,7 @@ describe('ModelService', () => {
         { provide: RuntimeLimitsProvider, useValue: runtimeLimitsProvider },
         { provide: WorkflowAuthorizationHook, useValue: workflowAuth },
         { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
+        { provide: UsageMeteringHook, useValue: usageMetering },
         ModelService,
       ],
     }).compile();
@@ -259,6 +263,13 @@ describe('ModelService', () => {
     expect(crypto.encryptApiKey).toHaveBeenCalledWith('sk-secret-9999');
     expect(repo.createModel).toHaveBeenCalledWith(
       expect.objectContaining({ apiKeyEncrypted: 'enc:sk-secret-9999', extraBody: {} }),
+    );
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'model',
+        eventType: 'model.created',
+        projectId: WORKSPACE_ID,
+      }),
     );
   });
 
@@ -447,6 +458,13 @@ describe('ModelService', () => {
         lastProbedAt: null,
       }),
     );
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'model',
+        eventType: 'model.created',
+        payload: expect.objectContaining({ duplicatedFromModelId: source.id }),
+      }),
+    );
   });
 
   it('maps update model name unique violations to model_name_taken', async () => {
@@ -481,13 +499,77 @@ describe('ModelService', () => {
 
   it('updates status=disabled into isActive=false', async () => {
     const row = fakeRow();
+    const updated = fakeRow({
+      isActive: false,
+      updatedAt: new Date('2026-05-16T00:00:00Z'),
+    });
     repo.findModelById.mockResolvedValue(row);
-    repo.updateModel.mockResolvedValue(row as ModelRow);
-    repo.findModelAccessibleToProject.mockResolvedValue(row);
+    repo.updateModel.mockResolvedValue(updated as ModelRow);
+    repo.findModelAccessibleToProject.mockResolvedValue(updated);
 
     await service.updateProjectModel(WORKSPACE_ID, row.id, { status: 'disabled' }, ACTOR);
 
     expect(repo.updateModel).toHaveBeenCalledWith(row.id, expect.objectContaining({ isActive: false }));
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'model',
+        eventType: 'model.activation_changed',
+        payload: expect.objectContaining({ previousIsActive: true, isActive: false }),
+      }),
+    );
+  });
+
+  it('records model.updated and concurrency limit change events', async () => {
+    const row = fakeRow({ concurrencyLimit: 10 });
+    const updated = fakeRow({
+      concurrencyLimit: 4,
+      updatedAt: new Date('2026-05-16T00:00:00Z'),
+    });
+    repo.findModelById.mockResolvedValue(row);
+    repo.updateModel.mockResolvedValue(updated as ModelRow);
+    repo.findModelAccessibleToProject.mockResolvedValue(updated);
+
+    await service.updateProjectModel(WORKSPACE_ID, row.id, { concurrency: { limit: 4 } }, ACTOR);
+
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'model',
+        eventType: 'model.updated',
+        payload: expect.objectContaining({ changedFields: ['concurrencyLimit'] }),
+      }),
+    );
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'model',
+        eventType: 'model.concurrency_limit_changed',
+        payload: expect.objectContaining({ previousConcurrencyLimit: 10, concurrencyLimit: 4 }),
+      }),
+    );
+  });
+
+  it('records model.deleted when a local model is removed', async () => {
+    vi.useFakeTimers();
+    const row = fakeRow();
+    const deletedAt = new Date('2026-05-19T08:30:00.000Z');
+    vi.setSystemTime(deletedAt);
+    try {
+      repo.findModelById.mockResolvedValue(row);
+
+      await service.deleteProjectModel(WORKSPACE_ID, row.id, { force: false }, ACTOR);
+
+      expect(repo.softDeleteModel).toHaveBeenCalledWith(row.id);
+      expect(usageMetering.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dimension: 'model',
+          eventType: 'model.deleted',
+          projectId: WORKSPACE_ID,
+          occurredAt: deletedAt,
+          idempotencyKey: `model:${row.id}:model.deleted:${deletedAt.toISOString()}`,
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('records probe outcome on existing model probe failure', async () => {

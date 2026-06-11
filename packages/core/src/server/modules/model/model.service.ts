@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { deriveEffectiveConcurrency, type RateLimiter, type UsageSnapshot } from '@proofhound/limiter';
 import { testModelConnectivity, type ModelInvocationConfig } from '@proofhound/llm-client';
 import { createLogger } from '@proofhound/logger';
@@ -34,6 +34,7 @@ import { AccessControlService } from '../../common/contracts/access-control.serv
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../common/contracts/runtime-limits.provider';
+import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
 import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
@@ -75,6 +76,7 @@ export class ModelService {
     private readonly runtimeLimitsProvider: RuntimeLimitsProvider,
     private readonly workflowAuth: WorkflowAuthorizationHook,
     private readonly quotaPolicy: QuotaPolicyHook,
+    @Optional() private readonly usageMetering?: UsageMeteringHook,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -141,6 +143,7 @@ export class ModelService {
     const modelId = randomUUID();
     const insert = this.buildInsertRow(projectId, modelId, dto, actor.sub);
     const created = await this.createModelOrThrowNameConflict(insert);
+    await this.recordModelEvent('model.created', created, actor.sub, { actionSource: source });
 
     return this.getProjectModelDetail(projectId, created.id, actor, orgId);
   }
@@ -245,7 +248,8 @@ export class ModelService {
       throw new NotFoundException(`Model ${modelId} not found`);
     }
     const patch = this.buildUpdateRow(dto, existing);
-    await this.updateModelOrThrowNameConflict(modelId, patch);
+    const updated = await this.updateModelOrThrowNameConflict(modelId, patch);
+    await this.recordModelUpdateEvents(existing, updated, actor.sub, source, patch);
 
     return this.getProjectModelDetail(projectId, modelId, actor, orgId);
   }
@@ -266,6 +270,10 @@ export class ModelService {
     }
     await this.assertNotActivelyReferenced(modelId);
     await this.repo.softDeleteModel(modelId);
+    const deletedAt = new Date();
+    await this.recordModelEvent('model.deleted', { ...existing, updatedAt: deletedAt, deletedAt }, actor.sub, {
+      actionSource: source,
+    });
   }
 
   async duplicateProjectModel(
@@ -305,6 +313,10 @@ export class ModelService {
       createdBy: actor.sub,
     };
     const created = await this.createModelOrThrowNameConflict(insert);
+    await this.recordModelEvent('model.created', created, actor.sub, {
+      actionSource: source,
+      duplicatedFromModelId: sourceModelId,
+    });
 
     return this.getProjectModelDetail(projectId, created.id, actor, orgId);
   }
@@ -507,6 +519,77 @@ export class ModelService {
       }
       throw error;
     }
+  }
+
+  private async recordModelUpdateEvents(
+    previous: ModelRow,
+    updated: ModelRow,
+    actorId: string,
+    actionSource: ActionSource,
+    patch: Partial<ModelInsertRow>,
+  ): Promise<void> {
+    const changedFields = Object.keys(patch);
+    await this.recordModelEvent('model.updated', updated, actorId, {
+      actionSource,
+      changedFields,
+      previousConcurrencyLimit: previous.concurrencyLimit,
+      previousIsActive: previous.isActive,
+    });
+
+    if (patch.concurrencyLimit !== undefined && previous.concurrencyLimit !== updated.concurrencyLimit) {
+      await this.recordModelEvent('model.concurrency_limit_changed', updated, actorId, {
+        actionSource,
+        previousConcurrencyLimit: previous.concurrencyLimit,
+        concurrencyLimit: updated.concurrencyLimit,
+      });
+    }
+
+    if (patch.isActive !== undefined && previous.isActive !== updated.isActive) {
+      await this.recordModelEvent('model.activation_changed', updated, actorId, {
+        actionSource,
+        previousIsActive: previous.isActive,
+        isActive: updated.isActive,
+      });
+    }
+  }
+
+  private async recordModelEvent(
+    eventType:
+      | 'model.created'
+      | 'model.updated'
+      | 'model.deleted'
+      | 'model.concurrency_limit_changed'
+      | 'model.activation_changed',
+    row: ModelRow,
+    actorId: string,
+    payload: Record<string, unknown> = {},
+  ): Promise<void> {
+    if (!this.usageMetering) return;
+    await safeRecordUsageEvent(
+      this.usageMetering,
+      {
+        idempotencyKey: `model:${row.id}:${eventType}:${row.updatedAt.toISOString()}`,
+        dimension: 'model',
+        eventType,
+        projectId: row.projectId ?? LOCAL_PROJECT_CONTEXT.projectId,
+        actorId,
+        occurredAt: row.updatedAt,
+        source: 'server',
+        payload: {
+          modelId: row.id,
+          name: row.name,
+          providerType: row.providerType,
+          providerModelId: row.providerModelId,
+          status: this.deriveStatus(row.isActive),
+          rpmLimit: row.rpmLimit,
+          tpmLimit: row.tpmLimit,
+          concurrencyLimit: row.concurrencyLimit,
+          autoConcurrency: row.autoConcurrency,
+          ...payload,
+        },
+      },
+      this.logger,
+    );
   }
 
   private async probeAndRecord(

@@ -11,6 +11,7 @@ export * from './token.service';
 export * from './limiter-key.strategy';
 export * from './runtime-limits.provider';
 export * from './quota-policy.hook';
+export * from './usage-metering.hook';
 export * from './workflow-authorization.hook';
 export * from './http-actor.guard';
 export * from './local-project-context.resolver';

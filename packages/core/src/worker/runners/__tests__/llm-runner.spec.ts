@@ -11,6 +11,7 @@ import {
   LocalRuntimeLimitsProvider,
   RuntimeLimitsProvider,
 } from '../../../server/common/contracts/runtime-limits.provider';
+import { NoopUsageMeteringHook, type UsageMeteringHook } from '../../../server/common/contracts/usage-metering.hook';
 import { createModelSecretResolver } from '../model-secret';
 
 const invokeLLMMock = vi.hoisted(() => vi.fn());
@@ -100,6 +101,7 @@ describe('runLlmJob — webhook 入口归因透传', () => {
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
       quotaPolicy,
+      usageMetering: new NoopUsageMeteringHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
       runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
@@ -165,6 +167,7 @@ describe('runLlmJob — orgId 透传至限流 key 的 ProjectContext', () => {
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: spy,
       quotaPolicy: new LocalQuotaPolicyHook(),
+      usageMetering: new NoopUsageMeteringHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
       runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
@@ -186,6 +189,120 @@ describe('runLlmJob — orgId 透传至限流 key 的 ProjectContext', () => {
 
     expect(spy.seen?.orgId).toBe('00000000-0000-4000-8000-000000000777');
     expect(spy.seen?.projectId).toBe(projectId);
+  });
+});
+
+describe('runLlmJob — usage metering job lifecycle', () => {
+  it('records started and completed events without changing the runner result', async () => {
+    invokeLLMMock.mockClear();
+    invokeLLMMock.mockImplementation(async (_args, deps) => {
+      await deps.onLimiterAcquired?.({
+        key: 'model:test',
+        estimatedTokens: 42,
+        acquireResult: { effectiveConcurrency: 2, backoffFactor: 1, latencyEwmaMs: 3000 },
+      });
+      return {
+        content: '{"ok":true}',
+        parsed: { ok: true },
+        decisionOutput: null,
+        isCorrect: null,
+        judgmentStatus: null,
+        usage: { inputTokens: 3, outputTokens: 4 },
+        costEstimate: 0.0001,
+        durationMs: 12,
+      };
+    });
+    const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
+    const runLlmJob = createLlmRunner({
+      db: fakeDb(activeModel),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new LocalLimiterKeyStrategy(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
+      usageMetering,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
+    });
+
+    const result = await runLlmJob(
+      {
+        projectId: '22222222-2222-4222-8222-222222222222',
+        source: 'experiment',
+        sourceId: '33333333-3333-4333-8333-333333333333',
+        promptVersionId: '44444444-4444-4444-8444-444444444444',
+        modelId: activeModel.id,
+        runResultId: '11111111-1111-4111-8111-111111111111',
+        renderedPrompt: { prompt: 'hi' },
+      } as never,
+      { bullmqJobId: 'job-1', bullmqQueue: 'llm', attempt: 2 },
+    );
+
+    expect(result.runResultId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'job:llm:job-1:2:job.started',
+        eventType: 'job.started',
+        payload: expect.objectContaining({
+          status: 'started',
+          estimatedTokens: 42,
+          effectiveConcurrency: 2,
+        }),
+      }),
+    );
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'job:llm:job-1:2:job.completed',
+        eventType: 'job.completed',
+        payload: expect.objectContaining({
+          status: 'completed',
+          latencyMs: 12,
+          inputTokens: 3,
+          outputTokens: 4,
+        }),
+      }),
+    );
+  });
+
+  it('records failed events while preserving the original error', async () => {
+    invokeLLMMock.mockClear();
+    invokeLLMMock.mockRejectedValue(new Error('provider down'));
+    const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
+    const runLlmJob = createLlmRunner({
+      db: fakeDb(activeModel),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new LocalLimiterKeyStrategy(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
+      usageMetering,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
+    });
+
+    await expect(
+      runLlmJob(
+        {
+          projectId: '22222222-2222-4222-8222-222222222222',
+          source: 'experiment',
+          sourceId: '33333333-3333-4333-8333-333333333333',
+          promptVersionId: '44444444-4444-4444-8444-444444444444',
+          modelId: activeModel.id,
+          runResultId: '11111111-1111-4111-8111-111111111111',
+          renderedPrompt: { prompt: 'hi' },
+        } as never,
+        { bullmqJobId: 'job-1', bullmqQueue: 'llm', attempt: 1 },
+      ),
+    ).rejects.toThrow('provider down');
+
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'job:llm:job-1:1:job.attempt_failed',
+        eventType: 'job.attempt_failed',
+        payload: expect.objectContaining({
+          status: 'failed',
+          errorKind: 'Error',
+        }),
+      }),
+    );
   });
 });
 
@@ -231,6 +348,7 @@ describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', 
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
       quotaPolicy: new LocalQuotaPolicyHook(),
+      usageMetering: new NoopUsageMeteringHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
       runtimeLimitsProvider: new CapProvider(),
@@ -270,6 +388,7 @@ describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', 
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
       quotaPolicy: new LocalQuotaPolicyHook(),
+      usageMetering: new NoopUsageMeteringHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
       runtimeLimitsProvider: new CapProvider(),

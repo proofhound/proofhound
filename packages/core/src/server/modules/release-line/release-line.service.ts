@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { createLogger } from '@proofhound/logger';
 import type {
   ReleaseLineDto,
@@ -13,6 +13,7 @@ import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { isUniqueViolation } from '../../common/errors/db-error';
+import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
 import {
   ReleaseLineRepository,
   type ReleaseLineIdentity,
@@ -26,6 +27,7 @@ export class ReleaseLineService {
   constructor(
     private readonly repo: ReleaseLineRepository,
     private readonly accessControl: AccessControlService,
+    @Optional() private readonly usageMetering?: UsageMeteringHook,
   ) {}
 
   async list(projectId: string, actor: CurrentUserPayload): Promise<{ data: ReleaseLineDto[]; total: number }> {
@@ -68,6 +70,7 @@ export class ReleaseLineService {
     );
     if (!updated) throw new BadRequestException(`Release line ${releaseLineId} has no adjustable canary lane`);
     this.logger.info({ releaseLineId, trafficRatio: input.trafficRatio }, 'release_line_traffic_ratio_updated');
+    await this.recordLineMutationEvents(updated, actor.sub, 'traffic_ratio_updated');
     return updated;
   }
 
@@ -84,6 +87,7 @@ export class ReleaseLineService {
       { releaseLineId, laneType: input.laneType, modelId: input.modelId ?? null, runConfig: input.runConfig },
       'release_line_run_config_updated',
     );
+    await this.recordLineMutationEvents(updated, actor.sub, 'run_config_updated');
     return updated;
   }
 
@@ -251,10 +255,12 @@ export class ReleaseLineService {
     });
 
     try {
-      return await this.repo.record({
+      const line = await this.repo.record({
         ...snapshot,
         lineName: normalizeReleaseLineName(snapshot.lineName),
       });
+      await this.recordLineMutationEvents(line, snapshot.createdBy, 'mirror_recorded');
+      return line;
     } catch (error) {
       if (isReleaseLineNameUniqueViolation(error)) {
         throw new ConflictException('release_name_taken');
@@ -262,6 +268,95 @@ export class ReleaseLineService {
       throw error;
     }
   }
+
+  private async recordLineMutationEvents(
+    line: ReleaseLineDto,
+    actorId: string | null | undefined,
+    reason: string,
+  ): Promise<void> {
+    if (!this.usageMetering) return;
+
+    const latestEvent = line.latestEvent ?? line.activeCanaryEvent ?? line.currentProductionEvent ?? null;
+    const eventPayload = {
+      releaseLineId: line.id,
+      releaseLineName: line.name,
+      status: line.status,
+      reason,
+      latestEventId: latestEvent?.id ?? null,
+      latestEventLaneType: latestEvent?.laneType ?? null,
+      latestEventOperation: latestEvent?.operation ?? null,
+      latestEventStatus: latestEvent?.status ?? null,
+      currentProductionEventId: line.currentProductionEventId,
+      activeCanaryEventId: line.activeCanaryEventId,
+      updatedAt: line.updatedAt,
+    };
+
+    if (isSameInstant(line.createdAt, line.updatedAt)) {
+      await safeRecordUsageEvent(
+        this.usageMetering,
+        {
+          idempotencyKey: `release_line:${line.id}:created`,
+          dimension: 'release',
+          eventType: 'release_line.created',
+          projectId: line.projectId,
+          actorId: actorId ?? undefined,
+          occurredAt: new Date(line.createdAt),
+          source: 'server',
+          payload: eventPayload,
+        },
+        this.logger,
+      );
+    }
+
+    await safeRecordUsageEvent(
+      this.usageMetering,
+      {
+        idempotencyKey: `release_line:${line.id}:status_changed:${line.status}:${line.updatedAt}`,
+        dimension: 'release',
+        eventType: 'release_line.status_changed',
+        projectId: line.projectId,
+        actorId: actorId ?? undefined,
+        occurredAt: new Date(line.updatedAt),
+        source: 'server',
+        payload: eventPayload,
+      },
+      this.logger,
+    );
+
+    if (!latestEvent) return;
+    await safeRecordUsageEvent(
+      this.usageMetering,
+      {
+        idempotencyKey: `release_event:${latestEvent.id}:created`,
+        dimension: 'release',
+        eventType: 'release_event.created',
+        projectId: line.projectId,
+        actorId: actorId ?? undefined,
+        occurredAt: new Date(latestEvent.createdAt),
+        source: 'server',
+        payload: {
+          ...eventPayload,
+          releaseLineEventId: latestEvent.id,
+          laneType: latestEvent.laneType,
+          operation: latestEvent.operation,
+          eventStatus: latestEvent.status,
+          terminalReason: latestEvent.terminalReason,
+          sourceEventId: latestEvent.sourceEventId,
+          supersedesEventId: latestEvent.supersedesEventId,
+          rollbackTargetEventId: latestEvent.rollbackTargetEventId,
+          promptVersionId: latestEvent.promptVersionId,
+          modelId: latestEvent.modelId,
+          inputConnectorId: latestEvent.inputConnectorId,
+          outputConnectorIds: latestEvent.outputConnectorIds,
+        },
+      },
+      this.logger,
+    );
+  }
+}
+
+function isSameInstant(left: string, right: string): boolean {
+  return new Date(left).getTime() === new Date(right).getTime();
 }
 
 export interface LegacyProductionEventMirrorInput {
