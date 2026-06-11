@@ -30,6 +30,11 @@ describe('DrizzleRunResultWriter', () => {
     });
 
     expect(query).not.toBeNull();
+    expect(query!.sql).toContain('WITH reserved_run_result AS');
+    expect(query!.sql).toContain('INSERT INTO ph_runs.run_result_ids');
+    expect(query!.sql).toContain('ON CONFLICT (id) DO NOTHING');
+    expect(query!.sql).toContain('reserved_run_result.created_at');
+    expect(query!.sql).not.toContain('WHERE NOT EXISTS');
     expect(query!.sql).toContain('id, project_id, source');
     expect(query!.params).toContain('22222222-2222-4222-8222-222222222222');
     expect(query!.sql).not.toMatch(/,\s*,/u);

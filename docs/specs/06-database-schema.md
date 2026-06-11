@@ -455,6 +455,11 @@ CREATE UNIQUE INDEX idx_optimization_project_name_active
 ### 5.3 `ph_runs.run_results`
 
 ```sql
+CREATE TABLE ph_runs.run_result_ids (
+  id                  UUID PRIMARY KEY,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE ph_runs.run_results (
   id                  UUID NOT NULL DEFAULT gen_random_uuid(),
   project_id          UUID NOT NULL REFERENCES ph_core.projects(id) ON DELETE CASCADE,
@@ -493,10 +498,17 @@ CREATE TABLE ph_runs.run_results (
 
 Run results are a fact table; business result fields are not updated after writing. Manual annotation, locking, and submission status are all written to `ph_runs.annotations`.
 
+`run_result_ids` is the unpartitioned idempotency registry for `run_results`:
+
+- Writers first reserve `run_result_ids.id` with `INSERT ... ON CONFLICT DO NOTHING`.
+- Only the writer that successfully reserves the id inserts the immutable `run_results` fact row.
+- `run_result_ids.created_at` is copied into `run_results.created_at`, giving the partitioned table a stable partition key for the reserved run result id.
+- This registry is required because PostgreSQL cannot enforce `UNIQUE(id)` on a range-partitioned table unless the unique key includes the partition key.
+
 `run_results` is physically partitioned by `created_at`:
 
-- First version uses monthly range partitions such as `run_results_2026_06` for `2026-06-01 <= created_at < 2026-07-01`.
-- The primary key is `(id, created_at)` because PostgreSQL unique constraints on partitioned tables must include the partition key.
+- First version uses UTC monthly range partitions such as `run_results_2026_06` for `2026-06-01 00:00:00+00 <= created_at < 2026-07-01 00:00:00+00`.
+- The partitioned table primary key is `(id, created_at)` because PostgreSQL unique constraints on partitioned tables must include the partition key; global id uniqueness is enforced by `run_result_ids.id`.
 - A `run_results_default` partition catches old or future rows if an operational migration has not created the exact month partition yet. Normal maintenance should create future month partitions before traffic reaches them; if a month partition becomes too large to maintain, switch the operational cadence to weekly partitions.
 - Partitioning improves historical query pruning, retention, archival, and `DROP` / `DETACH PARTITION` maintenance. It does not make online storage quota checks safe; write paths must not compute storage by scanning `run_results` or other detail tables.
 

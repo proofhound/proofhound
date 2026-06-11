@@ -8,8 +8,8 @@ import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 
-// ph_runs.run_results is monthly-partitioned by created_at, so a UNIQUE constraint cannot be applied to a single id column;
-// use INSERT ... SELECT ... WHERE NOT EXISTS for idempotency (SPEC 25 §11.2):
+// ph_runs.run_results is monthly-partitioned by created_at, so UNIQUE(id) cannot live on that table.
+// Reserve id in unpartitioned ph_runs.run_result_ids first, then insert into the partitioned fact table:
 //  - DBOS workflow retry / replay never writes a duplicate row for the same runResultId
 //  - Behaviorally equivalent to apps/worker/src/runners/run-result-writer.ts (the dual implementation will be reconciled when extracted into a package)
 @Injectable()
@@ -49,17 +49,23 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
       source: 'run_result',
     });
 
-    const insertResult = await this.db.execute<{ id: string }>(sql`
+    const insertResult = await this.db.execute<{ id: string; created_at?: Date | string }>(sql`
+      WITH reserved_run_result AS (
+        INSERT INTO ph_runs.run_result_ids (id)
+        VALUES (${record.id}::uuid)
+        ON CONFLICT (id) DO NOTHING
+        RETURNING id, created_at
+      )
       INSERT INTO ph_runs.run_results (
         id, project_id, source, source_id, release_variant_id, prompt_version_id, model_id,
         sample_id, external_id, rendered_prompt, input_variables,
         raw_response, parsed_output, decision_output, expected_output, is_correct, judgment_status,
         status, error_class, error_message,
         latency_ms, input_tokens, output_tokens, cost_estimate, attempt,
-        dbos_workflow_id, bullmq_job_id, round_index
+        dbos_workflow_id, bullmq_job_id, round_index, created_at
       )
       SELECT
-        ${record.id}::uuid, ${record.projectId}::uuid, ${record.source},
+        reserved_run_result.id, ${record.projectId}::uuid, ${record.source},
         ${record.sourceId}::uuid, ${releaseVariantId}::uuid, ${record.promptVersionId}::uuid, ${record.modelId}::uuid,
         ${sampleId}::uuid, ${externalId},
         ${JSON.stringify(record.renderedPrompt)}::jsonb,
@@ -70,15 +76,15 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
         ${record.status}, ${errorClass}, ${errorMessage},
         ${latencyMs}, ${inputTokens}, ${outputTokens},
         ${costEstimate}, ${attempt},
-        ${dbosWorkflowId}, ${bullmqJobId}, ${roundIndex}
-      WHERE NOT EXISTS (
-        SELECT 1 FROM ph_runs.run_results WHERE id = ${record.id}::uuid
-      )
-      RETURNING id
+        ${dbosWorkflowId}, ${bullmqJobId}, ${roundIndex},
+        reserved_run_result.created_at
+      FROM reserved_run_result
+      RETURNING id, created_at
     `);
 
-    if (unwrapRows<{ id: string }>(insertResult).length > 0 && this.usageMetering) {
-      const occurredAt = new Date();
+    const insertedRows = unwrapRows<{ id: string; created_at?: Date | string }>(insertResult);
+    if (insertedRows.length > 0 && this.usageMetering) {
+      const occurredAt = coerceDate(insertedRows[0]?.created_at);
       await safeRecordUsageEvent(
         this.usageMetering,
         {
@@ -131,4 +137,10 @@ function unwrapRows<T = unknown>(result: unknown): T[] {
     return ((result as { rows?: T[] }).rows ?? []) as T[];
   }
   return [];
+}
+
+function coerceDate(value: Date | string | undefined): Date {
+  if (value instanceof Date) return value;
+  if (value) return new Date(value);
+  return new Date();
 }

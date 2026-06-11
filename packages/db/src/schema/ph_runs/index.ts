@@ -25,6 +25,11 @@ import { optimizations } from './experiments';
 export { phRuns } from './_schema';
 export { experiments, optimizations } from './experiments';
 
+export const runResultIds = phRuns.table('run_result_ids', {
+  id: uuid('id').primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const optimizationRoundSteps = phRuns.table(
   'optimization_round_steps',
   {

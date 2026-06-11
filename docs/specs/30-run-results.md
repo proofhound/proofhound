@@ -6,6 +6,8 @@ Run results are the fact table for all LLM calls and the entry point for trouble
 
 Run results are immutable once written; manual annotations are written to `ph_runs.annotations`.
 
+`runResultId` is stable across DBOS / BullMQ retries. Writers reserve the id in `ph_runs.run_result_ids` before writing the partitioned `ph_runs.run_results` row; a retry for an already reserved id does not create or overwrite a run result.
+
 All run-result-based "failure count / failed samples / failure rate" metrics use one and the same definition:
 
 - An LLM call failure causes `run_results.status <> 'success'`.

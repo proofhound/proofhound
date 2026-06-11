@@ -55,20 +55,22 @@ ALTER TABLE "ph_runs"."run_results" ADD CONSTRAINT "run_results_release_variant_
 ALTER TABLE "ph_runs"."run_results" ADD CONSTRAINT "run_results_webhook_token_id_tokens_id_fk" FOREIGN KEY ("webhook_token_id") REFERENCES "ph_core"."tokens"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 DO $$
 DECLARE
-	partition_month date;
-	start_month date;
-	end_month date;
+	partition_month timestamp with time zone;
+	start_month timestamp with time zone;
+	end_month timestamp with time zone;
 	partition_name text;
 BEGIN
-	SELECT date_trunc('month', COALESCE(min("created_at"), now()))::date
+	PERFORM set_config('TimeZone', 'UTC', true);
+
+	SELECT date_trunc('month', COALESCE(min("created_at"), now()))
 	INTO start_month
 	FROM "ph_runs"."run_results_legacy";
 
-	IF start_month > date_trunc('month', now())::date THEN
-		start_month := date_trunc('month', now())::date;
+	IF start_month > date_trunc('month', now()) THEN
+		start_month := date_trunc('month', now());
 	END IF;
 
-	end_month := (date_trunc('month', now()) + interval '12 months')::date;
+	end_month := date_trunc('month', now()) + interval '12 months';
 	partition_month := start_month;
 
 	WHILE partition_month <= end_month LOOP
@@ -81,10 +83,10 @@ BEGIN
 			'ph_runs',
 			'run_results',
 			partition_month,
-			(partition_month + interval '1 month')::date
+			partition_month + interval '1 month'
 		);
 
-		partition_month := (partition_month + interval '1 month')::date;
+		partition_month := partition_month + interval '1 month';
 	END LOOP;
 END $$;--> statement-breakpoint
 CREATE TABLE "ph_runs"."run_results_default" PARTITION OF "ph_runs"."run_results" DEFAULT;--> statement-breakpoint
