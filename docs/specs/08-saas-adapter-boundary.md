@@ -545,11 +545,11 @@ Caller constraints:
 
 Emits immutable domain usage events when business facts happen. The hook is intentionally observation-only: OSS emits generic events with project / actor / source context, and the default implementation is no-op. It carries no organization, billing, plan, tenant, or hosted-edition semantics in OSS.
 
-| Item                 | OSS default                  | SaaS expectation                                                                                                         |
-| -------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Implementation class | `NoopUsageMeteringHook`      | e.g. `SaasUsageMeteringHook` bound in the SaaS `contracts` module                                                        |
-| Behavior             | Best-effort no-op            | Persist idempotent events, resolve project-to-org inside the SaaS repository, and mark usage read models dirty as needed |
-| Failure behavior     | Never blocks the caller path | Replacement implementations may throw, but OSS callers must wrap the hook so failures are logged and swallowed           |
+| Item                 | OSS default                  | SaaS expectation                                                                                                                                  |
+| -------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Implementation class | `NoopUsageMeteringHook`      | e.g. `SaasUsageMeteringHook` bound in the SaaS `contracts` module                                                                                 |
+| Behavior             | Best-effort no-op            | Persist idempotent events with bounded O(1) writes, resolve project-to-org inside the SaaS repository, and mark usage read models dirty as needed |
+| Failure behavior     | Never blocks the caller path | Replacement implementations may throw, but OSS callers must wrap the hook so failures are logged and swallowed                                    |
 
 Realized contract:
 
@@ -576,6 +576,11 @@ Caller constraints:
 
 - Events are emitted after the corresponding business fact has been accepted or written. The hook is not a transaction boundary in OSS; if a future event must commit atomically with a business write, add a real outbox in a later SPEC change.
 - Every event must include a stable `idempotencyKey` derived from the business fact, for example `run_result:<runResultId>:created`, `job:<queue>:<jobId>:<attempt>:<eventType>`, or `model:<modelId>:<eventType>:<updatedAt>`.
+- `UsageMeteringHook.record()` is called on request, worker, workflow, and release-runner hot paths. Replacement implementations must be bounded/O(1): append the idempotent event, optionally mark a coarse project/dimension dirty key, and return.
+- Replacement implementations must not synchronously aggregate `ph_runs.run_results`, storage/object detail rows, release detail tables, model read models, or other high-cardinality tables from `record()`. Dirty recompute, read-model refresh, and rollups must run asynchronously in batched workers.
+- A dirty key means "batch this project/dimension later"; it does not authorize immediate in-hook recompute. SaaS dirty processors should coalesce by project/dimension/window, use touched-project or time-window filters, and run full scans only in low-frequency reconciliation jobs.
+- For idempotent SaaS event stores, dirty marking should happen only when the event insert actually wins. Duplicate hook calls caused by retries must not create additional dirty churn.
+- High-volume events such as `run_result.created` carry enough payload (`status`, token counts, cost estimate, latency, source ids) for incremental rollups. Full detail-table scans are reserved for hourly/daily reconciliation over touched projects, bounded time windows, or shards.
 - Hook failures are best-effort only. Callers must use the safe wrapper around `UsageMeteringHook.record()` and log a warning without changing the original success / failure behavior.
 - OSS emits only `projectId` and optional flat `actorId`; SaaS resolves any organization or billing ownership inside the replacement hook by looking up the project. OSS event payloads must not include organization, plan, billing, tenant, quota tier, or control-plane fields.
 - Current emitters cover worker job lifecycle (`job.started` / `job.completed` / `job.failed` / `job.rate_limited`), immutable run-result creation (`run_result.created`), release line / event / run attachment facts, dataset and import dirty facts, and model configuration changes. These events are generic domain observations; the OSS UI does not expose a usage ledger or billing page.

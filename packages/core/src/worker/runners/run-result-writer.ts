@@ -47,7 +47,7 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
       source: 'run_result',
     });
 
-    await this.db.execute(sql`
+    const insertedRows = await this.db.execute<{ id: string }>(sql`
       INSERT INTO ph_runs.run_results (
         id, project_id, source, source_id, release_variant_id, prompt_version_id, model_id,
         sample_id, external_id, rendered_prompt, input_variables,
@@ -72,9 +72,10 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
       WHERE NOT EXISTS (
         SELECT 1 FROM ph_runs.run_results WHERE id = ${record.id}::uuid
       )
+      RETURNING id
     `);
 
-    if (this.usageMetering) {
+    if (insertedRows.length > 0 && this.usageMetering) {
       const occurredAt = new Date();
       await safeRecordUsageEvent(
         this.usageMetering,

@@ -1,11 +1,4 @@
-export type UsageMeteringDimension =
-  | 'project'
-  | 'job'
-  | 'run_result'
-  | 'release'
-  | 'storage'
-  | 'concurrency'
-  | 'model';
+export type UsageMeteringDimension = 'project' | 'job' | 'run_result' | 'release' | 'storage' | 'concurrency' | 'model';
 
 export type UsageMeteringSource = 'server' | 'worker' | 'workflow' | 'release-runner';
 
@@ -20,6 +13,15 @@ export interface UsageMeteringEvent {
   payload?: Record<string, unknown>;
 }
 
+/**
+ * Observation-only usage event hook.
+ *
+ * Implementations run on request, worker, and release-runner hot paths, so
+ * record() must stay bounded/O(1): append an idempotent event and optionally
+ * mark a coarse dirty key. It must not synchronously aggregate run_results,
+ * storage, release, or other detail tables, nor rebuild usage read models.
+ * Expensive recompute and rollups belong in async batched reconcile jobs.
+ */
 export abstract class UsageMeteringHook {
   abstract record(event: UsageMeteringEvent): Promise<void>;
 }
