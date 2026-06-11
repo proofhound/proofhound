@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/api-client",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Frontend C1 layer: HTTP client, split by resource",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

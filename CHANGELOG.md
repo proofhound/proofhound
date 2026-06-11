@@ -1,5 +1,13 @@
 # proofhound
 
+## [0.1.8](https://github.com/proofhound/proofhound/compare/v0.1.7...v0.1.8) (2026-06-11)
+
+
+### Features
+
+* **db:** partition run results by month ([#38](https://github.com/proofhound/proofhound/issues/38)) ([6407656](https://github.com/proofhound/proofhound/commit/640765604641aada80a1e4b51a6376feab06f55f))
+* **metering:** add OSS usage metering hooks ([#37](https://github.com/proofhound/proofhound/issues/37)) ([b5a919d](https://github.com/proofhound/proofhound/commit/b5a919d1d7992bbd77e296b6ff9d1770da97bd72))
+
 ## [0.1.7](https://github.com/proofhound/proofhound/compare/v0.1.6...v0.1.7) (2026-06-10)
 
 
