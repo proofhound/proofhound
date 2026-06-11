@@ -19,6 +19,7 @@ import type Redis from 'ioredis';
 import { LimiterKeyStrategy } from '../../server/common/contracts/limiter-key.strategy';
 import { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../server/common/contracts/runtime-limits.provider';
+import { safeRecordUsageEvent, UsageMeteringHook } from '../../server/common/contracts/usage-metering.hook';
 import { DATABASE_CLIENT } from '../../shared/database/database.constants';
 import { MODEL_SECRET_RESOLVER, modelSecretResolverFactory } from '../infrastructure/llm/model-secret.provider';
 import { REDIS_CLIENT, REDIS_LIMITER } from '../../shared/redis/redis.constants';
@@ -44,6 +45,7 @@ export class LlmConsumer extends WorkerHost {
     limiterKeyStrategy: LimiterKeyStrategy,
     quotaPolicy: QuotaPolicyHook,
     runtimeLimitsProvider: RuntimeLimitsProvider,
+    private readonly usageMetering: UsageMeteringHook,
   ) {
     super();
     this.runLlmJob = createLlmRunner({
@@ -52,10 +54,11 @@ export class LlmConsumer extends WorkerHost {
       limiterKeyStrategy,
       quotaPolicy,
       runtimeLimitsProvider,
+      usageMetering,
       logger: this.logger,
       modelSecretResolver,
     });
-    this.runResultWriter = new DrizzleRunResultWriter(db, quotaPolicy);
+    this.runResultWriter = new DrizzleRunResultWriter(db, quotaPolicy, usageMetering);
   }
 
   async process(job: Job<unknown>, token?: string): Promise<LlmRunnerResult> {
@@ -84,6 +87,12 @@ export class LlmConsumer extends WorkerHost {
       if (error instanceof RateLimitExceededError) {
         // Rate-limit hit: defer to the next time window, do NOT consume an attempt — SPEC 03 §4.2's attempts=5 is reserved for real errors
         const delayMs = Math.max(error.retryAfterMs, 1_000);
+        await this.recordJobEvent(payload, job, 'job.rate_limited', {
+          status: 'rate_limited',
+          errorKind: error.reason,
+          retryAfterMs: error.retryAfterMs,
+          delayMs,
+        });
         this.logger.info(
           {
             bullmqJobId: String(job.id),
@@ -158,6 +167,11 @@ export class LlmConsumer extends WorkerHost {
         },
         'llm_job_final_error_persisted',
       );
+      await this.recordJobEvent(payload, job, 'job.failed', {
+        status: 'failed',
+        runResultId,
+        errorKind: errorClass,
+      });
     } catch (writeError) {
       this.logger.error(
         {
@@ -241,6 +255,36 @@ export class LlmConsumer extends WorkerHost {
     if (ttl > 0) return ttl;
     if (ttl === -2) return 0;
     return remainingWebhookAsyncCallTtlSeconds(call.expiresAt);
+  }
+
+  private async recordJobEvent(
+    payload: LlmJobPayload,
+    job: Job<unknown>,
+    eventType: string,
+    eventPayload: Record<string, unknown>,
+  ): Promise<void> {
+    const attempt = (job.attemptsMade ?? 0) + (eventType === 'job.failed' ? 0 : 1);
+    await safeRecordUsageEvent(
+      this.usageMetering,
+      {
+        idempotencyKey: `job:llm:${String(job.id)}:${attempt}:${eventType}`,
+        dimension: 'job',
+        eventType,
+        projectId: payload.projectId,
+        occurredAt: new Date(),
+        source: 'worker',
+        payload: {
+          queue: 'llm',
+          jobId: String(job.id),
+          attempt,
+          runResultId: payload.runResultId ?? null,
+          modelId: payload.modelId,
+          source: payload.source,
+          ...eventPayload,
+        },
+      },
+      this.logger,
+    );
   }
 }
 

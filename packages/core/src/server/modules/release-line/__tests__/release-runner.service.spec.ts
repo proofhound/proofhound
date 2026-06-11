@@ -3,6 +3,7 @@ import type { BullmqService } from '../../../infrastructure/orchestration/bullmq
 import type { RedisMutexService } from '../../../../shared/redis/redis-mutex.service';
 import type { ConnectorDriverFactory } from '../../connector/connector.driver-factory';
 import type { ProjectContextResolver } from '../../../common/contracts/project-context.resolver';
+import type { UsageMeteringHook } from '../../../common/contracts/usage-metering.hook';
 import { computeReleaseRunResultId, passesTrafficRatio } from '../../canary-release/canary-runtime';
 import {
   type ReleaseRunnerLaneRow,
@@ -124,6 +125,25 @@ function projectResolverMock() {
       orgId,
       source: 'local',
     }),
+  };
+}
+
+function completedRunResult() {
+  return {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000099',
+    projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    createdAt: new Date('2026-05-21T10:00:03.000Z'),
+    externalId: 'sample-1',
+    status: 'success',
+    rawResponse: '{"ok":true}',
+    parsedOutput: { ok: true },
+    decisionOutput: 'allow',
+    errorClass: null,
+    errorMessage: null,
+    latencyMs: 120,
+    inputTokens: 10,
+    outputTokens: 5,
+    costEstimate: 0.001,
   };
 }
 
@@ -310,6 +330,33 @@ describe('ReleaseRunnerService', () => {
       2,
       expect.objectContaining({ sourceId: expectedEventId, externalId: 'same-business-id' }),
       computeReleaseRunResultId(expectedEventId, 'orders:0:43'),
+    );
+  });
+
+  it('records release_run.attached when completed run results are collected', async () => {
+    const row = line({ inputConnectorType: 'webhook' });
+    const repo = repoMock(row);
+    repo.attachCompletedRunResults.mockResolvedValue([completedRunResult()]);
+    const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
+    const service = new ReleaseRunnerService(
+      repo as unknown as ReleaseRunnerRepository,
+      driverFactoryMock() as unknown as ConnectorDriverFactory,
+      { enqueueLlmJob: vi.fn() } as unknown as BullmqService,
+      mutexMock().mutex as unknown as RedisMutexService,
+      projectResolverMock() as unknown as ProjectContextResolver,
+      usageMetering,
+    );
+
+    await service.scanOnce();
+
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'release',
+        eventType: 'release_run.attached',
+        idempotencyKey: `release_run:${productionEventId}:aaaaaaaa-aaaa-4aaa-8aaa-000000000099:attached`,
+        projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        source: 'release-runner',
+      }),
     );
   });
 });

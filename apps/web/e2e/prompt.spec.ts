@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { ResourceLedger, seedDataset, seedExperiment, seedModel, seedPromptVersion } from './support/api';
+import { ResourceLedger, seedDataset, seedExperiment, seedModel, seedPrompt, seedPromptVersion } from './support/api';
 
 test('creates a prompt via the UI, then a referenced version freezes and is read-only', async ({ page, request }) => {
   const ledger = new ResourceLedger(request);
@@ -51,6 +51,51 @@ test('creates a prompt via the UI, then a referenced version freezes and is read
     await expect(page.getByTestId('prompt-version-save')).toHaveCount(0);
   } finally {
     // Reverse-dependency teardown: experiment -> model -> dataset -> prompt.
+    await ledger.cleanup();
+  }
+});
+
+test('keeps prompt metrics loading overlay scoped to the metrics panel', async ({ page, request }) => {
+  const ledger = new ResourceLedger(request);
+  const tag = `e2e-prompt-loader-${Date.now()}`;
+  try {
+    const promptId = await seedPrompt(request, `${tag}-prompt`);
+    ledger.track('prompt', `/prompts/${promptId}`);
+
+    let metricsRequestSeen = false;
+    await page.route(`**/prompts/${promptId}/metrics`, async (route) => {
+      metricsRequestSeen = true;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          promptId,
+          versions: [],
+          totals: {
+            runCount: 0,
+            successCount: 0,
+            errorCount: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            totalCostEstimate: 0,
+          },
+        }),
+      });
+    });
+
+    await page.goto(`/prompts/${promptId}?tab=metrics`);
+
+    const metricsTab = page.getByTestId('prompt-metrics-tab');
+    await expect(metricsTab).toHaveAttribute('aria-busy', 'true');
+    const overlay = page.getByTestId('platform-loader').locator('..');
+    await expect(overlay).toHaveClass(/absolute/);
+    await expect(overlay).toHaveClass(/bg-background\/55/);
+    await expect(overlay).not.toHaveClass(/fixed/);
+    expect(metricsRequestSeen).toBe(true);
+
+    await expect(page.getByText('Total runs')).toBeVisible();
+  } finally {
     await ledger.cleanup();
   }
 });

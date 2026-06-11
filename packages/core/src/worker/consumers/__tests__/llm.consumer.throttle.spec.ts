@@ -5,6 +5,7 @@ import { LlmConsumer } from '../llm.consumer';
 import { LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
 import { LocalQuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
 import { LocalRuntimeLimitsProvider } from '../../../server/common/contracts/runtime-limits.provider';
+import { NoopUsageMeteringHook, type UsageMeteringHook } from '../../../server/common/contracts/usage-metering.hook';
 import * as llmRunnerModule from '../../runners/llm-runner';
 import * as runResultWriterModule from '../../runners/run-result-writer';
 
@@ -41,6 +42,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       throw new RateLimitExceededError('rpm', 1500);
     });
     vi.spyOn(llmRunnerModule, 'createLlmRunner').mockReturnValue(runMock);
+    const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
 
     const consumer = new LlmConsumer(
       {} as never,
@@ -50,6 +52,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       new LocalLimiterKeyStrategy(),
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
+      usageMetering,
     );
     const job = buildJob();
 
@@ -63,6 +66,22 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
     expect(typeof whenMs).toBe('number');
     expect(whenMs).toBeGreaterThan(Date.now());
     expect(token).toBe('tok-1');
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'job:llm:job-1:1:job.rate_limited',
+        dimension: 'job',
+        eventType: 'job.rate_limited',
+        projectId: validUuid('01111'),
+        source: 'worker',
+        payload: expect.objectContaining({
+          queue: 'llm',
+          modelId: validUuid('04444'),
+          status: 'rate_limited',
+          errorKind: 'rpm',
+          retryAfterMs: 1500,
+        }),
+      }),
+    );
   });
 
   it('uses a 1s floor when retryAfterMs is smaller', async () => {
@@ -78,6 +97,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       new LocalLimiterKeyStrategy(),
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
+      new NoopUsageMeteringHook(),
     );
     const job = buildJob();
     const before = Date.now();
@@ -101,6 +121,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       new LocalLimiterKeyStrategy(),
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
+      new NoopUsageMeteringHook(),
     );
     const job = buildJob();
 
@@ -125,6 +146,7 @@ describe('LlmConsumer.onFailed — final-error run_result write on attempts exha
       new LocalLimiterKeyStrategy(),
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
+      new NoopUsageMeteringHook(),
     );
 
     const job = {
@@ -174,6 +196,7 @@ describe('LlmConsumer.onFailed — final-error run_result write on attempts exha
       new LocalLimiterKeyStrategy(),
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
+      new NoopUsageMeteringHook(),
     );
 
     const job = {

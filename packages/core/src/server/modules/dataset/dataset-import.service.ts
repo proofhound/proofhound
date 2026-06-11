@@ -143,6 +143,13 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
         hasImages,
       });
       const dataset = await this.datasetService.getDataset(projectId, datasetId, actor);
+      await this.datasetService.recordDatasetImportCompleted({
+        projectId,
+        datasetId,
+        importId,
+        actorId: actor.sub,
+        sampleCount,
+      });
       this.logger.info({ importId, datasetId, sampleCount }, 'dataset_import_completed');
       return { dataset, sampleCount };
     } catch (error) {

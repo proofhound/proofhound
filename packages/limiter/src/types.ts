@@ -41,7 +41,9 @@ export interface UsageSnapshot {
   rpmUsed: number;
   tpmUsed: number;
   concurrencyInUse: number;
+  concurrencyPeakInMinute: number;
   windowMs: number;
+  sampledAt: string;
   windowEndsAt: string;
   // Auto-concurrency observability (present once the model has accumulated autostate).
   backoffFactor?: number;

@@ -59,16 +59,21 @@ export function PlatformLoadingScreen({ delayReveal = false }: PlatformLoadingSc
   );
 }
 
+type PlatformLoaderOverlayPlacement = 'container' | 'viewport';
+
 interface PlatformLoaderOverlayProps {
   className?: string;
+  placement?: PlatformLoaderOverlayPlacement;
   size?: PlatformLoaderSize;
 }
 
-export function PlatformLoaderOverlay({ className, size = 'md' }: PlatformLoaderOverlayProps) {
+export function PlatformLoaderOverlay({ className, placement = 'viewport', size = 'md' }: PlatformLoaderOverlayProps) {
   return (
     <div
       className={cn(
-        'absolute inset-0 z-10 flex items-center justify-center rounded-[inherit] bg-background/55 backdrop-blur-[1px]',
+        placement === 'viewport'
+          ? 'pointer-events-none fixed inset-0 z-40 flex items-center justify-center px-5'
+          : 'absolute inset-0 z-10 flex items-center justify-center rounded-[inherit] bg-background/55 backdrop-blur-[1px]',
         className,
       )}
     >

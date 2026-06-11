@@ -11,6 +11,7 @@ import {
   LocalRuntimeLimitsProvider,
   RuntimeLimitsProvider,
 } from '../../../server/common/contracts/runtime-limits.provider';
+import { NoopUsageMeteringHook, type UsageMeteringHook } from '../../../server/common/contracts/usage-metering.hook';
 import { createModelSecretResolver } from '../model-secret';
 
 const testModelConnectivityMock = vi.hoisted(() => vi.fn());
@@ -65,11 +66,15 @@ describe('runProbeJob — orgId 透传至限流 key 的 ProjectContext', () => {
       limiterKeyStrategy: spy,
       quotaPolicy,
       runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
+      usageMetering: new NoopUsageMeteringHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
     });
 
-    await runProbeJob({ modelId: activeModel.id, projectId, orgId: '00000000-0000-4000-8000-000000000777' });
+    await runProbeJob(
+      { modelId: activeModel.id, projectId, orgId: '00000000-0000-4000-8000-000000000777' },
+      { bullmqJobId: 'probe-1', bullmqQueue: 'probe', attempt: 1 },
+    );
 
     expect(spy.seen?.orgId).toBe('00000000-0000-4000-8000-000000000777');
     expect(spy.seen?.projectId).toBe(projectId);
@@ -106,11 +111,12 @@ describe('runProbeJob — orgId 透传至限流 key 的 ProjectContext', () => {
       limiterKeyStrategy: spy,
       quotaPolicy: new LocalQuotaPolicyHook(),
       runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
+      usageMetering: new NoopUsageMeteringHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
     });
 
-    await runProbeJob({ modelId: activeModel.id });
+    await runProbeJob({ modelId: activeModel.id }, { bullmqJobId: 'probe-1', bullmqQueue: 'probe', attempt: 1 });
 
     expect(spy.seen?.projectId).toBe(LOCAL_PROJECT_ID);
     expect(spy.seen?.orgId).toBeUndefined();
@@ -144,15 +150,19 @@ describe('runProbeJob — RuntimeLimitsProvider 把 plan cap 并入有效限制'
       })(),
       quotaPolicy: new LocalQuotaPolicyHook(),
       runtimeLimitsProvider: new CapProvider(),
+      usageMetering: new NoopUsageMeteringHook(),
       logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
       modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
     });
 
-    await runProbeJob({
-      modelId: activeModel.id,
-      projectId: '22222222-2222-4222-8222-222222222222',
-      orgId: '33333333-3333-4333-8333-333333333333',
-    });
+    await runProbeJob(
+      {
+        modelId: activeModel.id,
+        projectId: '22222222-2222-4222-8222-222222222222',
+        orgId: '33333333-3333-4333-8333-333333333333',
+      },
+      { bullmqJobId: 'probe-1', bullmqQueue: 'probe', attempt: 1 },
+    );
 
     expect(testModelConnectivityMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -163,6 +173,97 @@ describe('runProbeJob — RuntimeLimitsProvider 把 plan cap 并入有效限制'
         }),
       }),
       expect.any(Object),
+    );
+  });
+});
+
+describe('runProbeJob — usage metering job lifecycle', () => {
+  it('records started and completed events', async () => {
+    testModelConnectivityMock.mockClear();
+    testModelConnectivityMock.mockImplementation(async (_args, deps) => {
+      await deps.onLimiterAcquired?.({ key: 'model:test', estimatedTokens: 8 });
+      return {
+        ok: true,
+        modelId: activeModel.id,
+        providerType: 'openai',
+        providerModelId: 'gpt-test',
+        endpoint: activeModel.endpoint,
+        durationMs: 5,
+        checkedAt: '2026-05-21T00:00:00.000Z',
+      };
+    });
+    const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
+    const runProbeJob = createProbeRunner({
+      db: fakeDb(activeModel),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new (class extends LimiterKeyStrategy {
+        buildModelKey(): string {
+          return 'model:test';
+        }
+      })(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
+      usageMetering,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+    });
+
+    await runProbeJob(
+      { modelId: activeModel.id, projectId: '22222222-2222-4222-8222-222222222222' },
+      { bullmqJobId: 'probe-job-1', bullmqQueue: 'probe', attempt: 1 },
+    );
+
+    expect(testModelConnectivityMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ rethrowRateLimit: true }),
+    );
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'job:probe:probe-job-1:1:job.started',
+        eventType: 'job.started',
+        payload: expect.objectContaining({ status: 'started', estimatedTokens: 8 }),
+      }),
+    );
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'job:probe:probe-job-1:1:job.completed',
+        eventType: 'job.completed',
+        payload: expect.objectContaining({ status: 'completed', latencyMs: 5 }),
+      }),
+    );
+  });
+
+  it('records failed events and rethrows unexpected errors', async () => {
+    testModelConnectivityMock.mockRejectedValue(new Error('probe crashed'));
+    const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
+    const runProbeJob = createProbeRunner({
+      db: fakeDb(activeModel),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new (class extends LimiterKeyStrategy {
+        buildModelKey(): string {
+          return 'model:test';
+        }
+      })(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
+      usageMetering,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+    });
+
+    await expect(
+      runProbeJob(
+        { modelId: activeModel.id, projectId: '22222222-2222-4222-8222-222222222222' },
+        { bullmqJobId: 'probe-job-1', bullmqQueue: 'probe', attempt: 1 },
+      ),
+    ).rejects.toThrow('probe crashed');
+
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'job:probe:probe-job-1:1:job.failed',
+        eventType: 'job.failed',
+        payload: expect.objectContaining({ status: 'failed', errorKind: 'Error' }),
+      }),
     );
   });
 });

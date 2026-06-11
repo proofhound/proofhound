@@ -151,6 +151,7 @@ local tpm_key = KEYS[2]
 local tpm_total_key = KEYS[3]
 local concurrency_key = KEYS[4]
 local autostate_key = KEYS[5]
+local concurrency_peak_base_key = KEYS[6]
 
 local rpm_limit = tonumber(ARGV[1])
 local tpm_limit = tonumber(ARGV[2])
@@ -227,8 +228,17 @@ else
   redis.call('DEL', tpm_total_key)
 end
 
-redis.call('INCR', concurrency_key)
+local concurrency_after = tonumber(redis.call('INCR', concurrency_key) or '0')
 redis.call('PEXPIRE', concurrency_key, concurrency_ttl_ms)
+
+local minute_epoch_ms = math.floor(now_ms / 60000) * 60000
+local concurrency_peak_key = concurrency_peak_base_key .. ':' .. minute_epoch_ms
+local concurrency_peak = tonumber(redis.call('GET', concurrency_peak_key) or '0')
+if concurrency_after > concurrency_peak then
+  redis.call('SET', concurrency_peak_key, concurrency_after, 'PX', ttl_ms)
+else
+  redis.call('PEXPIRE', concurrency_peak_key, ttl_ms)
+end
 
 if auto_concurrency == 1 then
   redis.call('PEXPIRE', autostate_key, autostate_ttl_ms)
@@ -289,6 +299,8 @@ local cutoff_ms = now_ms - window_ms
 local rpm = prune_rpm(KEYS[1], cutoff_ms)
 local tpm = prune_tpm(KEYS[2], KEYS[3], cutoff_ms, ttl_ms)
 local concurrency = tonumber(redis.call('GET', KEYS[4]) or '0')
+local minute_epoch_ms = math.floor(now_ms / 60000) * 60000
+local concurrency_peak = tonumber(redis.call('GET', KEYS[6] .. ':' .. minute_epoch_ms) or '0')
 
 local vals = redis.call('HMGET', KEYS[5], 'lat', 'tok', 'bf')
 local lat = tonumber(vals[1])
@@ -301,7 +313,7 @@ if tok ~= nil then tok_out = math.floor(tok + 0.5) end
 local bf_out = -1
 if bf ~= nil then bf_out = math.floor(bf * 1000 + 0.5) end
 
-return {rpm, tpm, concurrency, now_ms, lat_out, tok_out, bf_out}
+return {rpm, tpm, concurrency, now_ms, lat_out, tok_out, bf_out, concurrency_peak}
 `;
 
 // RELEASE_SCRIPT — floor at 0: prevent misuse from making the concurrency count negative
@@ -378,15 +390,16 @@ export class RedisLimiter implements RateLimiter {
     const requestMember = randomUUID();
 
     while (true) {
-      const [rpmKey, tpmKey, tpmTotalKey, concurrencyKey, autostateKey] = this.keys(args.key);
+      const [rpmKey, tpmKey, tpmTotalKey, concurrencyKey, autostateKey, concurrencyPeakBaseKey] = this.keys(args.key);
       const result = await this.redis.eval(
         ACQUIRE_SCRIPT,
-        5,
+        6,
         rpmKey,
         tpmKey,
         tpmTotalKey,
         concurrencyKey,
         autostateKey,
+        concurrencyPeakBaseKey,
         args.limits.rpmLimit,
         args.limits.tpmLimit,
         args.limits.concurrencyLimit,
@@ -442,39 +455,45 @@ export class RedisLimiter implements RateLimiter {
   }
 
   async getUsage(key: string): Promise<UsageSnapshot> {
-    const [rpmKey, tpmKey, tpmTotalKey, concurrencyKey, autostateKey] = this.keys(key);
+    const [rpmKey, tpmKey, tpmTotalKey, concurrencyKey, autostateKey, concurrencyPeakBaseKey] = this.keys(key);
     const result = await this.redis.eval(
       USAGE_SCRIPT,
-      5,
+      6,
       rpmKey,
       tpmKey,
       tpmTotalKey,
       concurrencyKey,
       autostateKey,
+      concurrencyPeakBaseKey,
       this.windowMs,
     );
-    const [rpmUsed, tpmUsed, concurrencyInUse, sampledAtMs, latOut, tokOut, bfOut] = normalizeUsageResult(result);
+    const [rpmUsed, tpmUsed, concurrencyInUse, sampledAtMs, latOut, tokOut, bfOut, concurrencyPeakInMinute] =
+      normalizeUsageResult(result);
+    const sampledAt = new Date(sampledAtMs).toISOString();
 
     return {
       key,
       rpmUsed,
       tpmUsed,
       concurrencyInUse,
+      concurrencyPeakInMinute,
       windowMs: this.windowMs,
-      windowEndsAt: new Date(sampledAtMs).toISOString(),
+      sampledAt,
+      windowEndsAt: sampledAt,
       latencyEwmaMs: latOut >= 0 ? latOut : undefined,
       tokensEwma: tokOut >= 0 ? tokOut : undefined,
       backoffFactor: bfOut >= 0 ? bfOut / 1000 : undefined,
     };
   }
 
-  private keys(key: string): [string, string, string, string, string] {
+  private keys(key: string): [string, string, string, string, string, string] {
     return [
       `${this.keyPrefix}:${key}:rpm`,
       `${this.keyPrefix}:${key}:tpm`,
       `${this.keyPrefix}:${key}:tpm:total`,
       this.concurrencyKey(key),
       this.autostateKey(key),
+      this.concurrencyPeakBaseKey(key),
     ];
   }
 
@@ -484,6 +503,10 @@ export class RedisLimiter implements RateLimiter {
 
   private autostateKey(key: string): string {
     return `${this.keyPrefix}:${key}:autostate`;
+  }
+
+  private concurrencyPeakBaseKey(key: string): string {
+    return `${this.keyPrefix}:${key}:concurrency:peak`;
   }
 }
 
@@ -504,7 +527,7 @@ function normalizeAcquireResult(
   return [acquired, retryAfterMs, reason, effective, bfOut, Number.isFinite(latOut) ? latOut : -1];
 }
 
-function normalizeUsageResult(result: unknown): [number, number, number, number, number, number, number] {
+function normalizeUsageResult(result: unknown): [number, number, number, number, number, number, number, number] {
   if (!Array.isArray(result)) {
     throw new Error('unexpected Redis limiter usage result');
   }
@@ -513,6 +536,7 @@ function normalizeUsageResult(result: unknown): [number, number, number, number,
   const latOut = Number(result[4]);
   const tokOut = Number(result[5]);
   const bfOut = Number(result[6]);
+  const concurrencyPeakInMinute = parseCount(result[7]);
   return [
     parseCount(result[0]),
     parseCount(result[1]),
@@ -521,6 +545,7 @@ function normalizeUsageResult(result: unknown): [number, number, number, number,
     Number.isFinite(latOut) ? latOut : -1,
     Number.isFinite(tokOut) ? tokOut : -1,
     Number.isFinite(bfOut) ? bfOut : -1,
+    concurrencyPeakInMinute,
   ];
 }
 

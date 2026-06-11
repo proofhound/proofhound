@@ -8,6 +8,7 @@ import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../quota-policy.hook';
 import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from '../runtime-limits.provider';
 import { LocalTokenService } from '../../../modules/token/token.service';
 import { TokenService } from '../token.service';
+import { NoopUsageMeteringHook, UsageMeteringHook } from '../usage-metering.hook';
 import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from '../workflow-authorization.hook';
 
 // Asserts the contracts module binds + exports the new extension-point tokens to their Local* defaults
@@ -43,6 +44,10 @@ describe('LocalContractsModule new bindings', () => {
     expect(providerFor(QuotaPolicyHook)?.useClass).toBe(LocalQuotaPolicyHook);
   });
 
+  it('binds UsageMeteringHook -> NoopUsageMeteringHook', () => {
+    expect(providerFor(UsageMeteringHook)?.useClass).toBe(NoopUsageMeteringHook);
+  });
+
   it('binds ConnectorContextResolver -> LocalConnectorContextResolver', () => {
     expect(providerFor(ConnectorContextResolver)?.useClass).toBe(LocalConnectorContextResolver);
   });
@@ -54,6 +59,7 @@ describe('LocalContractsModule new bindings', () => {
     expect(exports).toContain(LimiterKeyStrategy);
     expect(exports).toContain(RuntimeLimitsProvider);
     expect(exports).toContain(QuotaPolicyHook);
+    expect(exports).toContain(UsageMeteringHook);
     expect(exports).toContain(WorkflowAuthorizationHook);
   });
 });

@@ -1,9 +1,11 @@
 import { Buffer } from 'node:buffer';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import type { LLMRunResultRecord, LLMRunResultWriter } from '@proofhound/llm-client';
+import { createLogger } from '@proofhound/logger';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
+import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 
 // ph_runs.run_results is monthly-partitioned by created_at, so a UNIQUE constraint cannot be applied to a single id column;
@@ -12,9 +14,12 @@ import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 //  - Behaviorally equivalent to apps/worker/src/runners/run-result-writer.ts (the dual implementation will be reconciled when extracted into a package)
 @Injectable()
 export class DrizzleRunResultWriter implements LLMRunResultWriter {
+  private readonly logger = createLogger('server.run-result-writer', { service: 'server' });
+
   constructor(
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
     private readonly quotaPolicy: QuotaPolicyHook,
+    @Optional() private readonly usageMetering?: UsageMeteringHook,
   ) {}
 
   async writeRunResult(record: LLMRunResultRecord): Promise<void> {
@@ -70,6 +75,35 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
         SELECT 1 FROM ph_runs.run_results WHERE id = ${record.id}::uuid
       )
     `);
+
+    if (this.usageMetering) {
+      const occurredAt = new Date();
+      await safeRecordUsageEvent(
+        this.usageMetering,
+        {
+          idempotencyKey: `run_result:${record.id}:created`,
+          dimension: 'run_result',
+          eventType: 'run_result.created',
+          projectId: record.projectId,
+          occurredAt,
+          source: 'workflow',
+          payload: {
+            runResultId: record.id,
+            source: record.source,
+            sourceId: record.sourceId,
+            promptVersionId: record.promptVersionId,
+            modelId: record.modelId,
+            status: record.status,
+            inputTokens,
+            outputTokens,
+            costEstimate,
+            latencyMs,
+            createdAt: occurredAt.toISOString(),
+          },
+        },
+        this.logger,
+      );
+    }
   }
 }
 

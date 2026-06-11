@@ -2,16 +2,21 @@ import { Buffer } from 'node:buffer';
 import { sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import type { LLMRunResultRecord, LLMRunResultWriter } from '@proofhound/llm-client';
+import { createLogger } from '@proofhound/logger';
 import type { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
+import { safeRecordUsageEvent, type UsageMeteringHook } from '../../server/common/contracts/usage-metering.hook';
 
 // ph_runs.run_results is a monthly-partitioned table by created_at; a UNIQUE constraint cannot be applied to a single id column;
 // use INSERT ... SELECT ... WHERE NOT EXISTS instead for idempotency, ensuring:
 //  1. worker stalled retries do not write duplicate rows
 //  2. when the consumer writes the final error row in OnWorkerEvent('failed'), an already-landed success row is not overwritten
 export class DrizzleRunResultWriter implements LLMRunResultWriter {
+  private readonly logger = createLogger('worker.run-result-writer', { service: 'worker' });
+
   constructor(
     private readonly db: DbClient,
     private readonly quotaPolicy: QuotaPolicyHook,
+    private readonly usageMetering?: UsageMeteringHook,
   ) {}
 
   async writeRunResult(record: LLMRunResultRecord): Promise<void> {
@@ -68,6 +73,35 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
         SELECT 1 FROM ph_runs.run_results WHERE id = ${record.id}::uuid
       )
     `);
+
+    if (this.usageMetering) {
+      const occurredAt = new Date();
+      await safeRecordUsageEvent(
+        this.usageMetering,
+        {
+          idempotencyKey: `run_result:${record.id}:created`,
+          dimension: 'run_result',
+          eventType: 'run_result.created',
+          projectId: record.projectId,
+          occurredAt,
+          source: 'worker',
+          payload: {
+            runResultId: record.id,
+            source: record.source,
+            sourceId: record.sourceId,
+            promptVersionId: record.promptVersionId,
+            modelId: record.modelId,
+            status: record.status,
+            inputTokens,
+            outputTokens,
+            costEstimate,
+            latencyMs,
+            createdAt: occurredAt.toISOString(),
+          },
+        },
+        this.logger,
+      );
+    }
   }
 }
 

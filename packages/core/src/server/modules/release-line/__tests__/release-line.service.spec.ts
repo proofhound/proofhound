@@ -4,6 +4,7 @@ import type { CurrentUserPayload } from '../../../common/decorators/current-user
 import { ReleaseLineService } from '../release-line.service';
 import type { ReleaseLineRepository } from '../release-line.repository';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import type { UsageMeteringHook } from '../../../common/contracts/usage-metering.hook';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const promptId = '22222222-2222-4222-8222-222222222222';
@@ -75,6 +76,39 @@ function legacyProductionInput() {
   };
 }
 
+function releaseLineDto() {
+  const now = '2026-05-23T00:00:00.000Z';
+  return {
+    id: '77777777-7777-4777-8777-777777777777',
+    projectId,
+    name: 'risk-prod',
+    status: 'production',
+    currentProductionEventId: '99999999-9999-4999-8999-999999999999',
+    activeCanaryEventId: null,
+    currentProductionEvent: null,
+    activeCanaryEvent: null,
+    latestEvent: {
+      id: '99999999-9999-4999-8999-999999999999',
+      releaseLineId: '77777777-7777-4777-8777-777777777777',
+      laneType: 'production',
+      operation: 'submit',
+      status: 'running',
+      terminalReason: null,
+      sourceEventId: null,
+      supersedesEventId: null,
+      rollbackTargetEventId: null,
+      promptVersionId,
+      modelId,
+      inputConnectorId,
+      outputConnectorIds: [],
+      createdAt: now,
+      updatedAt: now,
+    },
+    createdAt: now,
+    updatedAt: now,
+  } as never;
+}
+
 describe('ReleaseLineService.release name uniqueness', () => {
   it('rejects a duplicate release name for a new release identity', async () => {
     const repo = createRepoMock();
@@ -113,6 +147,36 @@ describe('ReleaseLineService.release name uniqueness', () => {
 
     await expect(service.recordLegacyProductionEvent(legacyProductionInput())).rejects.toThrow(
       new ConflictException('release_name_taken'),
+    );
+  });
+
+  it('records release line and release event metering after a mirrored event is written', async () => {
+    const repo = createRepoMock();
+    repo.record.mockResolvedValue(releaseLineDto());
+    const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
+    const service = new ReleaseLineService(
+      repo as unknown as ReleaseLineRepository,
+      new LocalAccessControlService(),
+      usageMetering,
+    );
+
+    await service.recordLegacyProductionEvent(legacyProductionInput());
+
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'release',
+        eventType: 'release_line.created',
+        idempotencyKey: 'release_line:77777777-7777-4777-8777-777777777777:created',
+        projectId,
+      }),
+    );
+    expect(usageMetering.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dimension: 'release',
+        eventType: 'release_event.created',
+        idempotencyKey: 'release_event:99999999-9999-4999-8999-999999999999:created',
+        projectId,
+      }),
     );
   });
 });

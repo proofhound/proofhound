@@ -18,8 +18,8 @@ describe('RedisLimiter', () => {
     await limiter.release({ key: 'model-1' });
 
     expect(evalMock).toHaveBeenCalledTimes(2);
-    // ACQUIRE now takes 5 KEYS (rpm/tpm/tpm:total/concurrency/autostate); RELEASE takes 1
-    expect(evalMock.mock.calls[0]?.[1]).toBe(5);
+    // ACQUIRE takes 6 KEYS (rpm/tpm/tpm:total/concurrency/autostate/current-minute peak); RELEASE takes 1
+    expect(evalMock.mock.calls[0]?.[1]).toBe(6);
     expect(evalMock.mock.calls[1]?.[1]).toBe(1);
 
     // ACQUIRE ARGV carries concurrency TTL (5 min), autostate TTL (30 min), default latency (3000ms),
@@ -33,9 +33,11 @@ describe('RedisLimiter', () => {
   });
 
   it('uses Redis sorted sets for RPM and TPM sliding windows', async () => {
-    const evalMock = vi.fn(
-      async (_script: string, _keyCount: number, ..._args: Array<string | number>) => [1, 0, 'ok'],
-    );
+    const evalMock = vi.fn(async (_script: string, _keyCount: number, ..._args: Array<string | number>) => [
+      1,
+      0,
+      'ok',
+    ]);
     const redis = { eval: evalMock };
     const limiter = new RedisLimiter(redis);
 
@@ -50,6 +52,26 @@ describe('RedisLimiter', () => {
     expect(acquireScript).toMatch(/ZADD', rpm_key/);
     expect(acquireScript).toMatch(/ZADD', tpm_key/);
     expect(acquireScript).toMatch(/tpm_total_key/);
+  });
+
+  it('records the current-minute concurrency peak after acquire succeeds', async () => {
+    const evalMock = vi.fn(async (_script: string, _keyCount: number, ..._args: Array<string | number>) => [
+      1,
+      0,
+      'ok',
+    ]);
+    const limiter = new RedisLimiter({ eval: evalMock });
+
+    await limiter.acquire({
+      key: 'model-1',
+      estimatedTokens: 12,
+      limits: { rpmLimit: 60, tpmLimit: 1000, concurrencyLimit: 2 },
+    });
+
+    const acquireScript = evalMock.mock.calls[0]?.[0] as string;
+    expect(acquireScript).toMatch(/concurrency_peak_base_key/);
+    expect(acquireScript).toMatch(/minute_epoch_ms/);
+    expect(acquireScript).toMatch(/concurrency_after > concurrency_peak/);
   });
 
   it('raises a typed error when the Redis script keeps rejecting on rpm', async () => {
@@ -133,9 +155,16 @@ describe('RedisLimiter', () => {
 
   it('getUsage reads sliding-window counters through Redis script', async () => {
     const sampledAtMs = Date.UTC(2026, 4, 20, 1, 2, 3);
-    const evalMock = vi.fn(
-      async (_script: string, _keyCount: number, ..._args: Array<string | number>) => [3, 450, 2, sampledAtMs],
-    );
+    const evalMock = vi.fn(async (_script: string, _keyCount: number, ..._args: Array<string | number>) => [
+      3,
+      450,
+      2,
+      sampledAtMs,
+      -1,
+      -1,
+      -1,
+      4,
+    ]);
     const redis = { eval: evalMock };
     const limiter = new RedisLimiter(redis as never);
 
@@ -146,15 +175,17 @@ describe('RedisLimiter', () => {
       rpmUsed: 3,
       tpmUsed: 450,
       concurrencyInUse: 2,
+      concurrencyPeakInMinute: 4,
       windowMs: 60_000,
+      sampledAt: new Date(sampledAtMs).toISOString(),
     });
     expect(usage.windowEndsAt).toBe(new Date(sampledAtMs).toISOString());
     expect(evalMock).toHaveBeenCalledTimes(1);
-    expect(evalMock.mock.calls[0]?.[1]).toBe(5);
+    expect(evalMock.mock.calls[0]?.[1]).toBe(6);
   });
 
   it('getUsage returns zeros when keys are missing', async () => {
-    const redis = { eval: vi.fn(async () => [0, 0, 0, Date.now(), -1, -1, -1]) };
+    const redis = { eval: vi.fn(async () => [0, 0, 0, Date.now(), -1, -1, -1, 0]) };
     const limiter = new RedisLimiter(redis as never);
 
     const usage = await limiter.getUsage('cold-model');
@@ -163,6 +194,7 @@ describe('RedisLimiter', () => {
       rpmUsed: 0,
       tpmUsed: 0,
       concurrencyInUse: 0,
+      concurrencyPeakInMinute: 0,
     });
     expect(usage.latencyEwmaMs).toBeUndefined();
     expect(usage.tokensEwma).toBeUndefined();
@@ -187,7 +219,7 @@ describe('RedisLimiter', () => {
 
   it('getUsage surfaces auto-concurrency state (latency / tokens / backoff)', async () => {
     const sampledAtMs = Date.UTC(2026, 4, 20, 1, 2, 3);
-    const redis = { eval: vi.fn(async () => [3, 450, 2, sampledAtMs, 2500, 1200, 850]) };
+    const redis = { eval: vi.fn(async () => [3, 450, 2, sampledAtMs, 2500, 1200, 850, 4]) };
     const limiter = new RedisLimiter(redis as never);
 
     const usage = await limiter.getUsage('m');
@@ -221,7 +253,7 @@ describe('RedisLimiter', () => {
   });
 });
 
-describe('deriveEffectiveConcurrency (Little\'s Law + AIMD backoff)', () => {
+describe("deriveEffectiveConcurrency (Little's Law + AIMD backoff)", () => {
   it('RPM binds: effective = ceil(rpm/60 × latency_s), clamped to ceiling', () => {
     // 60 rpm = 1 req/s; 5s latency → 5 concurrent needed
     expect(
