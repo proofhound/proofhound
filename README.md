@@ -1,5 +1,7 @@
 <p align="center">
-  <img src="assets/proofhound-logo.svg" alt="ProofHound Logo" width="96" height="96" />
+  <a href="https://proofhound.org">
+    <img src="assets/proofhound-logo.svg" alt="ProofHound Logo" width="96" height="96" />
+  </a>
 </p>
 
 <h1 align="center">ProofHound</h1>
@@ -11,12 +13,16 @@
 </p>
 
 <p align="center">
+  <strong><a href="https://proofhound.org">proofhound.org</a></strong> ·
+  <a href="https://proofhound.org">Reserve a ProofHound Cloud seat</a>
+</p>
+
+<p align="center">
   <a href="README.md">English</a> ·
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 <p align="center">
-  <a href="https://proofhound.org">Website</a> ·
   <a href="#get-started">Quick start</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="https://discord.gg/DGC6AzWrnt">Discord</a>
