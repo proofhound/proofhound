@@ -41,7 +41,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/github-clone-traffic.svg" alt="ProofHound GitHub clone trend for the last 14 days" width="720" />
+  <img src="assets/github-clone-traffic.svg" alt="ProofHound GitHub clone trend (snapshot: 14-day window ending Jun 14)" width="720" />
 </p>
 
 <p align="center">
