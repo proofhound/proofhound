@@ -161,22 +161,9 @@ So with optimization you can **skip step 5** (it automates the loop), and via **
 
 ProofHound is a TypeScript monolith split by module boundaries, with a Node.js worker for LLM calls. Three surfaces drive it — the Web UI, an HTTP API + MCP channel for agents and automation, and per-connector webhook ingress for online traffic — and they all share the same orchestration and storage.
 
-```mermaid
-flowchart TD
-    WEB[Web UI · apps/web]
-    AGENT[Agents and automation<br/>HTTP API · MCP]
-    HOOK[Webhook ingress · apps/webhook]
-    WEB --> SRV
-    AGENT --> SRV[server · NestJS · apps/server]
-    HOOK --> SRV
-    SRV --> ORCH[Orchestration<br/>DBOS + BullMQ]
-    ORCH --> WORK[LLM worker · apps/worker]
-    WORK --> PROV[(Your model providers)]
-    SRV --> PG[(PostgreSQL · Drizzle)]
-    SRV --> REDIS[(Redis · limits + queues)]
-    WORK --> PG
-    WORK --> REDIS
-```
+<p align="center">
+  <img src="assets/how-it-works.svg" alt="ProofHound architecture flow" width="840" />
+</p>
 
 | Layer         | Choice                                                                                                  |
 | ------------- | ------------------------------------------------------------------------------------------------------- |

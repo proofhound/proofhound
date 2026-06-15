@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="460" viewBox="0 0 980 460" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">ProofHound architecture flow</title>
+  <desc id="desc">Web UI, agents, and webhooks enter the NestJS server, which coordinates DBOS, BullMQ, the LLM worker, PostgreSQL, Redis, and model providers.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155" />
+    </marker>
+    <filter id="shadow" x="-12%" y="-16%" width="124%" height="132%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.10" />
+    </filter>
+    <style>
+      .title { fill: #0f172a; font: 700 24px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .caption { fill: #475569; font: 500 14px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .node-title { fill: #0f172a; font: 700 17px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .node-subtitle { fill: #475569; font: 500 13px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .surface { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.4; }
+      .core { fill: #ecfeff; stroke: #0891b2; stroke-width: 1.6; }
+      .worker { fill: #f0fdf4; stroke: #16a34a; stroke-width: 1.6; }
+      .store { fill: #fff7ed; stroke: #ea580c; stroke-width: 1.6; }
+      .provider { fill: #eef2ff; stroke: #4f46e5; stroke-width: 1.6; }
+      .arrow { stroke: #334155; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .soft-arrow { stroke: #64748b; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); stroke-dasharray: 5 6; }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="978" height="458" rx="18" fill="#ffffff" stroke="#e2e8f0" />
+  <rect x="22" y="22" width="936" height="416" rx="14" fill="#f8fafc" />
+
+  <text x="60" y="56" class="title">How ProofHound runs one prompt lifecycle</text>
+  <text x="60" y="80" class="caption">All entry points share the same orchestration, storage, run results, and rollback path.</text>
+
+  <g filter="url(#shadow)">
+    <rect class="surface" x="60" y="112" width="220" height="72" rx="8" />
+    <text x="84" y="145" class="node-title">Web UI</text>
+    <text x="84" y="168" class="node-subtitle">apps/web</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect class="surface" x="60" y="204" width="220" height="72" rx="8" />
+    <text x="84" y="237" class="node-title">HTTP API + MCP</text>
+    <text x="84" y="260" class="node-subtitle">agents and automation</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect class="surface" x="60" y="296" width="220" height="72" rx="8" />
+    <text x="84" y="329" class="node-title">Webhook ingress</text>
+    <text x="84" y="352" class="node-subtitle">apps/webhook</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect class="core" x="380" y="158" width="220" height="76" rx="8" />
+    <text x="404" y="192" class="node-title">Server</text>
+    <text x="404" y="215" class="node-subtitle">NestJS · apps/server</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect class="core" x="380" y="280" width="220" height="76" rx="8" />
+    <text x="404" y="314" class="node-title">Orchestration</text>
+    <text x="404" y="337" class="node-subtitle">DBOS + BullMQ</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect class="worker" x="700" y="158" width="220" height="76" rx="8" />
+    <text x="724" y="192" class="node-title">LLM worker</text>
+    <text x="724" y="215" class="node-subtitle">apps/worker</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect class="provider" x="700" y="280" width="220" height="76" rx="8" />
+    <text x="724" y="314" class="node-title">Model providers</text>
+    <text x="724" y="337" class="node-subtitle">your keys and endpoints</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect class="store" x="380" y="382" width="220" height="48" rx="8" />
+    <text x="404" y="411" class="node-title">PostgreSQL</text>
+    <text x="510" y="411" class="node-subtitle">Drizzle · ph_* schema</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect class="store" x="700" y="382" width="220" height="48" rx="8" />
+    <text x="724" y="411" class="node-title">Redis</text>
+    <text x="786" y="411" class="node-subtitle">limits + queues</text>
+  </g>
+
+  <path class="arrow" d="M 280 148 C 318 148 334 176 380 186" />
+  <path class="arrow" d="M 280 240 C 320 240 338 212 380 204" />
+  <path class="arrow" d="M 280 332 C 330 332 342 234 380 216" />
+  <path class="arrow" d="M 490 234 L 490 280" />
+  <path class="arrow" d="M 600 318 C 642 318 652 206 700 198" />
+  <path class="arrow" d="M 810 234 L 810 280" />
+  <path class="soft-arrow" d="M 490 356 L 490 382" />
+  <path class="soft-arrow" d="M 600 196 C 646 196 654 406 700 406" />
+  <path class="soft-arrow" d="M 810 356 L 810 382" />
+</svg>

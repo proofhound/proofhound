@@ -162,22 +162,9 @@ pnpm test:e2e e2e/experiment.spec.ts --reporter=line
 
 ProofHound 是基于 TypeScript 开发的模块化单体应用，搭配独立 Node.js Worker 进程专门处理 LLM 调用任务。平台提供三类访问入口：本地管理端、面向 AI Agent 与自动化场景的 HTTP API + MCP 通道、按业务划分的 Webhook 流量入口。三类入口共享同一套任务编排与数据存储体系。
 
-```mermaid
-flowchart TD
-    WEB[本地管理端 · apps/web]
-    AGENT[Agent 与自动化<br/>HTTP API · MCP]
-    HOOK[Webhook 入站 · apps/webhook]
-    WEB --> SRV
-    AGENT --> SRV[服务端 · NestJS · apps/server]
-    HOOK --> SRV
-    SRV --> ORCH[编排<br/>DBOS + BullMQ]
-    ORCH --> WORK[LLM worker · apps/worker]
-    WORK --> PROV[(你的模型供应商)]
-    SRV --> PG[(PostgreSQL · Drizzle)]
-    SRV --> REDIS[(Redis · 限流 + 队列)]
-    WORK --> PG
-    WORK --> REDIS
-```
+<p align="center">
+  <img src="assets/how-it-works.zh-CN.svg" alt="ProofHound 工作原理图" width="840" />
+</p>
 
 | 分层     | 技术方案                                                                                      |
 | -------- | --------------------------------------------------------------------------------------------- |
