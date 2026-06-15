@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="260" viewBox="0 0 840 260" role="img" aria-labelledby="title desc">
+  <title id="title">ProofHound GitHub clone trend</title>
+  <desc id="desc">GitHub clone traffic trend for the last 14 days: 12,351 total clones and 413 unique cloners.</desc>
+
+  <rect width="840" height="260" fill="#ffffff" />
+  <rect x="0.5" y="0.5" width="839" height="259" rx="8" fill="none" stroke="#d0d7de" />
+
+  <text x="48" y="42" fill="#24292f" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="700">
+    ProofHound clone trend
+  </text>
+  <text x="48" y="66" fill="#57606a" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13">
+    Last 14 days · 12.4k total clones · 413 unique cloners
+  </text>
+
+  <g stroke="#d8dee4" stroke-width="1">
+    <line x1="78" y1="88" x2="790" y2="88" />
+    <line x1="78" y1="155" x2="790" y2="155" />
+    <line x1="78" y1="222" x2="790" y2="222" />
+    <line x1="78" y1="88" x2="78" y2="222" />
+  </g>
+
+  <g fill="#6e7781" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11">
+    <text x="66" y="92" text-anchor="end">1.4k</text>
+    <text x="66" y="159" text-anchor="end">700</text>
+    <text x="66" y="226" text-anchor="end">0</text>
+    <text x="78" y="242" text-anchor="middle">Jun 1</text>
+    <text x="407" y="242" text-anchor="middle">Jun 7</text>
+    <text x="790" y="242" text-anchor="middle">Jun 14</text>
+  </g>
+
+  <polyline fill="none" stroke="#0f766e" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" points="78,179 133,170 188,154 242,147 297,156 352,123 407,127 462,141 516,103 571,96 626,118 681,125 735,146 790,142" />
+  <g fill="#0f766e" stroke="#ffffff" stroke-width="2">
+    <circle cx="78" cy="179" r="4" />
+    <circle cx="133" cy="170" r="4" />
+    <circle cx="188" cy="154" r="4" />
+    <circle cx="242" cy="147" r="4" />
+    <circle cx="297" cy="156" r="4" />
+    <circle cx="352" cy="123" r="4" />
+    <circle cx="407" cy="127" r="4" />
+    <circle cx="462" cy="141" r="4" />
+    <circle cx="516" cy="103" r="4" />
+    <circle cx="571" cy="96" r="4" />
+    <circle cx="626" cy="118" r="4" />
+    <circle cx="681" cy="125" r="4" />
+    <circle cx="735" cy="146" r="4" />
+    <circle cx="790" cy="142" r="4" />
+  </g>
+</svg>

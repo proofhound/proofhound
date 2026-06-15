@@ -16,12 +16,14 @@
 </p>
 
 <p align="center">
+  <a href="https://proofhound.org">官网</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#工作原理">工作原理</a> ·
   <a href="https://discord.gg/DGC6AzWrnt">Discord</a>
 </p>
 
 <p align="center">
+  <a href="https://proofhound.org"><img alt="官网" src="https://img.shields.io/badge/Website-proofhound.org-0F766E" /></a>
   <a href="https://github.com/proofhound/proofhound"><img alt="GitHub stars" src="https://img.shields.io/github/stars/proofhound/proofhound?style=flat&logo=github&label=Stars" /></a>
   <a href="https://discord.gg/DGC6AzWrnt"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" /></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
@@ -30,6 +32,10 @@
   <img alt="TypeScript 6.x" src="https://img.shields.io/badge/TypeScript-6.x-3178C6?logo=typescript&logoColor=white" />
   <img alt="PostgreSQL first" src="https://img.shields.io/badge/PostgreSQL-first-4169E1?logo=postgresql&logoColor=white" />
   <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-ready-0F766E" />
+</p>
+
+<p align="center">
+  <img src="assets/github-clone-traffic.svg" alt="ProofHound 最近 14 天 GitHub clone 趋势" width="720" />
 </p>
 
 <p align="center">
@@ -112,16 +118,16 @@ pnpm test:e2e e2e/experiment.spec.ts --reporter=line
 
 ProofHound 读取仓库根目录的 `.env`（由 server、webhook、worker 与 DB 脚本使用；`apps/web` 从 `apps/web/.env.local` 读取 `NEXT_PUBLIC_*`）。`cp .env.example .env` 已给出可用的本地默认值——下面列出几个常用、可能需要调整的变量：
 
-| 变量 | 用途 | 默认值 |
-| --- | --- | --- |
-| `MODEL_API_KEY_ENCRYPTION_KEY` | **必填** —— 加密静态存储的模型 API Key。用 `openssl rand -base64 32` 生成真实密钥。 | 开发占位值 |
-| `DATABASE_URL` | PostgreSQL 连接串。 | 指向 Docker Compose 的 Postgres |
-| `REDIS_URL` | Redis 连接（限流 + 队列）。 | 指向 Docker Compose 的 Redis |
-| `SERVER_PORT` | 服务端 API 端口。 | `4000` |
-| `WEB_PUBLIC_URL` | 允许跨域的 Web 来源（CORS）。 | `http://localhost:3000` |
-| `NEXT_PUBLIC_SERVER_URL` | Web 应用调用的服务端 URL。 | `http://localhost:4000` |
-| `WORKER_CONCURRENCY` | 单进程 `llm` queue 并发。 | `64` |
-| `LOG_LEVEL` | Pino 日志级别。 | `debug` |
+| 变量                           | 用途                                                                                | 默认值                          |
+| ------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------- |
+| `MODEL_API_KEY_ENCRYPTION_KEY` | **必填** —— 加密静态存储的模型 API Key。用 `openssl rand -base64 32` 生成真实密钥。 | 开发占位值                      |
+| `DATABASE_URL`                 | PostgreSQL 连接串。                                                                 | 指向 Docker Compose 的 Postgres |
+| `REDIS_URL`                    | Redis 连接（限流 + 队列）。                                                         | 指向 Docker Compose 的 Redis    |
+| `SERVER_PORT`                  | 服务端 API 端口。                                                                   | `4000`                          |
+| `WEB_PUBLIC_URL`               | 允许跨域的 Web 来源（CORS）。                                                       | `http://localhost:3000`         |
+| `NEXT_PUBLIC_SERVER_URL`       | Web 应用调用的服务端 URL。                                                          | `http://localhost:4000`         |
+| `WORKER_CONCURRENCY`           | 单进程 `llm` queue 并发。                                                           | `64`                            |
+| `LOG_LEVEL`                    | Pino 日志级别。                                                                     | `debug`                         |
 
 更高级 / 可选的变量（部署元数据、数据库重置与种子、测试、`pnpm probe:model` 脚本、连接器示例）在 [`.env.example`](.env.example) 内有逐项注释。
 
@@ -197,7 +203,7 @@ ProofHound 不转卖模型调用，也不在用量上加价：你自带供应商
 ## 开发中
 
 - **生成式任务优化** —— 在当前以分类为先的流程之外，扩展面向生成式任务的评估、比较与优化策略。
-- **ProofHound Cloud** —— 托管版，降低部署与运维成本。_即将上线。_
+- **ProofHound Cloud** —— 托管版，降低部署与运维成本。访问 [proofhound.org](https://proofhound.org) 预约早期席位。
 
 ## 项目结构
 
@@ -229,6 +235,7 @@ ProofHound 还很早期，非常欢迎社区参与。你可以：
 
 ## 社区与支持
 
+- **官网** —— 产品介绍、文档入口与 Cloud 早期预约表单：https://proofhound.org
 - **Discord** —— 最适合提问、求助安装、与其他用户交流：https://discord.gg/DGC6AzWrnt
 - **QQ 群** —— 318412485。
 - **GitHub Issues** —— 最适合 Bug、安装问题、模型接入问题与功能请求。

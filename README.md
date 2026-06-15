@@ -16,12 +16,14 @@
 </p>
 
 <p align="center">
+  <a href="https://proofhound.org">Website</a> ·
   <a href="#get-started">Quick start</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="https://discord.gg/DGC6AzWrnt">Discord</a>
 </p>
 
 <p align="center">
+  <a href="https://proofhound.org"><img alt="Website" src="https://img.shields.io/badge/Website-proofhound.org-0F766E" /></a>
   <a href="https://github.com/proofhound/proofhound"><img alt="GitHub stars" src="https://img.shields.io/github/stars/proofhound/proofhound?style=flat&logo=github&label=Stars" /></a>
   <a href="https://discord.gg/DGC6AzWrnt"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" /></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue" /></a>
@@ -30,6 +32,10 @@
   <img alt="TypeScript 6.x" src="https://img.shields.io/badge/TypeScript-6.x-3178C6?logo=typescript&logoColor=white" />
   <img alt="PostgreSQL first" src="https://img.shields.io/badge/PostgreSQL-first-4169E1?logo=postgresql&logoColor=white" />
   <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-ready-0F766E" />
+</p>
+
+<p align="center">
+  <img src="assets/github-clone-traffic.svg" alt="ProofHound GitHub clone trend for the last 14 days" width="720" />
 </p>
 
 <p align="center">
@@ -113,16 +119,16 @@ pnpm test:e2e e2e/experiment.spec.ts --reporter=line
 
 ProofHound reads the repo-root `.env` (used by server, webhook, worker, and the DB scripts; `apps/web` reads `NEXT_PUBLIC_*` from `apps/web/.env.local`). `cp .env.example .env` gives working local defaults — the common variables you may want to set:
 
-| Variable | What it's for | Default |
-| --- | --- | --- |
-| `MODEL_API_KEY_ENCRYPTION_KEY` | **Required** — encrypts stored model API keys at rest. Generate a real one with `openssl rand -base64 32`. | dev placeholder |
-| `DATABASE_URL` | PostgreSQL connection string. | Docker Compose Postgres |
-| `REDIS_URL` | Redis connection (rate limits + queues). | Docker Compose Redis |
-| `SERVER_PORT` | Server API port. | `4000` |
-| `WEB_PUBLIC_URL` | Web origin allowed for CORS. | `http://localhost:3000` |
-| `NEXT_PUBLIC_SERVER_URL` | Server URL the web app calls. | `http://localhost:4000` |
-| `WORKER_CONCURRENCY` | Per-process `llm` queue concurrency. | `64` |
-| `LOG_LEVEL` | Pino log level. | `debug` |
+| Variable                       | What it's for                                                                                              | Default                 |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `MODEL_API_KEY_ENCRYPTION_KEY` | **Required** — encrypts stored model API keys at rest. Generate a real one with `openssl rand -base64 32`. | dev placeholder         |
+| `DATABASE_URL`                 | PostgreSQL connection string.                                                                              | Docker Compose Postgres |
+| `REDIS_URL`                    | Redis connection (rate limits + queues).                                                                   | Docker Compose Redis    |
+| `SERVER_PORT`                  | Server API port.                                                                                           | `4000`                  |
+| `WEB_PUBLIC_URL`               | Web origin allowed for CORS.                                                                               | `http://localhost:3000` |
+| `NEXT_PUBLIC_SERVER_URL`       | Server URL the web app calls.                                                                              | `http://localhost:4000` |
+| `WORKER_CONCURRENCY`           | Per-process `llm` queue concurrency.                                                                       | `64`                    |
+| `LOG_LEVEL`                    | Pino log level.                                                                                            | `debug`                 |
 
 More advanced / optional variables (deploy metadata, DB reset & seeding, tests, the `pnpm probe:model` script, connector demos) are documented inline in [`.env.example`](.env.example).
 
@@ -198,7 +204,7 @@ Built-in provider types: OpenAI · Azure OpenAI · Anthropic · DeepSeek · Kimi
 ## In development
 
 - **Generative-task optimization** — evaluation, comparison, and optimization strategies beyond the current classification-first workflow.
-- **ProofHound Cloud** — a hosted edition to cut deployment and operations work. _Coming soon._
+- **ProofHound Cloud** — a hosted edition to cut deployment and operations work. Visit [proofhound.org](https://proofhound.org) to reserve an early-access seat.
 
 ## Project structure
 
@@ -230,6 +236,7 @@ If you are unsure whether an idea fits the project, please open an issue first t
 
 ## Community and support
 
+- **Website** — product overview, docs entry, and Cloud early-access form: https://proofhound.org
 - **Discord** — best for questions, setup help, and chatting with other users: https://discord.gg/DGC6AzWrnt
 - **QQ group** — 318412485.
 - **GitHub Issues** — best for bugs, installation problems, model-integration problems, and feature requests.
