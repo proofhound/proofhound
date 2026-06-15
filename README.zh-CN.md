@@ -41,7 +41,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/github-clone-traffic.svg" alt="ProofHound 最近 14 天 GitHub clone 趋势" width="720" />
+  <img src="assets/github-clone-traffic.svg" alt="ProofHound GitHub clone 趋势（快照：截至 6 月 14 日的 14 天窗口）" width="720" />
 </p>
 
 <p align="center">
