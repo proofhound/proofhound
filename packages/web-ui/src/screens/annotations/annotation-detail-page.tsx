@@ -223,7 +223,7 @@ export function AnnotationDetailPage({ projectId, annotationTaskId }: { projectI
               <AnnotationScopeBadge scope={task.scope} />
             </div>
             <p className="mt-1 max-w-3xl text-[12.5px] text-muted-foreground">
-              {task.promptName} · {task.releaseVariantLabel} · {task.promptVersionLabel ?? '-'} ·{' '}
+              {task.promptName} · {task.releaseVersionLabel} · {task.promptVersionLabel ?? '-'} ·{' '}
               {task.modelName ?? '-'}
             </p>
           </div>

@@ -12,10 +12,9 @@ export interface RunResultLabelSource {
 }
 
 const RUN_RESULT_STATUS_LABEL_KEYS: Record<RunResultStatusDto, TranslationKey> = {
+  running: 'experiments.runResult.status.running',
   success: 'experiments.runResult.status.success',
-  error: 'experiments.runResult.status.error',
-  timeout: 'experiments.runResult.status.timeout',
-  rate_limited: 'experiments.runResult.status.rateLimited',
+  failed: 'experiments.runResult.status.failed',
 };
 
 const RUN_RESULT_JUDGMENT_LABEL_KEYS: Record<BinaryRunResultJudgmentStatus, TranslationKey> = {
@@ -56,7 +55,7 @@ export function getRunResultJudgmentLabelKey(
 export function getRunResultFailureLabelKey(
   runResult: Pick<RunResultLabelSource, 'status' | 'judgmentStatus'>,
 ): TranslationKey | null {
-  if (runResult.status !== 'success') return RUN_RESULT_STATUS_LABEL_KEYS[runResult.status];
+  if (runResult.status === 'failed') return RUN_RESULT_STATUS_LABEL_KEYS[runResult.status];
   return runResult.judgmentStatus ? (RUN_RESULT_JUDGMENT_FAILURE_LABEL_KEYS[runResult.judgmentStatus] ?? null) : null;
 }
 

@@ -5,7 +5,7 @@ import { schema } from '@proofhound/db';
 import type { CreateDatasetDto, DatasetFieldSchemaDto } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 
-const { optimizations, datasetSamples, datasets, experiments, projects, prompts } = schema;
+const { optimizations, datasetSamples, datasets, experiments, projects, promptVersions } = schema;
 
 export interface DatasetProjectAccessRow {
   id: string;
@@ -15,6 +15,7 @@ export interface DatasetRow {
   id: string;
   projectId: string;
   name: string;
+  status: string;
   description: string | null;
   sampleCount: number;
   fieldSchema: unknown;
@@ -24,6 +25,7 @@ export interface DatasetRow {
   createdByDisplayName?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  archivedAt: Date | null;
   deletedAt: Date | null;
 }
 
@@ -52,6 +54,22 @@ export interface UpdateDatasetMetadataArgs {
   description: string | null;
 }
 
+export interface DatasetDeletionImpactRow {
+  id: string;
+  name: string | null;
+  status: string | null;
+  datasetId: string | null;
+  promptId: string | null;
+  promptVersionId: string | null;
+  promptVersionNumber: number | null;
+  createdAt: Date | null;
+}
+
+export interface DatasetDeletionImpactRows {
+  experiments: DatasetDeletionImpactRow[];
+  optimizations: DatasetDeletionImpactRow[];
+}
+
 @Injectable()
 export class DatasetRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
@@ -60,6 +78,7 @@ export class DatasetRepository {
     id: datasets.id,
     projectId: datasets.projectId,
     name: datasets.name,
+    status: datasets.status,
     description: datasets.description,
     sampleCount: datasets.sampleCount,
     fieldSchema: datasets.fieldSchema,
@@ -69,6 +88,7 @@ export class DatasetRepository {
     createdByDisplayName: sql<string | null>`NULL`,
     createdAt: datasets.createdAt,
     updatedAt: datasets.updatedAt,
+    archivedAt: datasets.archivedAt,
     deletedAt: datasets.deletedAt,
   };
 
@@ -113,6 +133,21 @@ export class DatasetRepository {
     return rows[0] ?? null;
   }
 
+  async archiveDataset(projectId: string, datasetId: string): Promise<void> {
+    const now = new Date();
+    await this.db
+      .update(datasets)
+      .set({ status: 'archived', archivedAt: now, updatedAt: now })
+      .where(and(eq(datasets.projectId, projectId), eq(datasets.id, datasetId), isNull(datasets.deletedAt)));
+  }
+
+  async restoreDataset(projectId: string, datasetId: string): Promise<void> {
+    await this.db
+      .update(datasets)
+      .set({ status: 'active', archivedAt: null, updatedAt: new Date() })
+      .where(and(eq(datasets.projectId, projectId), eq(datasets.id, datasetId), isNull(datasets.deletedAt)));
+  }
+
   // Full scan — only for export (complete dump). Detail browsing must use listDatasetSamplesPage.
   async listDatasetSamples(datasetId: string): Promise<DatasetSampleRow[]> {
     return this.db
@@ -141,7 +176,10 @@ export class DatasetRepository {
         .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id))
         .limit(options.limit)
         .offset(options.offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(datasetSamples).where(where),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(datasetSamples)
+        .where(where),
     ]);
 
     return { rows, total: Number(countResult[0]?.count ?? 0) };
@@ -172,13 +210,209 @@ export class DatasetRepository {
 
   async hardDeleteDataset(projectId: string, datasetId: string): Promise<number> {
     return this.db.transaction(async (tx) => {
-      await tx
-        .update(prompts)
-        .set({
-          defaultDatasetId: null,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(prompts.projectId, projectId), eq(prompts.defaultDatasetId, datasetId)));
+      await tx.execute(sql`
+        WITH target_optimizations AS (
+          SELECT id
+          FROM ph_runs.optimizations
+          WHERE project_id = ${projectId}::uuid
+            AND dataset_id = ${datasetId}::uuid
+            AND deleted_at IS NULL
+        ),
+        target_experiments AS (
+          SELECT DISTINCT e.id
+          FROM ph_runs.experiments e
+          WHERE e.project_id = ${projectId}::uuid
+            AND e.deleted_at IS NULL
+            AND (
+              e.dataset_id = ${datasetId}::uuid
+              OR e.optimization_id IN (SELECT id FROM target_optimizations)
+            )
+        ),
+        target_run_results AS (
+          SELECT rr.id, rr.created_at
+          FROM ph_runs.run_results rr
+          WHERE (
+            rr.source = 'experiment'
+            AND rr.source_id IN (SELECT id FROM target_experiments)
+          )
+          OR (
+            rr.source IN ('optimization_analysis', 'optimization_generate')
+            AND rr.source_id IN (SELECT id FROM target_optimizations)
+          )
+        )
+        DELETE FROM ph_runs.annotations annotation
+        USING target_run_results rr
+        WHERE annotation.run_result_id = rr.id
+          AND annotation.run_result_created_at = rr.created_at
+      `);
+
+      await tx.execute(sql`
+        WITH target_optimizations AS (
+          SELECT id
+          FROM ph_runs.optimizations
+          WHERE project_id = ${projectId}::uuid
+            AND dataset_id = ${datasetId}::uuid
+            AND deleted_at IS NULL
+        ),
+        target_experiments AS (
+          SELECT DISTINCT e.id
+          FROM ph_runs.experiments e
+          WHERE e.project_id = ${projectId}::uuid
+            AND e.deleted_at IS NULL
+            AND (
+              e.dataset_id = ${datasetId}::uuid
+              OR e.optimization_id IN (SELECT id FROM target_optimizations)
+            )
+        ),
+        target_run_results AS (
+          SELECT rr.id, rr.created_at
+          FROM ph_runs.run_results rr
+          WHERE (
+            rr.source = 'experiment'
+            AND rr.source_id IN (SELECT id FROM target_experiments)
+          )
+          OR (
+            rr.source IN ('optimization_analysis', 'optimization_generate')
+            AND rr.source_id IN (SELECT id FROM target_optimizations)
+          )
+        )
+        DELETE FROM ph_runs.run_results rr
+        USING target_run_results target
+        WHERE rr.id = target.id
+          AND rr.created_at = target.created_at
+      `);
+
+      await tx.execute(sql`
+        WITH target_optimizations AS (
+          SELECT id
+          FROM ph_runs.optimizations
+          WHERE project_id = ${projectId}::uuid
+            AND dataset_id = ${datasetId}::uuid
+            AND deleted_at IS NULL
+        ),
+        target_experiments AS (
+          SELECT DISTINCT e.id
+          FROM ph_runs.experiments e
+          WHERE e.project_id = ${projectId}::uuid
+            AND e.deleted_at IS NULL
+            AND (
+              e.dataset_id = ${datasetId}::uuid
+              OR e.optimization_id IN (SELECT id FROM target_optimizations)
+            )
+        )
+        UPDATE ph_releases.release_line_events event
+        SET source_experiment_id = NULL,
+            updated_at = now()
+        WHERE event.project_id = ${projectId}::uuid
+          AND event.source_experiment_id IN (SELECT id FROM target_experiments)
+      `);
+
+      await tx.execute(sql`
+        WITH target_optimizations AS (
+          SELECT id
+          FROM ph_runs.optimizations
+          WHERE project_id = ${projectId}::uuid
+            AND dataset_id = ${datasetId}::uuid
+            AND deleted_at IS NULL
+        ),
+        target_experiments AS (
+          SELECT DISTINCT e.id
+          FROM ph_runs.experiments e
+          WHERE e.project_id = ${projectId}::uuid
+            AND e.deleted_at IS NULL
+            AND (
+              e.dataset_id = ${datasetId}::uuid
+              OR e.optimization_id IN (SELECT id FROM target_optimizations)
+            )
+        )
+        UPDATE ph_releases.production_release_events event
+        SET source_experiment_id = NULL,
+            updated_at = now()
+        WHERE event.project_id = ${projectId}::uuid
+          AND event.source_experiment_id IN (SELECT id FROM target_experiments)
+      `);
+
+      await tx.execute(sql`
+        WITH target_optimizations AS (
+          SELECT id
+          FROM ph_runs.optimizations
+          WHERE project_id = ${projectId}::uuid
+            AND dataset_id = ${datasetId}::uuid
+            AND deleted_at IS NULL
+        ),
+        target_experiments AS (
+          SELECT DISTINCT e.id
+          FROM ph_runs.experiments e
+          WHERE e.project_id = ${projectId}::uuid
+            AND e.deleted_at IS NULL
+            AND (
+              e.dataset_id = ${datasetId}::uuid
+              OR e.optimization_id IN (SELECT id FROM target_optimizations)
+            )
+        )
+        UPDATE ph_runs.optimizations optimization
+        SET source_experiment_id = NULL,
+            updated_at = now()
+        WHERE optimization.project_id = ${projectId}::uuid
+          AND optimization.source_experiment_id IN (SELECT id FROM target_experiments)
+      `);
+
+      await tx.execute(sql`
+        WITH target_optimizations AS (
+          SELECT id
+          FROM ph_runs.optimizations
+          WHERE project_id = ${projectId}::uuid
+            AND dataset_id = ${datasetId}::uuid
+            AND deleted_at IS NULL
+        ),
+        target_experiments AS (
+          SELECT DISTINCT e.id
+          FROM ph_runs.experiments e
+          WHERE e.project_id = ${projectId}::uuid
+            AND e.deleted_at IS NULL
+            AND (
+              e.dataset_id = ${datasetId}::uuid
+              OR e.optimization_id IN (SELECT id FROM target_optimizations)
+            )
+        )
+        DELETE FROM ph_runs.experiments experiment
+        USING target_experiments target
+        WHERE experiment.id = target.id
+      `);
+
+      await tx.execute(sql`
+        WITH target_optimizations AS (
+          SELECT id
+          FROM ph_runs.optimizations
+          WHERE project_id = ${projectId}::uuid
+            AND dataset_id = ${datasetId}::uuid
+            AND deleted_at IS NULL
+        )
+        DELETE FROM ph_runs.optimization_round_steps step
+        USING target_optimizations target
+        WHERE step.optimization_id = target.id
+      `);
+
+      await tx.execute(sql`
+        WITH target_optimizations AS (
+          SELECT id
+          FROM ph_runs.optimizations
+          WHERE project_id = ${projectId}::uuid
+            AND dataset_id = ${datasetId}::uuid
+            AND deleted_at IS NULL
+        )
+        DELETE FROM ph_runs.optimizations optimization
+        USING target_optimizations target
+        WHERE optimization.id = target.id
+      `);
+
+      await tx.execute(sql`
+        UPDATE ph_assets.prompts
+        SET default_dataset_id = NULL,
+            updated_at = now()
+        WHERE project_id = ${projectId}::uuid
+          AND default_dataset_id = ${datasetId}::uuid
+      `);
 
       const deleted = await tx
         .delete(datasets)
@@ -187,6 +421,50 @@ export class DatasetRepository {
 
       return deleted.length;
     });
+  }
+
+  async listDeletionImpact(projectId: string, datasetId: string): Promise<DatasetDeletionImpactRows> {
+    const experimentRows = await this.db
+      .select({
+        id: experiments.id,
+        name: experiments.name,
+        status: experiments.status,
+        datasetId: experiments.datasetId,
+        promptId: promptVersions.promptId,
+        promptVersionId: experiments.promptVersionId,
+        promptVersionNumber: promptVersions.versionNumber,
+        createdAt: experiments.createdAt,
+      })
+      .from(experiments)
+      .leftJoin(promptVersions, eq(promptVersions.id, experiments.promptVersionId))
+      .where(
+        and(eq(experiments.projectId, projectId), eq(experiments.datasetId, datasetId), isNull(experiments.deletedAt)),
+      );
+
+    const optimizationRows = await this.db
+      .select({
+        id: optimizations.id,
+        name: optimizations.name,
+        status: optimizations.status,
+        datasetId: optimizations.datasetId,
+        promptId: optimizations.promptId,
+        promptVersionId: sql<string | null>`COALESCE(${optimizations.baseVersionId}, ${optimizations.bestVersionId})`,
+        promptVersionNumber: sql<number | null>`NULL`,
+        createdAt: optimizations.createdAt,
+      })
+      .from(optimizations)
+      .where(
+        and(
+          eq(optimizations.projectId, projectId),
+          eq(optimizations.datasetId, datasetId),
+          isNull(optimizations.deletedAt),
+        ),
+      );
+
+    return {
+      experiments: experimentRows,
+      optimizations: optimizationRows,
+    };
   }
 
   async updateDatasetMetadata(

@@ -216,7 +216,7 @@ export function AnnotationsListPage({ projectId }: { projectId: string }) {
                       <div className="min-w-0">
                         <div className="truncate font-mono text-[12.5px]">{task.sourceName}</div>
                         <div className="mt-1 truncate text-[11.5px] text-muted-foreground">
-                          {task.releaseVariantLabel} · {task.promptVersionLabel ?? '-'}
+                          {task.releaseVersionLabel} · {task.promptVersionLabel ?? '-'}
                         </div>
                       </div>
                     </TableCell>

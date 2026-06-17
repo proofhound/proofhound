@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { datasetFieldSchemaRoleSchema } from './dataset.dto';
 
-export const runResultStatusSchema = z.enum(['success', 'error', 'timeout', 'rate_limited']);
+export const runResultStatusSchema = z.enum(['running', 'success', 'failed']);
 export type RunResultStatusDto = z.infer<typeof runResultStatusSchema>;
 
 export const runResultJudgmentStatusSchema = z.enum(['correct', 'incorrect', 'parse_error', 'judge_error']);
@@ -19,6 +19,9 @@ export type RunResultSourceDto = z.infer<typeof runResultSourceSchema>;
 
 export const releaseRunResultLaneSchema = z.enum(['production', 'canary']);
 export type ReleaseRunResultLaneDto = z.infer<typeof releaseRunResultLaneSchema>;
+
+export const releaseRunResultVersionScopeSchema = z.enum(['exact', 'journey']);
+export type ReleaseRunResultVersionScopeDto = z.infer<typeof releaseRunResultVersionScopeSchema>;
 
 export const runResultSortSchema = z.enum(['created_desc', 'latency_desc', 'tokens_desc']);
 export type RunResultSortDto = z.infer<typeof runResultSortSchema>;
@@ -115,7 +118,8 @@ export type RunResultListQueryDto = z.infer<typeof runResultListQuerySchema>;
 
 export const runResultReleaseListQuerySchema = runResultListQuerySchema.extend({
   sourceIds: uuidCsvSchema,
-  releaseVariantIds: uuidCsvSchema,
+  releaseVersionIds: uuidCsvSchema,
+  releaseVersionScope: releaseRunResultVersionScopeSchema.optional().default('exact'),
   promptVersionIds: uuidCsvSchema,
   lane: releaseLaneCsvSchema,
   externalId: z.string().trim().max(200).optional(),
@@ -167,9 +171,12 @@ export const releaseRunResultListItemSchema = z.object({
   lane: releaseRunResultLaneSchema,
   eventId: z.string().uuid().nullable(),
   canaryId: z.string().uuid().nullable(),
-  releaseVariantId: z.string().uuid().nullable(),
-  releaseVariantNumber: z.number().int().positive().nullable(),
-  releaseVariantLabel: z.string().nullable(),
+  releaseVersionId: z.string().uuid().nullable(),
+  releaseVersionKind: z.enum(['candidate', 'production']).nullable(),
+  releaseVersionLabel: z.string().nullable(),
+  releaseVersionProductionNumber: z.number().int().positive().nullable(),
+  releaseVersionTargetProductionNumber: z.number().int().positive().nullable(),
+  releaseVersionCandidateNumber: z.number().int().positive().nullable(),
   externalId: z.string().nullable(),
   promptName: z.string().nullable(),
   promptVersionId: z.string().uuid(),

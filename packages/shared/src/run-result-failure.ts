@@ -8,7 +8,7 @@ export function isRunResultFailure(
   judgmentStatus: RunResultJudgmentStatusDto | string | null | undefined,
   expectedOutput: unknown = EXPECTED_OUTPUT_NOT_PROVIDED,
 ): boolean {
-  if (status !== 'success') return true;
+  if (status === 'failed') return true;
   if (judgmentStatus === 'parse_error') return true;
   if (judgmentStatus !== 'judge_error') return false;
   return expectedOutput === EXPECTED_OUTPUT_NOT_PROVIDED || (expectedOutput !== null && expectedOutput !== undefined);

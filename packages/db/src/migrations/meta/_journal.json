@@ -57,6 +57,76 @@
       "when": 1781176538267,
       "tag": "0007_run_result_id_registry",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781529961966,
+      "tag": "0008_white_rachel_grey",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781577971155,
+      "tag": "0009_flat_wilson_fisk",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781592042593,
+      "tag": "0010_overjoyed_namora",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781592934017,
+      "tag": "0011_release_version_candidate_number",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1781595000000,
+      "tag": "0012_prompt_label_canary",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1781600000000,
+      "tag": "0013_annotation_all_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1781664000000,
+      "tag": "0014_release_record_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1781667600000,
+      "tag": "0015_release_line_running_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1781671200000,
+      "tag": "0016_release_line_unarchive_operation",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1781674800000,
+      "tag": "0017_release_line_history_restore_operations",
+      "breakpoints": true
     }
   ]
 }

@@ -136,8 +136,17 @@ function makeRepo(): Mocked<OptimizationRepository> {
     loadPromptVersionsByIds: vi.fn().mockResolvedValue(new Map()),
     findActiveVersionIdForPrompt: vi.fn().mockResolvedValue(null),
     findPromptVersionLanguage: vi.fn().mockResolvedValue('zh-CN'),
+    findUsablePromptVersion: vi.fn().mockResolvedValue({
+      id: 'v1111111-1111-4111-8111-111111111111',
+      promptId: 'p1111111-1111-4111-8111-111111111111',
+      promptStatus: 'active',
+      promptDeletedAt: null,
+    }),
     findActiveChildExperiment: vi.fn().mockResolvedValue(null),
-    findDatasetForOptimization: vi.fn(),
+    findDatasetForOptimization: vi.fn().mockResolvedValue({
+      id: 'c1111111-1111-4111-8111-111111111111',
+      name: 'baseline-dataset',
+    }),
     updateBaseVersionId: vi.fn().mockResolvedValue(undefined),
   } as unknown as Mocked<OptimizationRepository>;
 }
@@ -1521,7 +1530,7 @@ describe('OptimizationService', () => {
             decisionOutput: null,
             expectedOutput: null,
             judgmentStatus: null,
-            status: 'error',
+            status: 'failed',
             count: 5,
             inputTokens: 0,
             outputTokens: 0,

@@ -10,7 +10,7 @@ const logger = createLogger('bullmq.mock', { service: 'integration-test' });
 
 export type MockBullmqBehavior =
   | 'all_success' // Write status='success', judgment='correct' for every sample
-  | 'all_error' // Write status='error', judgment=null for every sample
+  | 'all_error' // Write status='failed', judgment=null for every sample
   | 'never_complete'; // Do not write run_result, letting the workflow keep polling (for timeout tests; use with caution)
 
 export interface EnqueueCall {
@@ -59,7 +59,7 @@ export class MockBullmqService {
       return rrId;
     }
 
-    const status: 'success' | 'error' = this.behavior === 'all_error' ? 'error' : 'success';
+    const status: 'success' | 'failed' = this.behavior === 'all_error' ? 'failed' : 'success';
     const expectedOutputStr = String(payload.judgment?.expectedOutput ?? '');
     const decisionOutput = status === 'success' ? expectedOutputStr : null;
     const judgmentStatus = status === 'success' ? 'correct' : null;

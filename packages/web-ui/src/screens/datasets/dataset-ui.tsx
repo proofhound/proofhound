@@ -143,13 +143,13 @@ export function ModalityBadge({ modalities }: { modalities: DatasetModality[] })
   return <ModalityIconGroup kinds={kinds} tooltips={tooltips} ariaLabels={ariaLabels} />;
 }
 
-export function DeletedBadge() {
+export function ArchivedBadge() {
   const { t } = useI18n();
 
   return (
     <span className="status-archived inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium">
       <span className="dot-archived size-1.5 rounded-full" />
-      {t('datasets.status.deleted')}
+      {t('datasets.status.archived')}
     </span>
   );
 }

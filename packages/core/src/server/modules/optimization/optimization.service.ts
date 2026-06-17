@@ -206,6 +206,10 @@ export class OptimizationService {
     let resolvedPromptId = body.promptId ?? null;
     let resolvedBaseVersionId = body.baseVersionId ?? null;
     const requestedPromptLanguage = body.promptLanguage ?? DEFAULT_PROMPT_LANGUAGE;
+    const dataset = await this.repo.findDatasetForOptimization(projectId, body.datasetId);
+    if (!dataset) {
+      throw new BadRequestException('dataset_not_found_or_archived');
+    }
     let workflowStartAuthorized = false;
     const assertWorkflowStart = async () => {
       if (workflowStartAuthorized) return;
@@ -244,10 +248,6 @@ export class OptimizationService {
       if (resolvedBaseVersionId) {
         throw new BadRequestException('base_version_must_be_unset_for_dataset_only_starting_mode');
       }
-      const dataset = await this.repo.findDatasetForOptimization(projectId, body.datasetId);
-      if (!dataset) {
-        throw new BadRequestException(`Dataset ${body.datasetId} not found`);
-      }
       await assertWorkflowStart();
       resolvedPromptId = await this.createPlaceholderPromptWithRetry({
         projectId,
@@ -260,6 +260,15 @@ export class OptimizationService {
     }
 
     const resolvedPromptLanguage = await this.resolvePromptLanguage(body.promptLanguage, resolvedBaseVersionId);
+    if (resolvedBaseVersionId) {
+      const promptVersion = await this.repo.findUsablePromptVersion(projectId, resolvedBaseVersionId);
+      if (!promptVersion || promptVersion.promptDeletedAt) {
+        throw new BadRequestException('prompt_version_not_found');
+      }
+      if (promptVersion.promptStatus === 'archived') {
+        throw new BadRequestException('prompt_archived');
+      }
+    }
 
     await assertWorkflowStart();
 

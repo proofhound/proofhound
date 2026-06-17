@@ -29,7 +29,7 @@ describe('computeAccuracy', () => {
     const rows = [
       row({ status: 'success', judgmentStatus: 'correct', count: 3 }),
       row({ status: 'success', judgmentStatus: 'incorrect', count: 1 }),
-      row({ status: 'error', count: 1 }),
+      row({ status: 'failed', count: 1 }),
     ];
     expect(computeAccuracy(rows)).toEqual({ accuracy: 3 / 5, correct: 3, total: 5 });
   });
@@ -93,7 +93,7 @@ describe('computeClassificationMetrics', () => {
         outputTokens: 20,
         costEstimate: 0.01,
       }),
-      row({ status: 'error', count: 1, inputTokens: 50, outputTokens: 0, costEstimate: 0.005 }),
+      row({ status: 'failed', count: 1, inputTokens: 50, outputTokens: 0, costEstimate: 0.005 }),
       row({
         status: 'success',
         judgmentStatus: 'parse_error',

@@ -771,7 +771,7 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  className="size-4 cursor-pointer"
+                  className="size-4 cursor-pointer accent-primary"
                   checked={deleteState.force}
                   onChange={(event) => setDeleteState((prev) => ({ ...prev, force: event.target.checked }))}
                 />
@@ -1081,7 +1081,7 @@ function KafkaConfigSection({
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            className="size-4 cursor-pointer"
+            className="size-4 cursor-pointer accent-primary"
             checked={form.configFromBeginning}
             onChange={(event) => onUpdate('configFromBeginning', event.target.checked)}
           />

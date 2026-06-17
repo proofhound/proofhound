@@ -1,39 +1,52 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
   AlertTriangle,
-  ClipboardCheck,
+  Archive,
+  Check,
+  ChevronDown,
   CircleDollarSign,
-  Copy,
   Gauge,
+  MoreHorizontal,
+  Play,
   Plus,
+  RotateCcw,
+  ScrollText,
+  Search,
+  SlidersHorizontal,
   Square,
+  Tag,
+  Trash2,
   Timer,
 } from 'lucide-react';
+import * as echarts from 'echarts/core';
+import { LineChart, type LineSeriesOption } from 'echarts/charts';
 import {
-  CartesianGrid,
-  Line,
-  LineChart as RechartsLineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
-import type { TooltipContentProps } from 'recharts';
+  DataZoomComponent,
+  type DataZoomComponentOption,
+  GridComponent,
+  type GridComponentOption,
+  ToolboxComponent,
+  type ToolboxComponentOption,
+  TooltipComponent,
+  type TooltipComponentOption,
+} from 'echarts/components';
+import { SVGRenderer } from 'echarts/renderers';
+import type { ComposeOption, ECharts } from 'echarts/core';
 import type {
-  AnnotationTaskDto,
   ProductionReleaseHistoryItemDto,
   ProjectMonitoringFilterDto,
   ProjectMonitoringStatsDto,
   ProjectMonitoringTimeseriesDto,
+  ReleaseLineDeletionImpactDto,
   ReleaseLineEventDto,
+  ReleaseVersionKindDto,
   ReleaseRunResultListItemDto,
-  ReleaseVariantDto,
   SourceBucket,
 } from '@proofhound/shared';
 import { Main } from '@proofhound/ui/layout';
@@ -50,7 +63,15 @@ import {
   DialogTitle,
   Input,
   PlatformLoader,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   DetailPageSkeleton,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
   ResourcePaginationFooter,
   Table,
   TableBody,
@@ -61,45 +82,47 @@ import {
   TableRow,
   cn,
 } from '@proofhound/ui';
-import type {
-  DateRangePresetOption,
-  DateRangeSegmentedLabels,
-  DateRangeValue,
-  TableColumn,
-} from '@proofhound/ui';
-import { useAnnotationTaskList } from '../../hooks';
+import type { DateRangePresetOption, DateRangeSegmentedLabels, DateRangeValue, TableColumn } from '@proofhound/ui';
 import { useDelayedLoading } from '../../hooks';
 import { useProjectModels } from '../../hooks';
-import { useProductionReleaseHistory, useStopProductionRelease } from '../../hooks';
+import { useConnectors, useProductionReleaseHistory, useStopCanaryRelease } from '../../hooks';
 import { useProjectMonitoringStats, useProjectMonitoringTimeseries } from '../../hooks';
 import {
+  useArchiveReleaseLine,
+  usePromoteReleaseLineCanary,
+  useDeleteReleaseLine,
+  useReleaseLineDeleteImpact,
   useReleaseLineEvents,
   useReleaseLineList,
+  useRestoreReleaseLineHistoryToCanary,
+  useRestoreReleaseLineHistoryToProduction,
+  useStartReleaseLine,
+  useStopReleaseLine,
+  useUnarchiveReleaseLine,
+  useUpdateReleaseLineInputRoute,
+  useUpdateReleaseLineOutputRoute,
   useUpdateReleaseLineRunConfig,
   useUpdateReleaseLineTrafficRatio,
 } from '../../hooks';
 import { useReleaseRunResults } from '../../hooks';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh, useDateTimeFormatter } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { getReleaseLineId, getReleaseStopConfirmationName } from '../../lib';
+import { getApiErrorMessage, getReleaseLineId, getReleaseStopConfirmationName } from '../../lib';
 import type { ReleaseLineLatestEvent, ReleaseLineView } from '../../lib';
 import { BigChartCard, type DeltaTone } from '../monitoring/big-chart-card';
-import {
-  ReleaseEventPill,
-  ReleaseMetricCard,
-  formatCount,
-  formatPercent,
-} from './release-line-ui';
+import { formatCount, formatPercent } from './release-line-ui';
 import { ReleaseTopologyCanvas } from './release-topology-canvas';
 
-type DetailTab = 'monitoring' | 'variants' | 'results' | 'quality' | 'history';
+echarts.use([LineChart, GridComponent, TooltipComponent, DataZoomComponent, ToolboxComponent, SVGRenderer]);
+
+type DetailTab = 'monitoring' | 'results' | 'quality' | 'history' | 'settings';
 
 const DETAIL_TABS: Array<{ value: DetailTab; key: TranslationKey }> = [
   { value: 'monitoring', key: 'releases.detail.tab.monitoring' },
-  { value: 'variants', key: 'releases.detail.tab.variants' },
   { value: 'results', key: 'releases.detail.tab.results' },
   { value: 'quality', key: 'releases.detail.tab.quality' },
   { value: 'history', key: 'releases.detail.tab.history' },
+  { value: 'settings', key: 'releases.detail.tab.settings' },
 ];
 
 const RESULT_COLUMNS: TableColumn[] = [
@@ -107,36 +130,21 @@ const RESULT_COLUMNS: TableColumn[] = [
   { key: 'input', width: 'wide' },
   { key: 'output', width: 'wide' },
   { key: 'source', width: 'compact' },
-  { key: 'variant', width: 'normal' },
+  { key: 'version', width: 'normal' },
   { key: 'latency', width: 'compact' },
   { key: 'tokens', width: 'compact' },
   { key: 'createdAt', width: 'normal' },
 ];
 
 const RESULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
-type ResultSourceFilter = 'all' | 'production' | 'canary';
-type ResultPromptVersionFilterOption = { id: string; label: string };
-type ResultReleaseVariantFilterOption = { id: string; label: string; detail: string };
-type ReleaseVariantStage = 'production_canary' | 'production' | 'canary' | 'history';
-
-type ReleaseVariantDetail = {
+const HISTORY_INITIAL_GROUP_LIMIT = 8;
+const HISTORY_GROUP_PAGE_SIZE = 8;
+type ResultReleaseVersionFilterOption = {
   id: string;
-  variantNumber: number | null;
   label: string;
-  promptName: string;
-  promptVersionId: string | null;
-  promptVersionLabel: string | null;
-  modelId: string | null;
-  modelName: string | null;
-  modelProvider: string | null;
-  createdAt: string | null;
-  updatedAt: string | null;
-  stage: ReleaseVariantStage;
-  events: ReleaseLineEventDto[];
-  productionEventCount: number;
-  canaryEventCount: number;
-  totalProcessed: number;
-  totalErrors: number;
+  promptVersion: string;
+  model: string;
+  detail: string;
 };
 
 const EMPTY_BY_SOURCE: Record<SourceBucket, number> = { prod: 0, canary: 0, iter: 0, exp: 0 };
@@ -170,22 +178,118 @@ type CompactMetricItem = {
   tone?: CompactMetricTone;
 };
 
-type QualityMetricKey = 'score';
+type QualityMetricKey = 'recall' | 'precision' | 'f1' | 'accuracy';
+type QualityScopeKey = string;
+type QualityVersionLane = 'production' | 'canary';
+type QualityFilterOption<T extends string = string> = {
+  id: T;
+  label: string;
+  meta?: string;
+};
 
-type AnnotationQualityPoint = {
+type QualityVersionOption = {
   id: string;
-  x: string;
-  name: string;
+  label: string;
+  kind: ReleaseVersionKindDto;
+  promptVersion: string;
+  model: string;
+  pointCount: number;
+  latestAt: string | null;
+};
+
+type QualityScopeOption = QualityFilterOption<QualityScopeKey>;
+
+type ReleaseQualityMetricSet = Record<QualityMetricKey, number> & {
+  sampleCount: number | null;
+};
+
+type ReleaseQualityPoint = {
+  id: string;
+  eventId: string;
+  eventLabel: string;
+  scope: QualityScopeKey;
+  scopeLabel: string;
+  releaseVersionId: string;
+  releaseVersionKind: ReleaseVersionKindDto;
+  lane: QualityVersionLane;
   promptVersionLabel: string;
   modelName: string;
-  releaseVariantLabel: string;
-  submitted: number;
-  total: number;
-  matched: number;
-  mismatched: number;
+  releaseVersionLabel: string;
+  sampleCount: number | null;
+  createdAt: string;
   updatedAt: string | null;
-  score: number;
+  recall: number;
+  precision: number;
+  f1: number;
+  accuracy: number;
 };
+
+type QualityChartPoint = ReleaseQualityPoint & {
+  xIndex: number;
+  xLabel: string;
+  metric: QualityMetricKey;
+  metricLabel: string;
+  seriesId: string;
+  seriesLabel: string;
+  seriesColor: string;
+  value: number;
+};
+
+type QualityChartSeries = {
+  id: string;
+  label: string;
+  color: string;
+  metric: QualityMetricKey;
+  metricLabel: string;
+  scope: QualityScopeKey;
+  scopeLabel: string;
+  points: QualityChartPoint[];
+};
+
+type QualityEChartsOption = ComposeOption<
+  GridComponentOption | TooltipComponentOption | DataZoomComponentOption | ToolboxComponentOption | LineSeriesOption
+>;
+
+type QualityEChartsDatum = {
+  value: number;
+  qualityPoint: QualityChartPoint;
+  symbol: 'circle';
+  symbolSize: number;
+  itemStyle: {
+    color: string;
+    borderColor: string;
+    borderWidth: number;
+  };
+};
+
+type QualityEChartsTooltipParam = {
+  marker?: string;
+  seriesName?: string;
+  data?: QualityEChartsDatum | null;
+};
+
+type QualityPercentAxisExtent = {
+  min: number;
+  max: number;
+};
+
+const QUALITY_OVERALL_SCOPE = '__overall__';
+
+const QUALITY_METRIC_OPTIONS: ReadonlyArray<{ key: QualityMetricKey; labelKey: TranslationKey }> = [
+  { key: 'recall', labelKey: 'releases.detail.quality.metric.recall' },
+  { key: 'precision', labelKey: 'releases.detail.quality.metric.precision' },
+  { key: 'f1', labelKey: 'releases.detail.quality.metric.f1' },
+  { key: 'accuracy', labelKey: 'releases.detail.quality.metric.accuracy' },
+];
+
+const QUALITY_SERIES_COLORS = [
+  'var(--primary)',
+  'var(--src-iter)',
+  'var(--status-pending-dot)',
+  'var(--destructive)',
+  'var(--foreground)',
+  'var(--muted-foreground)',
+] as const;
 
 const COMPACT_METRIC_DOT_CLASS: Record<CompactMetricTone, string> = {
   default: 'bg-muted-foreground',
@@ -193,10 +297,6 @@ const COMPACT_METRIC_DOT_CLASS: Record<CompactMetricTone, string> = {
   canary: 'bg-[var(--src-canary-fg)]',
   success: 'bg-[var(--status-running-fg)]',
   danger: 'bg-destructive',
-};
-
-const QUALITY_LINE_COLORS: Record<QualityMetricKey, string> = {
-  score: 'var(--src-canary)',
 };
 
 function normalizeLineId(value: string) {
@@ -209,15 +309,17 @@ function normalizeLineId(value: string) {
 
 function resolveTab(value: string | null): DetailTab {
   if (value === 'annotation') return 'quality';
+  if (value === 'variants' || value === 'versions') return 'history';
   if (
     value === 'monitoring' ||
-    value === 'variants' ||
     value === 'results' ||
     value === 'quality' ||
-    value === 'history'
+    value === 'history' ||
+    value === 'settings'
   ) {
     return value;
   }
+  if (value === 'delete') return 'settings';
   return 'monitoring';
 }
 
@@ -232,11 +334,30 @@ function createDefaultMonitoringRange(): DateRangeValue {
   };
 }
 
+function createDefaultResultDateRange(): DateRangeValue {
+  const preset = resolveDateRangePreset('d7');
+  if (preset) return { preset: 'all', ...preset };
+  const now = new Date();
+  return {
+    preset: 'all',
+    from: new Date(now.getTime() - 7 * 24 * 60 * 60_000).toISOString(),
+    to: now.toISOString(),
+  };
+}
+
 function getMonitoringRefreshInterval(preset: DateRangeValue['preset']): number | false {
   if (preset === 'h1') return AUTO_REFRESH_INTERVAL_MS;
   if (preset === 'h24') return 30_000;
   if (preset === 'd7') return 60_000;
   return false;
+}
+
+function isResultDateRangeApplied(value: DateRangeValue) {
+  return value.preset !== 'all';
+}
+
+function isResultDateRangeRolling(value: DateRangeValue) {
+  return value.preset !== 'all' && value.preset !== 'custom';
 }
 
 function hasRunningRelease(line: ReleaseLineView | null) {
@@ -293,29 +414,280 @@ function timeValue(value: string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function buildAnnotationQualityPoints(tasks: AnnotationTaskDto[]): AnnotationQualityPoint[] {
-  const points: AnnotationQualityPoint[] = [];
-  for (const task of tasks) {
-    if (task.quality) {
-      points.push({
-        id: task.id,
-        x: '',
-        name: task.name,
-        promptVersionLabel: task.promptVersionLabel ?? '—',
-        modelName: task.modelName ?? '—',
-        releaseVariantLabel: task.releaseVariantLabel,
-        submitted: task.progress.submitted,
-        total: task.progress.total,
-        matched: task.quality.matched,
-        mismatched: task.quality.mismatched,
-        updatedAt: task.updatedAt,
-        score: toPercentPoint(task.quality.score),
+function latestTime(values: Array<string | null | undefined>) {
+  const latest = values
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => timeValue(right) - timeValue(left))[0];
+  return latest ?? null;
+}
+
+function qualityVersionLane(kind: ReleaseVersionKindDto): QualityVersionLane {
+  return kind === 'production' ? 'production' : 'canary';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringFromQualityRecord(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function numberFromQualityRecord(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  if (parsed <= 1) return toPercentPoint(parsed);
+  if (parsed <= 100) return parsed;
+  return null;
+}
+
+function countFromQualityRecord(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.round(parsed);
+}
+
+function readReleaseQualityMetricSet(value: unknown): ReleaseQualityMetricSet | null {
+  if (!isRecord(value)) return null;
+  const recall = numberFromQualityRecord(value, 'recall');
+  const precision = numberFromQualityRecord(value, 'precision');
+  const f1 = numberFromQualityRecord(value, 'f1');
+  const accuracy = numberFromQualityRecord(value, 'accuracy');
+  if (recall === null || precision === null || f1 === null || accuracy === null) return null;
+  const sampleCount = countFromQualityRecord(value, 'sampleCount');
+  return {
+    recall,
+    precision,
+    f1,
+    accuracy,
+    sampleCount,
+  };
+}
+
+function readReleaseQualityScopes(
+  metrics: Record<string, unknown> | null,
+  overallLabel: string,
+): Array<{ scope: QualityScopeKey; label: string; metrics: ReleaseQualityMetricSet }> {
+  const quality = isRecord(metrics?.['quality']) ? metrics['quality'] : null;
+  if (!quality) return [];
+
+  const scopes: Array<{ scope: QualityScopeKey; label: string; metrics: ReleaseQualityMetricSet }> = [];
+  const overallMetrics = readReleaseQualityMetricSet(quality['overall']);
+  if (overallMetrics) {
+    scopes.push({ scope: QUALITY_OVERALL_SCOPE, label: overallLabel, metrics: overallMetrics });
+  }
+
+  const rawScopes = quality['scopes'];
+  if (Array.isArray(rawScopes)) {
+    for (const item of rawScopes) {
+      if (!isRecord(item)) continue;
+      const scope = stringFromQualityRecord(item, 'key') ?? stringFromQualityRecord(item, 'label');
+      if (!scope) continue;
+      const metricSet = readReleaseQualityMetricSet(item['metrics']) ?? readReleaseQualityMetricSet(item);
+      if (!metricSet) continue;
+      scopes.push({
+        scope,
+        label: stringFromQualityRecord(item, 'label') ?? scope,
+        metrics: metricSet,
+      });
+    }
+  } else if (isRecord(rawScopes)) {
+    for (const [scope, value] of Object.entries(rawScopes)) {
+      if (!isRecord(value)) continue;
+      const metricSet = readReleaseQualityMetricSet(value['metrics']) ?? readReleaseQualityMetricSet(value);
+      if (!metricSet) continue;
+      scopes.push({
+        scope,
+        label: stringFromQualityRecord(value, 'label') ?? scope,
+        metrics: metricSet,
       });
     }
   }
-  return points
-    .sort((left, right) => timeValue(left.updatedAt) - timeValue(right.updatedAt))
-    .map((point, index) => ({ ...point, x: `#${index + 1}` }));
+
+  return scopes;
+}
+
+function buildReleaseQualityPoints(releaseEvents: ReleaseLineEventDto[], overallLabel: string): ReleaseQualityPoint[] {
+  const points: ReleaseQualityPoint[] = [];
+  for (const event of releaseEvents) {
+    if (!event.releaseVersionId) continue;
+    const releaseVersionKind =
+      event.releaseVersionKind ?? (event.laneType === 'production' ? 'production' : 'candidate');
+    for (const scope of readReleaseQualityScopes(event.metrics, overallLabel)) {
+      points.push({
+        id: `${event.id}:${scope.scope}`,
+        eventId: event.id,
+        eventLabel: event.operation,
+        scope: scope.scope,
+        scopeLabel: scope.label,
+        releaseVersionId: event.releaseVersionId,
+        releaseVersionKind,
+        lane: qualityVersionLane(releaseVersionKind),
+        promptVersionLabel: event.promptVersionLabel ?? formatShortId(event.promptVersionId),
+        modelName: event.modelName ?? formatShortId(event.modelId),
+        releaseVersionLabel: event.releaseVersionLabel ?? formatShortId(event.releaseVersionId),
+        sampleCount: scope.metrics.sampleCount,
+        createdAt: event.createdAt,
+        updatedAt: event.updatedAt,
+        recall: scope.metrics.recall,
+        precision: scope.metrics.precision,
+        f1: scope.metrics.f1,
+        accuracy: scope.metrics.accuracy,
+      });
+    }
+  }
+  return points.sort((left, right) => timeValue(left.createdAt) - timeValue(right.createdAt));
+}
+
+function buildQualityChartSeries(
+  points: ReleaseQualityPoint[],
+  metrics: readonly QualityFilterOption<QualityMetricKey>[],
+  scopes: readonly QualityScopeOption[],
+): QualityChartSeries[] {
+  const sortedPoints = [...points].sort((left, right) => timeValue(left.createdAt) - timeValue(right.createdAt));
+  const eventOrder = new Map<string, number>();
+  for (const point of sortedPoints) {
+    if (!eventOrder.has(point.eventId)) eventOrder.set(point.eventId, eventOrder.size + 1);
+  }
+
+  const series: QualityChartSeries[] = [];
+  for (const scope of scopes) {
+    const scopedPoints = sortedPoints.filter((point) => point.scope === scope.id);
+    if (scopedPoints.length === 0) continue;
+    for (const metric of metrics) {
+      const seriesId = `${scope.id}:${metric.id}`;
+      const seriesLabel = `${scope.label} · ${metric.label}`;
+      const color = QUALITY_SERIES_COLORS[series.length % QUALITY_SERIES_COLORS.length] ?? 'var(--primary)';
+      series.push({
+        id: seriesId,
+        label: seriesLabel,
+        color,
+        metric: metric.id,
+        metricLabel: metric.label,
+        scope: scope.id,
+        scopeLabel: scope.label,
+        points: scopedPoints.map((point) => ({
+          ...point,
+          xIndex: eventOrder.get(point.eventId) ?? 0,
+          xLabel: `#${eventOrder.get(point.eventId) ?? 0}`,
+          metric: metric.id,
+          metricLabel: metric.label,
+          seriesId,
+          seriesLabel,
+          seriesColor: color,
+          value: point[metric.id],
+        })),
+      });
+    }
+  }
+  return series;
+}
+
+function buildQualityChartAxisData(series: readonly QualityChartSeries[]): QualityChartPoint[] {
+  const points = new Map<string, QualityChartPoint>();
+  for (const item of series) {
+    for (const point of item.points) {
+      points.set(point.eventId, point);
+    }
+  }
+  return [...points.values()].sort((left, right) => left.xIndex - right.xIndex);
+}
+
+function buildQualityVersionOptions(points: ReleaseQualityPoint[]): QualityVersionOption[] {
+  const versions = new Map<string, QualityVersionOption>();
+  for (const point of points) {
+    const existing = versions.get(point.releaseVersionId);
+    const latestAt = latestTime([existing?.latestAt, point.updatedAt ?? point.createdAt]);
+    if (existing) {
+      versions.set(point.releaseVersionId, {
+        ...existing,
+        pointCount: existing.pointCount + 1,
+        latestAt,
+      });
+      continue;
+    }
+    versions.set(point.releaseVersionId, {
+      id: point.releaseVersionId,
+      label: point.releaseVersionLabel,
+      kind: point.releaseVersionKind,
+      promptVersion: point.promptVersionLabel,
+      model: point.modelName,
+      pointCount: 1,
+      latestAt,
+    });
+  }
+  return [...versions.values()].sort((left, right) =>
+    left.label.localeCompare(right.label, undefined, { numeric: true }),
+  );
+}
+
+function buildQualityScopeOptions(points: ReleaseQualityPoint[]): QualityScopeOption[] {
+  const scopes = new Map<string, QualityScopeOption>();
+  for (const point of points) {
+    scopes.set(point.scope, { id: point.scope, label: point.scopeLabel });
+  }
+  return [...scopes.values()].sort((left, right) => {
+    if (left.id === QUALITY_OVERALL_SCOPE) return -1;
+    if (right.id === QUALITY_OVERALL_SCOPE) return 1;
+    return left.label.localeCompare(right.label, undefined, { numeric: true });
+  });
+}
+
+function resolveActiveQualityScopes(
+  selectedScopes: QualityScopeKey[] | null,
+  options: QualityScopeOption[],
+): QualityScopeOption[] {
+  if (selectedScopes) {
+    const selectedSet = new Set(selectedScopes);
+    const activeOptions = options.filter((option) => selectedSet.has(option.id));
+    if (activeOptions.length > 0) return activeOptions;
+  }
+  const fallback = options.find((option) => option.id === QUALITY_OVERALL_SCOPE) ?? options[0] ?? null;
+  return fallback ? [fallback] : [];
+}
+
+function resolveActiveQualityMetrics(
+  selectedMetrics: QualityMetricKey[] | null,
+  options: readonly QualityFilterOption<QualityMetricKey>[],
+): QualityFilterOption<QualityMetricKey>[] {
+  if (selectedMetrics) {
+    const selectedSet = new Set(selectedMetrics);
+    const activeOptions = options.filter((option) => selectedSet.has(option.id));
+    if (activeOptions.length > 0) return activeOptions;
+  }
+  return options.filter((option) => option.id === 'f1');
+}
+
+function filterQualityPoints(
+  points: ReleaseQualityPoint[],
+  versionIds: string[],
+  scopes: readonly QualityScopeOption[],
+): ReleaseQualityPoint[] {
+  if (scopes.length === 0) return [];
+  const versionSet = new Set(versionIds);
+  const scopeSet = new Set(scopes.map((scope) => scope.id));
+  return points.filter((point) => versionSet.has(point.releaseVersionId) && scopeSet.has(point.scope));
+}
+
+function toggleQualityFilterValue<T extends string>(values: T[], value: T): T[] {
+  if (!values.includes(value)) return [...values, value];
+  if (values.length <= 1) return values;
+  return values.filter((item) => item !== value);
+}
+
+function normalizeQualitySearch(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function qualitySearchIncludes(query: string, parts: Array<string | number | null | undefined>) {
+  return parts
+    .filter((part): part is string | number => part !== null && part !== undefined)
+    .join(' ')
+    .toLowerCase()
+    .includes(query);
 }
 
 function comparisonFromDelta(
@@ -474,6 +846,77 @@ function CompactMetricGroup({
   );
 }
 
+function ReleaseLineDeleteImpactPanel({
+  impact,
+  loading,
+}: {
+  impact: ReleaseLineDeletionImpactDto | undefined;
+  loading: boolean;
+}) {
+  const { t } = useI18n();
+
+  if (loading && !impact) {
+    return (
+      <div
+        className="rounded-lg border bg-muted/35 px-3 py-2 text-[12px] text-muted-foreground"
+        data-testid="release-line-delete-impact"
+      >
+        {t('releases.deleteImpact.loading')}
+      </div>
+    );
+  }
+  if (!impact) return null;
+
+  const items = [
+    {
+      key: 'events',
+      label: t('releases.deleteImpact.events'),
+      hint: t('releases.deleteImpact.eventsHint'),
+      count: impact.events.length,
+    },
+    {
+      key: 'versions',
+      label: t('releases.deleteImpact.versions'),
+      hint: t('releases.deleteImpact.versionsHint'),
+      count: impact.versions.length,
+    },
+    {
+      key: 'run-results',
+      label: t('releases.deleteImpact.runResults'),
+      hint: t('releases.deleteImpact.runResultsHint'),
+      count: impact.runResults,
+    },
+    {
+      key: 'annotation-tasks',
+      label: t('releases.deleteImpact.annotationTasks'),
+      hint: t('releases.deleteImpact.annotationTasksHint'),
+      count: impact.annotationTasks.length,
+    },
+  ] as const;
+
+  return (
+    <div className="rounded-lg border border-destructive/25 bg-background p-3" data-testid="release-line-delete-impact">
+      {impact.total === 0 ? (
+        <div className="text-[12px] text-muted-foreground">{t('releases.deleteImpact.empty')}</div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-4">
+          {items.map((item) => (
+            <div
+              key={item.key}
+              className="rounded-md border bg-muted/30 px-3 py-2"
+              data-testid={`release-line-delete-impact-${item.key}`}
+            >
+              <div className="text-[11px] font-medium text-muted-foreground">{item.label}</div>
+              <div className="mt-1 font-mono text-[18px] font-semibold leading-none">{formatCount(item.count)}</div>
+              <div className="mt-1 truncate text-[10.5px] text-muted-foreground">{item.hint}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId: string; releaseLineId: string }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -491,17 +934,39 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
   );
   const historyQuery = useProductionReleaseHistory(projectId, line?.promptId ?? '');
   const releaseLineEventsQuery = useReleaseLineEvents(projectId, line?.id ?? '');
-  const stopProductionMutation = useStopProductionRelease(projectId);
+  const stopLineMutation = useStopReleaseLine(projectId);
+  const startLineMutation = useStartReleaseLine(projectId);
+  const archiveLineMutation = useArchiveReleaseLine(projectId);
+  const unarchiveLineMutation = useUnarchiveReleaseLine(projectId);
+  const deleteLineMutation = useDeleteReleaseLine(projectId);
+  const stopCanaryMutation = useStopCanaryRelease(projectId);
   const updateTrafficRatioMutation = useUpdateReleaseLineTrafficRatio(projectId);
+  const promoteCanaryMutation = usePromoteReleaseLineCanary(projectId);
   const updateRunConfigMutation = useUpdateReleaseLineRunConfig(projectId);
+  const updateOutputRouteMutation = useUpdateReleaseLineOutputRoute(projectId);
+  const updateInputRouteMutation = useUpdateReleaseLineInputRoute(projectId);
   const modelQuery = useProjectModels(projectId);
+  const outputConnectorsQuery = useConnectors(projectId, { direction: 'output' });
   const tab = resolveTab(searchParams.get('tab'));
-  const selectedReleaseVariantId = searchParams.get('variant') ?? undefined;
+  const selectedReleaseVersionId = searchParams.get('version') ?? undefined;
   const [stopDialogOpen, setStopDialogOpen] = useState(false);
   const [stopConfirmationText, setStopConfirmationText] = useState('');
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteState, setDeleteState] = useState<{
+    lineId: string;
+    confirmationText: string;
+    error: string | null;
+  }>({ lineId: '', confirmationText: '', error: null });
+  const activeDeleteLineId = line?.id ?? '';
+  const deleteConfirmationText = deleteState.lineId === activeDeleteLineId ? deleteState.confirmationText : '';
+  const deleteError = deleteState.lineId === activeDeleteLineId ? deleteState.error : null;
+  const deleteImpactQuery = useReleaseLineDeleteImpact(projectId, deleteDialogOpen ? activeDeleteLineId : '');
   const productionReleaseName = useMemo(() => getReleaseStopConfirmationName(line), [line]);
   const canConfirmStopProduction = stopConfirmationText === productionReleaseName && productionReleaseName.length > 0;
-  const canAddCanary = Boolean(line && line.production?.currentEvent?.status === 'running' && !line.canary);
+  const canConfirmDelete = Boolean(line && deleteConfirmationText === line.label);
+  const canAddCanary = Boolean(line && line.production?.currentEvent?.status === 'running');
+  const canaryActionPending = stopCanaryMutation.isPending || promoteCanaryMutation.isPending;
   const isLive = hasRunningRelease(line);
   const onAutoRefreshTick = useCallback(async () => {
     await Promise.all([
@@ -518,9 +983,18 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
   });
 
   useEffect(() => {
-    if (searchParams.get('tab') !== 'annotation') return;
+    const rawTab = searchParams.get('tab');
+    const normalizedTab =
+      rawTab === 'annotation'
+        ? 'quality'
+        : rawTab === 'variants' || rawTab === 'versions'
+          ? 'history'
+          : rawTab === 'delete'
+            ? 'settings'
+            : null;
+    if (!normalizedTab) return;
     const params = new URLSearchParams(searchParams.toString());
-    params.set('tab', 'quality');
+    params.set('tab', normalizedTab);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }, [pathname, router, searchParams]);
 
@@ -529,7 +1003,7 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
       const params = new URLSearchParams(searchParams.toString());
       if (next === 'monitoring') params.delete('tab');
       else params.set('tab', next);
-      if (next !== 'results') params.delete('variant');
+      if (next !== 'results') params.delete('version');
       const query = params.toString();
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     },
@@ -558,22 +1032,22 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
   }
 
   function openStopProductionDialog() {
-    if (!line?.production?.currentEvent) return;
+    if (!line || line.status !== 'running') return;
     setStopConfirmationText('');
     setStopDialogOpen(true);
   }
 
   function closeStopProductionDialog() {
-    if (stopProductionMutation.isPending) return;
+    if (stopLineMutation.isPending) return;
     setStopDialogOpen(false);
     setStopConfirmationText('');
   }
 
   function confirmStopProduction() {
-    if (!line?.production?.currentEvent || !canConfirmStopProduction) return;
-    stopProductionMutation.mutate(
+    if (!line || !canConfirmStopProduction) return;
+    stopLineMutation.mutate(
       {
-        eventId: line.production.currentEvent.id,
+        releaseLineId: line.id,
         body: { reason: t('releases.detail.stopReason') },
       },
       {
@@ -583,6 +1057,83 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
         },
       },
     );
+  }
+
+  function startReleaseLine() {
+    if (!line || line.status !== 'stopped') return;
+    startLineMutation.mutate({
+      releaseLineId: line.id,
+      body: { reason: t('releases.detail.startReason') },
+    });
+  }
+
+  function openArchiveDialog() {
+    if (!line || line.status !== 'stopped') return;
+    setArchiveDialogOpen(true);
+  }
+
+  function closeArchiveDialog() {
+    if (archiveLineMutation.isPending) return;
+    setArchiveDialogOpen(false);
+  }
+
+  function confirmArchiveReleaseLine() {
+    if (!line || line.status !== 'stopped') return;
+    archiveLineMutation.mutate(
+      {
+        releaseLineId: line.id,
+        body: { reason: t('releases.detail.archiveReason') },
+      },
+      {
+        onSuccess: () => setArchiveDialogOpen(false),
+      },
+    );
+  }
+
+  function unarchiveReleaseLine() {
+    if (!line || line.status !== 'archived') return;
+    unarchiveLineMutation.mutate({
+      releaseLineId: line.id,
+      body: { reason: t('releases.detail.unarchiveReason') },
+    });
+  }
+
+  function openDeleteDialog() {
+    if (!line) return;
+    setDeleteState({ lineId: line.id, confirmationText: '', error: null });
+    setDeleteDialogOpen(true);
+  }
+
+  function closeDeleteDialog() {
+    if (deleteLineMutation.isPending) return;
+    setDeleteDialogOpen(false);
+    if (line) setDeleteState({ lineId: line.id, confirmationText: '', error: null });
+  }
+
+  async function confirmDeleteReleaseLine() {
+    if (!line || !canConfirmDelete) return;
+    setDeleteState((current) => ({
+      lineId: line.id,
+      confirmationText: current.lineId === line.id ? current.confirmationText : '',
+      error: null,
+    }));
+    try {
+      await deleteLineMutation.mutateAsync({
+        releaseLineId: line.id,
+        body: {
+          confirmationName: line.label,
+          reason: t('releases.detail.deleteReason'),
+        },
+      });
+      setDeleteDialogOpen(false);
+      router.push('/releases');
+    } catch (error) {
+      setDeleteState((current) => ({
+        lineId: line.id,
+        confirmationText: current.lineId === line.id ? current.confirmationText : '',
+        error: getApiErrorMessage(error) ?? t('releases.detail.deleteFailed'),
+      }));
+    }
   }
 
   function openAddCanaryPage() {
@@ -598,16 +1149,16 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h1 className="truncate text-[22px] font-semibold leading-tight">{line.promptName}</h1>
               <span data-testid="release-line-detail-status" className="sr-only">
-                {line.production?.currentEvent?.status ?? line.canary?.status ?? line.status}
+                {line.status}
               </span>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {line.production?.currentEvent?.status === 'running' ? (
+            {line.status === 'running' ? (
               <Button
                 variant="outline"
                 onClick={openStopProductionDialog}
-                disabled={stopProductionMutation.isPending}
+                disabled={stopLineMutation.isPending}
                 className="text-destructive hover:text-destructive"
                 data-testid="release-line-detail-stop"
               >
@@ -615,10 +1166,47 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
                 {t('releases.detail.action.stopProduction')}
               </Button>
             ) : null}
+            {line.status === 'stopped' ? (
+              <Button
+                variant="outline"
+                onClick={startReleaseLine}
+                disabled={startLineMutation.isPending}
+                data-testid="release-line-detail-start"
+              >
+                <Play className="size-4" />
+                {startLineMutation.isPending ? t('releases.detail.action.starting') : t('releases.detail.action.start')}
+              </Button>
+            ) : null}
+            {line.status === 'stopped' ? (
+              <Button
+                variant="outline"
+                onClick={openArchiveDialog}
+                disabled={archiveLineMutation.isPending}
+                data-testid="release-line-detail-archive"
+              >
+                <Archive className="size-4" />
+                {archiveLineMutation.isPending
+                  ? t('releases.detail.action.archiving')
+                  : t('releases.detail.action.archive')}
+              </Button>
+            ) : null}
+            {line.status === 'archived' ? (
+              <Button
+                variant="outline"
+                onClick={unarchiveReleaseLine}
+                disabled={unarchiveLineMutation.isPending}
+                data-testid="release-line-detail-unarchive"
+              >
+                <RotateCcw className="size-4" />
+                {unarchiveLineMutation.isPending
+                  ? t('releases.detail.action.unarchiving')
+                  : t('releases.detail.action.unarchive')}
+              </Button>
+            ) : null}
             {canAddCanary ? (
               <Button onClick={openAddCanaryPage}>
                 <Plus className="size-4" />
-                {t('releases.detail.action.addCanary')}
+                {line.canary ? t('releases.detail.action.replaceCanary') : t('releases.detail.action.addCanary')}
               </Button>
             ) : null}
           </div>
@@ -628,6 +1216,8 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
           line={line}
           models={modelQuery.data?.data ?? []}
           modelsLoading={modelQuery.isLoading}
+          outputConnectors={outputConnectorsQuery.data?.data ?? []}
+          outputConnectorsLoading={outputConnectorsQuery.isLoading}
           onUpdateTrafficRatio={(_canary, trafficRatio) =>
             updateTrafficRatioMutation.mutateAsync({
               releaseLineId: line.id,
@@ -642,7 +1232,24 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
             })
           }
           runConfigPending={updateRunConfigMutation.isPending}
+          onUpdateOutputRoute={(body) =>
+            updateOutputRouteMutation.mutateAsync({
+              releaseLineId: line.id,
+              body,
+            })
+          }
+          outputRoutePending={updateOutputRouteMutation.isPending}
+          onUpdateInputRoute={(body) =>
+            updateInputRouteMutation.mutateAsync({
+              releaseLineId: line.id,
+              body,
+            })
+          }
+          inputRoutePending={updateInputRouteMutation.isPending}
           onAddCanary={canAddCanary ? openAddCanaryPage : undefined}
+          onStopCanary={(canary) => stopCanaryMutation.mutateAsync(canary.id)}
+          onPromoteCanary={() => promoteCanaryMutation.mutateAsync(line.id)}
+          canaryActionPending={canaryActionPending}
         />
 
         <div className="inline-flex w-fit flex-wrap gap-0.5 rounded-lg border bg-card p-1">
@@ -666,29 +1273,55 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
         {tab === 'monitoring' ? (
           <MonitoringPane projectId={projectId} line={line} releaseEvents={releaseLineEventsQuery.data?.data ?? []} />
         ) : null}
-        {tab === 'variants' ? (
-          <VariantsPane
-            line={line}
-            releaseEvents={releaseLineEventsQuery.data?.data ?? []}
-            loading={releaseLineEventsQuery.isLoading}
-          />
-        ) : null}
         {tab === 'results' ? (
           <ResultsPane
             projectId={projectId}
             line={line}
             releaseEvents={releaseLineEventsQuery.data?.data ?? []}
-            initialReleaseVariantId={selectedReleaseVariantId}
+            initialReleaseVersionId={selectedReleaseVersionId}
           />
         ) : null}
-        {tab === 'quality' ? <QualityMetricsPane projectId={projectId} line={line} /> : null}
+        {tab === 'quality' ? (
+          <QualityMetricsPane line={line} releaseEvents={releaseLineEventsQuery.data?.data ?? []} />
+        ) : null}
         {tab === 'history' ? (
           <HistoryPane
+            projectId={projectId}
             line={line}
             productionHistory={historyQuery.data?.data ?? []}
             releaseEvents={releaseLineEventsQuery.data?.data ?? []}
             loading={historyQuery.isLoading || releaseLineEventsQuery.isLoading}
           />
+        ) : null}
+        {tab === 'settings' ? (
+          <section className="rounded-lg border bg-card" data-testid="release-line-settings-tab">
+            <div className="border-b px-4 py-3">
+              <div className="text-[13px] font-semibold">{t('releases.detail.settings.title')}</div>
+              <p className="mt-1 text-[12px] text-muted-foreground">{t('releases.detail.settings.description')}</p>
+            </div>
+            <div className="p-4">
+              <div className="flex flex-col gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-[13px] font-semibold text-destructive">
+                    <AlertTriangle className="size-4" />
+                    {t('releases.detail.delete.dangerTitle')}
+                  </div>
+                  <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
+                    {t('releases.detail.delete.description')}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={openDeleteDialog}
+                  data-testid="release-line-delete-open"
+                >
+                  <Trash2 className="size-4" />
+                  {t('releases.detail.delete.open')}
+                </Button>
+              </div>
+            </div>
+          </section>
         ) : null}
       </div>
       <Dialog
@@ -726,7 +1359,7 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
               type="button"
               variant="outline"
               onClick={closeStopProductionDialog}
-              disabled={stopProductionMutation.isPending}
+              disabled={stopLineMutation.isPending}
             >
               {t('common.cancel')}
             </Button>
@@ -734,12 +1367,112 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
               type="button"
               variant="destructive"
               onClick={confirmStopProduction}
-              disabled={!canConfirmStopProduction || stopProductionMutation.isPending}
+              disabled={!canConfirmStopProduction || stopLineMutation.isPending}
+              data-testid="release-stop-production-confirm"
             >
               <Square className="size-4" />
-              {stopProductionMutation.isPending
+              {stopLineMutation.isPending
                 ? t('releases.detail.stopDialog.stopping')
                 : t('releases.detail.stopDialog.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={archiveDialogOpen}
+        onOpenChange={(open) => (open ? setArchiveDialogOpen(true) : closeArchiveDialog())}
+      >
+        <DialogContent data-testid="release-line-detail-archive-dialog">
+          <DialogHeader>
+            <DialogTitle>{t('releases.archiveDialog.title')}</DialogTitle>
+            <DialogDescription>{t('releases.archiveDialog.description')}</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border bg-muted/40 p-3">
+            <div className="text-[11.5px] font-medium text-muted-foreground">
+              {t('releases.detail.stopDialog.releaseName')}
+            </div>
+            <div className="mt-1 break-all font-mono text-[13px] font-semibold">{line.label}</div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeArchiveDialog}
+              disabled={archiveLineMutation.isPending}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={confirmArchiveReleaseLine}
+              disabled={archiveLineMutation.isPending}
+              data-testid="release-line-detail-archive-confirm"
+            >
+              <Archive className="size-4" />
+              {archiveLineMutation.isPending
+                ? t('releases.archiveDialog.archiving')
+                : t('releases.archiveDialog.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={deleteDialogOpen} onOpenChange={(open) => (open ? openDeleteDialog() : closeDeleteDialog())}>
+        <DialogContent data-testid="release-line-delete-dialog">
+          <DialogHeader>
+            <DialogTitle>{t('releases.detail.delete.title')}</DialogTitle>
+            <DialogDescription>{t('releases.detail.delete.dialogDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+            <div className="text-[11.5px] font-medium text-muted-foreground">
+              {t('releases.detail.delete.releaseName')}
+            </div>
+            <div className="mt-1 break-all font-mono text-[13px] font-semibold">{line.label}</div>
+          </div>
+          <ReleaseLineDeleteImpactPanel
+            impact={deleteImpactQuery.data}
+            loading={deleteImpactQuery.isLoading || deleteImpactQuery.isFetching}
+          />
+          <div className="space-y-2">
+            <label htmlFor="release-line-delete-name" className="text-[12.5px] font-medium">
+              {t('releases.detail.delete.inputLabel')}
+            </label>
+            <Input
+              id="release-line-delete-name"
+              value={deleteConfirmationText}
+              onChange={(event) =>
+                setDeleteState({
+                  lineId: line.id,
+                  confirmationText: event.target.value,
+                  error: null,
+                })
+              }
+              placeholder={t('releases.detail.delete.inputPlaceholder').replace('{name}', line.label)}
+              autoComplete="off"
+            />
+            {deleteConfirmationText.length > 0 && !canConfirmDelete ? (
+              <p className="text-[12px] text-destructive">{t('releases.detail.delete.mismatch')}</p>
+            ) : null}
+          </div>
+          {deleteError ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {deleteError}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeDeleteDialog} disabled={deleteLineMutation.isPending}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void confirmDeleteReleaseLine()}
+              disabled={!canConfirmDelete || deleteLineMutation.isPending}
+              data-testid="release-line-delete-confirm"
+            >
+              <Trash2 className="size-4" />
+              {deleteLineMutation.isPending
+                ? t('releases.detail.delete.deleting')
+                : t('releases.detail.delete.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1112,211 +1845,79 @@ function MonitoringPane({
   );
 }
 
-function VariantsPane({
-  line,
-  releaseEvents,
-  loading,
-}: {
-  line: ReleaseLineView;
-  releaseEvents: ReleaseLineEventDto[];
-  loading: boolean;
-}) {
-  const { t } = useI18n();
-  const formatDateTimeOrDash = useDateTimeOrDash();
-  const details = useMemo(() => buildReleaseVariantDetails(line, releaseEvents), [line, releaseEvents]);
-  const showLoader = useDelayedLoading(loading);
-
-  if (loading && details.length === 0) {
-    return showLoader ? <PlatformLoader className="py-8" size="sm" /> : null;
-  }
-  if (details.length === 0) {
-    return (
-      <div className="rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
-        {t('releases.detail.variants.empty')}
-      </div>
-    );
-  }
-
-  return (
-    <section className="space-y-3" data-testid="release-variants-pane">
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-        {details.map((detail) => (
-          <article key={detail.id} className="rounded-lg border bg-card p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-[17px] font-semibold">{detail.label}</span>
-                  <ReleaseVariantStageBadge stage={detail.stage} />
-                </div>
-                <div className="mt-1 max-w-full truncate text-[12px] text-muted-foreground">
-                  {detail.promptName} · {detail.promptVersionLabel ?? formatShortId(detail.promptVersionId)} ·{' '}
-                  {detail.modelName ?? formatShortId(detail.modelId)}
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void navigator.clipboard?.writeText(detail.id)}
-                >
-                  <Copy className="size-3.5" />
-                  {t('releases.detail.variants.copyId')}
-                </Button>
-                <Button type="button" variant="outline" size="sm" asChild>
-                  <Link
-                    href={`/releases/${encodeURIComponent(line.id)}?tab=results&variant=${encodeURIComponent(detail.id)}`}
-                  >
-                    <Activity className="size-3.5" />
-                    {t('releases.detail.variants.viewResults')}
-                  </Link>
-                </Button>
-                <Button type="button" size="sm" asChild>
-                  <Link
-                    href={`/annotations/new?line=${encodeURIComponent(line.id)}&variant=${encodeURIComponent(detail.id)}`}
-                  >
-                    <ClipboardCheck className="size-3.5" />
-                    {t('releases.detail.variants.newAnnotation')}
-                  </Link>
-                </Button>
-              </div>
-            </div>
-
-            <dl className="mt-4 grid grid-cols-2 gap-3 border-t pt-4 md:grid-cols-4">
-              <VariantMeta
-                label={t('releases.detail.variants.promptVersion')}
-                value={detail.promptVersionLabel ?? formatShortId(detail.promptVersionId)}
-              />
-              <VariantMeta
-                label={t('releases.detail.variants.model')}
-                value={detail.modelName ?? formatShortId(detail.modelId)}
-              />
-              <VariantMeta label={t('releases.detail.variants.provider')} value={detail.modelProvider ?? '—'} />
-              <VariantMeta
-                label={t('releases.detail.variants.updatedAt')}
-                value={formatDateTimeOrDash(detail.updatedAt)}
-              />
-              <VariantMeta
-                label={t('releases.detail.variants.productionEvents')}
-                value={formatCount(detail.productionEventCount)}
-              />
-              <VariantMeta
-                label={t('releases.detail.variants.canaryEvents')}
-                value={formatCount(detail.canaryEventCount)}
-              />
-              <VariantMeta label={t('releases.detail.variants.processed')} value={formatCount(detail.totalProcessed)} />
-              <VariantMeta label={t('releases.detail.variants.errors')} value={formatCount(detail.totalErrors)} />
-            </dl>
-
-            <div className="mt-4 border-t pt-4">
-              <div className="mb-2 text-[12px] font-medium text-muted-foreground">
-                {t('releases.detail.variants.events')}
-              </div>
-              {detail.events.length === 0 ? (
-                <div className="text-[12px] text-muted-foreground">{t('releases.detail.variants.noEvents')}</div>
-              ) : (
-                <div className="space-y-2">
-                  {detail.events.slice(0, 5).map((event) => (
-                    <div key={event.id} className="flex min-w-0 flex-wrap items-center gap-2 text-[12px]">
-                      <ReleaseEventPill event={event.operation} />
-                      <span className="font-mono text-muted-foreground">
-                        {t(
-                          event.laneType === 'production'
-                            ? 'releases.detail.history.productionLane'
-                            : 'releases.detail.history.canaryLane',
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                        {event.submitReason || event.status}
-                      </span>
-                      <span className="font-mono text-[11.5px] text-muted-foreground">
-                        {formatDateTimeOrDash(event.createdAt)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-4 border-t pt-3">
-              <div className="font-mono text-[11px] text-muted-foreground">{detail.id}</div>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function VariantMeta({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="truncate text-[11.5px] text-muted-foreground">{label}</dt>
-      <dd className="mt-1 truncate font-mono text-[12.5px] font-medium text-foreground">{value}</dd>
-    </div>
-  );
-}
-
-function ReleaseVariantStageBadge({ stage }: { stage: ReleaseVariantStage }) {
-  const { t } = useI18n();
-  const isProduction = stage === 'production' || stage === 'production_canary';
-  const isCanary = stage === 'canary' || stage === 'production_canary';
-  return (
-    <span
-      className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium"
-      style={{
-        background: isProduction ? 'var(--src-prod-soft)' : isCanary ? 'var(--src-canary-soft)' : 'var(--muted)',
-        color: isProduction ? 'var(--src-prod-fg)' : isCanary ? 'var(--src-canary-fg)' : 'var(--muted-foreground)',
-        borderColor: isProduction
-          ? 'color-mix(in srgb, var(--src-prod) 30%, transparent)'
-          : isCanary
-            ? 'color-mix(in srgb, var(--src-canary) 30%, transparent)'
-            : 'var(--border)',
-      }}
-    >
-      {t(`releases.detail.variants.stage.${stage}` as TranslationKey)}
-    </span>
-  );
-}
-
 function ResultsPane({
   projectId,
   line,
   releaseEvents,
-  initialReleaseVariantId,
+  initialReleaseVersionId,
 }: {
   projectId: string;
   line: ReleaseLineView;
   releaseEvents: ReleaseLineEventDto[];
-  initialReleaseVariantId?: string;
+  initialReleaseVersionId?: string;
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const formatDateTimeOrDash = useDateTimeOrDash();
-  const [sourceFilter, setSourceFilter] = useState<ResultSourceFilter>('all');
-  const [releaseVariantFilter, setReleaseVariantFilter] = useState(initialReleaseVariantId ?? 'all');
-  const [promptVersionFilter, setPromptVersionFilter] = useState('all');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => createDefaultResultDateRange());
+  const [releaseVersionFilter, setReleaseVersionFilter] = useState(initialReleaseVersionId ?? 'all');
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(20);
   const sourceIds = useMemo(() => getReleaseResultSourceIds(line, releaseEvents), [line, releaseEvents]);
-  const releaseVariantOptions = useMemo(
-    () => getReleaseResultVariantOptions(line, releaseEvents),
+  const releaseVersionOptions = useMemo(
+    () => getReleaseResultVersionOptions(line, releaseEvents),
     [line, releaseEvents],
   );
-  const promptVersionOptions = useMemo(
-    () => getReleaseResultPromptVersionOptions(line, releaseEvents),
-    [line, releaseEvents],
+  const activeReleaseVersionFilter =
+    releaseVersionFilter === 'all' || releaseVersionOptions.some((option) => option.id === releaseVersionFilter)
+      ? releaseVersionFilter
+      : 'all';
+  const releaseVersionIds = activeReleaseVersionFilter === 'all' ? undefined : [activeReleaseVersionFilter];
+  const applyDateRange = isResultDateRangeApplied(dateRange);
+  const handleDateRangeChange = useCallback((next: DateRangeValue) => {
+    setDateRange(next);
+    setPageIndex(0);
+  }, []);
+  const refreshResultDateRange = useCallback(() => {
+    const nextDateRange = resolveRollingDateRangeValue(dateRange);
+    if (
+      nextDateRange.preset !== dateRange.preset ||
+      nextDateRange.from !== dateRange.from ||
+      nextDateRange.to !== dateRange.to
+    ) {
+      setDateRange(nextDateRange);
+    }
+  }, [dateRange]);
+  useAutoRefresh({
+    intervalMs: AUTO_REFRESH_INTERVAL_MS,
+    enabled: sourceIds.length > 0 && isResultDateRangeRolling(dateRange),
+    onTick: refreshResultDateRange,
+  });
+  const dateRangePresetLabels = useMemo<ReadonlyArray<DateRangePresetOption>>(
+    () => [
+      { value: 'all', label: t('releases.detail.results.dateFilter.all') },
+      { value: 'h24', label: t('monitoring.timeRange.preset.h24') },
+      { value: 'd7', label: t('monitoring.timeRange.preset.d7') },
+      { value: 'd30', label: t('monitoring.timeRange.preset.d30') },
+      { value: 'custom', label: t('monitoring.timeRange.preset.custom') },
+    ],
+    [t],
   );
-  const activeReleaseVariantFilter =
-    releaseVariantFilter === 'all' || releaseVariantOptions.some((option) => option.id === releaseVariantFilter)
-      ? releaseVariantFilter
-      : 'all';
-  const activePromptVersionFilter =
-    promptVersionFilter === 'all' || promptVersionOptions.some((option) => option.id === promptVersionFilter)
-      ? promptVersionFilter
-      : 'all';
-  const laneFilter = sourceFilter === 'all' ? undefined : [sourceFilter];
-  const releaseVariantIds = activeReleaseVariantFilter === 'all' ? undefined : [activeReleaseVariantFilter];
-  const promptVersionIds = activePromptVersionFilter === 'all' ? undefined : [activePromptVersionFilter];
+  const dateRangeLabels = useMemo<DateRangeSegmentedLabels>(
+    () => ({
+      ariaLabel: t('releases.detail.results.dateFilter.ariaLabel'),
+      customRangeAriaLabel: t('releases.detail.results.dateFilter.customRangeAriaLabel'),
+      fromLabel: t('monitoring.timeRange.from'),
+      toLabel: t('monitoring.timeRange.to'),
+      dateLabel: t('monitoring.timeRange.date'),
+      timeLabel: t('monitoring.timeRange.time'),
+      previousMonth: t('monitoring.timeRange.previousMonth'),
+      nextMonth: t('monitoring.timeRange.nextMonth'),
+      cancel: t('common.cancel'),
+      apply: t('common.apply'),
+      invalidRange: t('monitoring.timeRange.invalidRange'),
+    }),
+    [t],
+  );
   const resultsQuery = useReleaseRunResults(
     projectId,
     {
@@ -1327,9 +1928,10 @@ function ResultsPane({
       judgmentStatus: undefined,
       isCorrect: undefined,
       sourceIds,
-      releaseVariantIds,
-      promptVersionIds,
-      lane: laneFilter,
+      releaseVersionIds,
+      releaseVersionScope: 'exact',
+      from: applyDateRange ? dateRange.from : undefined,
+      to: applyDateRange ? dateRange.to : undefined,
     },
     sourceIds.length > 0,
   );
@@ -1347,66 +1949,26 @@ function ResultsPane({
           <h2 className="text-[14px] font-semibold">{t('releases.detail.tab.results')}</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="sr-only" htmlFor="release-result-variant-filter">
-            {t('releases.detail.results.variant')}
+          <DateRangeSegmented
+            value={dateRange}
+            onChange={handleDateRangeChange}
+            presetLabels={dateRangePresetLabels}
+            labels={dateRangeLabels}
+            locale={language}
+          />
+          <label className="sr-only" htmlFor="release-result-version-filter">
+            {t('releases.detail.results.version')}
           </label>
-          <select
-            id="release-result-variant-filter"
-            name="releaseVariantFilter"
-            value={activeReleaseVariantFilter}
-            onChange={(event) => {
-              setReleaseVariantFilter(event.currentTarget.value);
+          <ResultReleaseVersionSelect
+            id="release-result-version-filter"
+            options={releaseVersionOptions}
+            value={activeReleaseVersionFilter}
+            onChange={(next) => {
+              setReleaseVersionFilter(next);
               setPageIndex(0);
             }}
-            className="h-9 rounded-md border bg-background px-3 text-[12px] font-medium text-foreground shadow-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={releaseVariantOptions.length === 0}
-          >
-            <option value="all">{t('releases.detail.results.variantFilter.all')}</option>
-            {releaseVariantOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label} · {option.detail}
-              </option>
-            ))}
-          </select>
-          <label className="sr-only" htmlFor="release-result-prompt-version-filter">
-            {t('releases.detail.results.promptVersion')}
-          </label>
-          <select
-            id="release-result-prompt-version-filter"
-            name="promptVersionFilter"
-            value={activePromptVersionFilter}
-            onChange={(event) => {
-              setPromptVersionFilter(event.currentTarget.value);
-              setPageIndex(0);
-            }}
-            className="h-9 rounded-md border bg-background px-3 text-[12px] font-medium text-foreground shadow-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={promptVersionOptions.length === 0}
-          >
-            <option value="all">{t('releases.detail.results.promptVersionFilter.all')}</option>
-            {promptVersionOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <div className="inline-flex rounded-lg border bg-background p-1">
-            {(['all', 'production', 'canary'] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => {
-                  setSourceFilter(value);
-                  setPageIndex(0);
-                }}
-                className={cn(
-                  'h-7 rounded-md px-3 text-[12px] font-medium transition-colors',
-                  sourceFilter === value ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {t(`releases.detail.results.sourceFilter.${value}` as TranslationKey)}
-              </button>
-            ))}
-          </div>
+            disabled={releaseVersionOptions.length === 0}
+          />
         </div>
       </div>
       <Table columns={RESULT_COLUMNS}>
@@ -1416,7 +1978,7 @@ function ResultsPane({
             <TableHead column="input">{t('releases.detail.results.input')}</TableHead>
             <TableHead column="output">{t('releases.detail.results.output')}</TableHead>
             <TableHead column="source">{t('releases.detail.results.source')}</TableHead>
-            <TableHead column="variant">{t('releases.detail.results.variant')}</TableHead>
+            <TableHead column="version">{t('releases.detail.results.version')}</TableHead>
             <TableHead column="latency">{t('releases.detail.results.latency')}</TableHead>
             <TableHead column="tokens">{t('releases.detail.results.tokens')}</TableHead>
             <TableHead column="createdAt">{t('releases.detail.results.createdAt')}</TableHead>
@@ -1446,8 +2008,8 @@ function ResultsPane({
               <TableCell column="source">
                 <ReleaseRunResultLaneBadge lane={row.lane} />
               </TableCell>
-              <TableCell column="variant" className="text-[12px]">
-                <ReleaseRunResultVariant value={row} />
+              <TableCell column="version" className="text-[12px]">
+                <ReleaseRunResultVersion value={row} />
               </TableCell>
               <TableCell column="latency" className="font-mono text-[11.5px] text-muted-foreground">
                 {formatResultLatency(row.latencyMs)}
@@ -1487,6 +2049,210 @@ function ResultsPane({
   );
 }
 
+function ResultReleaseVersionSelect({
+  id,
+  options,
+  value,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  options: ResultReleaseVersionFilterOption[];
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selectedOption = value === 'all' ? null : (options.find((option) => option.id === value) ?? null);
+  const allLabel = t('releases.detail.results.versionFilter.all');
+  const triggerLabel = selectedOption?.label ?? allLabel;
+  const triggerDetail = selectedOption?.detail ?? null;
+  const normalizedQuery = normalizeResultVersionSearch(query);
+  const allOptionVisible = !normalizedQuery || resultVersionSearchIncludes(normalizedQuery, [allLabel, 'all']);
+  const filteredOptions = useMemo(() => {
+    if (!normalizedQuery) return options;
+    return options.filter((option) =>
+      resultVersionSearchIncludes(normalizedQuery, [
+        option.id,
+        option.label,
+        option.promptVersion,
+        option.model,
+        option.detail,
+      ]),
+    );
+  }, [normalizedQuery, options]);
+
+  function select(next: string) {
+    onChange(next);
+    setOpen(false);
+    setQuery('');
+  }
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setQuery('');
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          id={id}
+          type="button"
+          variant="outline"
+          disabled={disabled}
+          data-testid="release-result-version-filter"
+          className="h-auto min-h-10 w-full justify-between px-3 py-2 text-left sm:w-[340px]"
+        >
+          <span className="min-w-0">
+            <span className="block truncate font-mono text-[13px] font-semibold">{triggerLabel}</span>
+            {triggerDetail ? (
+              <span className="mt-0.5 block truncate text-[11px] font-normal text-muted-foreground">
+                {triggerDetail}
+              </span>
+            ) : null}
+          </span>
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={6} className="w-[calc(100vw-2rem)] p-0 sm:w-[720px]">
+        <ResultDropdownSearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder={t('releases.detail.results.versionDropdown.search')}
+        />
+        <div className="max-h-[360px] overflow-y-auto p-1.5">
+          {allOptionVisible ? (
+            <button
+              type="button"
+              data-testid="release-result-version-option-all"
+              onClick={() => select('all')}
+              className={cn(
+                'flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left hover:bg-accent',
+                value === 'all' && 'bg-primary/5',
+              )}
+            >
+              <ResultVersionSelectionCheck selected={value === 'all'} />
+              <span className="min-w-0 flex-1">
+                <span className="block min-w-0 truncate font-mono text-[13px] font-semibold">{allLabel}</span>
+              </span>
+            </button>
+          ) : null}
+          {filteredOptions.length === 0 && !allOptionVisible ? (
+            <div className="px-3 py-8 text-center text-[12px] text-muted-foreground">
+              {t('releases.detail.results.versionDropdown.noMatches')}
+            </div>
+          ) : (
+            filteredOptions.map((option) => {
+              const selected = option.id === value;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  data-testid={`release-result-version-option-${option.id}`}
+                  onClick={() => select(option.id)}
+                  className={cn(
+                    'flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left hover:bg-accent',
+                    selected && 'bg-primary/5',
+                  )}
+                >
+                  <ResultVersionSelectionCheck selected={selected} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block min-w-0 truncate font-mono text-[13px] font-semibold">{option.label}</span>
+                    <span className="mt-1 grid gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground sm:grid-cols-3">
+                      <span className="min-w-0 truncate">
+                        <ResultDropdownFieldLabel
+                          label={t('releases.detail.results.versionDropdown.promptVersion')}
+                          value={option.promptVersion}
+                        />
+                      </span>
+                      <span className="min-w-0 truncate">
+                        <ResultDropdownFieldLabel
+                          label={t('releases.detail.results.versionDropdown.model')}
+                          value={option.model}
+                        />
+                      </span>
+                      <span className="min-w-0 truncate">
+                        <ResultDropdownFieldLabel
+                          label={t('releases.detail.results.versionDropdown.versionId')}
+                          value={formatShortId(option.id)}
+                        />
+                      </span>
+                    </span>
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function ResultDropdownSearchInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 border-b px-3 py-2">
+      <Search className="size-3.5 text-muted-foreground" aria-hidden="true" />
+      <Input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => event.stopPropagation()}
+        placeholder={placeholder}
+        data-testid="release-result-version-search"
+        className="h-8 border-0 bg-transparent px-0 text-[13px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+      />
+    </div>
+  );
+}
+
+function ResultVersionSelectionCheck({ selected }: { selected: boolean }) {
+  return (
+    <span
+      className={cn(
+        'mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full border',
+        selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/35 bg-background',
+      )}
+      aria-hidden="true"
+    >
+      <Check className={cn('size-3', selected ? 'opacity-100' : 'opacity-0')} />
+    </span>
+  );
+}
+
+function ResultDropdownFieldLabel({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <span className="text-muted-foreground">{label}</span>
+      <span className="mx-1 text-muted-foreground/60">-</span>
+      <span className="text-foreground">{value}</span>
+    </>
+  );
+}
+
+function normalizeResultVersionSearch(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function resultVersionSearchIncludes(query: string, parts: Array<string | number | null | undefined>) {
+  return parts
+    .filter((part): part is string | number => part !== null && part !== undefined)
+    .join(' ')
+    .toLowerCase()
+    .includes(query);
+}
+
 function getReleaseLineEventSourceIds(line: ReleaseLineView, releaseEvents: ReleaseLineEventDto[]): string[] {
   const ids = [
     ...releaseEvents.flatMap((event) => [
@@ -1522,126 +2288,11 @@ function getReleaseResultSourceIds(line: ReleaseLineView, releaseEvents: Release
   return getReleaseLineEventSourceIds(line, releaseEvents);
 }
 
-function buildReleaseVariantDetails(
+function getReleaseResultVersionOptions(
   line: ReleaseLineView,
   releaseEvents: ReleaseLineEventDto[],
-): ReleaseVariantDetail[] {
-  const baseById = new Map<
-    string,
-    Omit<
-      ReleaseVariantDetail,
-      'stage' | 'events' | 'productionEventCount' | 'canaryEventCount' | 'totalProcessed' | 'totalErrors'
-    >
-  >();
-  const eventsByVariant = new Map<string, ReleaseLineEventDto[]>();
-
-  const addVariant = (variant: ReleaseVariantDto) => {
-    baseById.set(variant.id, {
-      id: variant.id,
-      variantNumber: variant.variantNumber,
-      label: variant.label,
-      promptName: variant.promptName,
-      promptVersionId: variant.promptVersionId,
-      promptVersionLabel: variant.promptVersionLabel,
-      modelId: variant.modelId,
-      modelName: variant.modelName,
-      modelProvider: variant.modelProvider,
-      createdAt: variant.createdAt,
-      updatedAt: variant.updatedAt,
-    });
-  };
-
-  for (const variant of line.variants) addVariant(variant);
-  for (const event of releaseEvents) {
-    if (!event.releaseVariantId) continue;
-    const events = eventsByVariant.get(event.releaseVariantId) ?? [];
-    events.push(event);
-    eventsByVariant.set(event.releaseVariantId, events);
-
-    if (!baseById.has(event.releaseVariantId)) {
-      baseById.set(event.releaseVariantId, {
-        id: event.releaseVariantId,
-        variantNumber: event.releaseVariantNumber,
-        label: event.releaseVariantLabel ?? formatShortId(event.releaseVariantId),
-        promptName: event.promptName,
-        promptVersionId: event.promptVersionId,
-        promptVersionLabel: event.promptVersionLabel,
-        modelId: event.modelId,
-        modelName: event.modelName,
-        modelProvider: event.modelProvider,
-        createdAt: event.createdAt,
-        updatedAt: event.updatedAt,
-      });
-    }
-  }
-
-  const currentProductionVariantId =
-    releaseEvents.find((event) => event.id === line.production?.currentEvent?.id)?.releaseVariantId ?? null;
-  const activeCanaryVariantId =
-    line.canary?.releaseVariantId ??
-    releaseEvents.find((event) => event.id === line.canary?.id)?.releaseVariantId ??
-    null;
-
-  return [...baseById.values()]
-    .map((base) => {
-      const events = (eventsByVariant.get(base.id) ?? []).sort(
-        (left, right) => timeValue(right.createdAt) - timeValue(left.createdAt),
-      );
-      return {
-        ...base,
-        createdAt: minDateString([base.createdAt, ...events.map((event) => event.createdAt)]),
-        updatedAt: maxDateString([base.updatedAt, ...events.map((event) => event.updatedAt ?? event.createdAt)]),
-        stage: resolveReleaseVariantStage(base.id, currentProductionVariantId, activeCanaryVariantId, events),
-        events,
-        productionEventCount: events.filter((event) => event.laneType === 'production').length,
-        canaryEventCount: events.filter((event) => event.laneType === 'canary').length,
-        totalProcessed: events.reduce((sum, event) => sum + event.totalProcessed, 0),
-        totalErrors: events.reduce((sum, event) => sum + event.totalErrors, 0),
-      } satisfies ReleaseVariantDetail;
-    })
-    .sort((left, right) => {
-      if (left.variantNumber !== null && right.variantNumber !== null) return left.variantNumber - right.variantNumber;
-      if (left.variantNumber !== null) return -1;
-      if (right.variantNumber !== null) return 1;
-      return left.label.localeCompare(right.label, undefined, { numeric: true });
-    });
-}
-
-function resolveReleaseVariantStage(
-  releaseVariantId: string,
-  currentProductionVariantId: string | null,
-  activeCanaryVariantId: string | null,
-  events: ReleaseLineEventDto[],
-): ReleaseVariantStage {
-  const isProduction =
-    currentProductionVariantId === releaseVariantId ||
-    events.some((event) => event.laneType === 'production' && event.status === 'running');
-  const isCanary =
-    activeCanaryVariantId === releaseVariantId ||
-    events.some((event) => event.laneType === 'canary' && (event.status === 'running' || event.status === 'stopped'));
-  if (isProduction && isCanary) return 'production_canary';
-  if (isProduction) return 'production';
-  if (isCanary) return 'canary';
-  return 'history';
-}
-
-function minDateString(values: Array<string | null | undefined>): string | null {
-  const dates = values.filter((value): value is string => Boolean(value));
-  if (dates.length === 0) return null;
-  return dates.reduce((min, value) => (timeValue(value) < timeValue(min) ? value : min));
-}
-
-function maxDateString(values: Array<string | null | undefined>): string | null {
-  const dates = values.filter((value): value is string => Boolean(value));
-  if (dates.length === 0) return null;
-  return dates.reduce((max, value) => (timeValue(value) > timeValue(max) ? value : max));
-}
-
-function getReleaseResultVariantOptions(
-  line: ReleaseLineView,
-  releaseEvents: ReleaseLineEventDto[],
-): ResultReleaseVariantFilterOption[] {
-  const options = new Map<string, ResultReleaseVariantFilterOption>();
+): ResultReleaseVersionFilterOption[] {
+  const options = new Map<string, ResultReleaseVersionFilterOption>();
   const add = (input: {
     id: string | null | undefined;
     label: string | null | undefined;
@@ -1656,23 +2307,25 @@ function getReleaseResultVariantOptions(
     options.set(input.id, {
       id: input.id,
       label: input.label?.trim() || formatShortId(input.id),
+      promptVersion,
+      model,
       detail: `${promptVersion} · ${model}`,
     });
   };
-  for (const variant of line.variants) {
+  for (const version of line.versions) {
     add({
-      id: variant.id,
-      label: variant.label,
-      promptVersionLabel: variant.promptVersionLabel,
-      promptVersionId: variant.promptVersionId,
-      modelName: variant.modelName,
-      modelId: variant.modelId,
+      id: version.id,
+      label: version.label,
+      promptVersionLabel: version.promptVersionLabel,
+      promptVersionId: version.promptVersionId,
+      modelName: version.modelName,
+      modelId: version.modelId,
     });
   }
   for (const event of releaseEvents) {
     add({
-      id: event.releaseVariantId,
-      label: event.releaseVariantLabel,
+      id: event.releaseVersionId,
+      label: event.releaseVersionLabel,
       promptVersionLabel: event.promptVersionLabel,
       promptVersionId: event.promptVersionId,
       modelName: event.modelName,
@@ -1682,23 +2335,6 @@ function getReleaseResultVariantOptions(
   return [...options.values()].sort((left, right) =>
     left.label.localeCompare(right.label, undefined, { numeric: true }),
   );
-}
-
-function getReleaseResultPromptVersionOptions(
-  line: ReleaseLineView,
-  releaseEvents: ReleaseLineEventDto[],
-): ResultPromptVersionFilterOption[] {
-  const options = new Map<string, string>();
-  const add = (id: string | null | undefined, label: string | null | undefined) => {
-    if (!id) return;
-    options.set(id, label?.trim() || formatShortId(id));
-  };
-  add(line.production?.currentEvent?.promptVersionId, line.productionVersionLabel);
-  add(line.canary?.promptVersionId, line.canaryVersionLabel);
-  for (const event of releaseEvents) {
-    add(event.promptVersionId, event.promptVersionLabel);
-  }
-  return [...options.entries()].map(([id, label]) => ({ id, label }));
 }
 
 function formatReleaseRunResultInput(row: ReleaseRunResultListItemDto, maxLength: number): string {
@@ -1786,8 +2422,8 @@ function ReleaseRunResultLaneBadge({ lane }: { lane: ReleaseRunResultListItemDto
   );
 }
 
-function ReleaseRunResultVariant({ value }: { value: ReleaseRunResultListItemDto }) {
-  const label = value.releaseVariantLabel ?? formatShortId(value.releaseVariantId);
+function ReleaseRunResultVersion({ value }: { value: ReleaseRunResultListItemDto }) {
+  const label = value.releaseVersionLabel ?? formatShortId(value.releaseVersionId);
   const promptVersion = formatReleaseRunResultPromptVersion(value);
   const model = value.modelName ?? formatShortId(value.modelId);
   return (
@@ -1800,286 +2436,1702 @@ function ReleaseRunResultVariant({ value }: { value: ReleaseRunResultListItemDto
   );
 }
 
-function QualityMetricsPane({ projectId, line }: { projectId: string; line: ReleaseLineView }) {
+function QualityMetricsPane({ line, releaseEvents }: { line: ReleaseLineView; releaseEvents: ReleaseLineEventDto[] }) {
   const { t } = useI18n();
-  const annotationTasksQuery = useAnnotationTaskList(projectId);
-  const annotationTasksLoading = useDelayedLoading(annotationTasksQuery.isLoading);
-  const lineTasks = useMemo(
-    () => (annotationTasksQuery.data?.data ?? []).filter((task) => task.releaseLineId === line.id),
-    [annotationTasksQuery.data, line.id],
+  const [selectedVersionIds, setSelectedVersionIds] = useState<string[] | null>(null);
+  const [selectedScopeIds, setSelectedScopeIds] = useState<QualityScopeKey[] | null>(null);
+  const [selectedMetricIds, setSelectedMetricIds] = useState<QualityMetricKey[] | null>(['f1']);
+  const overallLabel = t('releases.detail.quality.scope.overall');
+  const qualityPoints = useMemo(
+    () => buildReleaseQualityPoints(releaseEvents, overallLabel),
+    [overallLabel, releaseEvents],
   );
-  const points = useMemo(() => buildAnnotationQualityPoints(lineTasks), [lineTasks]);
-  const latest = points[points.length - 1] ?? null;
-  const submitted = lineTasks.reduce((sum, task) => sum + task.progress.submitted, 0);
-  const matched = lineTasks.reduce((sum, task) => sum + (task.quality?.matched ?? 0), 0);
-  const mismatched = lineTasks.reduce((sum, task) => sum + (task.quality?.mismatched ?? 0), 0);
-  const judged = matched + mismatched;
-  const aggregateScore = judged > 0 ? toPercentPoint(matched / judged) : null;
-  const annotationHref = `/annotations/new?line=${encodeURIComponent(line.id)}`;
-
-  return (
-    <div className="space-y-4" data-testid="release-quality-metrics-pane">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-[14px] font-semibold">{t('releases.detail.quality.title')}</h2>
-        <Button asChild>
-          <Link href={annotationHref}>
-            <ClipboardCheck className="size-4" />
-            {t('releases.detail.action.newAnnotation')}
-          </Link>
-        </Button>
-      </div>
-
-      {annotationTasksLoading && lineTasks.length === 0 ? (
-        <PlatformLoader className="rounded-lg border bg-card py-10" size="sm" />
-      ) : null}
-
-      {annotationTasksQuery.isError ? (
-        <div className="rounded-lg border bg-card px-4 py-3 text-sm text-destructive">
-          {t('releases.detail.quality.loadFailed')}
-        </div>
-      ) : null}
-
-      {!annotationTasksQuery.isLoading && !annotationTasksQuery.isError && lineTasks.length === 0 ? (
-        <div className="rounded-lg border bg-card p-10 text-center" data-testid="release-quality-empty">
-          <div className="text-[15px] font-semibold">{t('releases.detail.quality.empty')}</div>
-          <Button className="mt-5" asChild>
-            <Link href={annotationHref}>
-              <ClipboardCheck className="size-4" />
-              {t('releases.detail.action.newAnnotation')}
-            </Link>
-          </Button>
-        </div>
-      ) : null}
-
-      {lineTasks.length > 0 ? (
-        <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <ReleaseMetricCard
-              label={t('releases.detail.quality.matchRate')}
-              value={formatQualityPercent(aggregateScore)}
-              detail={t('releases.detail.quality.tasksCount').replace('{count}', formatCount(lineTasks.length))}
-              tone="canary"
-            />
-            <ReleaseMetricCard
-              label={t('releases.detail.quality.latestMatchRate')}
-              value={formatQualityPercent(latest?.score)}
-              detail={latest?.name ?? t('common.noData')}
-            />
-            <ReleaseMetricCard
-              label={t('releases.detail.quality.matched')}
-              value={formatCount(matched)}
-              detail={t('releases.detail.quality.matchedHint')}
-            />
-            <ReleaseMetricCard
-              label={t('releases.detail.quality.mismatched')}
-              value={formatCount(mismatched)}
-              detail={t('releases.detail.quality.mismatchedHint')}
-            />
-            <ReleaseMetricCard
-              label={t('releases.detail.quality.submitted')}
-              value={formatCount(submitted)}
-              detail={t('releases.detail.quality.submittedHint')}
-            />
-          </div>
-
-          {points.length > 0 ? (
-            <div className="rounded-lg border bg-card p-4">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="text-[14px] font-semibold">{t('releases.detail.quality.chartTitle')}</div>
-                </div>
-                <QualityLegend />
-              </div>
-              <QualityMetricsChart data={points} />
-            </div>
-          ) : (
-            <div className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground">
-              {t('releases.detail.quality.noComparable')}
-            </div>
-          )}
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function QualityLegend() {
-  const { t } = useI18n();
-  const items: Array<{ key: QualityMetricKey; label: string }> = [
-    { key: 'score', label: t('releases.detail.quality.matchRate') },
-  ];
-
-  return (
-    <div className="flex flex-wrap items-center gap-3 text-[11.5px] text-muted-foreground">
-      {items.map((item) => (
-        <div key={item.key} className="inline-flex items-center gap-1.5">
-          <span
-            className="size-2 rounded-full"
-            style={{ background: QUALITY_LINE_COLORS[item.key] }}
-            aria-hidden="true"
-          />
-          <span>{item.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function QualityMetricsChart({ data }: { data: AnnotationQualityPoint[] }) {
-  const { t } = useI18n();
-  const metricLabels = useMemo<Record<QualityMetricKey, string>>(
-    () => ({
-      score: t('releases.detail.quality.matchRate'),
-    }),
+  const versionOptions = useMemo(() => buildQualityVersionOptions(qualityPoints), [qualityPoints]);
+  const scopeOptions = useMemo(() => buildQualityScopeOptions(qualityPoints), [qualityPoints]);
+  const metricOptions = useMemo<QualityFilterOption<QualityMetricKey>[]>(
+    () => QUALITY_METRIC_OPTIONS.map((option) => ({ id: option.key, label: t(option.labelKey) })),
     [t],
   );
+  const activeVersionIds = useMemo(() => {
+    const available = versionOptions.map((option) => option.id);
+    if (selectedVersionIds === null) return available;
+    return selectedVersionIds.filter((id) => available.includes(id));
+  }, [selectedVersionIds, versionOptions]);
+  const activeScopes = resolveActiveQualityScopes(selectedScopeIds, scopeOptions);
+  const activeMetrics = resolveActiveQualityMetrics(selectedMetricIds, metricOptions);
+  const visiblePoints = useMemo(
+    () => filterQualityPoints(qualityPoints, activeVersionIds, activeScopes),
+    [activeScopes, activeVersionIds, qualityPoints],
+  );
+  const chartSeries = useMemo(
+    () => buildQualityChartSeries(visiblePoints, activeMetrics, activeScopes),
+    [activeMetrics, activeScopes, visiblePoints],
+  );
+  const chartAxisData = useMemo(() => buildQualityChartAxisData(chartSeries), [chartSeries]);
+  const annotationHref = buildQualityAnnotationHref(line, releaseEvents);
 
   return (
-    <div className="h-[320px] min-w-0 w-full">
-      <ResponsiveContainer
-        width="100%"
-        height="100%"
-        minWidth={1}
-        minHeight={1}
-        initialDimension={{ width: 960, height: 320 }}
-      >
-        <RechartsLineChart data={data} margin={{ top: 12, right: 16, bottom: 8, left: 0 }}>
-          <CartesianGrid strokeDasharray="2 3" vertical={false} stroke="var(--border)" />
-          <XAxis
-            dataKey="x"
-            axisLine={false}
-            tickLine={false}
-            tick={{
-              fontSize: 10,
-              fontFamily: 'JetBrains Mono, ui-monospace, monospace',
-              fill: 'var(--muted-foreground)',
-            }}
-          />
-          <YAxis
-            axisLine={false}
-            tickLine={false}
-            domain={[0, 100]}
-            tick={{
-              fontSize: 10,
-              fontFamily: 'JetBrains Mono, ui-monospace, monospace',
-              fill: 'var(--muted-foreground)',
-            }}
-            tickFormatter={(value) => `${value}%`}
-            width={42}
-          />
-          <Tooltip
-            cursor={{ stroke: 'var(--border)', strokeDasharray: '4 4' }}
-            content={(props) => (
-              <QualityChartTooltip
-                {...props}
-                metricLabels={metricLabels}
-                submittedLabel={t('releases.detail.quality.submitted')}
-              />
-            )}
-          />
-          {(['score'] satisfies QualityMetricKey[]).map((key) => (
-            <Line
-              key={key}
-              type="monotone"
-              dataKey={key}
-              name={metricLabels[key]}
-              stroke={QUALITY_LINE_COLORS[key]}
-              strokeWidth={2}
-              dot={{ r: 3, strokeWidth: 1.5 }}
-              activeDot={{ r: 4 }}
-              isAnimationActive={false}
+    <section className="space-y-4" data-testid="release-quality-metrics-pane">
+      <div className="min-w-0">
+        <h2 className="text-[14px] font-semibold">{t('releases.detail.quality.title')}</h2>
+        <p className="mt-1 max-w-3xl text-[12px] leading-5 text-muted-foreground">
+          {t('releases.detail.quality.description')}
+        </p>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+        {qualityPoints.length > 0 ? (
+          <div className="flex flex-wrap items-end gap-3 border-b px-4 py-3">
+            <QualityVersionFilter
+              options={versionOptions}
+              activeIds={activeVersionIds}
+              onChange={setSelectedVersionIds}
             />
-          ))}
-        </RechartsLineChart>
-      </ResponsiveContainer>
+            <QualityScopeFilter
+              options={scopeOptions}
+              activeIds={activeScopes.map((scope) => scope.id)}
+              onChange={setSelectedScopeIds}
+            />
+            <QualityMetricFilter
+              options={metricOptions}
+              activeIds={activeMetrics.map((metric) => metric.id)}
+              onChange={setSelectedMetricIds}
+            />
+          </div>
+        ) : null}
+
+        <div className="px-4 pb-2 pt-4">
+          <QualityMetricsChart axisData={chartAxisData} series={chartSeries}>
+            {chartSeries.length === 0 ? (
+              qualityPoints.length === 0 ? (
+                <QualityEmptyChartMessage annotationHref={annotationHref} />
+              ) : (
+                <QualityFilteredEmptyChartMessage />
+              )
+            ) : null}
+          </QualityMetricsChart>
+        </div>
+        {chartSeries.length > 0 ? <QualityLegend series={chartSeries} /> : null}
+      </div>
+    </section>
+  );
+}
+
+function QualityVersionFilter({
+  options,
+  activeIds,
+  onChange,
+}: {
+  options: QualityVersionOption[];
+  activeIds: string[];
+  onChange: (next: string[] | null) => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const activeSet = useMemo(() => new Set(activeIds), [activeIds]);
+  const normalizedQuery = normalizeQualitySearch(query);
+  const latestOption = useMemo(
+    () => [...options].sort((left, right) => timeValue(right.latestAt) - timeValue(left.latestAt))[0] ?? null,
+    [options],
+  );
+  const productionVersionIds = useMemo(
+    () => options.filter((option) => option.kind === 'production').map((option) => option.id),
+    [options],
+  );
+  const canaryVersionIds = useMemo(
+    () => options.filter((option) => option.kind !== 'production').map((option) => option.id),
+    [options],
+  );
+  const selectedOptions = options.filter((option) => activeSet.has(option.id));
+  const allSelected = options.length > 0 && selectedOptions.length === options.length;
+  const productionSelected =
+    productionVersionIds.length > 0 &&
+    selectedOptions.length === productionVersionIds.length &&
+    productionVersionIds.every((id) => activeSet.has(id));
+  const canarySelected =
+    canaryVersionIds.length > 0 &&
+    selectedOptions.length === canaryVersionIds.length &&
+    canaryVersionIds.every((id) => activeSet.has(id));
+  let triggerLabel = formatTemplate(t('releases.detail.quality.filter.selectedVersions'), {
+    count: formatCount(selectedOptions.length),
+  });
+  if (allSelected) {
+    triggerLabel = t('releases.detail.quality.filter.allVersions');
+  } else if (productionSelected) {
+    triggerLabel = t('releases.detail.quality.filter.allProductionVersions');
+  } else if (canarySelected) {
+    triggerLabel = t('releases.detail.quality.filter.allCanaryVersions');
+  } else if (selectedOptions.length === 1) {
+    triggerLabel = selectedOptions[0]?.label ?? triggerLabel;
+  }
+  const filteredOptions = useMemo(() => {
+    if (!normalizedQuery) return options;
+    return options.filter((option) =>
+      qualitySearchIncludes(normalizedQuery, [option.label, option.promptVersion, option.model, option.id]),
+    );
+  }, [normalizedQuery, options]);
+
+  function commit(next: string[]) {
+    onChange(next.length === options.length ? null : next);
+  }
+
+  return (
+    <div className="flex min-w-[220px] flex-col gap-1.5">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {t('releases.detail.quality.filter.version')}
+      </span>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setQuery('');
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={options.length === 0}
+            className="h-10 justify-between gap-2 px-3 text-left"
+          >
+            <span className="min-w-0 truncate font-mono text-[13px] font-semibold">{triggerLabel}</span>
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" sideOffset={6} className="w-[calc(100vw-2rem)] p-0 sm:w-[560px]">
+          <ResultDropdownSearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder={t('releases.detail.quality.filter.versionSearch')}
+          />
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5 border-b px-3 py-2 text-[12px]">
+            <button type="button" className="font-medium text-primary" onClick={() => onChange(null)}>
+              {t('releases.detail.quality.filter.selectAll')}
+            </button>
+            <button
+              type="button"
+              className="font-medium text-primary disabled:text-muted-foreground"
+              disabled={!latestOption}
+              onClick={() => {
+                if (latestOption) onChange([latestOption.id]);
+              }}
+            >
+              {t('releases.detail.quality.filter.latestOnly')}
+            </button>
+            <button
+              type="button"
+              className="font-medium text-primary disabled:text-muted-foreground"
+              disabled={productionVersionIds.length === 0}
+              onClick={() => commit(productionVersionIds)}
+            >
+              {t('releases.detail.quality.filter.allProductionVersions')}
+            </button>
+            <button
+              type="button"
+              className="font-medium text-primary disabled:text-muted-foreground"
+              disabled={canaryVersionIds.length === 0}
+              onClick={() => commit(canaryVersionIds)}
+            >
+              {t('releases.detail.quality.filter.allCanaryVersions')}
+            </button>
+          </div>
+          <div className="max-h-[320px] overflow-y-auto p-1.5">
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-8 text-center text-[12px] text-muted-foreground">
+                {t('releases.detail.quality.filter.noVersions')}
+              </div>
+            ) : (
+              filteredOptions.map((option) => {
+                const selected = activeSet.has(option.id);
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => commit(toggleQualityFilterValue(activeIds, option.id))}
+                    className={cn(
+                      'flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left hover:bg-accent',
+                      selected && 'bg-primary/5',
+                    )}
+                  >
+                    <ResultVersionSelectionCheck selected={selected} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="min-w-0 truncate font-mono text-[13px] font-semibold">{option.label}</span>
+                        <QualityVersionKindBadge kind={option.kind} />
+                      </span>
+                      <span className="mt-1 grid gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground sm:grid-cols-3">
+                        <span className="min-w-0 truncate">
+                          <ResultDropdownFieldLabel
+                            label={t('releases.detail.results.versionDropdown.promptVersion')}
+                            value={option.promptVersion}
+                          />
+                        </span>
+                        <span className="min-w-0 truncate">
+                          <ResultDropdownFieldLabel
+                            label={t('releases.detail.results.versionDropdown.model')}
+                            value={option.model}
+                          />
+                        </span>
+                        <span className="min-w-0 truncate">
+                          <ResultDropdownFieldLabel
+                            label={t('releases.detail.quality.filter.points')}
+                            value={formatCount(option.pointCount)}
+                          />
+                        </span>
+                      </span>
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
 
-function QualityChartTooltip({
-  active,
-  payload,
-  label,
-  metricLabels,
-  submittedLabel,
-}: TooltipContentProps & {
-  metricLabels: Record<QualityMetricKey, string>;
-  submittedLabel: string;
+function QualityScopeFilter({
+  options,
+  activeIds,
+  onChange,
+}: {
+  options: readonly QualityScopeOption[];
+  activeIds: QualityScopeKey[];
+  onChange: (next: QualityScopeKey[]) => void;
+}) {
+  return (
+    <QualityMultiSelectFilter
+      labelKey="releases.detail.quality.filter.scope"
+      options={options}
+      activeIds={activeIds}
+      onChange={onChange}
+      allLabelKey="releases.detail.quality.filter.allScopes"
+      selectedLabelKey="releases.detail.quality.filter.selectedScopes"
+      emptyLabelKey="releases.detail.quality.filter.scopeEmpty"
+      minWidthClassName="min-w-[190px]"
+    />
+  );
+}
+
+function QualityMetricFilter({
+  options,
+  activeIds,
+  onChange,
+}: {
+  options: readonly QualityFilterOption<QualityMetricKey>[];
+  activeIds: QualityMetricKey[];
+  onChange: (next: QualityMetricKey[]) => void;
+}) {
+  return (
+    <QualityMultiSelectFilter
+      labelKey="releases.detail.quality.filter.metric"
+      options={options}
+      activeIds={activeIds}
+      onChange={onChange}
+      allLabelKey="releases.detail.quality.filter.allMetrics"
+      selectedLabelKey="releases.detail.quality.filter.selectedMetrics"
+      emptyLabelKey="releases.detail.quality.filter.metricEmpty"
+      minWidthClassName="min-w-[170px]"
+    />
+  );
+}
+
+function QualityMultiSelectFilter<T extends string>({
+  labelKey,
+  options,
+  activeIds,
+  onChange,
+  allLabelKey,
+  selectedLabelKey,
+  emptyLabelKey,
+  minWidthClassName,
+}: {
+  labelKey: TranslationKey;
+  options: readonly QualityFilterOption<T>[];
+  activeIds: T[];
+  onChange: (next: T[]) => void;
+  allLabelKey: TranslationKey;
+  selectedLabelKey: TranslationKey;
+  emptyLabelKey: TranslationKey;
+  minWidthClassName: string;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const activeSet = useMemo(() => new Set(activeIds), [activeIds]);
+  const selectedOptions = options.filter((option) => activeSet.has(option.id));
+  const allSelected = options.length > 0 && selectedOptions.length === options.length;
+  const triggerLabel = allSelected
+    ? t(allLabelKey)
+    : selectedOptions.length === 1
+      ? selectedOptions[0]?.label
+      : selectedOptions.length > 1
+        ? formatTemplate(t(selectedLabelKey), { count: formatCount(selectedOptions.length) })
+        : t(emptyLabelKey);
+
+  function commit(next: T[]) {
+    if (next.length === 0) return;
+    onChange(next);
+  }
+
+  return (
+    <div className={cn('flex flex-col gap-1.5', minWidthClassName)}>
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t(labelKey)}</span>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={options.length === 0}
+            className="h-10 justify-between gap-2 px-3 text-left"
+          >
+            <span className="min-w-0 truncate text-[13px] font-semibold">{triggerLabel}</span>
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" sideOffset={6} className="w-64 p-0">
+          <div className="flex gap-3 border-b px-3 py-2 text-[12px]">
+            <button
+              type="button"
+              className="font-medium text-primary disabled:text-muted-foreground"
+              disabled={allSelected}
+              onClick={() => onChange(options.map((option) => option.id))}
+            >
+              {t('releases.detail.quality.filter.selectAll')}
+            </button>
+          </div>
+          <div className="max-h-[260px] overflow-y-auto p-1.5">
+            {options.length === 0 ? (
+              <div className="px-3 py-8 text-center text-[12px] text-muted-foreground">{t(emptyLabelKey)}</div>
+            ) : (
+              options.map((option) => {
+                const selected = activeSet.has(option.id);
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => commit(toggleQualityFilterValue(activeIds, option.id))}
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-accent',
+                      selected && 'bg-primary/5',
+                    )}
+                  >
+                    <ResultVersionSelectionCheck selected={selected} />
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{option.label}</span>
+                    {option.meta ? (
+                      <span className="shrink-0 text-[11px] text-muted-foreground">{option.meta}</span>
+                    ) : null}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+function QualityVersionKindBadge({ kind }: { kind: ReleaseVersionKindDto }) {
+  const { t } = useI18n();
+  const isProduction = kind === 'production';
+  return (
+    <span
+      className="inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium leading-4"
+      style={{
+        background: isProduction ? 'var(--src-prod-soft)' : 'var(--src-canary-soft)',
+        color: isProduction ? 'var(--src-prod-fg)' : 'var(--src-canary-fg)',
+        borderColor: isProduction
+          ? 'color-mix(in srgb, var(--src-prod) 30%, transparent)'
+          : 'color-mix(in srgb, var(--src-canary) 30%, transparent)',
+      }}
+    >
+      {t(
+        isProduction
+          ? 'releases.detail.history.versionKind.production'
+          : 'releases.detail.history.versionKind.candidate',
+      )}
+    </span>
+  );
+}
+
+function QualityLegend({ series }: { series: readonly QualityChartSeries[] }) {
+  const { t } = useI18n();
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t px-4 py-3 text-[11.5px] text-muted-foreground">
+      {series.map((item) => (
+        <span key={item.id} className="inline-flex items-center gap-1.5">
+          <span className="h-0.5 w-5 rounded-full" style={{ background: item.color }} aria-hidden />
+          {item.label}
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1.5 border-l pl-4">
+        <span className="size-2.5 rounded-full bg-[var(--src-prod)]" aria-hidden />
+        {t('releases.detail.quality.legend.production')}
+      </span>
+      <span className="inline-flex items-center gap-1.5">
+        <span className="size-2.5 rounded-full border-2 border-[var(--src-canary)] bg-card" aria-hidden />
+        {t('releases.detail.quality.legend.canary')}
+      </span>
+    </div>
+  );
+}
+
+function readChartCssColor(name: string, fallback: string) {
+  if (typeof window === 'undefined') return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+function resolveChartColor(value: string, fallback: string) {
+  const variableName = value.match(/var\((--[^),\s]+)/)?.[1];
+  return variableName ? readChartCssColor(variableName, fallback) : value;
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => {
+    const escaped: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    };
+    return escaped[char] ?? char;
+  });
+}
+
+function resolveQualityPercentAxisExtent(extent: QualityPercentAxisExtent) {
+  if (!Number.isFinite(extent.min) || !Number.isFinite(extent.max)) {
+    return { min: 0, max: 100 };
+  }
+
+  const dataMin = Math.max(0, Math.min(100, Math.min(extent.min, extent.max)));
+  const dataMax = Math.max(0, Math.min(100, Math.max(extent.min, extent.max)));
+  const dataSpan = dataMax - dataMin;
+  const padding = Math.max(2, dataSpan * 0.2);
+  let nextMin = Math.max(0, dataMin - padding);
+  let nextMax = Math.min(100, dataMax + padding);
+
+  if (nextMax - nextMin < 10) {
+    const center = (dataMin + dataMax) / 2;
+    nextMin = Math.max(0, center - 5);
+    nextMax = Math.min(100, center + 5);
+    if (nextMin === 0) nextMax = Math.min(100, Math.max(10, nextMax));
+    if (nextMax === 100) nextMin = Math.max(0, Math.min(90, nextMin));
+  }
+
+  const roundedMin = Math.max(0, Math.floor(nextMin / 5) * 5);
+  const roundedMax = Math.min(100, Math.ceil(nextMax / 5) * 5);
+  return roundedMax > roundedMin ? { min: roundedMin, max: roundedMax } : { min: 0, max: 100 };
+}
+
+function getQualityPercentAxisMin(extent: QualityPercentAxisExtent) {
+  return resolveQualityPercentAxisExtent(extent).min;
+}
+
+function getQualityPercentAxisMax(extent: QualityPercentAxisExtent) {
+  return resolveQualityPercentAxisExtent(extent).max;
+}
+
+function QualityMetricsChart({
+  axisData,
+  series,
+  children,
+}: {
+  axisData: QualityChartPoint[];
+  series: readonly QualityChartSeries[];
+  children?: ReactNode;
 }) {
   const { t } = useI18n();
   const formatDateTimeOrDash = useDateTimeOrDash();
-  if (!active || !payload || payload.length === 0) return null;
-  const point = payload[0]?.payload as AnnotationQualityPoint | undefined;
-  if (!point) return null;
+  const chartRef = useRef<HTMLDivElement | null>(null);
+  const chartInstanceRef = useRef<ECharts | null>(null);
+  const [chartColorVersion, setChartColorVersion] = useState(0);
+
+  useEffect(() => {
+    if (typeof MutationObserver === 'undefined') return undefined;
+    const observer = new MutationObserver(() => setChartColorVersion((current) => current + 1));
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class', 'style', 'data-theme'],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  const chartOption = useMemo<QualityEChartsOption>(() => {
+    void chartColorVersion;
+    const foregroundColor = readChartCssColor('--foreground', '#e5e7eb');
+    const mutedColor = readChartCssColor('--muted-foreground', '#94a3b8');
+    const borderColor = readChartCssColor('--border', '#1f2937');
+    const cardColor = readChartCssColor('--card', '#020617');
+    const popoverColor = readChartCssColor('--popover', cardColor);
+    const primaryColor = readChartCssColor('--primary', '#60a5fa');
+    const productionColor = readChartCssColor('--src-prod', '#22c55e');
+    const canaryColor = readChartCssColor('--src-canary', '#3b82f6');
+    const categoryLabels = axisData.map((point) => point.releaseVersionLabel);
+
+    const qualitySeries: LineSeriesOption[] = series.map((item) => {
+      const pointByEvent = new Map(item.points.map((point) => [point.eventId, point]));
+      const lineColor = resolveChartColor(item.color, primaryColor);
+      return {
+        id: item.id,
+        name: item.label,
+        type: 'line',
+        smooth: true,
+        connectNulls: true,
+        showSymbol: true,
+        symbol: 'circle',
+        symbolSize: 8,
+        lineStyle: {
+          width: 2,
+          color: lineColor,
+          opacity: 1,
+        },
+        itemStyle: {
+          color: lineColor,
+          opacity: 1,
+        },
+        emphasis: {
+          disabled: true,
+        },
+        blur: {
+          lineStyle: {
+            opacity: 1,
+          },
+          itemStyle: {
+            opacity: 1,
+          },
+        },
+        data: axisData.map((axisPoint) => {
+          const point = pointByEvent.get(axisPoint.eventId);
+          if (!point) return null;
+          const laneColor = point.lane === 'production' ? productionColor : canaryColor;
+          return {
+            value: point.value,
+            qualityPoint: point,
+            symbol: 'circle',
+            symbolSize: 8,
+            itemStyle: {
+              color: point.lane === 'production' ? laneColor : cardColor,
+              borderColor: laneColor,
+              borderWidth: 2,
+            },
+          } satisfies QualityEChartsDatum;
+        }),
+      };
+    });
+
+    return {
+      animation: false,
+      backgroundColor: 'transparent',
+      grid: {
+        top: 26,
+        right: 24,
+        bottom: axisData.length > 1 ? 62 : 38,
+        left: 48,
+        containLabel: false,
+      },
+      tooltip: {
+        trigger: 'axis',
+        appendToBody: true,
+        confine: true,
+        borderWidth: 1,
+        borderColor,
+        backgroundColor: popoverColor,
+        textStyle: {
+          color: foregroundColor,
+          fontSize: 12,
+          fontFamily: 'inherit',
+        },
+        extraCssText: 'box-shadow: 0 12px 30px rgba(15, 23, 42, 0.22); border-radius: 6px;',
+        axisPointer: {
+          type: 'line',
+          lineStyle: {
+            color: borderColor,
+            type: 'dashed',
+          },
+        },
+        formatter: (rawParams: unknown) => {
+          const params = (Array.isArray(rawParams) ? rawParams : [rawParams]) as QualityEChartsTooltipParam[];
+          const points = params
+            .map((param) => param.data?.qualityPoint)
+            .filter((point): point is QualityChartPoint => Boolean(point));
+          const point = points[0];
+          if (!point) return '';
+          const kindText = t(
+            point.releaseVersionKind === 'production'
+              ? 'releases.detail.history.versionKind.production'
+              : 'releases.detail.history.versionKind.candidate',
+          );
+          const rows = params
+            .map((param) => {
+              const qualityPoint = param.data?.qualityPoint;
+              if (!qualityPoint) return '';
+              const sampleCount =
+                qualityPoint.sampleCount === null
+                  ? '—'
+                  : formatTemplate(t('releases.detail.quality.sampleCountShort'), {
+                      count: formatCount(qualityPoint.sampleCount),
+                    });
+              return [
+                '<div style="display:flex;align-items:center;gap:8px;min-width:260px;margin-top:4px;">',
+                param.marker ?? '',
+                `<span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${mutedColor};">${escapeHtml(
+                  param.seriesName ?? qualityPoint.seriesLabel,
+                )}</span>`,
+                `<span style="font-family:JetBrains Mono, ui-monospace, monospace;font-weight:600;">${escapeHtml(
+                  formatQualityPercent(qualityPoint.value),
+                )}</span>`,
+                `<span style="font-family:JetBrains Mono, ui-monospace, monospace;font-size:11px;color:${mutedColor};">${escapeHtml(
+                  sampleCount,
+                )}</span>`,
+                '</div>',
+              ].join('');
+            })
+            .join('');
+          return [
+            '<div style="min-width:280px;">',
+            `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-family:JetBrains Mono, ui-monospace, monospace;font-size:11px;color:${mutedColor};">`,
+            `<span>${escapeHtml(point.xLabel)}</span><span>·</span><span>${escapeHtml(
+              formatDateTimeOrDash(point.updatedAt ?? point.createdAt),
+            )}</span>`,
+            '</div>',
+            '<div style="display:flex;align-items:center;gap:8px;min-width:0;">',
+            `<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">${escapeHtml(
+              point.eventLabel,
+            )}</span>`,
+            `<span style="display:inline-flex;align-items:center;border-radius:999px;border:1px solid ${borderColor};padding:1px 6px;font-size:11px;color:${mutedColor};">${escapeHtml(
+              kindText,
+            )}</span>`,
+            '</div>',
+            `<div style="margin-top:2px;font-size:11.5px;color:${mutedColor};">${escapeHtml(
+              point.releaseVersionLabel,
+            )} · ${escapeHtml(point.promptVersionLabel)} · ${escapeHtml(point.modelName)}</div>`,
+            `<div style="margin-top:8px;">${rows}</div>`,
+            '</div>',
+          ].join('');
+        },
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: categoryLabels,
+        axisLine: {
+          show: false,
+        },
+        axisTick: {
+          show: false,
+        },
+        axisLabel: {
+          color: mutedColor,
+          fontSize: 10,
+          fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+          hideOverlap: true,
+          margin: 10,
+        },
+      },
+      yAxis: {
+        type: 'value',
+        min: getQualityPercentAxisMin,
+        max: getQualityPercentAxisMax,
+        scale: true,
+        splitNumber: 4,
+        axisLine: {
+          show: false,
+        },
+        axisTick: {
+          show: false,
+        },
+        axisLabel: {
+          color: mutedColor,
+          fontSize: 10,
+          fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+          formatter: '{value}%',
+        },
+        splitLine: {
+          lineStyle: {
+            color: borderColor,
+            type: 'dashed',
+            opacity: 0.7,
+          },
+        },
+      },
+      dataZoom:
+        axisData.length > 1
+          ? [
+              {
+                type: 'inside',
+                xAxisIndex: 0,
+                filterMode: 'filter',
+                zoomOnMouseWheel: true,
+                moveOnMouseWheel: 'shift',
+                moveOnMouseMove: true,
+                preventDefaultMouseMove: true,
+                minValueSpan: 1,
+              },
+              {
+                type: 'slider',
+                xAxisIndex: 0,
+                filterMode: 'filter',
+                bottom: 10,
+                height: 24,
+                showDetail: false,
+                brushSelect: true,
+                minValueSpan: 1,
+                borderColor,
+                fillerColor: 'rgba(59, 130, 246, 0.18)',
+                backgroundColor: 'transparent',
+                dataBackground: {
+                  lineStyle: {
+                    color: borderColor,
+                  },
+                  areaStyle: {
+                    color: 'rgba(148, 163, 184, 0.14)',
+                  },
+                },
+                selectedDataBackground: {
+                  lineStyle: {
+                    color: primaryColor,
+                  },
+                  areaStyle: {
+                    color: 'rgba(59, 130, 246, 0.22)',
+                  },
+                },
+                moveHandleStyle: {
+                  color: primaryColor,
+                },
+                handleStyle: {
+                  color: cardColor,
+                  borderColor: primaryColor,
+                },
+              },
+            ]
+          : [],
+      toolbox: {
+        show: axisData.length > 1,
+        right: 8,
+        top: 0,
+        itemSize: 14,
+        iconStyle: {
+          borderColor: mutedColor,
+        },
+        emphasis: {
+          iconStyle: {
+            borderColor: foregroundColor,
+          },
+        },
+        feature: {
+          restore: {
+            title: t('releases.detail.quality.chart.resetView'),
+          },
+        },
+      },
+      series: qualitySeries,
+    };
+  }, [axisData, chartColorVersion, formatDateTimeOrDash, series, t]);
+
+  useEffect(() => {
+    const element = chartRef.current;
+    if (!element) return undefined;
+    const instance = echarts.init(element, undefined, { renderer: 'svg' });
+    chartInstanceRef.current = instance;
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            instance.resize();
+          });
+    resizeObserver?.observe(element);
+    return () => {
+      resizeObserver?.disconnect();
+      chartInstanceRef.current = null;
+      instance.dispose();
+    };
+  }, []);
+
+  useEffect(() => {
+    chartInstanceRef.current?.setOption(chartOption, true);
+  }, [chartOption]);
+
   return (
-    <div className="min-w-[220px] rounded-md border bg-popover px-2.5 py-2 text-[12px] shadow-md">
-      <div className="mb-1 font-mono text-[10.5px] text-muted-foreground">
-        {label} · {formatDateTimeOrDash(point.updatedAt)}
-      </div>
-      <div className="font-semibold">{point.name}</div>
-      <div className="mt-0.5 text-[11.5px] text-muted-foreground">
-        {point.releaseVariantLabel} · {point.promptVersionLabel} · {point.modelName}
-      </div>
-      <div className="mt-2 space-y-0.5">
-        {(['score'] satisfies QualityMetricKey[]).map((key) => (
-          <div key={key} className="flex items-center gap-2">
-            <span className="size-2 rounded-full" style={{ background: QUALITY_LINE_COLORS[key] }} aria-hidden />
-            <span className="text-muted-foreground">{metricLabels[key]}</span>
-            <span className="ml-auto font-mono">{formatQualityPercent(point[key])}</span>
+    <div className="relative min-w-0 w-full">
+      <div className="relative h-[360px] min-w-0 w-full">
+        <div
+          ref={chartRef}
+          className="h-full w-full"
+          role="img"
+          aria-label={t('releases.detail.quality.chartTitle')}
+          data-testid="release-quality-echarts-chart"
+        />
+        {children ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-4">
+            <div className="pointer-events-auto w-full max-w-[360px] rounded-lg border bg-card/95 px-4 py-4 text-center shadow-sm">
+              {children}
+            </div>
           </div>
-        ))}
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">{t('releases.detail.quality.matched')}</span>
-          <span className="ml-auto font-mono">{formatCount(point.matched)}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">{t('releases.detail.quality.mismatched')}</span>
-          <span className="ml-auto font-mono">{formatCount(point.mismatched)}</span>
-        </div>
-        <div className="mt-1 flex items-center gap-2 border-t pt-1">
-          <span className="text-muted-foreground">{submittedLabel}</span>
-          <span className="ml-auto font-mono">
-            {formatCount(point.submitted)} / {formatCount(point.total)}
-          </span>
-        </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-type TimelineItem = {
-  id: string;
-  event: ReleaseLineLatestEvent;
-  title: string;
-  createdAt: string | null;
-  meta: string;
-  variant: string | null;
-};
-
-function buildReleaseEventMeta(event: ReleaseLineEventDto) {
-  const parts = [
-    event.status,
-    event.trafficRatio !== null ? `${Math.round(event.trafficRatio * 100)}%` : null,
-    event.trafficMode,
-    event.submitReason,
-  ].filter((value): value is string => Boolean(value));
-  return parts.join(' · ') || event.id;
+function QualityEmptyChartMessage({ annotationHref }: { annotationHref: string }) {
+  const { t } = useI18n();
+  return (
+    <div data-testid="release-quality-empty">
+      <div className="text-[14px] font-semibold">{t('releases.detail.quality.empty')}</div>
+      <p className="mx-auto mt-1 max-w-[300px] text-[12px] leading-5 text-muted-foreground">
+        {t('releases.detail.quality.emptyDescription')}
+      </p>
+      <Button asChild size="sm" className="mt-3 h-8 gap-1.5">
+        <Link href={annotationHref}>
+          <Plus className="size-3.5" aria-hidden />
+          {t('releases.detail.quality.emptyAction')}
+        </Link>
+      </Button>
+    </div>
+  );
 }
 
-function formatReleaseEventVariant(event: ReleaseLineEventDto) {
-  if (!event.releaseVariantId) return null;
-  const label = event.releaseVariantLabel ?? formatShortId(event.releaseVariantId);
-  const promptVersion = event.promptVersionLabel ?? formatShortId(event.promptVersionId);
-  const model = event.modelName ?? formatShortId(event.modelId);
-  return `${label} · ${promptVersion} · ${model}`;
+function QualityFilteredEmptyChartMessage() {
+  const { t } = useI18n();
+  return (
+    <div className="text-[13px] font-medium text-muted-foreground">{t('releases.detail.quality.filteredEmpty')}</div>
+  );
+}
+
+type Translate = ReturnType<typeof useI18n>['t'];
+
+function formatTemplate(template: string, values: Record<string, string | number>) {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''));
+}
+
+type HistoryVersionKind = ReleaseLineEventDto['releaseVersionKind'];
+type HistoryVersionRecord = ReleaseLineView['versions'][number];
+type HistoryCanaryRecord = ReleaseLineView['canaryHistory'][number];
+
+type HistoryConfigChangeItem = {
+  field: string;
+  previous: string;
+  next: string;
+};
+
+type HistoryConfigChange = {
+  id: string;
+  at: string | null;
+  event: ReleaseLineLatestEvent;
+  items: HistoryConfigChangeItem[];
+};
+
+type HistoryMetaItem = {
+  label: string;
+  value: string;
+  mono?: boolean;
+};
+
+export type HistoryRow = {
+  id: string;
+  sourceEventId: string | null;
+  releaseVersionId: string | null;
+  releaseVersionKind: HistoryVersionKind;
+  releaseVersionLabel: string;
+  productionNumber: number | null;
+  targetProductionNumber: number | null;
+  candidateNumber: number | null;
+  event: ReleaseLineLatestEvent;
+  laneType: ReleaseLineEventDto['laneType'] | null;
+  promptName: string;
+  promptVersionId: string | null;
+  promptVersionLabel: string;
+  modelId: string | null;
+  modelName: string;
+  modelProvider: string | null;
+  inputConnectorName: string | null;
+  inputConnectorType: string | null;
+  outputConnectors: ReleaseLineEventDto['outputConnectors'];
+  runConfig: Record<string, unknown>;
+  trafficRatio: number | null;
+  trafficMode: string | null;
+  recordMode: string | null;
+  recordCategories: string[];
+  status: string | null;
+  isLive: boolean;
+  countSummary: string | null;
+  relations: string | null;
+  reason: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  configChanges: HistoryConfigChange[];
+};
+
+export type HistoryGroup = {
+  id: string;
+  production: HistoryRow | null;
+  candidates: HistoryRow[];
+  isLive: boolean;
+  sortAt: string | null;
+  productionNumber: number | null;
+};
+
+const RELEASE_CONFIG_OPERATIONS = new Set<ReleaseLineEventDto['operation']>([
+  'traffic_updated',
+  'mode_updated',
+  'config_changed',
+]);
+
+export function buildHistoryGroups(
+  line: ReleaseLineView,
+  releaseEvents: ReleaseLineEventDto[],
+  productionHistory: ProductionReleaseHistoryItemDto[],
+  t: Translate,
+): HistoryGroup[] {
+  if (releaseEvents.length > 0 || line.versions.length > 0) {
+    return buildCanonicalHistoryGroups(line, releaseEvents, t);
+  }
+  return buildLegacyHistoryGroups(line, productionHistory, t);
+}
+
+function buildCanonicalHistoryGroups(line: ReleaseLineView, releaseEvents: ReleaseLineEventDto[], t: Translate) {
+  const eventsByVersion = groupReleaseEventsByVersion(releaseEvents);
+  const rowsByVersion = new Map<string, HistoryRow>();
+  const looseRows: HistoryRow[] = [];
+
+  for (const version of line.versions) {
+    const events = eventsByVersion.get(version.id) ?? [];
+    rowsByVersion.set(version.id, buildHistoryRowFromVersion(line, version, events, t));
+  }
+
+  for (const [key, events] of eventsByVersion.entries()) {
+    if (rowsByVersion.has(key)) continue;
+    looseRows.push(buildHistoryRowFromEvents(line, events, t));
+  }
+
+  const grouped = new Map<string, HistoryGroup>();
+  for (const row of [...rowsByVersion.values(), ...looseRows]) {
+    const key = getHistoryGroupKey(row);
+    const group = ensureHistoryGroup(grouped, key, row);
+    if (isProductionHistoryRow(row)) {
+      group.production = chooseNewestHistoryRow(group.production, row);
+      group.productionNumber = row.productionNumber ?? row.targetProductionNumber ?? group.productionNumber;
+    } else {
+      group.candidates.push(row);
+    }
+    group.isLive = group.isLive || isHistoryRowLive(row);
+    group.sortAt = chooseNewestDate(group.sortAt, row.updatedAt ?? row.createdAt);
+  }
+
+  return [...grouped.values()]
+    .map((group) => ({
+      ...group,
+      candidates: group.candidates.sort(compareHistoryRows),
+    }))
+    .sort(compareHistoryGroups);
+}
+
+function buildLegacyHistoryGroups(
+  line: ReleaseLineView,
+  productionHistory: ProductionReleaseHistoryItemDto[],
+  t: Translate,
+) {
+  const productionRows = productionHistory.map((item) => buildLegacyProductionHistoryRow(item, t));
+  const canaryRows = (line.canaryHistory.length > 0 ? line.canaryHistory : line.canary ? [line.canary] : []).map(
+    (item) => buildLegacyCanaryHistoryRow(item, t),
+  );
+  if (productionRows.length === 0 && canaryRows.length === 0) return [];
+
+  const groups = productionRows.map<HistoryGroup>((row) => ({
+    id: row.id,
+    production: row,
+    candidates: [],
+    isLive: isHistoryRowLive(row),
+    sortAt: row.updatedAt ?? row.createdAt,
+    productionNumber: row.productionNumber,
+  }));
+  const fallbackGroup =
+    groups[0] ??
+    ({
+      id: canaryRows[0]?.id ?? 'legacy-canary',
+      production: null,
+      candidates: [],
+      isLive: false,
+      sortAt: canaryRows[0]?.updatedAt ?? canaryRows[0]?.createdAt ?? null,
+      productionNumber: null,
+    } satisfies HistoryGroup);
+
+  if (groups.length === 0) groups.push(fallbackGroup);
+  for (const row of canaryRows) {
+    fallbackGroup.candidates.push(row);
+    fallbackGroup.isLive = fallbackGroup.isLive || isHistoryRowLive(row);
+    fallbackGroup.sortAt = chooseNewestDate(fallbackGroup.sortAt, row.updatedAt ?? row.createdAt);
+  }
+
+  return groups
+    .map((group) => ({ ...group, candidates: group.candidates.sort(compareHistoryRows) }))
+    .sort(compareHistoryGroups);
+}
+
+function groupReleaseEventsByVersion(events: ReleaseLineEventDto[]) {
+  const grouped = new Map<string, ReleaseLineEventDto[]>();
+  for (const event of events) {
+    const key = event.releaseVersionId ?? event.id;
+    const current = grouped.get(key) ?? [];
+    current.push(event);
+    grouped.set(key, current);
+  }
+  return grouped;
+}
+
+function buildHistoryRowFromVersion(
+  line: ReleaseLineView,
+  version: HistoryVersionRecord,
+  events: ReleaseLineEventDto[],
+  t: Translate,
+): HistoryRow {
+  const latest = getLatestReleaseEvent(events);
+  const label = latest?.releaseVersionLabel ?? version.label;
+  return {
+    id: latest?.id ?? version.id,
+    sourceEventId: latest?.id ?? null,
+    releaseVersionId: version.id,
+    releaseVersionKind: version.kind,
+    releaseVersionLabel: label,
+    productionNumber: version.productionVersionNumber,
+    targetProductionNumber: version.targetProductionVersionNumber,
+    candidateNumber: version.candidateNumber,
+    event: latest?.operation ?? (version.kind === 'production' ? 'create_production' : 'create_canary'),
+    laneType: latest?.laneType ?? (version.kind === 'production' ? 'production' : 'canary'),
+    promptName: latest?.promptName ?? version.promptName,
+    promptVersionId: latest?.promptVersionId ?? version.promptVersionId,
+    promptVersionLabel:
+      latest?.promptVersionLabel ??
+      version.promptVersionLabel ??
+      (version.promptVersionNumber ? `v${version.promptVersionNumber}` : formatShortId(version.promptVersionId)),
+    modelId: latest?.modelId ?? version.modelId,
+    modelName: formatHistoryModel(latest?.modelName ?? version.modelName, latest?.modelId ?? version.modelId),
+    modelProvider: latest?.modelProvider ?? version.modelProvider,
+    inputConnectorName: latest?.inputConnectorName ?? line.inputConnectorName,
+    inputConnectorType: latest?.inputConnectorType ?? line.inputConnectorType,
+    outputConnectors: latest?.outputConnectors ?? line.outputConnectors,
+    runConfig: normalizeRunConfig(latest?.runConfig),
+    trafficRatio: latest?.trafficRatio ?? null,
+    trafficMode: latest?.trafficMode ?? null,
+    recordMode: latest?.recordMode ?? null,
+    recordCategories: latest?.recordCategories ?? [],
+    status: latest ? formatReleaseEventStatus(latest) : null,
+    isLive: latest?.status === 'running',
+    countSummary: latest ? formatReleaseEventCounts(latest, t) : null,
+    relations: latest ? formatReleaseEventRelations(latest, t) : null,
+    reason: latest?.submitReason.trim() || null,
+    createdAt: latest?.createdAt ?? version.createdAt,
+    updatedAt: latest?.updatedAt ?? version.updatedAt,
+    configChanges: buildReleaseConfigChanges(events, t),
+  };
+}
+
+function buildHistoryRowFromEvents(line: ReleaseLineView, events: ReleaseLineEventDto[], t: Translate): HistoryRow {
+  const latest = getLatestReleaseEvent(events);
+  if (!latest) {
+    return {
+      id: 'empty',
+      sourceEventId: null,
+      releaseVersionId: null,
+      releaseVersionKind: null,
+      releaseVersionLabel: '—',
+      productionNumber: null,
+      targetProductionNumber: null,
+      candidateNumber: null,
+      event: null,
+      laneType: null,
+      promptName: line.promptName,
+      promptVersionId: null,
+      promptVersionLabel: '—',
+      modelId: null,
+      modelName: '—',
+      modelProvider: null,
+      inputConnectorName: line.inputConnectorName,
+      inputConnectorType: line.inputConnectorType,
+      outputConnectors: line.outputConnectors,
+      runConfig: {},
+      trafficRatio: null,
+      trafficMode: null,
+      recordMode: null,
+      recordCategories: [],
+      status: null,
+      isLive: false,
+      countSummary: null,
+      relations: null,
+      reason: null,
+      createdAt: null,
+      updatedAt: null,
+      configChanges: [],
+    };
+  }
+
+  return {
+    id: latest.id,
+    sourceEventId: latest.id,
+    releaseVersionId: latest.releaseVersionId,
+    releaseVersionKind: latest.releaseVersionKind,
+    releaseVersionLabel: latest.releaseVersionLabel ?? formatShortId(latest.releaseVersionId),
+    productionNumber: latest.releaseVersionProductionNumber,
+    targetProductionNumber: latest.releaseVersionTargetProductionNumber,
+    candidateNumber: latest.releaseVersionCandidateNumber,
+    event: latest.operation,
+    laneType: latest.laneType,
+    promptName: latest.promptName,
+    promptVersionId: latest.promptVersionId,
+    promptVersionLabel: latest.promptVersionLabel ?? formatShortId(latest.promptVersionId),
+    modelId: latest.modelId,
+    modelName: formatHistoryModel(latest.modelName, latest.modelId),
+    modelProvider: latest.modelProvider,
+    inputConnectorName: latest.inputConnectorName ?? line.inputConnectorName,
+    inputConnectorType: latest.inputConnectorType ?? line.inputConnectorType,
+    outputConnectors: latest.outputConnectors.length > 0 ? latest.outputConnectors : line.outputConnectors,
+    runConfig: normalizeRunConfig(latest.runConfig),
+    trafficRatio: latest.trafficRatio,
+    trafficMode: latest.trafficMode,
+    recordMode: latest.recordMode,
+    recordCategories: latest.recordCategories,
+    status: formatReleaseEventStatus(latest),
+    isLive: latest.status === 'running',
+    countSummary: formatReleaseEventCounts(latest, t),
+    relations: formatReleaseEventRelations(latest, t),
+    reason: latest.submitReason.trim() || null,
+    createdAt: latest.createdAt,
+    updatedAt: latest.updatedAt,
+    configChanges: buildReleaseConfigChanges(events, t),
+  };
+}
+
+function buildLegacyProductionHistoryRow(item: ProductionReleaseHistoryItemDto, t: Translate): HistoryRow {
+  const configChanges =
+    item.eventType === 'config_change'
+      ? [
+          {
+            id: item.id,
+            at: item.updatedAt,
+            event: item.eventType,
+            items: buildLegacyProductionConfigItems(item, t),
+          },
+        ]
+      : [];
+  const relations = [
+    item.sourceExperimentId
+      ? `${t('releases.detail.history.relation.sourceExperiment')} ${formatShortId(item.sourceExperimentId)}`
+      : null,
+    item.sourceCanaryId
+      ? `${t('releases.detail.history.relation.sourceEvent')} ${formatShortId(item.sourceCanaryId)}`
+      : null,
+    item.rollbackTargetEventId
+      ? `${t('releases.detail.history.relation.rollbackTarget')} ${formatShortId(item.rollbackTargetEventId)}`
+      : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return {
+    id: item.id,
+    sourceEventId: item.id,
+    releaseVersionId: null,
+    releaseVersionKind: 'production',
+    releaseVersionLabel: item.promptVersionLabel ?? formatShortId(item.id),
+    productionNumber: null,
+    targetProductionNumber: null,
+    candidateNumber: null,
+    event: item.eventType,
+    laneType: 'production',
+    promptName: item.promptVersionLabel ?? '—',
+    promptVersionId: item.promptVersionId,
+    promptVersionLabel: item.promptVersionLabel ?? formatShortId(item.promptVersionId),
+    modelId: item.modelId,
+    modelName: item.modelName ?? formatShortId(item.modelId),
+    modelProvider: null,
+    inputConnectorName: item.inputConnectorName,
+    inputConnectorType: null,
+    outputConnectors: [],
+    runConfig: normalizeRunConfig(item.runConfig),
+    trafficRatio: null,
+    trafficMode: null,
+    recordMode: item.recordMode,
+    recordCategories: item.recordCategories ?? [],
+    status: formatLegacyProductionStatus(item),
+    isLive: item.status === 'running',
+    countSummary: null,
+    relations: relations.length > 0 ? relations.join(' · ') : null,
+    reason: item.submitReason.trim() || null,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    configChanges,
+  };
+}
+
+function buildLegacyCanaryHistoryRow(canary: HistoryCanaryRecord, t: Translate): HistoryRow {
+  return {
+    id: canary.id,
+    sourceEventId: canary.id,
+    releaseVersionId: canary.releaseVersionId,
+    releaseVersionKind: 'candidate',
+    releaseVersionLabel: canary.releaseVersionLabel ?? canary.promptVersionLabel ?? formatShortId(canary.id),
+    productionNumber: null,
+    targetProductionNumber: null,
+    candidateNumber: null,
+    event: canary.status === 'running' ? 'ratio_change' : 'create_canary',
+    laneType: 'canary',
+    promptName: canary.promptName ?? canary.name ?? '—',
+    promptVersionId: canary.promptVersionId,
+    promptVersionLabel: canary.promptVersionLabel ?? formatShortId(canary.promptVersionId),
+    modelId: canary.modelId,
+    modelName: formatHistoryModel(canary.modelName, canary.modelId, canary.modelProvider),
+    modelProvider: canary.modelProvider,
+    inputConnectorName: canary.inputConnectorName,
+    inputConnectorType: canary.inputConnectorType,
+    outputConnectors: canary.outputConnectors,
+    runConfig: normalizeRunConfig(canary.runConfig),
+    trafficRatio: canary.trafficRatio,
+    trafficMode: canary.trafficMode,
+    recordMode: canary.recordMode,
+    recordCategories: canary.recordCategories ?? [],
+    status: canary.status,
+    isLive: canary.status === 'running',
+    countSummary: formatCanaryCounts(canary, t),
+    relations: null,
+    reason: canary.description?.trim() || null,
+    createdAt: canary.createdAt,
+    updatedAt: canary.updatedAt,
+    configChanges: [],
+  };
+}
+
+function formatReleaseEventStatus(event: ReleaseLineEventDto) {
+  const parts = [
+    event.status,
+    event.terminalReason ? `${event.terminalReason}` : null,
+    event.controlState ? `${event.controlState}` : null,
+  ].filter((value): value is string => Boolean(value));
+  return parts.join(' · ') || '—';
+}
+
+function formatLegacyProductionStatus(item: ProductionReleaseHistoryItemDto) {
+  return [item.status, item.stopReason, item.controlState].filter(Boolean).join(' · ') || '—';
+}
+
+function formatHistoryModel(name: string | null | undefined, id: string | null | undefined, provider?: string | null) {
+  const model = name ?? formatShortId(id);
+  return provider ? `${model} · ${provider}` : model;
+}
+
+function formatRecordMode(mode: string | null | undefined, t: Translate, categories: string[] = []) {
+  if (mode === 'all') return t('releases.detail.topology.recordMode.all');
+  if (mode === 'selected_categories' || mode === 'correct_only') {
+    const label = t('releases.detail.topology.recordMode.selectedCategories');
+    return categories.length > 0 ? `${label}: ${categories.join('、')}` : label;
+  }
+  return mode || '—';
+}
+
+function formatReleaseEventCounts(event: ReleaseLineEventDto, t: Translate) {
+  return [
+    `${t('releases.detail.metric.received')} ${formatCount(event.totalReceived)}`,
+    `${t('releases.detail.metric.processed')} ${formatCount(event.totalProcessed)}`,
+    `${t('releases.detail.metric.errors')} ${formatCount(event.totalErrors)}`,
+  ].join(' · ');
+}
+
+function formatCanaryCounts(canary: NonNullable<ReleaseLineView['canary']>, t: Translate) {
+  return [
+    `${t('releases.detail.metric.received')} ${formatCount(canary.totalReceived)}`,
+    `${t('releases.detail.metric.processed')} ${formatCount(canary.totalProcessed)}`,
+    `${t('releases.detail.metric.errors')} ${formatCount(canary.totalErrors)}`,
+  ].join(' · ');
+}
+
+function formatReleaseEventRelations(event: ReleaseLineEventDto, t: Translate) {
+  const parts = [
+    event.sourceEventId
+      ? `${t('releases.detail.history.relation.sourceEvent')} ${formatShortId(event.sourceEventId)}`
+      : null,
+    event.supersedesEventId
+      ? `${t('releases.detail.history.relation.supersedes')} ${formatShortId(event.supersedesEventId)}`
+      : null,
+    event.rollbackTargetEventId
+      ? `${t('releases.detail.history.relation.rollbackTarget')} ${formatShortId(event.rollbackTargetEventId)}`
+      : null,
+    event.sourceExperimentId
+      ? `${t('releases.detail.history.relation.sourceExperiment')} ${formatShortId(event.sourceExperimentId)}`
+      : null,
+  ].filter((value): value is string => Boolean(value));
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+function ensureHistoryGroup(map: Map<string, HistoryGroup>, id: string, seed: HistoryRow) {
+  const current = map.get(id);
+  if (current) return current;
+  const next: HistoryGroup = {
+    id,
+    production: null,
+    candidates: [],
+    isLive: false,
+    sortAt: seed.updatedAt ?? seed.createdAt,
+    productionNumber: seed.productionNumber ?? seed.targetProductionNumber,
+  };
+  map.set(id, next);
+  return next;
+}
+
+function chooseNewestHistoryRow(current: HistoryRow | null, next: HistoryRow) {
+  if (!current) return next;
+  return timeValue(next.updatedAt ?? next.createdAt) >= timeValue(current.updatedAt ?? current.createdAt)
+    ? next
+    : current;
+}
+
+function chooseNewestDate(current: string | null, next: string | null | undefined) {
+  if (!next) return current;
+  if (!current) return next;
+  return timeValue(next) >= timeValue(current) ? next : current;
+}
+
+function compareHistoryRows(left: HistoryRow, right: HistoryRow) {
+  const candidateDelta = (right.candidateNumber ?? 0) - (left.candidateNumber ?? 0);
+  if (candidateDelta !== 0) return candidateDelta;
+  return timeValue(right.updatedAt ?? right.createdAt) - timeValue(left.updatedAt ?? left.createdAt);
+}
+
+export function compareHistoryGroups(left: HistoryGroup, right: HistoryGroup) {
+  // Total order, "newest production first":
+  // 1. Groups WITH a productionNumber rank above those without (candidate-only / legacy),
+  //    so a numbered production group never sinks below a null group on timestamp alone.
+  // 2. Within numbered groups: productionNumber descending.
+  // 3. Within null groups (single class): sortAt descending.
+  // 4. Ties: sortAt descending.
+  const leftHasNumber = left.productionNumber !== null;
+  const rightHasNumber = right.productionNumber !== null;
+  if (leftHasNumber !== rightHasNumber) return leftHasNumber ? -1 : 1;
+  if (leftHasNumber && rightHasNumber) {
+    const numberDelta = right.productionNumber! - left.productionNumber!;
+    if (numberDelta !== 0) return numberDelta;
+  }
+  return timeValue(right.sortAt) - timeValue(left.sortAt);
+}
+
+function getLatestReleaseEvent(events: ReleaseLineEventDto[]) {
+  return [...events].sort((left, right) => timeValue(right.updatedAt) - timeValue(left.updatedAt))[0] ?? null;
+}
+
+function isProductionHistoryRow(row: HistoryRow) {
+  return row.releaseVersionKind === 'production' || row.laneType === 'production';
+}
+
+export function isHistoryRowLive(row: HistoryRow) {
+  return row.isLive;
+}
+
+function getHistoryGroupKey(row: HistoryRow) {
+  const productionNumber =
+    row.releaseVersionKind === 'candidate'
+      ? row.targetProductionNumber
+      : (row.productionNumber ?? row.targetProductionNumber);
+  if (productionNumber !== null) return `production-${productionNumber}`;
+  return row.releaseVersionId ?? row.id;
+}
+
+function normalizeRunConfig(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function getRunConfigNumber(config: Record<string, unknown>, key: string) {
+  const value = config[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function buildReleaseConfigChanges(events: ReleaseLineEventDto[], t: Translate): HistoryConfigChange[] {
+  const sorted = [...events].sort((left, right) => timeValue(left.updatedAt) - timeValue(right.updatedAt));
+  const changes: HistoryConfigChange[] = [];
+  sorted.forEach((event, index) => {
+    if (!RELEASE_CONFIG_OPERATIONS.has(event.operation)) return;
+    const previous =
+      [...sorted.slice(0, index)].reverse().find((item) => item.releaseVersionId === event.releaseVersionId) ?? null;
+    changes.push({
+      id: event.id,
+      at: event.updatedAt ?? event.createdAt,
+      event: event.operation,
+      items: buildConfigChangeItems(previous, event, t),
+    });
+  });
+  return changes;
+}
+
+function buildLegacyProductionConfigItems(
+  item: ProductionReleaseHistoryItemDto,
+  t: Translate,
+): HistoryConfigChangeItem[] {
+  const config = normalizeRunConfig(item.runConfig);
+  const changes: HistoryConfigChangeItem[] = [];
+  addConfigChange(
+    changes,
+    t('releases.detail.topology.field.rpmLimit'),
+    '—',
+    formatHistoryNumber(getRunConfigNumber(config, 'rpmLimit')),
+    true,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.topology.field.tpmLimit'),
+    '—',
+    formatHistoryNumber(getRunConfigNumber(config, 'tpmLimit')),
+    true,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.topology.field.concurrency'),
+    '—',
+    formatHistoryNumber(getRunConfigNumber(config, 'concurrency')),
+    true,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.topology.field.temperature'),
+    '—',
+    formatHistoryTemperature(getRunConfigNumber(config, 'temperature')),
+    true,
+  );
+  if (changes.length > 0) return changes;
+  return [
+    {
+      field: t('releases.detail.history.field.snapshot'),
+      previous: '—',
+      next: t('releases.detail.history.change.updated'),
+    },
+  ];
+}
+
+function buildConfigChangeItems(
+  previous: ReleaseLineEventDto | null,
+  current: ReleaseLineEventDto,
+  t: Translate,
+): HistoryConfigChangeItem[] {
+  const previousConfig = normalizeRunConfig(previous?.runConfig);
+  const currentConfig = normalizeRunConfig(current.runConfig);
+  const changes: HistoryConfigChangeItem[] = [];
+  const includeInitial = previous === null;
+
+  addConfigChange(
+    changes,
+    t('releases.detail.history.traffic'),
+    formatRatioValue(previous?.trafficRatio ?? null),
+    formatRatioValue(current.trafficRatio),
+    includeInitial,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.history.field.trafficMode'),
+    previous?.trafficMode ?? '—',
+    current.trafficMode ?? '—',
+    includeInitial,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.topology.field.rpmLimit'),
+    formatHistoryNumber(getRunConfigNumber(previousConfig, 'rpmLimit')),
+    formatHistoryNumber(getRunConfigNumber(currentConfig, 'rpmLimit')),
+    includeInitial,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.topology.field.tpmLimit'),
+    formatHistoryNumber(getRunConfigNumber(previousConfig, 'tpmLimit')),
+    formatHistoryNumber(getRunConfigNumber(currentConfig, 'tpmLimit')),
+    includeInitial,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.topology.field.concurrency'),
+    formatHistoryNumber(getRunConfigNumber(previousConfig, 'concurrency')),
+    formatHistoryNumber(getRunConfigNumber(currentConfig, 'concurrency')),
+    includeInitial,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.topology.field.temperature'),
+    formatHistoryTemperature(getRunConfigNumber(previousConfig, 'temperature')),
+    formatHistoryTemperature(getRunConfigNumber(currentConfig, 'temperature')),
+    includeInitial,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.history.model'),
+    formatHistoryModel(previous?.modelName, previous?.modelId, previous?.modelProvider),
+    formatHistoryModel(current.modelName, current.modelId, current.modelProvider),
+    includeInitial,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.field.upstream'),
+    formatConnectorLabel(previous?.inputConnectorName ?? null, previous?.inputConnectorType ?? null),
+    formatConnectorLabel(current.inputConnectorName, current.inputConnectorType),
+    includeInitial,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.history.field.outputConnectors'),
+    formatOutputConnectors(previous?.outputConnectors ?? []),
+    formatOutputConnectors(current.outputConnectors),
+    includeInitial,
+  );
+  addConfigChange(
+    changes,
+    t('releases.detail.history.recordMode'),
+    formatRecordMode(previous?.recordMode, t, previous?.recordCategories ?? []),
+    formatRecordMode(current.recordMode, t, current.recordCategories),
+    includeInitial,
+  );
+
+  if (changes.length > 0) return changes;
+  return [
+    {
+      field: t('releases.detail.history.field.snapshot'),
+      previous: '—',
+      next: t('releases.detail.history.change.updated'),
+    },
+  ];
+}
+
+function addConfigChange(
+  changes: HistoryConfigChangeItem[],
+  field: string,
+  previous: string,
+  next: string,
+  includeInitial = false,
+) {
+  if (next === '—') return;
+  if (!includeInitial && previous === next) return;
+  changes.push({ field, previous, next });
+}
+
+function formatRatioValue(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : '—';
+}
+
+function formatHistoryNumber(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return Number.isInteger(value) ? formatCount(value) : formatHistoryTemperature(value);
+}
+
+function formatHistoryTemperature(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return value.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function formatConnectorLabel(name: string | null | undefined, type: string | null | undefined) {
+  if (!name && !type) return '—';
+  return [type, name].filter((value): value is string => Boolean(value)).join(' · ');
+}
+
+function formatOutputConnectors(connectors: ReleaseLineEventDto['outputConnectors']) {
+  if (connectors.length === 0) return '—';
+  return connectors.map((connector) => formatConnectorLabel(connector.name, connector.type)).join(' / ');
+}
+
+function formatHistoryVersionLabel(label: string) {
+  return label.replace(/^v(?=\d)/, 'V');
+}
+
+function buildHistoryRuntimeItems(row: HistoryRow, t: Translate): HistoryMetaItem[] {
+  const items: HistoryMetaItem[] = [];
+  const rpm = getRunConfigNumber(row.runConfig, 'rpmLimit');
+  const tpm = getRunConfigNumber(row.runConfig, 'tpmLimit');
+  const concurrency = getRunConfigNumber(row.runConfig, 'concurrency');
+  const temperature = getRunConfigNumber(row.runConfig, 'temperature');
+
+  if (row.trafficRatio !== null || row.trafficMode) {
+    items.push({ label: t('releases.detail.history.traffic'), value: formatReleaseRowTraffic(row), mono: true });
+  }
+  if (rpm !== null)
+    items.push({ label: t('releases.detail.topology.field.rpmLimit'), value: formatHistoryNumber(rpm), mono: true });
+  if (tpm !== null)
+    items.push({ label: t('releases.detail.topology.field.tpmLimit'), value: formatHistoryNumber(tpm), mono: true });
+  if (concurrency !== null) {
+    items.push({
+      label: t('releases.detail.topology.field.concurrency'),
+      value: formatHistoryNumber(concurrency),
+      mono: true,
+    });
+  }
+  if (temperature !== null) {
+    items.push({
+      label: t('releases.detail.topology.field.temperature'),
+      value: formatHistoryTemperature(temperature),
+      mono: true,
+    });
+  }
+  if (row.recordMode) {
+    items.push({
+      label: t('releases.detail.history.recordMode'),
+      value: formatRecordMode(row.recordMode, t, row.recordCategories),
+      mono: true,
+    });
+  }
+  return items;
+}
+
+function buildHistoryConnectorItems(row: HistoryRow, t: Translate): HistoryMetaItem[] {
+  return [
+    {
+      label: t('releases.detail.field.upstream'),
+      value: formatConnectorLabel(row.inputConnectorName, row.inputConnectorType),
+    },
+    {
+      label: t('releases.detail.field.downstream'),
+      value:
+        row.outputConnectors.length > 0
+          ? formatOutputConnectors(row.outputConnectors)
+          : t('releases.detail.history.field.noDownstream'),
+    },
+  ];
+}
+
+function buildHistoryReasonItems(row: HistoryRow, t: Translate): HistoryMetaItem[] {
+  if (!row.reason) return [];
+  return [{ label: t('releases.detail.history.reason'), value: row.reason }];
+}
+
+function formatReleaseRowTraffic(row: HistoryRow) {
+  return (
+    [formatRatioValue(row.trafficRatio), row.trafficMode].filter((value) => value && value !== '—').join(' · ') || '—'
+  );
+}
+
+function buildReleaseResultsHref(line: ReleaseLineView, row: HistoryRow) {
+  if (!row.releaseVersionId) return null;
+  return `/releases/${encodeURIComponent(line.id)}?tab=results&version=${encodeURIComponent(row.releaseVersionId)}`;
+}
+
+function buildAnnotationHref(line: ReleaseLineView, row: HistoryRow) {
+  if (!row.releaseVersionId) return null;
+  return `/annotations/new?line=${encodeURIComponent(line.id)}&version=${encodeURIComponent(row.releaseVersionId)}`;
+}
+
+function buildQualityAnnotationHref(line: ReleaseLineView, releaseEvents: ReleaseLineEventDto[]) {
+  const latestEvent = [...releaseEvents]
+    .filter((event) => Boolean(event.releaseVersionId))
+    .sort(
+      (left, right) => timeValue(right.updatedAt ?? right.createdAt) - timeValue(left.updatedAt ?? left.createdAt),
+    )[0];
+  const params = new URLSearchParams({ line: line.id });
+  if (latestEvent?.releaseVersionId) params.set('version', latestEvent.releaseVersionId);
+  return `/annotations/new?${params.toString()}`;
 }
 
 function HistoryPane({
+  projectId,
   line,
   productionHistory,
   releaseEvents,
   loading,
 }: {
+  projectId: string;
   line: ReleaseLineView;
   productionHistory: ProductionReleaseHistoryItemDto[];
   releaseEvents: ReleaseLineEventDto[];
@@ -2087,50 +4139,133 @@ function HistoryPane({
 }) {
   const { t } = useI18n();
   const formatDateTimeOrDash = useDateTimeOrDash();
-  const items = useMemo<TimelineItem[]>(() => {
-    if (releaseEvents.length > 0) {
-      return releaseEvents.map((event) => ({
-        id: event.id,
-        event: event.operation,
-        title: `${event.laneType === 'production' ? t('releases.detail.history.productionLane') : t('releases.detail.history.canaryLane')} · ${event.promptVersionLabel ?? event.id.slice(0, 8)}`,
-        createdAt: event.createdAt,
-        meta: buildReleaseEventMeta(event),
-        variant: formatReleaseEventVariant(event),
-      }));
-    }
-    const prod = productionHistory.map((item) => ({
-      id: item.id,
-      event: item.eventType,
-      title: item.promptVersionLabel ?? item.id.slice(0, 8),
-      createdAt: item.createdAt,
-      meta: item.submitReason || item.status,
-      variant: null,
-    }));
-    const canary = line.canary
-      ? [
-          {
-            id: line.canary.id,
-            event: line.canary.status === 'running' ? 'ratio_change' : 'create_canary',
-            title: `${line.canary.promptVersionLabel ?? line.canary.id.slice(0, 8)} · ${Math.round(line.canary.trafficRatio * 100)}%`,
-            createdAt: line.canary.updatedAt,
-            meta: line.canary.description ?? line.canary.status,
-            variant: line.canary.releaseVariantLabel
-              ? `${line.canary.releaseVariantLabel} · ${line.canary.promptVersionLabel ?? '-'} · ${line.canary.modelName ?? '-'}`
-              : null,
-          } satisfies TimelineItem,
-        ]
-      : [];
-    return [...canary, ...prod].sort(
-      (left, right) =>
-        (right.createdAt ? Date.parse(right.createdAt) : 0) - (left.createdAt ? Date.parse(left.createdAt) : 0),
-    );
-  }, [line.canary, productionHistory, releaseEvents, t]);
+  const restoreToProductionMutation = useRestoreReleaseLineHistoryToProduction(projectId);
+  const restoreToCanaryMutation = useRestoreReleaseLineHistoryToCanary(projectId);
+  const restorePending = restoreToProductionMutation.isPending || restoreToCanaryMutation.isPending;
+  const [restoreFeedback, setRestoreFeedback] = useState<{
+    tone: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const groups = useMemo(
+    () => buildHistoryGroups(line, releaseEvents, productionHistory, t),
+    [line, productionHistory, releaseEvents, t],
+  );
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({});
+  const [moreOpen, setMoreOpen] = useState<Record<string, boolean>>({});
+  const [configOpen, setConfigOpen] = useState<Record<string, boolean>>({});
+  const historyGroupResetKey = `${line.id}:${groups.length}`;
+  const [visibleGroupState, setVisibleGroupState] = useState(() => ({
+    key: historyGroupResetKey,
+    count: HISTORY_INITIAL_GROUP_LIMIT,
+  }));
+  const [loadingMoreKey, setLoadingMoreKey] = useState<string | null>(null);
+  const loadingMoreKeyRef = useRef<string | null>(null);
+  const loadMoreTimerRef = useRef<number | null>(null);
   const showLoader = useDelayedLoading(loading);
+  const visibleGroupCount =
+    visibleGroupState.key === historyGroupResetKey ? visibleGroupState.count : HISTORY_INITIAL_GROUP_LIMIT;
+  const visibleGroups = useMemo(() => groups.slice(0, visibleGroupCount), [groups, visibleGroupCount]);
+  const hasMoreGroups = visibleGroupCount < groups.length;
+  const isLoadingMoreGroups = loadingMoreKey === historyGroupResetKey && hasMoreGroups;
+
+  const restoreHistoryToProduction = useCallback(
+    (row: HistoryRow, versionLabel: string) => {
+      if (!row.sourceEventId || line.status === 'archived') return;
+      setRestoreFeedback(null);
+      restoreToProductionMutation.mutate(
+        {
+          releaseLineId: line.id,
+          body: {
+            sourceEventId: row.sourceEventId,
+            reason: formatTemplate(t('releases.detail.history.action.restoreToProductionReason'), {
+              version: versionLabel,
+            }),
+          },
+        },
+        {
+          onSuccess: () =>
+            setRestoreFeedback({
+              tone: 'success',
+              message: t('releases.detail.history.action.restoreSuccess'),
+            }),
+          onError: (error) =>
+            setRestoreFeedback({
+              tone: 'error',
+              message: getApiErrorMessage(error) ?? t('releases.detail.history.action.restoreFailed'),
+            }),
+        },
+      );
+    },
+    [line.id, line.status, restoreToProductionMutation, t],
+  );
+
+  const restoreHistoryToCanary = useCallback(
+    (row: HistoryRow, versionLabel: string) => {
+      if (!row.sourceEventId || line.status === 'archived') return;
+      setRestoreFeedback(null);
+      restoreToCanaryMutation.mutate(
+        {
+          releaseLineId: line.id,
+          body: {
+            sourceEventId: row.sourceEventId,
+            reason: formatTemplate(t('releases.detail.history.action.restoreToCanaryReason'), {
+              version: versionLabel,
+            }),
+          },
+        },
+        {
+          onSuccess: () =>
+            setRestoreFeedback({
+              tone: 'success',
+              message: t('releases.detail.history.action.restoreSuccess'),
+            }),
+          onError: (error) =>
+            setRestoreFeedback({
+              tone: 'error',
+              message: getApiErrorMessage(error) ?? t('releases.detail.history.action.restoreFailed'),
+            }),
+        },
+      );
+    },
+    [line.id, line.status, restoreToCanaryMutation, t],
+  );
+
+  const loadMoreHistoryGroups = useCallback(() => {
+    if (!hasMoreGroups) return;
+    if (loadingMoreKeyRef.current === historyGroupResetKey) return;
+
+    loadingMoreKeyRef.current = historyGroupResetKey;
+    setLoadingMoreKey(historyGroupResetKey);
+    setVisibleGroupState((current) => {
+      const currentCount = current.key === historyGroupResetKey ? current.count : HISTORY_INITIAL_GROUP_LIMIT;
+      return {
+        key: historyGroupResetKey,
+        count: Math.min(groups.length, currentCount + HISTORY_GROUP_PAGE_SIZE),
+      };
+    });
+
+    if (loadMoreTimerRef.current) window.clearTimeout(loadMoreTimerRef.current);
+    loadMoreTimerRef.current = window.setTimeout(() => {
+      loadingMoreKeyRef.current = null;
+      setLoadingMoreKey((current) => (current === historyGroupResetKey ? null : current));
+      loadMoreTimerRef.current = null;
+    }, 360);
+  }, [groups.length, hasMoreGroups, historyGroupResetKey]);
+
+  useEffect(() => {
+    return () => {
+      if (loadMoreTimerRef.current) {
+        window.clearTimeout(loadMoreTimerRef.current);
+        loadMoreTimerRef.current = null;
+      }
+      loadingMoreKeyRef.current = null;
+    };
+  }, []);
 
   if (loading) {
     return showLoader ? <PlatformLoader className="py-8" size="sm" /> : null;
   }
-  if (items.length === 0) {
+  if (groups.length === 0) {
     return (
       <div className="rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
         {t('releases.detail.history.empty')}
@@ -2139,37 +4274,494 @@ function HistoryPane({
   }
 
   return (
-    <div className="relative space-y-3 pl-8">
-      <div className="absolute bottom-0 left-[11px] top-0 w-0.5 bg-border" />
-      {items.map((item, index) => (
-        <div key={item.id} className="relative rounded-lg border bg-card">
-          <div
-            className="absolute left-[-27px] top-[18px] size-3.5 rounded-full border-2"
-            style={{
-              background: index === 0 ? 'var(--status-canary-dot)' : 'var(--card)',
-              borderColor: index === 0 ? 'var(--status-canary-dot)' : 'var(--border)',
-              boxShadow:
-                index === 0 ? '0 0 0 4px color-mix(in srgb, var(--status-canary-dot) 25%, transparent)' : undefined,
-            }}
-          />
-          <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
-            <ReleaseEventPill event={item.event} />
-            <span className="text-[14px] font-semibold">{item.title}</span>
-            <span className="ml-auto font-mono text-[11.5px] text-muted-foreground">
-              {formatDateTimeOrDash(item.createdAt)} · {item.id.slice(0, 8)}
-            </span>
-          </div>
-          <div className="space-y-2 px-4 py-3 text-[12.5px] text-muted-foreground">
-            {item.variant ? (
-              <div>
-                <span className="font-medium text-foreground">{t('releases.detail.history.variant')}</span>
-                <span className="ml-2 font-mono">{item.variant}</span>
-              </div>
-            ) : null}
-            <div>{item.meta}</div>
-          </div>
+    <section className="w-full" aria-label={t('releases.detail.history.title')}>
+      {restoreFeedback ? (
+        <div
+          role={restoreFeedback.tone === 'error' ? 'alert' : 'status'}
+          className={cn(
+            'mb-3 flex items-center gap-2 rounded-md border px-3 py-2 text-[12.5px]',
+            restoreFeedback.tone === 'error'
+              ? 'border-destructive/35 bg-destructive/5 text-destructive'
+              : 'border-border bg-muted/55 text-muted-foreground',
+          )}
+        >
+          {restoreFeedback.tone === 'error' ? <AlertTriangle className="size-3.5" /> : <Check className="size-3.5" />}
+          <span>{restoreFeedback.message}</span>
         </div>
-      ))}
+      ) : null}
+      <div className="relative pl-[30px]">
+        {visibleGroups.map((group, index) => {
+          const headline = group.production ?? group.candidates[0] ?? null;
+          if (!headline) return null;
+          const children = group.production ? group.candidates : group.candidates.slice(1);
+          const defaultOpen = group.isLive || index === 0;
+          const isOpen = groupOpen[group.id] ?? defaultOpen;
+          return (
+            <div key={group.id} className="relative mb-4">
+              <div className="absolute bottom-3.5 left-[-22px] top-[18px] w-[1.5px] bg-border" aria-hidden />
+              <HistoryVersionCard
+                line={line}
+                row={headline}
+                variant={isProductionHistoryRow(headline) ? 'production' : 'canary'}
+                live={group.isLive && isProductionHistoryRow(headline)}
+                hasChildren={children.length > 0}
+                childrenOpen={isOpen}
+                moreOpen={Boolean(moreOpen[headline.id])}
+                configOpen={Boolean(configOpen[headline.id])}
+                onToggleChildren={() =>
+                  setGroupOpen((current) => ({
+                    ...current,
+                    [group.id]: !(current[group.id] ?? defaultOpen),
+                  }))
+                }
+                onToggleMore={() =>
+                  setMoreOpen((current) => ({
+                    ...current,
+                    [headline.id]: !current[headline.id],
+                  }))
+                }
+                onToggleConfig={() =>
+                  setConfigOpen((current) => ({
+                    ...current,
+                    [headline.id]: !current[headline.id],
+                  }))
+                }
+                onRestoreToProduction={restoreHistoryToProduction}
+                onRestoreToCanary={restoreHistoryToCanary}
+                restorePending={restorePending}
+                formatDateTimeOrDash={formatDateTimeOrDash}
+              />
+              {isOpen && children.length > 0 ? (
+                <div className="mb-0.5 mt-2.5 flex flex-col gap-2.5">
+                  {children.map((row) => (
+                    <HistoryVersionCard
+                      key={row.id}
+                      line={line}
+                      row={row}
+                      variant="canary"
+                      compact
+                      live={isHistoryRowLive(row)}
+                      hasChildren={false}
+                      childrenOpen={false}
+                      moreOpen={Boolean(moreOpen[row.id])}
+                      configOpen={Boolean(configOpen[row.id])}
+                      onToggleChildren={() => undefined}
+                      onToggleMore={() =>
+                        setMoreOpen((current) => ({
+                          ...current,
+                          [row.id]: !current[row.id],
+                        }))
+                      }
+                      onToggleConfig={() =>
+                        setConfigOpen((current) => ({
+                          ...current,
+                          [row.id]: !current[row.id],
+                        }))
+                      }
+                      onRestoreToProduction={restoreHistoryToProduction}
+                      onRestoreToCanary={restoreHistoryToCanary}
+                      restorePending={restorePending}
+                      formatDateTimeOrDash={formatDateTimeOrDash}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {hasMoreGroups ? (
+        <HistoryLoadMoreIndicator
+          loading={isLoadingMoreGroups}
+          label={
+            isLoadingMoreGroups ? t('releases.detail.history.loadingMore') : t('releases.detail.history.moreAvailable')
+          }
+          onClick={loadMoreHistoryGroups}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function HistoryLoadMoreIndicator({
+  loading,
+  label,
+  onClick,
+}: {
+  loading: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  if (!loading) {
+    return (
+      <div className="flex justify-center py-3">
+        <button
+          type="button"
+          onClick={onClick}
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border bg-card px-3.5 text-[12px] font-medium text-muted-foreground shadow-sm transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <ChevronDown className="size-3.5" aria-hidden />
+          <span>{label}</span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex justify-center py-4" role="status" aria-live="polite" aria-label={label}>
+      <span className="sr-only">{label}</span>
+      <span className="relative flex h-8 w-28 items-center justify-center" aria-hidden>
+        <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-transparent via-border to-transparent" />
+        <span className="relative inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-2 shadow-sm">
+          {[0, 1, 2].map((index) => (
+            <span
+              key={index}
+              className="size-1.5 rounded-full bg-muted-foreground/80 motion-safe:animate-bounce"
+              style={{ animationDelay: `${index * 120}ms` }}
+            />
+          ))}
+        </span>
+      </span>
     </div>
+  );
+}
+
+function HistoryVersionCard({
+  line,
+  row,
+  variant,
+  live,
+  compact = false,
+  hasChildren,
+  childrenOpen,
+  moreOpen,
+  configOpen,
+  onToggleChildren,
+  onToggleMore,
+  onToggleConfig,
+  onRestoreToProduction,
+  onRestoreToCanary,
+  restorePending,
+  formatDateTimeOrDash,
+}: {
+  line: ReleaseLineView;
+  row: HistoryRow;
+  variant: 'production' | 'canary';
+  live: boolean;
+  compact?: boolean;
+  hasChildren: boolean;
+  childrenOpen: boolean;
+  moreOpen: boolean;
+  configOpen: boolean;
+  onToggleChildren: () => void;
+  onToggleMore: () => void;
+  onToggleConfig: () => void;
+  onRestoreToProduction: (row: HistoryRow, versionLabel: string) => void;
+  onRestoreToCanary: (row: HistoryRow, versionLabel: string) => void;
+  restorePending: boolean;
+  formatDateTimeOrDash: (value: string | null | undefined) => string;
+}) {
+  const { t } = useI18n();
+  const isProduction = variant === 'production';
+  const runtimeItems = buildHistoryRuntimeItems(row, t);
+  const connectorItems = buildHistoryConnectorItems(row, t);
+  const reasonItems = buildHistoryReasonItems(row, t);
+  const hasConfig = row.configChanges.length > 0;
+  const dateLabel = formatDateTimeOrDash(row.updatedAt ?? row.createdAt);
+  const resultsHref = buildReleaseResultsHref(line, row);
+  const annotationHref = buildAnnotationHref(line, row);
+  const versionLabel = formatHistoryVersionLabel(row.releaseVersionLabel || '—');
+  const expandLabel = formatTemplate(
+    t(childrenOpen ? 'releases.detail.history.action.collapseVersion' : 'releases.detail.history.action.expandVersion'),
+    { version: versionLabel },
+  );
+  const moreLabel = formatTemplate(t('releases.detail.history.action.moreInfo'), { version: versionLabel });
+  const configLabel = formatTemplate(t('releases.detail.history.action.configChanges'), { version: versionLabel });
+  const resultLabel = formatTemplate(t('releases.detail.history.action.viewResults'), { version: versionLabel });
+  const annotationLabel = formatTemplate(t('releases.detail.history.action.createAnnotation'), {
+    version: versionLabel,
+  });
+  const actionMenuLabel = formatTemplate(t('releases.detail.history.action.moreActions'), { version: versionLabel });
+  const restoreDisabled = !row.sourceEventId || line.status === 'archived' || restorePending;
+  const restoreHistoryRow = () => {
+    if (isProduction) onRestoreToProduction(row, versionLabel);
+    else onRestoreToCanary(row, versionLabel);
+  };
+  const rowClickProps = hasChildren
+    ? {
+        role: 'button' as const,
+        tabIndex: 0,
+        'aria-expanded': childrenOpen,
+        'aria-label': expandLabel,
+        onClick: onToggleChildren,
+        onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          onToggleChildren();
+        },
+      }
+    : {};
+
+  return (
+    <div
+      {...rowClickProps}
+      className={cn(
+        'relative flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[10px] border bg-card px-[15px] shadow-sm transition-shadow hover:shadow-md',
+        hasChildren && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        compact ? 'py-[11px]' : 'py-[13px]',
+      )}
+      style={
+        live && isProduction
+          ? {
+              borderColor: 'color-mix(in srgb, var(--src-prod) 35%, var(--border))',
+              boxShadow: '0 1px 3px color-mix(in srgb, var(--src-prod) 12%, transparent)',
+            }
+          : undefined
+      }
+    >
+      <span
+        className={cn(
+          'absolute z-10 rounded-full bg-card',
+          isProduction
+            ? 'left-[-29px] top-[14px] size-4 border-[2.5px]'
+            : 'left-[-26px] top-[15px] size-2.5 border-[2.5px]',
+        )}
+        style={{
+          background: live ? (isProduction ? 'var(--src-prod)' : 'var(--src-canary)') : 'var(--card)',
+          borderColor: isProduction ? (live ? 'var(--src-prod)' : 'var(--muted-foreground)') : 'var(--src-canary)',
+          boxShadow: live
+            ? `0 0 0 4px color-mix(in srgb, ${isProduction ? 'var(--src-prod)' : 'var(--src-canary)'} 16%, transparent)`
+            : undefined,
+        }}
+        aria-hidden
+      />
+      <span
+        className="absolute left-[-14px] top-[19px] h-[1.5px] w-[11px] bg-border"
+        style={!isProduction ? { background: 'color-mix(in srgb, var(--src-canary) 35%, var(--border))' } : undefined}
+        aria-hidden
+      />
+
+      <HistoryVersionBadge label={versionLabel} variant={variant} compact={compact} />
+
+      <div className="flex min-w-0 flex-1 items-center">
+        <div className="flex w-[200px] min-w-0 shrink-0 items-baseline gap-[7px] whitespace-nowrap">
+          <span className="shrink-0 text-[11.5px] text-muted-foreground">{t('releases.detail.history.model')}</span>
+          <span className="min-w-0 truncate text-[13.5px] font-medium text-foreground">{row.modelName}</span>
+        </div>
+        <div className="flex w-[212px] min-w-0 shrink-0 items-baseline gap-[7px] whitespace-nowrap">
+          <span className="shrink-0 text-[11.5px] text-muted-foreground">
+            {t('releases.detail.history.field.prompt')}
+          </span>
+          <span className="min-w-0 truncate text-[13.5px] font-medium text-foreground">{row.promptName}</span>
+          <span className="shrink-0 text-muted-foreground">·</span>
+          <span className="shrink-0 font-mono text-[12.5px] font-semibold text-muted-foreground">
+            {row.promptVersionLabel}
+          </span>
+        </div>
+        <div className="shrink-0 whitespace-nowrap font-mono text-[11.5px] text-muted-foreground">{dateLabel}</div>
+      </div>
+
+      <div className="ml-auto flex shrink-0 items-center gap-2" onClick={(event) => event.stopPropagation()}>
+        <button
+          type="button"
+          onClick={onToggleMore}
+          aria-pressed={moreOpen}
+          aria-label={moreLabel}
+          title={moreLabel}
+          className={cn(
+            'inline-flex size-[30px] items-center justify-center rounded-lg border bg-card p-0 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            moreOpen && 'border-ring bg-muted text-foreground',
+            compact && 'size-7 rounded-md',
+          )}
+        >
+          <ChevronDown
+            className={cn(compact ? 'size-3.5' : 'size-4', 'transition-transform', moreOpen && 'rotate-180')}
+          />
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={actionMenuLabel}
+              title={actionMenuLabel}
+              className={cn(
+                'inline-flex size-[30px] items-center justify-center rounded-lg border bg-card p-0 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                compact && 'size-7 rounded-md',
+              )}
+            >
+              <MoreHorizontal className={compact ? 'size-3.5' : 'size-4'} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56" onClick={(event) => event.stopPropagation()}>
+            <DropdownMenuItem disabled={!hasConfig} onSelect={onToggleConfig} className="gap-2">
+              <SlidersHorizontal className="size-3.5" />
+              {configLabel}
+            </DropdownMenuItem>
+            <HistoryDropdownLink href={resultsHref} label={resultLabel}>
+              <ScrollText className="size-3.5" />
+            </HistoryDropdownLink>
+            <HistoryDropdownLink href={annotationHref} label={annotationLabel}>
+              <Tag className="size-3.5" />
+            </HistoryDropdownLink>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={restoreDisabled}
+              onSelect={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                restoreHistoryRow();
+              }}
+              className="gap-2"
+            >
+              <RotateCcw className="size-3.5" />
+              {restorePending
+                ? t('releases.detail.history.action.restoring')
+                : t('releases.detail.history.action.restore')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {moreOpen ? (
+        <HistoryMorePanel runtimeItems={runtimeItems} connectorItems={connectorItems} reasonItems={reasonItems} />
+      ) : null}
+      {configOpen && hasConfig ? (
+        <HistoryConfigPanel changes={row.configChanges} formatDateTimeOrDash={formatDateTimeOrDash} />
+      ) : null}
+    </div>
+  );
+}
+
+function HistoryDropdownLink({ href, label, children }: { href: string | null; label: string; children: ReactNode }) {
+  if (!href) {
+    return (
+      <DropdownMenuItem disabled className="gap-2">
+        {children}
+        {label}
+      </DropdownMenuItem>
+    );
+  }
+
+  return (
+    <DropdownMenuItem asChild className="gap-2">
+      <Link href={href}>
+        {children}
+        {label}
+      </Link>
+    </DropdownMenuItem>
+  );
+}
+
+function HistoryMorePanel({
+  runtimeItems,
+  connectorItems,
+  reasonItems,
+}: {
+  runtimeItems: HistoryMetaItem[];
+  connectorItems: HistoryMetaItem[];
+  reasonItems: HistoryMetaItem[];
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="mt-3 basis-full rounded-lg border bg-muted/55 px-[13px] py-[11px]">
+      <HistoryPanelRow title={t('releases.detail.history.runtimeSection')} items={runtimeItems} />
+      <HistoryPanelRow title={t('releases.detail.history.connectorSection')} items={connectorItems} />
+      {reasonItems.length > 0 ? (
+        <HistoryPanelRow title={t('releases.detail.history.reasonSection')} items={reasonItems} />
+      ) : null}
+    </div>
+  );
+}
+
+function HistoryPanelRow({ title, items }: { title: string; items: HistoryMetaItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2 py-[7px] first:pt-0 last:pb-0 sm:flex-row sm:items-baseline [&+&]:border-t">
+      <div className="w-[58px] shrink-0 text-[11.5px] font-semibold text-muted-foreground">{title}</div>
+      <dl className="flex min-w-0 flex-1 flex-wrap gap-x-[30px] gap-y-[9px]">
+        {items.map((item) => (
+          <div key={item.label} className="min-w-0">
+            <dt className="text-[11px] text-muted-foreground">{item.label}</dt>
+            <dd
+              className={cn(
+                'mt-0.5 max-w-[360px] break-words text-[13px] font-semibold text-foreground',
+                item.mono && 'font-mono',
+              )}
+            >
+              {item.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function HistoryConfigPanel({
+  changes,
+  formatDateTimeOrDash,
+}: {
+  changes: HistoryConfigChange[];
+  formatDateTimeOrDash: (value: string | null | undefined) => string;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="mt-3 basis-full rounded-lg border bg-muted/55 px-[13px] py-[11px]">
+      <div className="mb-2 text-[11.5px] font-semibold text-muted-foreground">
+        {t('releases.detail.history.configChanges')}
+      </div>
+      <div className="ml-[3px] flex flex-col gap-2.5 border-l-[1.5px] border-dotted border-muted-foreground/60 pl-[13px]">
+        {changes.map((change) => (
+          <div key={change.id} className="relative flex flex-col gap-1.5 sm:flex-row sm:items-baseline sm:gap-4">
+            <span className="absolute left-[-16.5px] top-1.5 size-1.5 rounded-full bg-muted-foreground" aria-hidden />
+            <span className="min-w-[118px] shrink-0 font-mono text-[11.5px] text-muted-foreground">
+              {formatDateTimeOrDash(change.at)}
+            </span>
+            <div className="flex min-w-0 flex-wrap gap-x-0 gap-y-1">
+              {change.items.map((item) => (
+                <span
+                  key={`${change.id}-${item.field}-${item.next}`}
+                  className="inline-flex items-baseline border-l px-3 text-[12.5px] first:border-l-0 first:pl-0"
+                >
+                  <span className="mr-2 font-semibold text-foreground">{item.field}</span>
+                  <span className="font-mono text-muted-foreground">{item.previous}</span>
+                  <span className="mx-1.5 text-muted-foreground">→</span>
+                  <span className="font-mono font-semibold text-foreground">{item.next}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HistoryVersionBadge({
+  label,
+  variant,
+  compact,
+}: {
+  label: string;
+  variant: 'production' | 'canary';
+  compact?: boolean;
+}) {
+  const isProduction = variant === 'production';
+  return (
+    <span
+      className={cn(
+        'inline-flex h-[26px] w-[54px] shrink-0 items-center justify-center truncate rounded-md border px-2 font-mono text-[13px] font-semibold leading-none',
+        compact && 'h-[25px] text-[12px]',
+      )}
+      style={{
+        background: isProduction ? 'var(--src-prod-soft)' : 'var(--src-canary-soft)',
+        color: isProduction ? 'var(--src-prod-fg)' : 'var(--src-canary-fg)',
+        borderColor: isProduction
+          ? 'color-mix(in srgb, var(--src-prod) 35%, var(--border))'
+          : 'color-mix(in srgb, var(--src-canary) 35%, var(--border))',
+      }}
+    >
+      {label}
+    </span>
   );
 }

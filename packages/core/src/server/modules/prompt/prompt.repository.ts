@@ -21,10 +21,15 @@ const {
   prompts,
   promptVersions,
   promptVersionLabels,
+  productionReleaseEvents,
   releaseLineEvents,
   releaseLines,
   runResults,
 } = schema;
+
+// The drizzle transaction handle passed to a `db.transaction` callback. The cascade helper only
+// needs `execute`, but typing it as the full transaction keeps it interchangeable with `this.db`.
+type PromptDbTransaction = Parameters<Parameters<DbClient['transaction']>[0]>[0];
 
 export interface PromptProjectAccessRow {
   id: string;
@@ -34,6 +39,7 @@ export interface PromptRow {
   id: string;
   projectId: string;
   name: string;
+  status: string;
   currentOnlineVersionId: string | null;
   defaultDatasetId: string | null;
   defaultDatasetName: string | null;
@@ -41,6 +47,7 @@ export interface PromptRow {
   createdByDisplayName?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  archivedAt: Date | null;
   deletedAt: Date | null;
 }
 
@@ -108,10 +115,9 @@ export interface PromptDeletionImpactRow {
 }
 
 export interface PromptDeletionImpactRows {
+  releaseLines: PromptDeletionImpactRow[];
   experiments: PromptDeletionImpactRow[];
   optimizations: PromptDeletionImpactRow[];
-  canaryReleases: PromptDeletionImpactRow[];
-  productionReleases: PromptDeletionImpactRow[];
 }
 
 @Injectable()
@@ -122,6 +128,7 @@ export class PromptRepository {
     id: prompts.id,
     projectId: prompts.projectId,
     name: prompts.name,
+    status: prompts.status,
     currentOnlineVersionId: prompts.currentOnlineVersionId,
     defaultDatasetId: prompts.defaultDatasetId,
     defaultDatasetName: datasets.name,
@@ -129,6 +136,7 @@ export class PromptRepository {
     createdByDisplayName: sql<string | null>`NULL`,
     createdAt: prompts.createdAt,
     updatedAt: prompts.updatedAt,
+    archivedAt: prompts.archivedAt,
     deletedAt: prompts.deletedAt,
   };
 
@@ -199,10 +207,32 @@ export class PromptRepository {
     const rows = await this.db
       .select({ id: datasets.id, name: datasets.name })
       .from(datasets)
-      .where(and(eq(datasets.projectId, projectId), eq(datasets.id, datasetId), isNull(datasets.deletedAt)))
+      .where(
+        and(
+          eq(datasets.projectId, projectId),
+          eq(datasets.id, datasetId),
+          eq(datasets.status, 'active'),
+          isNull(datasets.deletedAt),
+        ),
+      )
       .limit(1);
 
     return rows[0] ?? null;
+  }
+
+  async archivePrompt(projectId: string, promptId: string): Promise<void> {
+    const now = new Date();
+    await this.db
+      .update(prompts)
+      .set({ status: 'archived', archivedAt: now, updatedAt: now })
+      .where(and(eq(prompts.projectId, projectId), eq(prompts.id, promptId), isNull(prompts.deletedAt)));
+  }
+
+  async restorePrompt(projectId: string, promptId: string): Promise<void> {
+    await this.db
+      .update(prompts)
+      .set({ status: 'active', archivedAt: null, updatedAt: new Date() })
+      .where(and(eq(prompts.projectId, projectId), eq(prompts.id, promptId), isNull(prompts.deletedAt)));
   }
 
   async listVersionsByPromptIds(promptIds: string[]): Promise<PromptVersionRow[]> {
@@ -328,73 +358,48 @@ export class PromptRepository {
             )
         : [];
 
-    const canaryRows =
-      input.versionIds.length > 0
-        ? await this.db
-            .select({
-              id: releaseLineEvents.id,
-              name: sql<string | null>`COALESCE(${releaseLines.name}, ${releaseLineEvents.promptName})`,
-              status: releaseLineEvents.status,
-              promptId: releaseLineEvents.promptId,
-              promptVersionId: releaseLineEvents.promptVersionId,
-              promptVersionNumber: sql<
-                number | null
-              >`COALESCE(${promptVersions.versionNumber}, ${releaseLineEvents.promptVersionNumber}, NULLIF(${releaseLineEvents.promptVersionSnapshot}->>'versionNumber', '')::int)`,
-              createdAt: releaseLineEvents.createdAt,
-            })
-            .from(releaseLineEvents)
-            .leftJoin(releaseLines, eq(releaseLines.id, releaseLineEvents.releaseLineId))
-            .leftJoin(promptVersions, eq(promptVersions.id, releaseLineEvents.promptVersionId))
-            .where(
-              and(
-                eq(releaseLineEvents.projectId, input.projectId),
-                eq(releaseLineEvents.laneType, 'canary'),
-                inArray(releaseLineEvents.promptVersionId, input.versionIds),
-                sql`${releaseLineEvents.status} <> 'archived'`,
-              ),
-            )
-        : [];
-
-    const productionConditions: SQL[] = [];
-    if (input.includePromptShell) productionConditions.push(eq(releaseLineEvents.promptId, input.promptId));
+    const releaseLineConditions: SQL[] = [];
+    if (input.includePromptShell) releaseLineConditions.push(eq(releaseLines.promptId, input.promptId));
     if (input.versionIds.length > 0) {
-      productionConditions.push(inArray(releaseLineEvents.promptVersionId, input.versionIds));
+      releaseLineConditions.push(inArray(releaseLineEvents.promptVersionId, input.versionIds));
     }
-    const productionRows =
-      productionConditions.length > 0
+    const rawReleaseLineRows =
+      releaseLineConditions.length > 0
         ? await this.db
             .select({
-              id: releaseLineEvents.id,
-              name: sql<
-                string | null
-              >`COALESCE(${releaseLines.name}, ${releaseLineEvents.promptName}, ${prompts.name})`,
-              status: releaseLineEvents.status,
-              promptId: releaseLineEvents.promptId,
-              promptVersionId: releaseLineEvents.promptVersionId,
-              promptVersionNumber: sql<
-                number | null
-              >`COALESCE(${promptVersions.versionNumber}, ${releaseLineEvents.promptVersionNumber}, NULLIF(${releaseLineEvents.promptVersionSnapshot}->>'versionNumber', '')::int)`,
-              createdAt: releaseLineEvents.createdAt,
+              id: releaseLines.id,
+              name: releaseLines.name,
+              status: releaseLines.status,
+              promptId: releaseLines.promptId,
+              promptVersionId: sql<string | null>`NULL`,
+              promptVersionNumber: sql<number | null>`NULL`,
+              createdAt: releaseLines.createdAt,
             })
-            .from(releaseLineEvents)
-            .leftJoin(releaseLines, eq(releaseLines.id, releaseLineEvents.releaseLineId))
-            .leftJoin(prompts, eq(prompts.id, releaseLineEvents.promptId))
-            .leftJoin(promptVersions, eq(promptVersions.id, releaseLineEvents.promptVersionId))
-            .where(
+            .from(releaseLines)
+            .leftJoin(
+              releaseLineEvents,
               and(
+                eq(releaseLineEvents.releaseLineId, releaseLines.id),
                 eq(releaseLineEvents.projectId, input.projectId),
-                eq(releaseLineEvents.laneType, 'production'),
-                or(...productionConditions),
-                sql`${releaseLineEvents.status} <> 'archived'`,
               ),
             )
+            .where(
+              and(
+                eq(releaseLines.projectId, input.projectId),
+                or(...releaseLineConditions),
+              ),
+            )
+            .orderBy(desc(releaseLines.updatedAt))
         : [];
+    const releaseLineRowsById = new Map<string, PromptDeletionImpactRow>();
+    for (const row of rawReleaseLineRows) {
+      if (!releaseLineRowsById.has(row.id)) releaseLineRowsById.set(row.id, row);
+    }
 
     return {
+      releaseLines: Array.from(releaseLineRowsById.values()),
       experiments: experimentRows,
       optimizations: autoRows,
-      canaryReleases: canaryRows,
-      productionReleases: productionRows,
     };
   }
 
@@ -499,7 +504,211 @@ export class PromptRepository {
   }
 
   async hardDeletePrompt(projectId: string, promptId: string): Promise<void> {
-    await this.db.delete(prompts).where(and(eq(prompts.projectId, projectId), eq(prompts.id, promptId)));
+    await this.db.transaction(async (tx) => {
+      const now = new Date();
+
+      // Prompt-level delete stops every running release lane that depends on this prompt.
+      await tx
+        .update(productionReleaseEvents)
+        .set({
+          status: 'stopped',
+          stopReason: 'force_stopped',
+          finishedAt: now,
+          controlState: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(productionReleaseEvents.projectId, projectId),
+            eq(productionReleaseEvents.promptId, promptId),
+            eq(productionReleaseEvents.status, 'running'),
+          ),
+        );
+
+      await tx
+        .update(releaseLineEvents)
+        .set({
+          status: 'stopped',
+          terminalReason: 'force_stopped',
+          finishedAt: now,
+          controlState: null,
+          controlStatePayload: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(releaseLineEvents.projectId, projectId),
+            eq(releaseLineEvents.promptId, promptId),
+            eq(releaseLineEvents.status, 'running'),
+          ),
+        );
+
+      await tx
+        .update(releaseLines)
+        .set({
+          status: 'stopped',
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(releaseLines.projectId, projectId),
+            eq(releaseLines.promptId, promptId),
+            sql`${releaseLines.status} <> 'archived'`,
+          ),
+        );
+
+      // Scope the cascade to every version of the prompt; also catch optimizations attached to the
+      // prompt shell itself (placeholder / from_dataset_only optimizations).
+      await this.cascadeDeleteForTargetVersions(
+        tx,
+        projectId,
+        sql`
+          SELECT id, generated_by_optimization_id
+          FROM ph_assets.prompt_versions
+          WHERE prompt_id = ${promptId}::uuid
+        `,
+        sql`o.prompt_id = ${promptId}::uuid`,
+      );
+
+      await tx.delete(prompts).where(and(eq(prompts.projectId, projectId), eq(prompts.id, promptId)));
+    });
+  }
+
+  /**
+   * Cascade-delete every experiment / optimization (and the run results, annotations, and
+   * optimization round steps they own) that reference the versions produced by `targetVersionsSelect`,
+   * and null out the `source_experiment_id` back-references that would otherwise dangle.
+   *
+   * `targetVersionsSelect` must yield `(id, generated_by_optimization_id)` rows. Callers scope it
+   * either to a whole prompt (`hardDeletePrompt`) or to a single version (`deleteDraftVersionHard`),
+   * keeping both delete paths on the same impact semantics (SPEC 23 §4.2 / §3).
+   *
+   * `extraOptimizationScope` lets the prompt-level path also pull in optimizations attached to the
+   * prompt shell (e.g. placeholder / from_dataset_only optimizations whose base_version_id is null);
+   * the version-level path omits it so it only removes optimizations that reference THIS version.
+   *
+   * Release snapshot rows (release_versions / release_line_events / production_release_events) are
+   * intentionally left in place — they hold immutable snapshots kept for history; only their FK-less
+   * `source_experiment_id` back-reference is nulled so the deleted experiment is not left dangling.
+   */
+  private async cascadeDeleteForTargetVersions(
+    tx: PromptDbTransaction,
+    projectId: string,
+    targetVersionsSelect: SQL,
+    extraOptimizationScope?: SQL,
+  ): Promise<void> {
+    const optimizationScope = extraOptimizationScope
+      ? sql`${extraOptimizationScope}
+            OR o.base_version_id IN (SELECT id FROM target_versions)`
+      : sql`o.base_version_id IN (SELECT id FROM target_versions)`;
+
+    // Shared CTE chain resolving the versions → optimizations → experiments → run results to delete.
+    const targetSelections = sql`
+      WITH target_versions AS (
+        ${targetVersionsSelect}
+      ),
+      target_optimizations AS (
+        SELECT DISTINCT o.id
+        FROM ph_runs.optimizations o
+        WHERE o.project_id = ${projectId}::uuid
+          AND o.deleted_at IS NULL
+          AND (
+            ${optimizationScope}
+            OR o.best_version_id IN (SELECT id FROM target_versions)
+            OR o.id IN (
+              SELECT generated_by_optimization_id
+              FROM target_versions
+              WHERE generated_by_optimization_id IS NOT NULL
+            )
+          )
+      ),
+      target_experiments AS (
+        SELECT DISTINCT e.id
+        FROM ph_runs.experiments e
+        WHERE e.project_id = ${projectId}::uuid
+          AND e.deleted_at IS NULL
+          AND (
+            e.prompt_version_id IN (SELECT id FROM target_versions)
+            OR e.optimization_id IN (SELECT id FROM target_optimizations)
+          )
+      ),
+      target_run_results AS (
+        SELECT rr.id, rr.created_at
+        FROM ph_runs.run_results rr
+        WHERE (
+          rr.source = 'experiment'
+          AND rr.source_id IN (SELECT id FROM target_experiments)
+        )
+        OR (
+          rr.source IN ('optimization_analysis', 'optimization_generate')
+          AND rr.source_id IN (SELECT id FROM target_optimizations)
+        )
+      )
+    `;
+
+    await tx.execute(sql`
+      ${targetSelections}
+      DELETE FROM ph_runs.annotations annotation
+      USING target_run_results rr
+      WHERE annotation.run_result_id = rr.id
+        AND annotation.run_result_created_at = rr.created_at
+    `);
+
+    await tx.execute(sql`
+      ${targetSelections}
+      DELETE FROM ph_runs.run_results rr
+      USING target_run_results target
+      WHERE rr.id = target.id
+        AND rr.created_at = target.created_at
+    `);
+
+    await tx.execute(sql`
+      ${targetSelections}
+      UPDATE ph_releases.release_line_events event
+      SET source_experiment_id = NULL,
+          updated_at = now()
+      WHERE event.project_id = ${projectId}::uuid
+        AND event.source_experiment_id IN (SELECT id FROM target_experiments)
+    `);
+
+    await tx.execute(sql`
+      ${targetSelections}
+      UPDATE ph_releases.production_release_events event
+      SET source_experiment_id = NULL,
+          updated_at = now()
+      WHERE event.project_id = ${projectId}::uuid
+        AND event.source_experiment_id IN (SELECT id FROM target_experiments)
+    `);
+
+    await tx.execute(sql`
+      ${targetSelections}
+      UPDATE ph_runs.optimizations optimization
+      SET source_experiment_id = NULL,
+          updated_at = now()
+      WHERE optimization.project_id = ${projectId}::uuid
+        AND optimization.source_experiment_id IN (SELECT id FROM target_experiments)
+    `);
+
+    await tx.execute(sql`
+      ${targetSelections}
+      DELETE FROM ph_runs.experiments experiment
+      USING target_experiments target
+      WHERE experiment.id = target.id
+    `);
+
+    await tx.execute(sql`
+      ${targetSelections}
+      DELETE FROM ph_runs.optimization_round_steps step
+      USING target_optimizations target
+      WHERE step.optimization_id = target.id
+    `);
+
+    await tx.execute(sql`
+      ${targetSelections}
+      DELETE FROM ph_runs.optimizations optimization
+      USING target_optimizations target
+      WHERE optimization.id = target.id
+    `);
   }
 
   async findVersionInPrompt(promptId: string, versionId: string): Promise<PromptVersionRow | null> {
@@ -619,8 +828,90 @@ export class PromptRepository {
     });
   }
 
-  async deleteDraftVersionHard(promptId: string, versionId: string): Promise<void> {
+  /**
+   * Physically delete a single prompt version, applying the SAME permanent-delete impact semantics
+   * as `hardDeletePrompt` but scoped to that one version (SPEC 23 §4.2): every experiment / optimization
+   * (and their owned run results, annotations, and optimization round steps) that references THIS version
+   * is cascade-deleted, and any running release lane that depends on THIS version is stopped — all in one
+   * transaction so a rollback reverts the whole thing (SPEC 23 §4.2 last bullet).
+   */
+  async deleteDraftVersionHard(projectId: string, promptId: string, versionId: string): Promise<void> {
     await this.db.transaction(async (tx) => {
+      const now = new Date();
+
+      // Stop running release lanes that depend on THIS version (snapshots stay for history).
+      await tx
+        .update(productionReleaseEvents)
+        .set({
+          status: 'stopped',
+          stopReason: 'force_stopped',
+          finishedAt: now,
+          controlState: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(productionReleaseEvents.projectId, projectId),
+            eq(productionReleaseEvents.promptVersionId, versionId),
+            eq(productionReleaseEvents.status, 'running'),
+          ),
+        );
+
+      await tx
+        .update(releaseLineEvents)
+        .set({
+          status: 'stopped',
+          terminalReason: 'force_stopped',
+          finishedAt: now,
+          controlState: null,
+          controlStatePayload: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(releaseLineEvents.projectId, projectId),
+            eq(releaseLineEvents.promptVersionId, versionId),
+            eq(releaseLineEvents.status, 'running'),
+          ),
+        );
+
+      // Recompute the aggregate status of every line that ever pinned this version — do NOT blanket-stop
+      // it. A line whose live production/canary slot runs a DIFFERENT version must stay 'running'; only a
+      // line whose live slot was just force-stopped drops to 'stopped'. This mirrors lineStatus() and the
+      // runner's barrier, which both key off the slot pointers (current_production_event_id /
+      // active_canary_event_id), so the line status can never disagree with the events the runner
+      // actually executes. Archived lines stay archived.
+      await tx.execute(sql`
+        UPDATE ph_releases.release_lines l
+        SET status = CASE
+              WHEN l.status = 'archived' THEN 'archived'
+              WHEN EXISTS (
+                SELECT 1
+                FROM ph_releases.release_line_events e
+                WHERE e.id IN (l.current_production_event_id, l.active_canary_event_id)
+                  AND e.status = 'running'
+              ) THEN 'running'
+              ELSE 'stopped'
+            END,
+            updated_at = ${now}
+        WHERE l.project_id = ${projectId}::uuid
+          AND EXISTS (
+            SELECT 1
+            FROM ph_releases.release_line_events e2
+            WHERE e2.release_line_id = l.id
+              AND e2.prompt_version_id = ${versionId}::uuid
+          )
+      `);
+
+      // Same cascade as the prompt-level delete, scoped to a single target version.
+      await this.cascadeDeleteForTargetVersions(tx, projectId, sql`
+        SELECT id, generated_by_optimization_id
+        FROM ph_assets.prompt_versions
+        WHERE prompt_id = ${promptId}::uuid
+          AND id = ${versionId}::uuid
+      `);
+
+      // Removing the version row cascades prompt_version_labels (FK ON DELETE CASCADE).
       await tx
         .delete(promptVersions)
         .where(and(eq(promptVersions.promptId, promptId), eq(promptVersions.id, versionId)));
@@ -629,7 +920,7 @@ export class PromptRepository {
         .update(prompts)
         .set({
           currentOnlineVersionId: sql`CASE WHEN ${prompts.currentOnlineVersionId} = ${versionId} THEN NULL ELSE ${prompts.currentOnlineVersionId} END`,
-          updatedAt: new Date(),
+          updatedAt: now,
         })
         .where(eq(prompts.id, promptId));
     });

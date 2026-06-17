@@ -100,7 +100,7 @@ const LABEL_ACTION_MESSAGE_DISMISS_MS = 3000;
 
 const PROMPT_VERSION_SYSTEM_LABEL_KEYS: Partial<Record<string, TranslationKey>> = {
   latest: 'prompts.labels.system.latest',
-  gray: 'prompts.labels.system.gray',
+  canary: 'prompts.labels.system.canary',
   production: 'prompts.labels.system.production',
 };
 
@@ -136,17 +136,14 @@ const PROMPT_MODALITY_LABEL_KEYS: Record<ModalityKind, TranslationKey> = {
 };
 
 const IMPACT_LABEL_KEYS: Record<PromptDeletionImpactItemDto['kind'], TranslationKey> = {
+  release_line: 'prompts.deleteImpactReleaseLine',
   experiment: 'prompts.deleteImpactExperiment',
   optimization: 'prompts.deleteImpactOptimization',
-  canary_release: 'prompts.deleteImpactCanaryRelease',
-  production_release: 'prompts.deleteImpactProductionRelease',
 };
 
 function DeleteImpactPanel({ impact, loading }: { impact: PromptDeletionImpactDto | undefined; loading: boolean }) {
   const { t } = useI18n();
-  const items = impact
-    ? [...impact.experiments, ...impact.optimizations, ...impact.canaryReleases, ...impact.productionReleases]
-    : [];
+  const items = impact ? [...impact.releaseLines, ...impact.experiments, ...impact.optimizations] : [];
 
   if (loading) {
     return (
@@ -180,7 +177,9 @@ function DeleteImpactPanel({ impact, loading }: { impact: PromptDeletionImpactDt
                 {t(IMPACT_LABEL_KEYS[item.kind])} · {item.name ?? item.id}
               </div>
               <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                {item.promptVersionNumber ? `v${item.promptVersionNumber}` : '-'} · {item.status ?? '-'}
+                {item.kind === 'release_line'
+                  ? (item.status ?? '-')
+                  : `${item.promptVersionNumber ? `v${item.promptVersionNumber}` : '-'} · ${item.status ?? '-'}`}
               </div>
             </div>
             <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">{item.id.slice(0, 8)}</span>
@@ -200,7 +199,7 @@ interface PromptDatasetOption {
   sampleCount: number;
   fieldCount: number;
   updatedAt: string;
-  status: 'active' | 'deleted';
+  status: 'active' | 'archived';
 }
 
 function DatasetSelectionPanel({
@@ -307,7 +306,6 @@ function DatasetSelectionPanel({
                     className={cn(
                       'flex min-w-0 items-start gap-2 rounded-md border px-2.5 py-2 text-left transition-colors hover:bg-muted/40',
                       selected ? 'border-primary bg-primary/5' : 'border-border bg-background',
-                      dataset.status === 'deleted' && 'opacity-70',
                       readOnly && 'cursor-not-allowed opacity-60',
                     )}
                     aria-pressed={selected}

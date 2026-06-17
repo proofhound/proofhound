@@ -648,7 +648,7 @@ export function ConnectorFormPage({
                       <label className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
-                          className="size-4 cursor-pointer"
+                          className="size-4 cursor-pointer accent-primary"
                           checked={state.configFromBeginning}
                           onChange={(event) => update('configFromBeginning', event.target.checked)}
                         />

@@ -115,16 +115,21 @@ export function AnnotationTaskStatusBadge({ status, className }: { status: Annot
 export function AnnotationScopeBadge({ scope = 'canary' }: { scope?: AnnotationTaskView['scope'] }) {
   const { t } = useI18n();
   const isOnline = scope === 'online';
+  const isAll = scope === 'all';
   return (
     <span
       className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium leading-4"
       style={{
-        background: isOnline ? 'var(--src-prod-soft)' : 'var(--status-canary-bg)',
-        color: isOnline ? 'var(--src-prod-fg)' : 'var(--status-canary-fg)',
-        borderColor: isOnline ? 'color-mix(in srgb, var(--src-prod) 30%, transparent)' : 'var(--status-canary-bd)',
+        background: isAll ? 'var(--status-running-bg)' : isOnline ? 'var(--src-prod-soft)' : 'var(--status-canary-bg)',
+        color: isAll ? 'var(--status-running-fg)' : isOnline ? 'var(--src-prod-fg)' : 'var(--status-canary-fg)',
+        borderColor: isAll
+          ? 'var(--status-running-bd)'
+          : isOnline
+            ? 'color-mix(in srgb, var(--src-prod) 30%, transparent)'
+            : 'var(--status-canary-bd)',
       }}
     >
-      {t(isOnline ? 'annotations.scope.online' : 'annotations.scope.canary')}
+      {t(isAll ? 'annotations.scope.all' : isOnline ? 'annotations.scope.online' : 'annotations.scope.canary')}
     </span>
   );
 }

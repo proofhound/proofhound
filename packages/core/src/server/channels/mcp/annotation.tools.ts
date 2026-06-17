@@ -24,7 +24,7 @@ export function createAnnotationTools(service: AnnotationService): McpToolDefini
     },
     {
       name: 'annotation_task_options',
-      description: '列出可创建标注任务的发布名称、发布组合、分类选项及灰度 / 生产样本数量',
+      description: '列出可创建标注任务的发布名称、发布版本、分类选项、run result 总量及按分类聚合的数量',
       inputSchema: { type: 'object', properties: {} },
       handler: async (_input, ctx) => {
         const { projectId } = resolveMcpProjectContext(ctx);
@@ -33,16 +33,29 @@ export function createAnnotationTools(service: AnnotationService): McpToolDefini
     },
     {
       name: 'annotation_task_create',
-      description: '按发布名称、发布组合、灰度/生产范围和样本数创建标注任务',
+      description: '按发布名称、发布版本和抽样配置创建标注任务，支持随机抽取或按 run result 分类指定数量',
       inputSchema: {
         type: 'object',
-        required: ['name', 'releaseLineId', 'releaseVariantId', 'scope', 'sampleSize'],
+        required: ['name', 'releaseLineId', 'releaseVersionId'],
         properties: {
           name: { type: 'string', minLength: 1, maxLength: 120 },
           releaseLineId: { type: 'string', format: 'uuid' },
-          releaseVariantId: { type: 'string', format: 'uuid' },
-          scope: { type: 'string', enum: ['canary', 'online'] },
+          releaseVersionId: { type: 'string', format: 'uuid' },
+          releaseVersionScope: { type: 'string', enum: ['exact', 'journey'] },
+          scope: { type: 'string', enum: ['all', 'canary', 'online'] },
+          samplingMode: { type: 'string', enum: ['random', 'per_category'] },
           sampleSize: { type: 'integer', minimum: 1, maximum: 10000 },
+          categorySampleCounts: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['category', 'sampleSize'],
+              properties: {
+                category: { type: 'string', minLength: 1 },
+                sampleSize: { type: 'integer', minimum: 0, maximum: 10000 },
+              },
+            },
+          },
         },
       },
       handler: async (input, ctx) => {

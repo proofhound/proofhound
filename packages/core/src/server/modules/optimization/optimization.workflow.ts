@@ -1824,7 +1824,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
   }
 
   // SPEC 25 §11.4.1: check whether the LLM result for this round is already success in DB; on hit, skip the LLM call
-  // Strictly filter status='success'; non-success rows (rate_limited/timeout/error) are not reused — normal re-invocation
+  // Strictly filter status='success'; failed or in-progress rows are not reused — normal re-invocation
   private async peekOptimizationRunResultImpl(
     optimizationId: string,
     roundNumber: number,

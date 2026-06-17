@@ -6,7 +6,9 @@ import {
   mapCanaryVariables,
   matchesCanaryFilter,
   normalizeQueuePayload,
+  OUTPUT_MAPPING_CONNECTOR_EXCLUDED,
   passesTrafficRatio,
+  selectOutputMappingForConnector,
   type CanaryRuntimeConfig,
 } from '../canary-runtime';
 
@@ -53,11 +55,15 @@ describe('release runtime helpers', () => {
       inputVariables: { text: '很好' },
       limits: { rpmLimit: 60, tpmLimit: 60_000, concurrency: 2 },
     });
-    expect(llmPayload.judgment).toBeUndefined();
+    expect(llmPayload.judgment).toMatchObject({
+      outputSchema: release.promptOutputSchema,
+      judgmentRules: release.promptJudgmentRules,
+    });
+    expect(llmPayload.judgment).not.toHaveProperty('expectedOutput');
     expect(llmPayload.renderedPrompt.prompt).toContain('很好');
   });
 
-  it('only enables automatic judgment when release input carries expected output', () => {
+  it('includes expected output in judgment when release input carries it', () => {
     const payload = normalizeQueuePayload({
       sample_id: 's-1',
       text: '很好',
@@ -126,5 +132,84 @@ describe('release runtime helpers', () => {
       source: { type: 'release', id: release.id },
       created_at: '2026-05-21T10:00:02.000Z',
     });
+  });
+
+  it('selects output mappings per output connector while preserving legacy lane-wide mappings', () => {
+    const connectorMapping = [
+      {
+        connectorId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        outputMapping: [{ source: 'label', target: 'redis.label' }],
+      },
+      {
+        connectorId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        outputMapping: [{ source: 'decision_output', target: 'kafka.decision' }],
+      },
+    ];
+
+    expect(selectOutputMappingForConnector(connectorMapping, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')).toEqual([
+      { source: 'decision_output', target: 'kafka.decision' },
+    ]);
+    // A connector excluded from a configured per-connector mapping is signalled
+    // distinctly so the runner skips delivery — it must NOT fall through to the
+    // legacy raw envelope (BUG A6).
+    expect(selectOutputMappingForConnector(connectorMapping, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc')).toBe(
+      OUTPUT_MAPPING_CONNECTOR_EXCLUDED,
+    );
+    // Legacy flat mapping array applies to every connector unchanged.
+    expect(
+      selectOutputMappingForConnector([{ source: 'label', target: 'prediction.label' }], 'ignored-connector-id'),
+    ).toEqual([{ source: 'label', target: 'prediction.label' }]);
+    // Truly unconfigured mappings (empty / non-array) stay the legacy raw-emitting case.
+    expect(selectOutputMappingForConnector([], 'any-connector-id')).toEqual([]);
+    expect(selectOutputMappingForConnector(undefined, 'any-connector-id')).toEqual([]);
+    // A matched connector with empty rows still receives the default envelope shape (SPEC 27 §15).
+    expect(
+      selectOutputMappingForConnector(
+        [{ connectorId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', outputMapping: [] }],
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      ),
+    ).toEqual([]);
+  });
+
+  it('does not leak raw output to a connector excluded from a per-connector mapping, while legacy flat mapping still emits raw', () => {
+    const runResult = {
+      id: '88888888-8888-4888-8888-888888888888',
+      createdAt: new Date('2026-05-21T10:00:02.000Z'),
+      externalId: 'sample-1',
+      status: 'success',
+      rawResponse: '{"label":"positive","secret":"leak-me"}',
+      parsedOutput: { label: 'positive', secret: 'leak-me' },
+      decisionOutput: 'positive',
+      errorClass: null,
+      errorMessage: null,
+      latencyMs: 123,
+      inputTokens: 12,
+      outputTokens: 5,
+      costEstimate: 0.001,
+    };
+
+    const perConnectorMapping = [
+      {
+        connectorId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        outputMapping: [{ source: 'label', target: 'redis.label' }],
+      },
+    ];
+
+    // Excluded connector: the runner sees the sentinel and skips delivery — the full
+    // parsed/raw payload is never emitted to it.
+    const excludedSelection = selectOutputMappingForConnector(
+      perConnectorMapping,
+      'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    );
+    expect(excludedSelection).toBe(OUTPUT_MAPPING_CONNECTOR_EXCLUDED);
+
+    // Legacy flat mapping (no connector entries) keeps emitting the raw default envelope.
+    const legacySelection = selectOutputMappingForConnector([], 'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+    expect(legacySelection).toEqual([]);
+    const legacyPayload = buildReleaseOutputPayload({
+      release: { id: release.id, outputMapping: legacySelection },
+      runResult,
+    });
+    expect(legacyPayload.result).toEqual({ label: 'positive', secret: 'leak-me' });
   });
 });

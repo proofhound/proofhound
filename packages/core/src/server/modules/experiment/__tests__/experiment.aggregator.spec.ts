@@ -37,7 +37,7 @@ describe('aggregateExperimentMetrics', () => {
         decisionOutput: null,
         expectedOutput: 'negative',
         judgmentStatus: null,
-        status: 'error',
+        status: 'failed',
         count: 1,
         inputTokens: 0,
         outputTokens: 0,

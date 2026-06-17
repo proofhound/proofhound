@@ -110,12 +110,15 @@ export const datasets = phAssets.table(
       .default(sql`'[]'::jsonb`),
     hasImages: boolean('has_images').notNull().default(false),
     storagePrefix: text('storage_prefix'),
+    status: text('status').notNull().default('active'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdBy: uuid('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check('datasets_status_check', sql`${t.status} IN ('active', 'archived')`),
     uniqueIndex('idx_datasets_project_name_active')
       .on(t.projectId, t.name)
       .where(sql`${t.deletedAt} IS NULL`),
@@ -212,12 +215,15 @@ export const prompts = phAssets.table(
     name: text('name').notNull(),
     currentOnlineVersionId: uuid('current_online_version_id'),
     defaultDatasetId: uuid('default_dataset_id').references(() => datasets.id, { onDelete: 'restrict' }),
+    status: text('status').notNull().default('active'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdBy: uuid('created_by').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
+    check('prompts_status_check', sql`${t.status} IN ('active', 'archived')`),
     uniqueIndex('idx_prompts_project_name_active')
       .on(t.projectId, t.name)
       .where(sql`${t.deletedAt} IS NULL`),

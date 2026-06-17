@@ -10,6 +10,8 @@ import { LOCAL_PROJECT_ID } from '@proofhound/shared';
 import { and, eq, inArray, notInArray, sql, type SQL } from 'drizzle-orm';
 import { createDbClient } from './client';
 import {
+  annotations,
+  annotationTasks,
   connectors,
   datasetSamples,
   datasets,
@@ -21,6 +23,10 @@ import {
   prompts,
   promptVersions,
   projects,
+  releaseLineEvents,
+  releaseLines,
+  releaseVersions,
+  runResultIds,
   runResults,
   tokens,
 } from './schema';
@@ -30,6 +36,14 @@ import { DEV_EXPERIMENTS, DEV_EXPERIMENT_DATASETS } from './fixtures/dev/experim
 import { DEV_MODELS } from './fixtures/dev/models';
 import { DEV_OPTIMIZATIONS, DEV_OPTIMIZATION_ROUND_STEPS } from './fixtures/dev/optimizations';
 import { DEV_PROMPTS } from './fixtures/dev/prompts';
+import {
+  DEV_RELEASE_ANNOTATIONS,
+  DEV_RELEASE_ANNOTATION_TASKS,
+  DEV_RELEASE_EVENTS,
+  DEV_RELEASE_LINES,
+  DEV_RELEASE_RUN_RESULTS,
+  DEV_RELEASE_VERSIONS,
+} from './fixtures/dev/releases';
 
 const PRODUCTION_ENV_NAMES = new Set(['prod', 'production']);
 const DEV_MODEL_API_KEY_PLACEHOLDER = 'dev-seed-placeholder-api-key';
@@ -143,8 +157,17 @@ async function main(): Promise<void> {
   const fixtureExperimentIds = DEV_EXPERIMENTS.map((e) => e.id);
   const fixtureOptimizationIds = DEV_OPTIMIZATIONS.map((a) => a.id);
   const fixtureConnectorIds = DEV_CONNECTORS.map((c) => c.id);
+  const fixtureReleaseLineIds = DEV_RELEASE_LINES.map((line) => line.id);
+  const fixtureReleaseVersionIds = DEV_RELEASE_VERSIONS.map((version) => version.id);
+  const fixtureReleaseEventIds = DEV_RELEASE_EVENTS.map((event) => event.id);
 
+  await db.delete(annotations);
   await db.delete(runResults);
+  await db.delete(annotationTasks);
+  await db.delete(releaseLineEvents).where(notInArray(releaseLineEvents.id, fixtureReleaseEventIds));
+  await db.update(releaseVersions).set({ promotedFromReleaseVersionId: null });
+  await db.delete(releaseVersions).where(notInArray(releaseVersions.id, fixtureReleaseVersionIds));
+  await db.delete(releaseLines).where(notInArray(releaseLines.id, fixtureReleaseLineIds));
   await db.delete(optimizationRoundSteps);
   await db
     .update(optimizations)
@@ -659,6 +682,286 @@ async function main(): Promise<void> {
       });
   }
   console.warn(`✅  Optimization data ready: ${DEV_OPTIMIZATIONS.length} optimizations, ${DEV_OPTIMIZATION_ROUND_STEPS.length} steps`);
+
+  for (const fixture of DEV_RELEASE_LINES) {
+    await db
+      .insert(releaseLines)
+      .values({
+        id: fixture.id,
+        projectId: LOCAL_PROJECT_ID,
+        name: fixture.name,
+        description: fixture.description,
+        promptId: fixture.promptId,
+        promptName: fixture.promptName,
+        promptSnapshot: fixture.promptSnapshot,
+        inputConnectorId: fixture.inputConnectorId,
+        inputConnectorName: fixture.inputConnectorName,
+        inputConnectorType: fixture.inputConnectorType,
+        inputConnectorSnapshot: fixture.inputConnectorSnapshot,
+        status: fixture.status,
+        currentProductionEventId: fixture.currentProductionEventId,
+        activeCanaryEventId: fixture.activeCanaryEventId,
+        createdBy: LOCAL_ACTOR_ID,
+        createdAt: new Date(fixture.createdAt),
+        updatedAt: new Date(fixture.updatedAt),
+        archivedAt: null,
+      })
+      .onConflictDoUpdate({
+        target: releaseLines.id,
+        set: {
+          projectId: LOCAL_PROJECT_ID,
+          name: fixture.name,
+          description: fixture.description,
+          promptId: fixture.promptId,
+          promptName: fixture.promptName,
+          promptSnapshot: fixture.promptSnapshot,
+          inputConnectorId: fixture.inputConnectorId,
+          inputConnectorName: fixture.inputConnectorName,
+          inputConnectorType: fixture.inputConnectorType,
+          inputConnectorSnapshot: fixture.inputConnectorSnapshot,
+          status: fixture.status,
+          currentProductionEventId: fixture.currentProductionEventId,
+          activeCanaryEventId: fixture.activeCanaryEventId,
+          updatedAt: new Date(fixture.updatedAt),
+          archivedAt: null,
+        },
+      });
+  }
+
+  for (const fixture of DEV_RELEASE_VERSIONS) {
+    await db
+      .insert(releaseVersions)
+      .values({
+        id: fixture.id,
+        projectId: LOCAL_PROJECT_ID,
+        releaseLineId: fixture.releaseLineId,
+        kind: fixture.kind,
+        productionVersionNumber: fixture.productionVersionNumber,
+        targetProductionVersionNumber: fixture.targetProductionVersionNumber,
+        candidateNumber: fixture.candidateNumber,
+        promotedFromReleaseVersionId: fixture.promotedFromReleaseVersionId,
+        promptId: fixture.promptId,
+        promptName: fixture.promptName,
+        promptVersionId: fixture.promptVersionId,
+        promptVersionNumber: fixture.promptVersionNumber,
+        promptSnapshot: fixture.promptSnapshot,
+        promptVersionSnapshot: fixture.promptVersionSnapshot,
+        modelId: fixture.modelId,
+        modelSnapshot: fixture.modelSnapshot,
+        createdBy: LOCAL_ACTOR_ID,
+        createdAt: new Date(fixture.createdAt),
+        updatedAt: new Date(fixture.updatedAt),
+      })
+      .onConflictDoUpdate({
+        target: releaseVersions.id,
+        set: {
+          projectId: LOCAL_PROJECT_ID,
+          releaseLineId: fixture.releaseLineId,
+          kind: fixture.kind,
+          productionVersionNumber: fixture.productionVersionNumber,
+          targetProductionVersionNumber: fixture.targetProductionVersionNumber,
+          candidateNumber: fixture.candidateNumber,
+          promotedFromReleaseVersionId: fixture.promotedFromReleaseVersionId,
+          promptId: fixture.promptId,
+          promptName: fixture.promptName,
+          promptVersionId: fixture.promptVersionId,
+          promptVersionNumber: fixture.promptVersionNumber,
+          promptSnapshot: fixture.promptSnapshot,
+          promptVersionSnapshot: fixture.promptVersionSnapshot,
+          modelId: fixture.modelId,
+          modelSnapshot: fixture.modelSnapshot,
+          updatedAt: new Date(fixture.updatedAt),
+        },
+      });
+  }
+
+  for (const fixture of DEV_RELEASE_EVENTS) {
+    await db
+      .insert(releaseLineEvents)
+      .values({
+        id: fixture.id,
+        projectId: LOCAL_PROJECT_ID,
+        releaseLineId: fixture.releaseLineId,
+        laneType: fixture.laneType,
+        operation: fixture.operation,
+        status: fixture.status,
+        terminalReason: fixture.terminalReason,
+        sourceEventId: fixture.sourceEventId,
+        supersedesEventId: fixture.supersedesEventId,
+        rollbackTargetEventId: fixture.rollbackTargetEventId,
+        releaseVersionId: fixture.releaseVersionId,
+        promptId: fixture.promptId,
+        promptName: fixture.promptName,
+        promptVersionId: fixture.promptVersionId,
+        promptVersionNumber: fixture.promptVersionNumber,
+        promptSnapshot: fixture.promptSnapshot,
+        promptVersionSnapshot: fixture.promptVersionSnapshot,
+        modelId: fixture.modelId,
+        modelSnapshot: fixture.modelSnapshot,
+        inputConnectorId: fixture.inputConnectorId,
+        inputConnectorSnapshot: fixture.inputConnectorSnapshot,
+        outputConnectorIds: fixture.outputConnectorIds,
+        outputConnectorSnapshots: fixture.outputConnectorSnapshots,
+        trafficMode: fixture.trafficMode,
+        trafficRatio: fixture.trafficRatio,
+        runConfig: fixture.runConfig,
+        variableMapping: fixture.variableMapping,
+        outputMapping: fixture.outputMapping,
+        filterRules: fixture.filterRules,
+        recordMode: fixture.recordMode,
+        externalIdField: fixture.externalIdField,
+        retentionDays: fixture.retentionDays,
+        sourceExperimentId: fixture.sourceExperimentId,
+        submitReason: fixture.submitReason,
+        metrics: fixture.metrics,
+        totalReceived: fixture.totalReceived,
+        totalProcessed: fixture.totalProcessed,
+        totalFiltered: fixture.totalFiltered,
+        totalCorrect: fixture.totalCorrect,
+        totalErrors: fixture.totalErrors,
+        controlState: fixture.controlState,
+        controlStatePayload: fixture.controlStatePayload,
+        startedAt: fixture.startedAt ? new Date(fixture.startedAt) : null,
+        finishedAt: fixture.finishedAt ? new Date(fixture.finishedAt) : null,
+        createdBy: LOCAL_ACTOR_ID,
+        createdAt: new Date(fixture.createdAt),
+        updatedAt: new Date(fixture.updatedAt),
+      })
+      .onConflictDoUpdate({
+        target: releaseLineEvents.id,
+        set: {
+          projectId: LOCAL_PROJECT_ID,
+          releaseLineId: fixture.releaseLineId,
+          laneType: fixture.laneType,
+          operation: fixture.operation,
+          status: fixture.status,
+          terminalReason: fixture.terminalReason,
+          sourceEventId: fixture.sourceEventId,
+          supersedesEventId: fixture.supersedesEventId,
+          rollbackTargetEventId: fixture.rollbackTargetEventId,
+          releaseVersionId: fixture.releaseVersionId,
+          promptId: fixture.promptId,
+          promptName: fixture.promptName,
+          promptVersionId: fixture.promptVersionId,
+          promptVersionNumber: fixture.promptVersionNumber,
+          promptSnapshot: fixture.promptSnapshot,
+          promptVersionSnapshot: fixture.promptVersionSnapshot,
+          modelId: fixture.modelId,
+          modelSnapshot: fixture.modelSnapshot,
+          inputConnectorId: fixture.inputConnectorId,
+          inputConnectorSnapshot: fixture.inputConnectorSnapshot,
+          outputConnectorIds: fixture.outputConnectorIds,
+          outputConnectorSnapshots: fixture.outputConnectorSnapshots,
+          trafficMode: fixture.trafficMode,
+          trafficRatio: fixture.trafficRatio,
+          runConfig: fixture.runConfig,
+          variableMapping: fixture.variableMapping,
+          outputMapping: fixture.outputMapping,
+          filterRules: fixture.filterRules,
+          recordMode: fixture.recordMode,
+          externalIdField: fixture.externalIdField,
+          retentionDays: fixture.retentionDays,
+          sourceExperimentId: fixture.sourceExperimentId,
+          submitReason: fixture.submitReason,
+          metrics: fixture.metrics,
+          totalReceived: fixture.totalReceived,
+          totalProcessed: fixture.totalProcessed,
+          totalFiltered: fixture.totalFiltered,
+          totalCorrect: fixture.totalCorrect,
+          totalErrors: fixture.totalErrors,
+          controlState: fixture.controlState,
+          controlStatePayload: fixture.controlStatePayload,
+          startedAt: fixture.startedAt ? new Date(fixture.startedAt) : null,
+          finishedAt: fixture.finishedAt ? new Date(fixture.finishedAt) : null,
+          updatedAt: new Date(fixture.updatedAt),
+        },
+      });
+  }
+
+  for (const fixture of DEV_RELEASE_RUN_RESULTS) {
+    await db
+      .insert(runResultIds)
+      .values({
+        id: fixture.id,
+        createdAt: new Date(fixture.createdAt),
+      })
+      .onConflictDoNothing();
+
+    await db.insert(runResults).values({
+      id: fixture.id,
+      projectId: LOCAL_PROJECT_ID,
+      source: 'release',
+      sourceId: fixture.sourceId,
+      releaseVersionId: fixture.releaseVersionId,
+      promptVersionId: fixture.promptVersionId,
+      modelId: fixture.modelId,
+      sampleId: fixture.sampleId,
+      externalId: fixture.externalId,
+      renderedPrompt: fixture.renderedPrompt,
+      inputVariables: fixture.inputVariables,
+      rawResponse: fixture.rawResponse,
+      parsedOutput: fixture.parsedOutput,
+      decisionOutput: fixture.decisionOutput,
+      expectedOutput: fixture.expectedOutput,
+      isCorrect: fixture.isCorrect,
+      judgmentStatus: fixture.judgmentStatus,
+      status: fixture.status,
+      errorClass: fixture.errorClass,
+      errorMessage: fixture.errorMessage,
+      latencyMs: fixture.latencyMs,
+      inputTokens: fixture.inputTokens,
+      outputTokens: fixture.outputTokens,
+      costEstimate: fixture.costEstimate,
+      attempt: 1,
+      dbosWorkflowId: null,
+      bullmqJobId: null,
+      webhookTokenId: null,
+      createdAt: new Date(fixture.createdAt),
+    });
+  }
+
+  for (const fixture of DEV_RELEASE_ANNOTATION_TASKS) {
+    await db.insert(annotationTasks).values({
+      id: fixture.id,
+      scope: fixture.scope,
+      canaryId: null,
+      productionReleaseEventId: null,
+      releaseLineEventId: fixture.releaseLineEventId,
+      releaseVersionId: fixture.releaseVersionId,
+      releaseVersionScope: fixture.releaseVersionScope,
+      name: fixture.name,
+      annotationSchema: fixture.annotationSchema,
+      samplingConfig: fixture.samplingConfig,
+      totalSampled: fixture.totalSampled,
+      totalAnnotated: fixture.totalAnnotated,
+      status: fixture.status,
+      createdBy: LOCAL_ACTOR_ID,
+      createdAt: new Date(fixture.createdAt),
+      updatedAt: new Date(fixture.updatedAt),
+    });
+  }
+
+  for (const fixture of DEV_RELEASE_ANNOTATIONS) {
+    await db.insert(annotations).values({
+      id: fixture.id,
+      runResultId: fixture.runResultId,
+      runResultCreatedAt: new Date(fixture.runResultCreatedAt),
+      taskId: fixture.taskId,
+      isCorrect: fixture.isCorrect,
+      fields: fixture.fields,
+      notes: fixture.notes,
+      lockedBy: fixture.lockedBy,
+      lockedAt: fixture.lockedAt ? new Date(fixture.lockedAt) : null,
+      lockHeartbeatAt: fixture.lockHeartbeatAt ? new Date(fixture.lockHeartbeatAt) : null,
+      submittedAt: fixture.submittedAt ? new Date(fixture.submittedAt) : null,
+      submittedBy: fixture.submittedBy,
+      createdAt: new Date(fixture.createdAt),
+      updatedAt: new Date(fixture.updatedAt),
+    });
+  }
+  console.warn(
+    `✅  Release data ready: ${DEV_RELEASE_LINES.length} lines, ${DEV_RELEASE_VERSIONS.length} versions, ${DEV_RELEASE_EVENTS.length} events, ${DEV_RELEASE_RUN_RESULTS.length} run results`,
+  );
   console.warn('✅  Local dev data snapshot written successfully');
 
   process.exit(0);

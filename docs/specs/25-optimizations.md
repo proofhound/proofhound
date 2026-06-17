@@ -14,11 +14,11 @@ At the implementation level, the entire loop is a long-running **DBOS workflow**
 
 Different businesses have different starting points; the platform supports three modes:
 
-| Starting point       | Applicable scenario                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Existing experiment  | You already have a prompt that has run an experiment with a baseline metric, and you want targeted improvement                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Starting point          | Applicable scenario                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Existing experiment     | You already have a prompt that has run an experiment with a baseline metric, and you want targeted improvement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Existing prompt version | You have already written a prompt but have not run an experiment yet. The system first runs a baseline experiment (not counted as an optimization round); on success it backfills that experiment into `optimizations.source_experiment_id`, and the subsequent flow is identical to the "Existing experiment" starting point. The frontend offers a two-pane selector ("prompts on the left / prompt versions on the right") for picking the starting point, and displays the selected version's template variables, output schema, prompt language, and a prompt preview; on submit it sends `promptId` + `baseVersionId`, and can explicitly override the `promptLanguage` used for this optimization. If an API / MCP caller omits `baseVersionId`, the server selects one automatically as a backstop — preferring `prompts.current_online_version_id`, and falling back to the version with the highest version number for that prompt |
-| Dataset only         | Starting from nothing; the platform automatically generates the first prompt version and then begins optimizing. At `createOptimization` time it automatically creates an empty prompt (a `prompts` row only, with no `prompt_versions` row) as the carrier entity; after the workflow starts it uses `analysisModelId` to randomly draw `initialSamplingRounds × initialSamplesPerRound` samples from the dataset, derives and generates the first prompt version in this task's `promptLanguage` and freezes it. The frontend only sends `datasetId` + `analysisModelId` + `taskModelId` + `goals`, and **does not send** `promptId` / `baseVersionId`. See §2.1 for the detailed contract |
+| Dataset only            | Starting from nothing; the platform automatically generates the first prompt version and then begins optimizing. At `createOptimization` time it automatically creates an empty prompt (a `prompts` row only, with no `prompt_versions` row) as the carrier entity; after the workflow starts it uses `analysisModelId` to randomly draw `initialSamplingRounds × initialSamplesPerRound` samples from the dataset, derives and generates the first prompt version in this task's `promptLanguage` and freezes it. The frontend only sends `datasetId` + `analysisModelId` + `taskModelId` + `goals`, and **does not send** `promptId` / `baseVersionId`. See §2.1 for the detailed contract                                                                                                                                                                                                                                                 |
 
 ### 2.0 Prompt language snapshot
 
@@ -77,12 +77,12 @@ When creating an optimization the user may optionally fill in `optimizationHint`
 
 **Failure reason codes**: the following reasons all land in `optimizations.analysis_failure_reason` and the finalize step's `reason` field:
 
-| Reason code                          | Trigger condition                                                                          |
-| ------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `first_version_dataset_empty_v1`     | The dataset has 0 samples                                                                  |
+| Reason code                          | Trigger condition                                                                                                          |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `first_version_dataset_empty_v1`     | The dataset has 0 samples                                                                                                  |
 | `first_version_parse_failed_v1`      | The LLM output cannot be parsed into the target JSON / fails schema validation (still failing after 1 format-repair retry) |
-| `first_version_generation_failed_v1` | The LLM call failed overall (other uncategorized errors)                                   |
-| `prompt_name_collision_v1`           | The auto-created prompt collided on naming a second time                                   |
+| `first_version_generation_failed_v1` | The LLM call failed overall (other uncategorized errors)                                                                   |
+| `prompt_name_collision_v1`           | The auto-created prompt collided on naming a second time                                                                   |
 
 (The old reason code `starting_mode_unsupported_v1` is, after this change, retained **only** as a backstop — returned when starting_mode is an unknown enum value; from_dataset_only no longer returns this reason, which is considered deprecated)
 
@@ -94,13 +94,13 @@ When creating an optimization the user may optionally fill in `optimizationHint`
 
 Optimization is **strategy-pluggable** — the same dataset / same prompt can try different strategies. Each strategy decides "how to analyze failures, how to generate new versions, and which additional run configuration it needs".
 
-| Strategy                     | Status        | Applicable scenario                                                            | Configuration items              |
-| ---------------------------- | ------------- | ------------------------------------------------------------------------------ | -------------------------------- |
-| **`error_pattern_analysis`** | V1 (default)  | Classification problems; the model has a judgment field and can enumerate failure patterns | None                             |
-| `pairwise_preference`        | Roadmap       | Generative tasks; compares multiple candidate versions via LLM-as-judge to pick the best | Candidates per round / judge model |
-| `reflective_critique`        | Roadmap       | Any task; lets the model self-critique its output and revise the prompt        | Self-critique rounds / critique template |
-| `score_optimization`         | Roadmap       | Scenarios with a scalar score (rating / scoring); uses historical scores to guide generation (APE / OPRO idea) | History window length / temperature schedule |
-| `beam_search`                | Roadmap       | When compute budget is ample; keeps the Top-K versions and expands them in parallel | Beam width / pruning threshold   |
+| Strategy                     | Status       | Applicable scenario                                                                                            | Configuration items                          |
+| ---------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **`error_pattern_analysis`** | V1 (default) | Classification problems; the model has a judgment field and can enumerate failure patterns                     | None                                         |
+| `pairwise_preference`        | Roadmap      | Generative tasks; compares multiple candidate versions via LLM-as-judge to pick the best                       | Candidates per round / judge model           |
+| `reflective_critique`        | Roadmap      | Any task; lets the model self-critique its output and revise the prompt                                        | Self-critique rounds / critique template     |
+| `score_optimization`         | Roadmap      | Scenarios with a scalar score (rating / scoring); uses historical scores to guide generation (APE / OPRO idea) | History window length / temperature schedule |
+| `beam_search`                | Roadmap      | When compute budget is ample; keeps the Top-K versions and expands them in parallel                            | Beam width / pruning threshold               |
 
 When creating an optimization the user must explicitly select a strategy; the default is `error_pattern_analysis`. The open-source edition currently only lands classification semantics; if generative / agent is supported in the future, it should be extended via a strategy package.
 
@@ -152,7 +152,7 @@ Displays all optimization tasks within the instance:
 - Status: **running / success / failed / stopped / cancelled**
 - Best metric + corresponding version
 - Supports create, delete, stop, resume
-- Delete / bulk delete must show a confirmation first; after confirmation the backend performs a physical delete (`DELETE ph_runs.optimizations`) and does not write a `deleted_at` soft-delete marker. Already-generated experiments and run results are retained; when deleting an optimization task, the sub-experiments' `optimization_id / round_index` association is cleared, to avoid breaking the experiments table constraints by deleting the optimization row.
+- Delete / bulk delete must show a confirmation first; after confirmation the backend permanently deletes the optimization as a child work item. This does not modify the upstream prompt or dataset. The deletion plan removes optimization round steps, optimization analysis / generation run results, and generated sub-experiments owned by the optimization together with their owned descendants.
 
 ## 6. Detail page
 
@@ -239,25 +239,25 @@ Each optimization round itself creates a new experiment, and this round's metric
 
 **Add two columns to `ph_runs.experiments`**
 
-| Column            | Type         | Meaning                                                                                  |
-| ----------------- | ------------ | ---------------------------------------------------------------------------------------- |
+| Column            | Type         | Meaning                                                                                                                 |
+| ----------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `optimization_id` | uuid null fk | Which optimization this experiment belongs to (NULL if none, i.e. a standalone experiment created manually by the user) |
-| `round_index`     | int null     | The optimization's 0-based round index; NULL together with `optimization_id` or NOT NULL together with it |
+| `round_index`     | int null     | The optimization's 0-based round index; NULL together with `optimization_id` or NOT NULL together with it               |
 
 The index `(optimization_id, round_index)` is partial unique where `optimization_id IS NOT NULL`, guaranteeing **at most one** experiment per optimization per round.
 
 **Add one column to `ph_runs.run_results`**
 
-| Column        | Type     | Meaning                                                                                                |
-| ------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| Column        | Type     | Meaning                                                                                                                                |
+| ------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `round_index` | int null | When `source ∈ {optimization_analysis, optimization_generate}`, indicates which round this call belongs to; NULL for sample-type calls |
 
 **Add columns to the main table `ph_runs.optimizations`**
 
-| Column                    | Type       | Meaning                                                                                   |
-| ------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
-| `summary`                 | jsonb null | At finish, lands aggregates such as total cost / tokens / best diff (not per-round metrics, which the service aggregates in real time) |
-| `analysis_failure_reason` | text null  | Recorded when the entire optimization is terminated by a fatal analysis-LLM error          |
+| Column                    | Type       | Meaning                                                                                                                                    |
+| ------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `summary`                 | jsonb null | At finish, lands aggregates such as total cost / tokens / best diff (not per-round metrics, which the service aggregates in real time)     |
+| `analysis_failure_reason` | text null  | Recorded when the entire optimization is terminated by a fatal analysis-LLM error                                                          |
 | `prompt_language`         | text       | The prompt language snapshot at creation time, valued `zh-CN` / `en-US`, controlling all platform-generated prompt languages for this task |
 
 ### 11.2 Detail page / list page aggregation (service real-time join)
@@ -276,17 +276,17 @@ The index `(optimization_id, round_index)` is partial unique where `optimization
 
 The visible blocks of each round card in the detail page's "evolution timeline" are joined in real time by the backend aggregator, **not relying on any "round complete" marker** — they become visible as soon as the data source is persisted. So while a round is in `running` status, the ready intermediate products (error samples, improvement suggestions, prompt diff, current experiment metrics) are all exposed in sync:
 
-| DTO field                | Data source                                                                                                                                                                                       | When ready                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `metrics`                | `experiments.metrics`                                                                                                                                                                             | Updated in real time while the experiment runs          |
-| `experimentResult`       | `experiments.{status, processed_samples, failed_samples, total_samples, metrics, started_at, finished_at}`                                                                                        | Visible when the sub-experiment is created (with a progress bar), fully populated with classification metrics when finished |
-| `errorPatterns`          | `run_results.parsed_output.errorPatterns` (`source='optimization_analysis'`)                                                                                                                      | When the analysis LLM completes                         |
-| `improvementSuggestions` | `run_results.parsed_output.suggestedChanges` (`source='optimization_analysis'`)                                                                                                                   | When the analysis LLM completes (same source as errorPatterns) |
-| `promptDiff.toText`      | `run_results.parsed_output.newPromptBody` (`source='optimization_generate'`)                                                                                                                      | When the generate LLM completes                         |
-| `promptDiff.fromText`    | The actual generation baseline of the current version, `prompt_versions.body` (prefer the current `prompt_versions.parent_version_id`; during generation use the generate `run_results.prompt_version_id`; old data falls back to the previous round / baseVersion) | When the generate LLM completes (at the same time as toText) |
-| `summaryFallback`        | Analysis LLM `parsed_output.summary` / truncated `rawResponse`                                                                                                                                    | When the analysis LLM completes; only degraded display when there is no structured field |
-| `status`                 | Derived from `round_steps` (preferred), otherwise mapped from `experiments.status` (fallback)                                                                                                     | Throughout; steps data is visible before the experiment row (see §12) |
-| `steps`                  | `ph_runs.optimization_round_steps` rows by `round_index`                                                                                                                                          | Visible from the analysis stage (the error_analysis=running row appears earliest) |
+| DTO field                | Data source                                                                                                                                                                                                                                                         | When ready                                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `metrics`                | `experiments.metrics`                                                                                                                                                                                                                                               | Updated in real time while the experiment runs                                                                              |
+| `experimentResult`       | `experiments.{status, processed_samples, failed_samples, total_samples, metrics, started_at, finished_at}`                                                                                                                                                          | Visible when the sub-experiment is created (with a progress bar), fully populated with classification metrics when finished |
+| `errorPatterns`          | `run_results.parsed_output.errorPatterns` (`source='optimization_analysis'`)                                                                                                                                                                                        | When the analysis LLM completes                                                                                             |
+| `improvementSuggestions` | `run_results.parsed_output.suggestedChanges` (`source='optimization_analysis'`)                                                                                                                                                                                     | When the analysis LLM completes (same source as errorPatterns)                                                              |
+| `promptDiff.toText`      | `run_results.parsed_output.newPromptBody` (`source='optimization_generate'`)                                                                                                                                                                                        | When the generate LLM completes                                                                                             |
+| `promptDiff.fromText`    | The actual generation baseline of the current version, `prompt_versions.body` (prefer the current `prompt_versions.parent_version_id`; during generation use the generate `run_results.prompt_version_id`; old data falls back to the previous round / baseVersion) | When the generate LLM completes (at the same time as toText)                                                                |
+| `summaryFallback`        | Analysis LLM `parsed_output.summary` / truncated `rawResponse`                                                                                                                                                                                                      | When the analysis LLM completes; only degraded display when there is no structured field                                    |
+| `status`                 | Derived from `round_steps` (preferred), otherwise mapped from `experiments.status` (fallback)                                                                                                                                                                       | Throughout; steps data is visible before the experiment row (see §12)                                                       |
+| `steps`                  | `ph_runs.optimization_round_steps` rows by `round_index`                                                                                                                                                                                                            | Visible from the analysis stage (the error_analysis=running row appears earliest)                                           |
 
 A single `improvementSuggestions` entry has the structure `{ section, title, detail?, priority? }`: `section` comes from the strategy package parser's `SuggestedChange.section` (pointing to which prompt section), `title` comes from `change` (a one-sentence action), `detail` comes from `rationale`, and `priority` passes through `high | medium | low`. The frontend colors by priority, as an independent collapsible block immediately between `errorPatterns` and `promptDiff`.
 
@@ -391,23 +391,23 @@ Whether this round's LLM call failed, whether it is still running, and the failu
 
 The `experiments` + `run_results` of §11.1 can only aggregate a round card **after the whole analyze → generate → experiment set has finished running** (the experiments row is not created until the end of `prepareRoundImpl`). To let the user see the current round card and the step in progress during the error analysis and prompt generation stages too, `ph_runs.optimization_round_steps` is added:
 
-| Column             | Type                     | Meaning                                                                                          |
-| ------------------ | ------------------------ | ------------------------------------------------------------------------------------------------ |
-| `id`               | uuid pk                  | Primary key                                                                                       |
-| `optimization_id`  | uuid not null fk         | The owning optimization (`ON DELETE CASCADE`)                                                     |
-| `round_index`      | int not null             | 0-based round index                                                                              |
-| `step`             | text not null + check    | One of `error_analysis` / `generate_prompt` / `experiment`                                        |
-| `status`           | text not null + check    | `pending` / `running` / `success` / `failed` / `skipped`                                          |
-| `error_class`      | text null                | The normalized error class name when the step fails (`Error.name` or `'Error'`)                  |
-| `error_message`    | text null                | The step failure message (≤1000 characters, to avoid stuffing a large stack into the DB)         |
+| Column             | Type                     | Meaning                                                                                                                                       |
+| ------------------ | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | uuid pk                  | Primary key                                                                                                                                   |
+| `optimization_id`  | uuid not null fk         | The owning optimization (`ON DELETE CASCADE`)                                                                                                 |
+| `round_index`      | int not null             | 0-based round index                                                                                                                           |
+| `step`             | text not null + check    | One of `error_analysis` / `generate_prompt` / `experiment`                                                                                    |
+| `status`           | text not null + check    | `pending` / `running` / `success` / `failed` / `skipped`                                                                                      |
+| `error_class`      | text null                | The normalized error class name when the step fails (`Error.name` or `'Error'`)                                                               |
+| `error_message`    | text null                | The step failure message (≤1000 characters, to avoid stuffing a large stack into the DB)                                                      |
 | `run_result_id`    | uuid null                | For navigation: the run_results row id associated with the analysis / generate step (no FK, since run_results is a monthly-partitioned table) |
-| `experiment_id`    | uuid null                | For navigation: the experiments row id associated with the experiment step                       |
-| `started_at`       | tstz null                | Step start time                                                                                   |
-| `finished_at`      | tstz null                | The time the step's terminal state was written                                                   |
-| `attempt`          | int not null default 0   | DBOS step retry count (to observe where the workflow is stuck)                                    |
-| `dbos_workflow_id` | text null                | The parent workflow id, for log correlation                                                       |
-| `created_at`       | tstz not null defaultNow | Row creation time                                                                                 |
-| `updated_at`       | tstz not null defaultNow | Row last-updated time                                                                             |
+| `experiment_id`    | uuid null                | For navigation: the experiments row id associated with the experiment step                                                                    |
+| `started_at`       | tstz null                | Step start time                                                                                                                               |
+| `finished_at`      | tstz null                | The time the step's terminal state was written                                                                                                |
+| `attempt`          | int not null default 0   | DBOS step retry count (to observe where the workflow is stuck)                                                                                |
+| `dbos_workflow_id` | text null                | The parent workflow id, for log correlation                                                                                                   |
+| `created_at`       | tstz not null defaultNow | Row creation time                                                                                                                             |
+| `updated_at`       | tstz not null defaultNow | Row last-updated time                                                                                                                         |
 
 The unique constraint `unique(optimization_id, round_index, step)` is the core of upsert idempotency: on DBOS step retry / replay, multiple `upsertRoundStep` calls do not write duplicate rows; fields not provided are backstopped with `COALESCE(EXCLUDED.x, x)`, to avoid overwriting the previously-written `finished_at` / `run_result_id` to null.
 
@@ -435,19 +435,19 @@ The unique constraint `unique(optimization_id, round_index, step)` is the core o
 
 `OptimizationWorkflow.prepareRoundImpl` calls `repo.upsertRoundStep` (wrapped in a layer of `upsertStepSafe`, which only logs a warn without blocking the main path when the upsert fails) at the following boundaries:
 
-| Node                                          | step              | status  | Additional fields                                                             |
-| --------------------------------------------- | ----------------- | ------- | ----------------------------------------------------------------------------- |
-| `prepareRoundImpl` start (pre-check passed)   | `error_analysis`  | running | `started_at`, `dbos_workflow_id`                                              |
-| `analyzeFailures` success                     | `error_analysis`  | success | `finished_at`, `run_result_id = analysisRunResultId`                          |
-| `analyzeFailures` throws                      | `error_analysis`  | failed  | `finished_at`, `error_class`, `error_message`                                 |
-| Before calling `generateNextVersion`          | `generate_prompt` | running | `started_at`                                                                  |
-| `generateNextVersion` success                 | `generate_prompt` | success | `finished_at`, `run_result_id = generateRunResultId`                          |
-| `generateNextVersion` throws                  | `generate_prompt` | failed  | `finished_at`, `error_class`, `error_message`                                 |
-| `createChildExperimentRow` success            | `experiment`      | running | `started_at`, `experiment_id`                                                 |
-| `markChildLaunchFailedStep`                   | `experiment`      | failed  | `finished_at`, `error_class='LaunchFailed'`, `error_message=launch_failed: …` |
-| `finalizeRoundImpl` gets sub-experiment success | `experiment`    | success | `finished_at`                                                                 |
-| `finalizeRoundImpl` gets sub-experiment failed  | `experiment`    | failed  | `finished_at`, `error_message='experiment_failed'`                            |
-| `finalizeRoundImpl` gets cancelled/stopped    | `experiment`      | skipped | `finished_at`                                                                 |
+| Node                                            | step              | status  | Additional fields                                                             |
+| ----------------------------------------------- | ----------------- | ------- | ----------------------------------------------------------------------------- |
+| `prepareRoundImpl` start (pre-check passed)     | `error_analysis`  | running | `started_at`, `dbos_workflow_id`                                              |
+| `analyzeFailures` success                       | `error_analysis`  | success | `finished_at`, `run_result_id = analysisRunResultId`                          |
+| `analyzeFailures` throws                        | `error_analysis`  | failed  | `finished_at`, `error_class`, `error_message`                                 |
+| Before calling `generateNextVersion`            | `generate_prompt` | running | `started_at`                                                                  |
+| `generateNextVersion` success                   | `generate_prompt` | success | `finished_at`, `run_result_id = generateRunResultId`                          |
+| `generateNextVersion` throws                    | `generate_prompt` | failed  | `finished_at`, `error_class`, `error_message`                                 |
+| `createChildExperimentRow` success              | `experiment`      | running | `started_at`, `experiment_id`                                                 |
+| `markChildLaunchFailedStep`                     | `experiment`      | failed  | `finished_at`, `error_class='LaunchFailed'`, `error_message=launch_failed: …` |
+| `finalizeRoundImpl` gets sub-experiment success | `experiment`      | success | `finished_at`                                                                 |
+| `finalizeRoundImpl` gets sub-experiment failed  | `experiment`      | failed  | `finished_at`, `error_message='experiment_failed'`                            |
+| `finalizeRoundImpl` gets cancelled/stopped      | `experiment`      | skipped | `finished_at`                                                                 |
 
 `error_class` / `error_message` are uniformly normalized by the module-level helper `normalizeErrorForStep`, with `error_message` truncated to 1000 characters.
 

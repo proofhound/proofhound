@@ -410,9 +410,92 @@ export class OptimizationRepository {
 
   async hardDeleteOptimization(projectId: string, optimizationId: string): Promise<void> {
     await this.db.transaction(async (tx) => {
+      await tx.execute(sql`
+        WITH target_experiments AS (
+          SELECT id
+          FROM ph_runs.experiments
+          WHERE project_id = ${projectId}::uuid
+            AND optimization_id = ${optimizationId}::uuid
+            AND deleted_at IS NULL
+        ),
+        target_run_results AS (
+          SELECT rr.id, rr.created_at
+          FROM ph_runs.run_results rr
+          WHERE (
+            rr.source = 'experiment'
+            AND rr.source_id IN (SELECT id FROM target_experiments)
+          )
+          OR (
+            rr.source IN ('optimization_analysis', 'optimization_generate')
+            AND rr.source_id = ${optimizationId}::uuid
+          )
+        )
+        DELETE FROM ph_runs.annotations annotation
+        USING target_run_results rr
+        WHERE annotation.run_result_id = rr.id
+          AND annotation.run_result_created_at = rr.created_at
+      `);
+
+      await tx.execute(sql`
+        WITH target_experiments AS (
+          SELECT id
+          FROM ph_runs.experiments
+          WHERE project_id = ${projectId}::uuid
+            AND optimization_id = ${optimizationId}::uuid
+            AND deleted_at IS NULL
+        ),
+        target_run_results AS (
+          SELECT rr.id, rr.created_at
+          FROM ph_runs.run_results rr
+          WHERE (
+            rr.source = 'experiment'
+            AND rr.source_id IN (SELECT id FROM target_experiments)
+          )
+          OR (
+            rr.source IN ('optimization_analysis', 'optimization_generate')
+            AND rr.source_id = ${optimizationId}::uuid
+          )
+        )
+        DELETE FROM ph_runs.run_results rr
+        USING target_run_results target
+        WHERE rr.id = target.id
+          AND rr.created_at = target.created_at
+      `);
+
+      await tx.execute(sql`
+        WITH target_experiments AS (
+          SELECT id
+          FROM ph_runs.experiments
+          WHERE project_id = ${projectId}::uuid
+            AND optimization_id = ${optimizationId}::uuid
+            AND deleted_at IS NULL
+        )
+        UPDATE ph_releases.production_release_events event
+        SET source_experiment_id = NULL,
+            updated_at = now()
+        WHERE event.project_id = ${projectId}::uuid
+          AND event.source_experiment_id IN (SELECT id FROM target_experiments)
+      `);
+
+      await tx.execute(sql`
+        WITH target_experiments AS (
+          SELECT id
+          FROM ph_runs.experiments
+          WHERE project_id = ${projectId}::uuid
+            AND optimization_id = ${optimizationId}::uuid
+            AND deleted_at IS NULL
+        )
+        UPDATE ph_releases.release_line_events event
+        SET source_experiment_id = NULL,
+            updated_at = now()
+        WHERE event.project_id = ${projectId}::uuid
+          AND event.source_experiment_id IN (SELECT id FROM target_experiments)
+      `);
+
+      await tx.delete(optimizationRoundSteps).where(eq(optimizationRoundSteps.optimizationId, optimizationId));
+
       await tx
-        .update(experiments)
-        .set({ optimizationId: null, roundIndex: null, updatedAt: new Date() })
+        .delete(experiments)
         .where(and(eq(experiments.projectId, projectId), eq(experiments.optimizationId, optimizationId)));
 
       await tx
@@ -430,7 +513,14 @@ export class OptimizationRepository {
     const rows = await this.db
       .select({ id: datasets.id, name: datasets.name })
       .from(datasets)
-      .where(and(eq(datasets.projectId, projectId), eq(datasets.id, datasetId), isNull(datasets.deletedAt)))
+      .where(
+        and(
+          eq(datasets.projectId, projectId),
+          eq(datasets.id, datasetId),
+          eq(datasets.status, 'active'),
+          isNull(datasets.deletedAt),
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   }
@@ -1118,7 +1208,7 @@ export class OptimizationRepository {
     const [promptRow] = await this.db
       .select({ currentOnlineVersionId: prompts.currentOnlineVersionId })
       .from(prompts)
-      .where(and(eq(prompts.id, promptId), isNull(prompts.deletedAt)))
+      .where(and(eq(prompts.id, promptId), eq(prompts.status, 'active'), isNull(prompts.deletedAt)))
       .limit(1);
     if (!promptRow) return null;
     if (promptRow.currentOnlineVersionId) return promptRow.currentOnlineVersionId;
@@ -1138,6 +1228,24 @@ export class OptimizationRepository {
       .where(eq(promptVersions.id, versionId))
       .limit(1);
     return row?.promptLanguage ?? null;
+  }
+
+  async findUsablePromptVersion(
+    projectId: string,
+    versionId: string,
+  ): Promise<{ id: string; promptId: string; promptStatus: string; promptDeletedAt: Date | null } | null> {
+    const [row] = await this.db
+      .select({
+        id: promptVersions.id,
+        promptId: promptVersions.promptId,
+        promptStatus: prompts.status,
+        promptDeletedAt: prompts.deletedAt,
+      })
+      .from(promptVersions)
+      .innerJoin(prompts, eq(prompts.id, promptVersions.promptId))
+      .where(and(eq(prompts.projectId, projectId), eq(promptVersions.id, versionId)))
+      .limit(1);
+    return row ?? null;
   }
 
   async listOptimizationLlmRunResults(optimizationId: string): Promise<OptimizationRoundLlmRow[]> {

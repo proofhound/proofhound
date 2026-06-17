@@ -30,32 +30,38 @@ test('creates an annotation task from a canary release and labels a sample via t
     const { connectorId, webhookToken, webhookSlug } = await seedWebhookConnector(request, `${tag}-conn`);
     ledger.track('connector', `/connectors/${connectorId}`);
 
-    const { eventId: canaryEventId, releaseLineId, releaseVariantId } = await seedCanaryRelease(request, {
+    const {
+      eventId: canaryEventId,
+      releaseLineId,
+      releaseVersionId,
+    } = await seedCanaryRelease(request, {
       promptVersionId,
       modelId,
       connectorId,
       name: `${tag}-canary`,
     });
     eventId = canaryEventId;
-    expect(releaseVariantId).toBeTruthy();
-    const variantId = releaseVariantId as string;
+    expect(releaseVersionId).toBeTruthy();
+    const versionId = releaseVersionId as string;
 
-    // ---- Drive inbound traffic so the variant accumulates canary run_results to annotate ----
+    // ---- Drive inbound traffic so the version accumulates canary run_results to annotate ----
     await postWebhook(request, { slug: webhookSlug, token: webhookToken, payload: { id: 'ext-1', text: 'A' } });
     await postWebhook(request, { slug: webhookSlug, token: webhookToken, payload: { id: 'ext-2', text: 'B' } });
     await postWebhook(request, { slug: webhookSlug, token: webhookToken, payload: { id: 'ext-3', text: 'A' } });
-    await waitForReleaseRunResults(request, { releaseLineId, releaseVariantId: variantId, scope: 'canary', min: 2 });
+    await waitForReleaseRunResults(request, { releaseLineId, releaseVersionId: versionId, scope: 'canary', min: 2 });
 
     // ---- Create the annotation task through the UI ----
     await page.goto('/annotations/new');
     await expect(page.getByTestId('annotation-new-page')).toBeVisible();
 
     await page.getByTestId('annotation-new-task-name').fill(tag);
-    // Release line is a native <select>; release variant is a tile-button group (auto-selects the first).
-    await page.getByTestId('annotation-new-release-line-select').selectOption(releaseLineId);
-    await page.getByTestId(`annotation-new-release-variant-option-${variantId}`).click();
-    // Scope is a Segmented control; 'Canary candidate' is the default but click it to be explicit.
-    await page.getByTestId('annotation-new-scope').getByRole('button', { name: 'Canary candidate' }).click();
+    // Release name and release version use searchable dropdowns.
+    await page.getByTestId('annotation-new-release-line-select').click();
+    await page.getByTestId('annotation-new-release-line-search').fill(tag);
+    await page.getByTestId(`annotation-new-release-line-option-${releaseLineId}`).click();
+    await page.getByTestId('annotation-new-release-version-select').click();
+    await page.getByTestId('annotation-new-release-version-search').fill(versionId.slice(0, 8));
+    await page.getByTestId(`annotation-new-release-version-option-${versionId}`).click();
     await page.getByTestId('annotation-new-sample-size').fill('2');
 
     await expect(page.getByTestId('annotation-new-submit')).toBeEnabled();

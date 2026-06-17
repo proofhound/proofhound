@@ -50,7 +50,7 @@ describe('RunResultRepository', () => {
             decision_output: null,
             expected_output: 'positive',
             judgment_status: null,
-            status: 'error',
+            status: 'failed',
             count: 1,
             input_tokens: 0,
             output_tokens: null,
@@ -75,7 +75,7 @@ describe('RunResultRepository', () => {
           decisionOutput: null,
           expectedOutput: 'positive',
           judgmentStatus: null,
-          status: 'error',
+          status: 'failed',
           count: 1,
           inputTokens: 0,
           outputTokens: 0,
@@ -150,7 +150,7 @@ describe('RunResultRepository', () => {
       ]);
       expect(result).toEqual({ terminalCount: 10, failedCount: 4 });
       expect(query).not.toBeNull();
-      expect(query!.sql).toContain("status <> 'success'");
+      expect(query!.sql).toContain("status = 'failed'");
       expect(query!.sql).toContain("judgment_status = 'parse_error'");
       expect(query!.sql).toContain("judgment_status = 'judge_error' AND expected_output IS NOT NULL");
     });
@@ -357,6 +357,72 @@ describe('RunResultRepository', () => {
         canaryId: '88888888-8888-4888-8888-888888888888',
       });
     });
+
+    it('expands release version filters by journey and maps version labels', async () => {
+      const queries: Query[] = [];
+      const repo = new RunResultRepository({
+        execute: async (sqlQuery: SQL) => {
+          queries.push(toQuery(sqlQuery));
+          return queries.length === 1
+            ? [
+                {
+                  id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                  project_id: '11111111-1111-4111-8111-111111111111',
+                  source: 'release',
+                  source_id: '88888888-8888-4888-8888-888888888888',
+                  release_event_id: '88888888-8888-4888-8888-888888888888',
+                  release_version_id: '99999999-9999-4999-8999-999999999999',
+                  release_version_kind: 'candidate',
+                  release_version_production_number: null,
+                  release_version_target_production_number: 2,
+                  release_version_candidate_number: 3,
+                  lane_type: 'canary',
+                  external_id: 'order-2',
+                  prompt_name: 'risk-classifier',
+                  prompt_version_id: '66666666-6666-4666-8666-666666666666',
+                  prompt_version_number: 4,
+                  model_id: '77777777-7777-4777-8777-777777777777',
+                  model_name: 'gpt-test',
+                  model_provider: 'openai',
+                  status: 'success',
+                  judgment_status: 'incorrect',
+                  is_correct: false,
+                  decision_output: 'reject',
+                  input_variables: { id: 'order-2' },
+                  raw_response: '{"decision":"reject"}',
+                  parsed_output: { decision: 'reject' },
+                  error_class: null,
+                  error_message: null,
+                  latency_ms: 456,
+                  input_tokens: 14,
+                  output_tokens: 9,
+                  cost_estimate: '0.0031',
+                  attempt: 1,
+                  created_at: '2026-05-21T10:01:00.000Z',
+                },
+              ]
+            : [{ total: 1 }];
+        },
+      } as unknown as DbClient);
+
+      const out = await repo.listByRelease('11111111-1111-4111-8111-111111111111', {
+        ...defaultReleaseQuery,
+        releaseVersionIds: ['99999999-9999-4999-8999-999999999999'],
+        releaseVersionScope: 'journey',
+        lane: ['canary'],
+      });
+
+      expect(queries[0]!.sql).toContain('release_version.target_production_version_number IN');
+      expect(queries[0]!.sql).toContain('FROM ph_releases.release_versions selected');
+      expect(out.data[0]).toMatchObject({
+        releaseVersionId: '99999999-9999-4999-8999-999999999999',
+        releaseVersionKind: 'candidate',
+        releaseVersionLabel: 'v1.3',
+        releaseVersionProductionNumber: null,
+        releaseVersionTargetProductionNumber: 2,
+        releaseVersionCandidateNumber: 3,
+      });
+    });
   });
 
   describe('getDetailById', () => {
@@ -377,7 +443,7 @@ describe('RunResultRepository', () => {
             source_id: '11111111-1111-1111-1111-111111111111',
             sample_id: null,
             external_id: 'ext-1',
-            status: 'error',
+            status: 'failed',
             judgment_status: null,
             is_correct: null,
             decision_output: null,
@@ -412,7 +478,7 @@ describe('RunResultRepository', () => {
         id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         experimentId: '11111111-1111-1111-1111-111111111111',
         source: 'experiment',
-        status: 'error',
+        status: 'failed',
         errorClass: 'parse',
         errorMessage: 'invalid json',
         rawResponse: 'oops',

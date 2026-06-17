@@ -137,7 +137,7 @@ export class LlmConsumer extends WorkerHost {
         projectId: payload.projectId,
         source: payload.source,
         sourceId: payload.sourceId,
-        releaseVariantId: payload.releaseVariantId ?? null,
+        releaseVersionId: payload.releaseVersionId ?? null,
         promptVersionId: payload.promptVersionId,
         modelId: payload.modelId,
         sampleId: payload.sampleId ?? null,
@@ -146,7 +146,7 @@ export class LlmConsumer extends WorkerHost {
         inputVariables: payload.inputVariables,
         rawResponse: null,
         parsedOutput: null,
-        status: errorClass === 'AbortError' ? 'timeout' : 'error',
+        status: 'failed',
         errorClass,
         errorMessage,
         latencyMs: null,
@@ -186,7 +186,7 @@ export class LlmConsumer extends WorkerHost {
     if (payload.webhookAsyncCall) {
       await this.writeWebhookAsyncError(payload.webhookAsyncCall, {
         runResultId,
-        runStatus: errorClass === 'AbortError' ? 'timeout' : 'error',
+        runStatus: 'failed',
         errorClass,
         errorMessage,
       }).catch((cacheError) => {

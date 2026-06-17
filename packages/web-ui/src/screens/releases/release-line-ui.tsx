@@ -1,35 +1,29 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { GitCompareArrows, Rocket, Split, type LucideIcon } from 'lucide-react';
 import type { ProductionReleaseEventTypeDto, ReleaseLineEventOperationDto } from '@proofhound/shared';
-import { cn } from '@proofhound/ui';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, cn } from '@proofhound/ui';
 import { formatDateTime } from '../../lib';
 import type { ReleaseLineLatestEvent, ReleaseLineStatus, ReleaseLineView } from '../../lib';
 import { useI18n, type TranslationKey } from '../../i18n';
 
 const STATUS_TOKENS: Record<ReleaseLineStatus, { bg: string; fg: string; bd: string; dot: string; pulse: boolean }> = {
-  production: {
+  running: {
     bg: 'var(--status-running-bg)',
     fg: 'var(--status-running-fg)',
     bd: 'var(--status-running-bd)',
     dot: 'var(--status-running-dot)',
     pulse: true,
   },
-  production_canary: {
-    bg: 'var(--status-canary-bg)',
-    fg: 'var(--status-canary-fg)',
-    bd: 'var(--status-canary-bd)',
-    dot: 'var(--status-canary-dot)',
-    pulse: true,
-  },
-  canary: {
-    bg: 'var(--status-pending-bg)',
-    fg: 'var(--status-pending-fg)',
-    bd: 'var(--status-pending-bd)',
-    dot: 'var(--status-pending-dot)',
-    pulse: true,
-  },
   stopped: {
+    bg: 'var(--status-archived-bg)',
+    fg: 'var(--status-archived-fg)',
+    bd: 'var(--status-archived-bd)',
+    dot: 'var(--status-archived-dot)',
+    pulse: false,
+  },
+  archived: {
     bg: 'var(--status-archived-bg)',
     fg: 'var(--status-archived-fg)',
     bd: 'var(--status-archived-bd)',
@@ -77,20 +71,21 @@ const RELEASE_LINE_OPERATION_KEYS: Record<ReleaseLineEventOperationDto, Translat
   cancel_canary: 'releases.event.operation.cancelCanary',
   promote_canary: 'productionReleases.eventType.from_canary',
   rollback: 'productionReleases.eventType.rollback',
+  restore_to_production: 'releases.event.operation.restoreToProduction',
+  restore_to_canary: 'releases.event.operation.restoreToCanary',
   force_stop: 'productionReleases.eventType.force_stop',
   archive_line: 'releases.event.operation.archiveLine',
+  unarchive_line: 'releases.event.operation.unarchiveLine',
 };
 
 function statusLabelKey(status: ReleaseLineStatus): TranslationKey {
   switch (status) {
-    case 'production':
-      return 'releases.status.production';
-    case 'production_canary':
-      return 'releases.status.productionCanary';
-    case 'canary':
-      return 'releases.status.canary';
+    case 'running':
+      return 'releases.status.running';
     case 'stopped':
       return 'releases.status.stopped';
+    case 'archived':
+      return 'releases.status.archived';
   }
 }
 
@@ -232,13 +227,77 @@ export function ReleaseMetricCard({
   );
 }
 
+type TrafficLaneTone = 'production' | 'canary' | 'muted';
+
+const TRAFFIC_LANE_TOKENS: Record<
+  TrafficLaneTone,
+  { fg: string; bd: string; iconBg: string }
+> = {
+  production: {
+    fg: 'var(--status-running-fg)',
+    bd: 'color-mix(in srgb, var(--status-running-dot) 22%, var(--border))',
+    iconBg: 'color-mix(in srgb, var(--status-running-dot) 12%, var(--card))',
+  },
+  canary: {
+    fg: 'var(--status-canary-fg)',
+    bd: 'color-mix(in srgb, var(--status-canary-dot) 28%, var(--border))',
+    iconBg: 'color-mix(in srgb, var(--status-canary-dot) 14%, var(--card))',
+  },
+  muted: {
+    fg: 'var(--muted-foreground)',
+    bd: 'var(--border)',
+    iconBg: 'var(--card)',
+  },
+};
+
+function clampTrafficPercent(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function TrafficAllocationRow({
+  icon: Icon,
+  label,
+  percent,
+  tone,
+}: {
+  icon: LucideIcon;
+  label: string;
+  percent: number;
+  tone: TrafficLaneTone;
+}) {
+  const value = clampTrafficPercent(percent);
+  const tokens = TRAFFIC_LANE_TOKENS[tone];
+  return (
+    <div className="inline-flex h-5 w-fit items-center gap-1.5" aria-label={`${label} ${value}%`}>
+      <TooltipProvider delayDuration={120}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="flex size-5 shrink-0 items-center justify-center rounded-md border"
+              style={{ background: tokens.iconBg, color: tokens.fg, borderColor: tokens.bd }}
+              title={label}
+              aria-label={label}
+            >
+              <Icon className="size-3" aria-hidden="true" strokeWidth={2.2} />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">{label}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <span className="shrink-0 tabular-nums" style={{ color: tokens.fg }}>
+        {value}%
+      </span>
+    </div>
+  );
+}
+
 export function ReleaseTrafficBar({ line }: { line: ReleaseLineView }) {
   const { t } = useI18n();
   const ratio = Math.max(0, Math.min(1, line.trafficRatio ?? 0));
   const canaryPercent = Math.round(ratio * 100);
   const prodPercent = Math.max(0, 100 - canaryPercent);
 
-  if (line.status === 'stopped') {
+  if (line.status !== 'running') {
     return (
       <div className="flex h-7 items-center justify-center rounded-md border bg-muted font-mono text-[11px] font-semibold text-muted-foreground">
         {t('releases.traffic.offline')}
@@ -246,55 +305,58 @@ export function ReleaseTrafficBar({ line }: { line: ReleaseLineView }) {
     );
   }
 
-  if (line.status === 'production') {
+  const hasRunningProduction = line.production?.currentEvent?.status === 'running';
+  const hasRunningCanary = line.canary?.status === 'running';
+
+  if (!hasRunningProduction && !hasRunningCanary) {
     return (
-      <div className="flex h-7 overflow-hidden rounded-md border font-mono text-[11px] font-semibold">
-        <div
-          className="flex flex-1 items-center justify-center"
-          style={{
-            background: 'color-mix(in srgb, var(--status-running-dot) 18%, var(--card))',
-            color: 'var(--status-running-fg)',
-          }}
-        >
-          {t('releases.traffic.productionFull')}
-        </div>
+      <div className="flex h-7 items-center justify-center rounded-md border bg-muted font-mono text-[11px] font-semibold text-muted-foreground">
+        {t('releases.traffic.offline')}
       </div>
     );
   }
 
-  const showProdSegment = line.status === 'production_canary';
-  return (
-    <div className="flex h-7 overflow-hidden rounded-md border font-mono text-[11px] font-semibold">
-      {showProdSegment ? (
-        <div
-          className="flex min-w-8 items-center justify-center"
-          style={{
-            width: `${prodPercent}%`,
-            background: 'color-mix(in srgb, var(--status-running-dot) 18%, var(--card))',
-            color: 'var(--status-running-fg)',
-          }}
-          title={`${t('releases.lane.production')} ${prodPercent}%`}
-        >
-          {prodPercent >= 18 ? `${prodPercent}%` : ''}
-        </div>
-      ) : null}
-      <div
-        className="flex min-w-8 items-center justify-center border-l border-dashed"
-        style={{
-          width: `${Math.max(canaryPercent, showProdSegment ? 4 : canaryPercent)}%`,
-          flex: showProdSegment ? undefined : canaryPercent,
-          background: 'color-mix(in srgb, var(--status-canary-dot) 22%, var(--card))',
-          color: 'var(--status-canary-fg)',
-        }}
-        title={`${t('releases.lane.canary')} ${canaryPercent}%`}
-      >
-        {canaryPercent}%
+  if (hasRunningProduction && !hasRunningCanary) {
+    return (
+      <div className="inline-flex font-mono text-[10.5px] font-semibold leading-none">
+        <TrafficAllocationRow
+          icon={Rocket}
+          label={t('releases.traffic.productionLane')}
+          percent={100}
+          tone="production"
+        />
       </div>
-      {!showProdSegment ? (
-        <div className="flex flex-1 items-center justify-center border-l border-dashed bg-muted text-muted-foreground">
-          {t('releases.traffic.passThrough')}
-        </div>
-      ) : null}
+    );
+  }
+
+  const isDualRun = line.canary?.trafficMode === 'dual_run';
+  const productionPercent = hasRunningProduction ? (isDualRun ? 100 : prodPercent) : Math.max(0, 100 - canaryPercent);
+  const CanaryIcon = isDualRun ? GitCompareArrows : Split;
+  const canaryLabel = t(isDualRun ? 'releases.traffic.canaryDualRun' : 'releases.traffic.canarySplit');
+
+  return (
+    <div className="inline-flex flex-col items-start gap-1 font-mono text-[10.5px] font-semibold leading-none">
+      {hasRunningProduction ? (
+        <TrafficAllocationRow
+          icon={Rocket}
+          label={t('releases.traffic.productionLane')}
+          percent={productionPercent}
+          tone="production"
+        />
+      ) : (
+        <TrafficAllocationRow
+          icon={Split}
+          label={t('releases.traffic.passThrough')}
+          percent={Math.max(0, 100 - canaryPercent)}
+          tone="muted"
+        />
+      )}
+      <TrafficAllocationRow
+        icon={CanaryIcon}
+        label={canaryLabel}
+        percent={canaryPercent}
+        tone="canary"
+      />
     </div>
   );
 }

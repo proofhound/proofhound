@@ -114,7 +114,7 @@ export function createDatasetTools(datasetService: DatasetService): McpToolDefin
     },
     {
       name: 'dataset_delete_dataset',
-      description: '物理删除无实验 / 优化引用的数据集',
+      description: '物理删除数据集；删除前应先调用 dataset_get_delete_impact 展示会连带删除的实验 / 优化',
       inputSchema: {
         type: 'object',
         required: ['datasetId'],
@@ -127,6 +127,54 @@ export function createDatasetTools(datasetService: DatasetService): McpToolDefin
         const datasetId = datasetIdParamSchema.parse(input.datasetId);
         await datasetService.deleteDataset(projectId, datasetId, getMcpActor(ctx));
         return { ok: true };
+      },
+    },
+    {
+      name: 'dataset_get_delete_impact',
+      description: '查看删除数据集会连带删除的实验与优化',
+      inputSchema: {
+        type: 'object',
+        required: ['datasetId'],
+        properties: {
+          datasetId: { type: 'string', format: 'uuid' },
+        },
+      },
+      handler: async (input, ctx) => {
+        const { projectId } = resolveMcpProjectContext(ctx);
+        const datasetId = datasetIdParamSchema.parse(input.datasetId);
+        return datasetService.getDatasetDeleteImpact(projectId, datasetId, getMcpActor(ctx));
+      },
+    },
+    {
+      name: 'dataset_archive_dataset',
+      description: '将数据集从活跃状态归档；归档后不能继续创建实验或优化',
+      inputSchema: {
+        type: 'object',
+        required: ['datasetId'],
+        properties: {
+          datasetId: { type: 'string', format: 'uuid' },
+        },
+      },
+      handler: async (input, ctx) => {
+        const { projectId } = resolveMcpProjectContext(ctx);
+        const datasetId = datasetIdParamSchema.parse(input.datasetId);
+        return datasetService.archiveDataset(projectId, datasetId, getMcpActor(ctx));
+      },
+    },
+    {
+      name: 'dataset_restore_dataset',
+      description: '将归档数据集恢复为活跃状态',
+      inputSchema: {
+        type: 'object',
+        required: ['datasetId'],
+        properties: {
+          datasetId: { type: 'string', format: 'uuid' },
+        },
+      },
+      handler: async (input, ctx) => {
+        const { projectId } = resolveMcpProjectContext(ctx);
+        const datasetId = datasetIdParamSchema.parse(input.datasetId);
+        return datasetService.restoreDataset(projectId, datasetId, getMcpActor(ctx));
       },
     },
     {

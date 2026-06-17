@@ -7,6 +7,7 @@ function makeDataset(overrides: Partial<DatasetListItemDto> = {}): DatasetListIt
     id: 'd-1',
     projectId: 'p-1',
     name: 'demo',
+    status: 'active',
     description: null,
     createdBy: 'u-1',
     createdByDisplayName: 'Alice',
@@ -18,6 +19,7 @@ function makeDataset(overrides: Partial<DatasetListItemDto> = {}): DatasetListIt
     references: { experiments: 0, optimizations: 0 },
     createdAt: '2026-05-19T00:00:00.000Z',
     updatedAt: '2026-05-19T00:00:00.000Z',
+    archivedAt: null,
     deletedAt: null,
     ...overrides,
   };

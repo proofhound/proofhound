@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { Segmented } from './segmented';
 import { cn } from '../lib/utils';
 
-export type DateRangePreset = 'h1' | 'h24' | 'd7' | 'd30' | 'custom';
+export type DateRangePreset = 'all' | 'h1' | 'h24' | 'd7' | 'd30' | 'custom';
 
 export interface DateRangeValue {
   preset: DateRangePreset;
@@ -82,7 +82,7 @@ export function resolveDateRangePreset(
   preset: DateRangePreset,
   now: Date = new Date(),
 ): { from: string; to: string } | null {
-  if (preset === 'custom') return null;
+  if (preset === 'all' || preset === 'custom') return null;
   const ms = {
     h1: 60 * 60_000,
     h24: 24 * 60 * 60_000,
@@ -124,7 +124,7 @@ export function DateRangeSegmented({
         value={value.preset}
         options={presetLabels}
         onChange={(preset) => {
-          if (preset === 'custom') {
+          if (preset === 'all' || preset === 'custom') {
             onChange({ ...value, preset });
             return;
           }

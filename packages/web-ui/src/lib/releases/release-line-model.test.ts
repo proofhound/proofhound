@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { CanaryReleaseListItemDto, ProductionReleaseListItemDto } from '@proofhound/shared';
+import type { CanaryReleaseListItemDto, ProductionReleaseListItemDto, ReleaseLineDto } from '@proofhound/shared';
 import {
   buildReleaseLines,
   filterReleaseLines,
   getReleaseLineId,
   getReleaseStopConfirmationName,
   getReleaseResultSourceIds,
+  mapReleaseLineDtos,
   summarizeReleaseLines,
 } from './release-line-model';
 
@@ -31,6 +32,7 @@ function production(overrides: Partial<ProductionReleaseListItemDto> = {}): Prod
     variableMapping: { content: 'payload.text', id: 'payload.id' },
     filterRules: null,
     recordMode: 'all',
+    recordCategories: [],
     externalIdField: 'payload.id',
     retentionDays: null,
     status: 'running',
@@ -87,6 +89,7 @@ function canary(overrides: Partial<CanaryReleaseListItemDto> = {}): CanaryReleas
     runMode: 'manual',
     stopConditions: null,
     recordMode: 'all',
+    recordCategories: [],
     filterRules: null,
     variableMapping: [
       { source: 'payload.id', target: 'id', required: true },
@@ -120,11 +123,112 @@ function canary(overrides: Partial<CanaryReleaseListItemDto> = {}): CanaryReleas
     targetDatasetName: null,
     createdByName: 'alice',
     annotationTaskId: null,
-    releaseVariantId: null,
-    releaseVariantNumber: null,
-    releaseVariantLabel: null,
+    releaseVersionId: null,
+    releaseVersionLabel: null,
     annotationProgress: { total: 30, claimed: 5, submitted: 12 },
     quality: null,
+    ...overrides,
+  };
+}
+
+function releaseLineEvent(
+  overrides: Partial<NonNullable<ReleaseLineDto['currentProductionEvent']>> = {},
+): NonNullable<ReleaseLineDto['currentProductionEvent']> {
+  return {
+    id: '60000000-0000-4000-8000-000000000001',
+    projectId: PROJECT_ID,
+    releaseLineId: LINE_ID,
+    releaseVersionId: null,
+    releaseVersionKind: 'production',
+    releaseVersionLabel: 'v1',
+    releaseVersionProductionNumber: 1,
+    releaseVersionTargetProductionNumber: 1,
+    releaseVersionCandidateNumber: null,
+    annotationTaskId: null,
+    laneType: 'production',
+    operation: 'create_production',
+    status: 'running',
+    terminalReason: null,
+    sourceEventId: null,
+    sourceLegacySource: null,
+    sourceLegacyId: null,
+    supersedesEventId: null,
+    rollbackTargetEventId: null,
+    legacySource: null,
+    legacySourceId: null,
+    promptId: PROMPT_ID,
+    promptName: 'risk-judge',
+    promptVersionId: VERSION_ID,
+    promptVersionNumber: 1,
+    promptVersionLabel: 'v1',
+    promptSnapshot: {},
+    promptVersionSnapshot: {},
+    modelId: MODEL_ID,
+    modelName: 'gpt-4o-mini',
+    modelProvider: 'openai',
+    modelSnapshot: {},
+    inputConnectorId: CONNECTOR_ID,
+    inputConnectorName: 'risk.app.events',
+    inputConnectorType: 'kafka',
+    inputConnectorSnapshot: {},
+    outputConnectorIds: ['70000000-0000-4000-8000-000000000001'],
+    outputConnectors: [{ id: '70000000-0000-4000-8000-000000000001', name: 'risk-out', type: 'kafka' }],
+    outputConnectorSnapshots: [],
+    trafficMode: 'split',
+    trafficRatio: null,
+    runConfig: { rpmLimit: 100, tpmLimit: 1000, concurrency: 2, temperature: 0.2 },
+    variableMapping: { id: 'payload.id' },
+    outputMapping: [{ source: 'decision', target: 'decision' }],
+    filterRules: null,
+    recordMode: 'all',
+    recordCategories: [],
+    externalIdField: 'payload.id',
+    retentionDays: null,
+    sourceExperimentId: null,
+    submitReason: 'ship',
+    metrics: null,
+    totalReceived: 0,
+    totalProcessed: 0,
+    totalFiltered: 0,
+    totalCorrect: 0,
+    totalErrors: 0,
+    controlState: null,
+    controlStatePayload: null,
+    startedAt: '2026-05-20T00:00:00.000Z',
+    finishedAt: null,
+    createdBy: USER_ID,
+    createdAt: '2026-05-20T00:00:00.000Z',
+    updatedAt: '2026-05-20T00:10:00.000Z',
+    ...overrides,
+  };
+}
+
+function releaseLineDto(overrides: Partial<ReleaseLineDto> = {}): ReleaseLineDto {
+  const production = releaseLineEvent();
+  return {
+    id: LINE_ID,
+    projectId: PROJECT_ID,
+    name: 'risk-judge',
+    description: null,
+    promptId: PROMPT_ID,
+    promptName: 'risk-judge',
+    promptSnapshot: {},
+    inputConnectorId: CONNECTOR_ID,
+    inputConnectorName: 'risk.app.events',
+    inputConnectorType: 'kafka',
+    inputConnectorSnapshot: {},
+    status: 'running',
+    currentProductionEventId: production.id,
+    activeCanaryEventId: null,
+    currentProductionEvent: production,
+    activeCanaryEvent: null,
+    versions: [],
+    outputConnectors: production.outputConnectors,
+    latestEvent: production,
+    createdBy: USER_ID,
+    createdAt: '2026-05-20T00:00:00.000Z',
+    updatedAt: '2026-05-20T00:10:00.000Z',
+    archivedAt: null,
     ...overrides,
   };
 }
@@ -144,7 +248,7 @@ describe('release line model', () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({
       id: getReleaseLineId(PROMPT_ID, CONNECTOR_ID),
-      status: 'production_canary',
+      status: 'running',
       productionVersionLabel: 'v16',
       canaryVersionLabel: 'v17',
       trafficRatio: 0.2,
@@ -158,7 +262,7 @@ describe('release line model', () => {
     const lines = buildReleaseLines([production({ currentEvent: null, aggregateStatus: 'offline' })], [canary()]);
 
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.status).toBe('canary');
+    expect(lines[0]?.status).toBe('running');
     expect(lines[0]?.production).toBeNull();
   });
 
@@ -180,7 +284,7 @@ describe('release line model', () => {
       [canary({ status: 'completed', trafficRatio: 1, finishedAt: '2026-05-21T01:00:00.000Z' })],
     );
 
-    expect(lines[0]?.status).toBe('production');
+    expect(lines[0]?.status).toBe('running');
     expect(lines[0]?.canary).toBeNull();
     expect(lines[0]?.trafficRatio).toBeNull();
     expect(lines[0]?.canaryHistory).toHaveLength(1);
@@ -220,9 +324,7 @@ describe('release line model', () => {
     });
     const [line] = buildReleaseLines([promotedProduction], []);
 
-    expect(line ? getReleaseStopConfirmationName({ ...line, label: 'emotion category' }) : '').toBe(
-      'emotion category',
-    );
+    expect(line ? getReleaseStopConfirmationName({ ...line, label: 'emotion category' }) : '').toBe('emotion category');
   });
 
   it('summarizes and filters visible release lines', () => {
@@ -245,6 +347,7 @@ describe('release line model', () => {
 
     expect(summary).toMatchObject({
       total: 2,
+      running: 1,
       productionCanary: 1,
       stopped: 1,
       totalProcessed: 180,
@@ -252,7 +355,181 @@ describe('release line model', () => {
       annotationOpen: 18,
     });
     expect(summary.failureRate).toBeCloseTo(10 / 180);
-    expect(filterReleaseLines(lines, 'production_canary', 'risk')).toHaveLength(1);
+    expect(filterReleaseLines(lines, 'running', 'risk')).toHaveLength(1);
     expect(filterReleaseLines(lines, 'stopped', 'tag')).toHaveLength(1);
+  });
+
+  it('normalizes canonical output mappings before exposing release line views', () => {
+    const outputConnectorId = '70000000-0000-4000-8000-000000000001';
+    const event: NonNullable<ReleaseLineDto['currentProductionEvent']> = {
+      id: '60000000-0000-4000-8000-000000000001',
+      projectId: PROJECT_ID,
+      releaseLineId: LINE_ID,
+      releaseVersionId: null,
+      releaseVersionKind: 'production',
+      releaseVersionLabel: 'v1',
+      releaseVersionProductionNumber: 1,
+      releaseVersionTargetProductionNumber: 1,
+      releaseVersionCandidateNumber: null,
+      annotationTaskId: null,
+      laneType: 'production',
+      operation: 'create_production',
+      status: 'running',
+      terminalReason: null,
+      sourceEventId: null,
+      sourceLegacySource: null,
+      sourceLegacyId: null,
+      supersedesEventId: null,
+      rollbackTargetEventId: null,
+      legacySource: null,
+      legacySourceId: null,
+      promptId: PROMPT_ID,
+      promptName: 'risk-judge',
+      promptVersionId: VERSION_ID,
+      promptVersionNumber: 1,
+      promptVersionLabel: 'v1',
+      promptSnapshot: {},
+      promptVersionSnapshot: {},
+      modelId: MODEL_ID,
+      modelName: 'gpt-4o-mini',
+      modelProvider: 'openai',
+      modelSnapshot: {},
+      inputConnectorId: CONNECTOR_ID,
+      inputConnectorName: 'risk.app.events',
+      inputConnectorType: 'kafka',
+      inputConnectorSnapshot: {},
+      outputConnectorIds: [outputConnectorId],
+      outputConnectors: [{ id: outputConnectorId, name: 'risk-out', type: 'kafka' }],
+      outputConnectorSnapshots: [],
+      trafficMode: 'split',
+      trafficRatio: null,
+      runConfig: { rpmLimit: 100, tpmLimit: 1000, concurrency: 2, temperature: 0.2 },
+      variableMapping: { id: 'payload.id' },
+      outputMapping: [
+        { source: 'decision', target: 'decision' },
+        { source: 'missing-target' },
+        null,
+        { source: undefined, target: 'bad' },
+      ],
+      filterRules: null,
+      recordMode: 'all',
+      recordCategories: [],
+      externalIdField: 'payload.id',
+      retentionDays: null,
+      sourceExperimentId: null,
+      submitReason: 'ship',
+      metrics: null,
+      totalReceived: 0,
+      totalProcessed: 0,
+      totalFiltered: 0,
+      totalCorrect: 0,
+      totalErrors: 0,
+      controlState: null,
+      controlStatePayload: null,
+      startedAt: '2026-05-20T00:00:00.000Z',
+      finishedAt: null,
+      createdBy: USER_ID,
+      createdAt: '2026-05-20T00:00:00.000Z',
+      updatedAt: '2026-05-20T00:10:00.000Z',
+    };
+    const [line] = mapReleaseLineDtos([
+      {
+        id: LINE_ID,
+        projectId: PROJECT_ID,
+        name: 'risk-judge',
+        description: null,
+        promptId: PROMPT_ID,
+        promptName: 'risk-judge',
+        promptSnapshot: {},
+        inputConnectorId: CONNECTOR_ID,
+        inputConnectorName: 'risk.app.events',
+        inputConnectorType: 'kafka',
+        inputConnectorSnapshot: {},
+        status: 'running',
+        currentProductionEventId: event.id,
+        activeCanaryEventId: null,
+        currentProductionEvent: event,
+        activeCanaryEvent: null,
+        versions: [],
+        outputConnectors: event.outputConnectors,
+        latestEvent: event,
+        createdBy: USER_ID,
+        createdAt: '2026-05-20T00:00:00.000Z',
+        updatedAt: '2026-05-20T00:10:00.000Z',
+        archivedAt: null,
+      },
+    ]);
+
+    expect(line?.productionOutputMapping).toEqual([{ source: 'decision', target: 'decision' }]);
+  });
+
+  it('aggregates production-only counts into the release line view', () => {
+    const [line] = mapReleaseLineDtos([
+      releaseLineDto({
+        currentProductionEvent: releaseLineEvent({ totalReceived: 500, totalProcessed: 480, totalErrors: 5 }),
+        activeCanaryEvent: null,
+        activeCanaryEventId: null,
+      }),
+    ]);
+
+    expect(line?.totalReceived).toBe(500);
+    expect(line?.totalProcessed).toBe(480);
+    expect(line?.totalErrors).toBe(5);
+    expect(summarizeReleaseLines(line ? [line] : [])).toMatchObject({
+      totalProcessed: 480,
+      totalErrors: 5,
+    });
+  });
+
+  it('aggregates canary-only counts when there is no production event', () => {
+    const canaryEvent = releaseLineEvent({
+      id: '60000000-0000-4000-8000-000000000002',
+      laneType: 'canary',
+      releaseVersionKind: 'candidate',
+      operation: 'create_canary',
+      totalReceived: 200,
+      totalProcessed: 180,
+      totalErrors: 10,
+    });
+    const [line] = mapReleaseLineDtos([
+      releaseLineDto({
+        currentProductionEvent: null,
+        currentProductionEventId: null,
+        activeCanaryEvent: canaryEvent,
+        activeCanaryEventId: canaryEvent.id,
+        latestEvent: canaryEvent,
+      }),
+    ]);
+
+    expect(line?.totalReceived).toBe(200);
+    expect(line?.totalProcessed).toBe(180);
+    expect(line?.totalErrors).toBe(10);
+  });
+
+  it('sums production and canary counts when both lanes are present', () => {
+    const canaryEvent = releaseLineEvent({
+      id: '60000000-0000-4000-8000-000000000002',
+      laneType: 'canary',
+      releaseVersionKind: 'candidate',
+      operation: 'create_canary',
+      totalReceived: 200,
+      totalProcessed: 180,
+      totalErrors: 10,
+    });
+    const [line] = mapReleaseLineDtos([
+      releaseLineDto({
+        currentProductionEvent: releaseLineEvent({ totalReceived: 500, totalProcessed: 480, totalErrors: 5 }),
+        activeCanaryEvent: canaryEvent,
+        activeCanaryEventId: canaryEvent.id,
+      }),
+    ]);
+
+    expect(line?.totalReceived).toBe(700);
+    expect(line?.totalProcessed).toBe(660);
+    expect(line?.totalErrors).toBe(15);
+    expect(summarizeReleaseLines(line ? [line] : [])).toMatchObject({
+      totalProcessed: 660,
+      totalErrors: 15,
+    });
   });
 });

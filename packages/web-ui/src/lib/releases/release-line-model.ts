@@ -8,7 +8,7 @@ import type {
   ReleaseLineEventDto,
 } from '@proofhound/shared';
 
-export type ReleaseLineStatus = 'production' | 'production_canary' | 'canary' | 'stopped';
+export type ReleaseLineStatus = 'running' | 'stopped' | 'archived';
 
 export type ReleaseLineFilter = ReleaseLineStatus | 'all';
 
@@ -28,12 +28,16 @@ export interface ReleaseLineView {
   inputConnectorId: string | null;
   inputConnectorName: string | null;
   inputConnectorType: string | null;
+  inputConnectorSnapshot: unknown;
   outputConnectors: Array<{ id: string; name: string; type: string }>;
   status: ReleaseLineStatus;
   production: ProductionReleaseListItemDto | null;
+  productionOutputMapping: unknown;
   canary: CanaryReleaseListItemDto | null;
+  canaryOutputMapping: unknown;
+  canaryPromptVersionSnapshot: unknown;
   canaryHistory: CanaryReleaseListItemDto[];
-  variants: ReleaseLineDto['variants'];
+  versions: ReleaseLineDto['versions'];
   productionVersionLabel: string | null;
   productionModelName: string | null;
   canaryVersionLabel: string | null;
@@ -51,10 +55,12 @@ export interface ReleaseLineView {
 
 export interface ReleaseLineSummary {
   total: number;
+  running: number;
   production: number;
   productionCanary: number;
   canary: number;
   stopped: number;
+  archived: number;
   totalProcessed: number;
   totalErrors: number;
   failureRate: number | null;
@@ -62,6 +68,38 @@ export interface ReleaseLineSummary {
 }
 
 const ACTIVE_CANARY_STATUSES = new Set<CanaryReleaseStatusDto>(['running', 'stopped']);
+
+function normalizeOutputMapping(value: unknown): Array<{ source: string; target: string }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is { source: string; target: string } => {
+      return (
+        Boolean(item) &&
+        typeof item === 'object' &&
+        'source' in item &&
+        'target' in item &&
+        typeof item.source === 'string' &&
+        typeof item.target === 'string'
+      );
+    })
+    .map((item) => ({ source: item.source, target: item.target }));
+}
+
+function normalizeOutputMappingSnapshot(value: unknown): unknown {
+  if (!Array.isArray(value)) return [];
+  const connectorRoutes = value
+    .filter((item): item is { connectorId: string; outputMapping: unknown } => {
+      return (
+        Boolean(item) &&
+        typeof item === 'object' &&
+        'connectorId' in item &&
+        'outputMapping' in item &&
+        typeof item.connectorId === 'string'
+      );
+    })
+    .map((item) => ({ connectorId: item.connectorId, outputMapping: normalizeOutputMapping(item.outputMapping) }));
+  return connectorRoutes.length ? connectorRoutes : normalizeOutputMapping(value);
+}
 
 const CANARY_STATUS_RANK: Record<CanaryReleaseStatusDto, number> = {
   running: 0,
@@ -188,10 +226,8 @@ function buildLineStatus(
   canary: CanaryReleaseListItemDto | null,
 ): ReleaseLineStatus {
   const hasProduction = production?.aggregateStatus === 'online' && Boolean(production.currentEvent);
-  const hasActiveCanary = isActiveCanary(canary);
-  if (hasProduction && hasActiveCanary) return 'production_canary';
-  if (hasProduction) return 'production';
-  if (hasActiveCanary) return 'canary';
+  const hasRunningCanary = canary?.status === 'running';
+  if (hasProduction || hasRunningCanary) return 'running';
   return 'stopped';
 }
 
@@ -264,12 +300,16 @@ export function buildReleaseLines(
         inputConnectorId,
         inputConnectorName: getInputConnectorName(production, canary ?? latestCanary),
         inputConnectorType: getInputConnectorType(production, canary ?? latestCanary),
+        inputConnectorSnapshot: null,
         outputConnectors,
         status,
         production,
+        productionOutputMapping: [],
         canary,
+        canaryOutputMapping: canary?.outputMapping ?? [],
+        canaryPromptVersionSnapshot: null,
         canaryHistory,
-        variants: [],
+        versions: [],
         productionVersionLabel: production?.promptVersionLabel ?? null,
         productionModelName: production?.modelName ?? null,
         canaryVersionLabel: canary?.promptVersionLabel ?? null,
@@ -302,12 +342,16 @@ export function mapReleaseLineDtos(items: ReleaseLineDto[]): ReleaseLineView[] {
         inputConnectorId: line.inputConnectorId,
         inputConnectorName: line.inputConnectorName,
         inputConnectorType: line.inputConnectorType,
+        inputConnectorSnapshot: line.inputConnectorSnapshot,
         outputConnectors: line.outputConnectors,
-        status: mapCanonicalLineStatus(line.status),
+        status: mapCanonicalLineStatus(line),
         production,
+        productionOutputMapping: normalizeOutputMappingSnapshot(line.currentProductionEvent?.outputMapping),
         canary,
+        canaryOutputMapping: normalizeOutputMappingSnapshot(line.activeCanaryEvent?.outputMapping),
+        canaryPromptVersionSnapshot: line.activeCanaryEvent?.promptVersionSnapshot ?? null,
         canaryHistory,
-        variants: line.variants,
+        versions: line.versions,
         productionVersionLabel: line.currentProductionEvent?.promptVersionLabel ?? null,
         productionModelName: line.currentProductionEvent?.modelName ?? null,
         canaryVersionLabel: line.activeCanaryEvent?.promptVersionLabel ?? null,
@@ -316,9 +360,11 @@ export function mapReleaseLineDtos(items: ReleaseLineDto[]): ReleaseLineView[] {
         latestEvent: line.latestEvent ? mapCanonicalLatestEvent(line.latestEvent) : null,
         createdAt: line.createdAt,
         updatedAt: line.updatedAt,
-        totalReceived: line.activeCanaryEvent?.totalReceived ?? 0,
-        totalProcessed: line.activeCanaryEvent?.totalProcessed ?? 0,
-        totalErrors: line.activeCanaryEvent?.totalErrors ?? 0,
+        totalReceived:
+          (line.currentProductionEvent?.totalReceived ?? 0) + (line.activeCanaryEvent?.totalReceived ?? 0),
+        totalProcessed:
+          (line.currentProductionEvent?.totalProcessed ?? 0) + (line.activeCanaryEvent?.totalProcessed ?? 0),
+        totalErrors: (line.currentProductionEvent?.totalErrors ?? 0) + (line.activeCanaryEvent?.totalErrors ?? 0),
         annotationSubmitted: 0,
         annotationTotal: 0,
       } satisfies ReleaseLineView;
@@ -343,10 +389,8 @@ function stripLegacyCanaryPromotionPrefix(value: string): string {
   return value.replace(/^灰度候选\s*100%\s*接管[：:]\s*/u, '').trim();
 }
 
-function mapCanonicalLineStatus(status: ReleaseLineDto['status']): ReleaseLineStatus {
-  if (status === 'production_with_canary') return 'production_canary';
-  if (status === 'archived') return 'stopped';
-  return status;
+function mapCanonicalLineStatus(line: ReleaseLineDto): ReleaseLineStatus {
+  return line.status;
 }
 
 function mapCanonicalLatestEvent(event: ReleaseLineEventDto): ReleaseLineLatestEvent {
@@ -398,6 +442,7 @@ function mapProductionEvent(event: ReleaseLineEventDto): ProductionReleaseEventD
     variableMapping: normalizeProductionVariableMapping(event.variableMapping),
     filterRules: event.filterRules as ProductionReleaseEventDto['filterRules'],
     recordMode: event.recordMode,
+    recordCategories: event.recordCategories,
     externalIdField: event.externalIdField,
     retentionDays: event.retentionDays,
     status: mapProductionStatus(event.status),
@@ -434,7 +479,7 @@ function mapProductionEventType(event: ReleaseLineEventDto): ProductionReleaseEv
   if (event.operation === 'create_production_from_experiment') return 'from_experiment';
   if (event.operation === 'promote_canary') return 'from_canary';
   if (event.operation === 'config_changed') return 'config_change';
-  if (event.operation === 'rollback') return 'rollback';
+  if (event.operation === 'rollback' || event.operation === 'restore_to_production') return 'rollback';
   if (event.operation === 'force_stop') return 'force_stop';
   return 'from_prompt';
 }
@@ -473,12 +518,13 @@ function mapCanaryLine(line: ReleaseLineDto): CanaryReleaseListItemDto | null {
     runMode: 'manual',
     stopConditions: null,
     recordMode: event.recordMode,
+    recordCategories: event.recordCategories,
     filterRules: event.filterRules as CanaryReleaseListItemDto['filterRules'],
     variableMapping: normalizeCanaryVariableMapping(event.variableMapping),
-    outputMapping: Array.isArray(event.outputMapping) ? event.outputMapping : [],
+    outputMapping: normalizeOutputMapping(event.outputMapping),
     externalIdField: event.externalIdField ?? 'id',
     annotationSchema: [],
-    storageCategories: [],
+    storageCategories: event.recordCategories,
     targetDatasetId: null,
     runConfig: event.runConfig as CanaryReleaseListItemDto['runConfig'],
     totalReceived: event.totalReceived,
@@ -503,9 +549,8 @@ function mapCanaryLine(line: ReleaseLineDto): CanaryReleaseListItemDto | null {
     targetDatasetName: null,
     createdByName: null,
     annotationTaskId: null,
-    releaseVariantId: event.releaseVariantId,
-    releaseVariantNumber: event.releaseVariantNumber,
-    releaseVariantLabel: event.releaseVariantLabel,
+    releaseVersionId: event.releaseVersionId,
+    releaseVersionLabel: event.releaseVersionLabel,
     annotationProgress: { total: 0, claimed: 0, submitted: 0 },
     quality: null,
   };
@@ -524,10 +569,12 @@ function normalizeCanaryVariableMapping(value: unknown): CanaryReleaseListItemDt
 export function summarizeReleaseLines(lines: ReleaseLineView[]): ReleaseLineSummary {
   const summary: ReleaseLineSummary = {
     total: lines.length,
+    running: 0,
     production: 0,
     productionCanary: 0,
     canary: 0,
     stopped: 0,
+    archived: 0,
     totalProcessed: 0,
     totalErrors: 0,
     failureRate: null,
@@ -535,10 +582,14 @@ export function summarizeReleaseLines(lines: ReleaseLineView[]): ReleaseLineSumm
   };
 
   for (const line of lines) {
-    if (line.status === 'production') summary.production += 1;
-    if (line.status === 'production_canary') summary.productionCanary += 1;
-    if (line.status === 'canary') summary.canary += 1;
+    const hasProduction = Boolean(line.production?.currentEvent);
+    const hasRunningCanary = line.canary?.status === 'running';
+    if (line.status === 'running') summary.running += 1;
+    if (hasProduction && hasRunningCanary) summary.productionCanary += 1;
+    else if (hasProduction) summary.production += 1;
+    else if (hasRunningCanary) summary.canary += 1;
     if (line.status === 'stopped') summary.stopped += 1;
+    if (line.status === 'archived') summary.archived += 1;
     summary.totalProcessed += line.totalProcessed;
     summary.totalErrors += line.totalErrors;
     summary.annotationOpen += Math.max(0, line.annotationTotal - line.annotationSubmitted);

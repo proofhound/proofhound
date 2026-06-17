@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import {
+  Archive,
   Download,
   Edit3,
   FlaskConical,
@@ -14,6 +15,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Trash2,
+  RotateCcw,
   X,
 } from 'lucide-react';
 import type { DatasetExportFormatDto } from '@proofhound/shared';
@@ -47,17 +49,25 @@ import {
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { useDatasets, useDeleteDataset, useDownloadDataset, useUpdateDataset } from '../../hooks';
+import {
+  useArchiveDataset,
+  useDatasetDeleteImpact,
+  useDatasets,
+  useDeleteDataset,
+  useDownloadDataset,
+  useRestoreDataset,
+  useUpdateDataset,
+} from '../../hooks';
 import { useDateTimeFormatter } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage } from '../../lib';
 import { DatasetTransferProgressPanel, useDatasetTransferProgress } from './dataset-transfer-progress';
-import { getReferenceCount, type ProjectDataset, type DatasetModality } from './dataset-types';
+import type { ProjectDataset, DatasetModality } from './dataset-types';
 import { toProjectDataset } from './dataset-mappers';
 import {
   CategoryDistribution,
-  DeletedBadge,
+  ArchivedBadge,
   ExportFormatMenu,
   ModalityBadge,
   ReferenceText,
@@ -163,36 +173,47 @@ function FilterChip({
 }
 
 function getModalityCount(datasets: ProjectDataset[], modality: DatasetModality) {
-  return datasets.filter((dataset) => dataset.modalities.includes(modality) && dataset.status !== 'deleted').length;
+  return datasets.filter((dataset) => dataset.modalities.includes(modality) && dataset.status === 'active').length;
 }
 
 function DatasetActions({
   dataset,
   downloading,
   deleting,
+  restoring,
+  archiving,
   onDelete,
   onDownload,
   onEdit,
+  onArchive,
+  onRestore,
   onStartOptimization,
   onStartExperiment,
 }: {
   dataset: ProjectDataset;
   downloading: boolean;
   deleting?: boolean;
+  restoring?: boolean;
+  archiving?: boolean;
   onDelete: (dataset: ProjectDataset) => void;
   onDownload: (dataset: ProjectDataset) => void;
   onEdit: (dataset: ProjectDataset) => void;
+  onArchive: (dataset: ProjectDataset) => void;
+  onRestore: (dataset: ProjectDataset) => void;
   onStartOptimization: (dataset: ProjectDataset) => void;
   onStartExperiment: (dataset: ProjectDataset) => void;
 }) {
   const { t } = useI18n();
-  const disabled = dataset.status === 'deleted' || deleting;
+  const archived = dataset.status === 'archived';
+  const pending = Boolean(deleting || restoring || archiving);
+  const primaryDisabled = archived || pending;
 
   return (
     <div className="inline-flex items-center justify-end gap-1">
       <TableActionIconButton
         label={t('datasets.action.startExperiment')}
-        disabled={disabled}
+        data-testid={`dataset-action-start-experiment-${dataset.id}`}
+        disabled={primaryDisabled}
         onClick={(event) => {
           event.stopPropagation();
           onStartExperiment(dataset);
@@ -202,7 +223,8 @@ function DatasetActions({
       </TableActionIconButton>
       <TableActionIconButton
         label={t('datasets.action.startOptimization')}
-        disabled={disabled}
+        data-testid={`dataset-action-start-optimization-${dataset.id}`}
+        disabled={primaryDisabled}
         onClick={(event) => {
           event.stopPropagation();
           onStartOptimization(dataset);
@@ -213,7 +235,7 @@ function DatasetActions({
       <TableActionIconButton
         label={`${t('datasets.download')} ${dataset.name}`}
         tooltipLabel={t('datasets.download')}
-        disabled={disabled || downloading}
+        disabled={pending || downloading}
         onClick={(event) => {
           event.stopPropagation();
           onDownload(dataset);
@@ -222,7 +244,7 @@ function DatasetActions({
         {downloading ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
       </TableActionIconButton>
       <DropdownMenu>
-        <TableActionTooltip label={t('datasets.action.more')} disabled={disabled}>
+        <TableActionTooltip label={t('datasets.action.more')} disabled={pending}>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
@@ -230,7 +252,8 @@ function DatasetActions({
               size="icon"
               className={TABLE_ACTION_ICON_BUTTON_CLASS}
               aria-label={t('datasets.action.more')}
-              disabled={disabled}
+              data-testid={`dataset-action-more-${dataset.id}`}
+              disabled={pending}
               onClick={(event) => event.stopPropagation()}
             >
               <MoreHorizontal className="size-3.5" />
@@ -238,11 +261,30 @@ function DatasetActions({
           </DropdownMenuTrigger>
         </TableActionTooltip>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => onEdit(dataset)}>
+          <DropdownMenuItem
+            disabled={archived}
+            data-testid={`dataset-action-edit-${dataset.id}`}
+            onSelect={() => onEdit(dataset)}
+          >
             <Edit3 className="size-4 text-muted-foreground" />
             {t('datasets.action.editName')}
           </DropdownMenuItem>
-          <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => onDelete(dataset)}>
+          {archived ? (
+            <DropdownMenuItem data-testid={`dataset-action-restore-${dataset.id}`} onSelect={() => onRestore(dataset)}>
+              <RotateCcw className="size-4 text-muted-foreground" />
+              {t('datasets.action.restore')}
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem data-testid={`dataset-action-archive-${dataset.id}`} onSelect={() => onArchive(dataset)}>
+              <Archive className="size-4 text-muted-foreground" />
+              {t('datasets.action.archive')}
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            data-testid={`dataset-action-delete-${dataset.id}`}
+            onSelect={() => onDelete(dataset)}
+          >
             <Trash2 className="size-4" />
             {t('datasets.action.delete')}
           </DropdownMenuItem>
@@ -258,9 +300,13 @@ function DatasetTable({
   selectedIds,
   downloadingDatasetId,
   deletingDatasetId,
+  archivingDatasetId,
+  restoringDatasetId,
   onDelete,
   onDownload,
   onEdit,
+  onArchive,
+  onRestore,
   onToggleSelected,
 }: {
   datasets: ProjectDataset[];
@@ -268,9 +314,13 @@ function DatasetTable({
   selectedIds: string[];
   downloadingDatasetId: string | null;
   deletingDatasetId: string | null;
+  archivingDatasetId: string | null;
+  restoringDatasetId: string | null;
   onDelete: (dataset: ProjectDataset) => void;
   onDownload: (dataset: ProjectDataset) => void;
   onEdit: (dataset: ProjectDataset) => void;
+  onArchive: (dataset: ProjectDataset) => void;
+  onRestore: (dataset: ProjectDataset) => void;
   onToggleSelected: (datasetId: string) => void;
 }) {
   const { t } = useI18n();
@@ -301,63 +351,51 @@ function DatasetTable({
       <TableBody>
         {datasets.map((dataset) => {
           const selected = selectedIds.includes(dataset.id);
-          const deleted = dataset.status === 'deleted';
+          const archived = dataset.status === 'archived';
           const description = dataset.description.trim();
           return (
             <TableRow
               key={dataset.id}
               selected={selected}
               onClick={() => router.push(`/datasets/${dataset.id}`)}
-              className={cn(deleted && 'opacity-65')}
+              className={cn(archived && 'opacity-70')}
             >
               <TableCell column="select">
                 <SelectionBox
                   checked={selected}
-                  disabled={deleted}
+                  disabled={archived}
                   ariaLabel={`${t('datasets.select')} ${dataset.name}`}
                   onClick={() => onToggleSelected(dataset.id)}
                 />
               </TableCell>
               <TableCell column="name">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className={cn(
-                      'truncate text-[13.5px] font-semibold',
-                      deleted && 'line-through text-muted-foreground',
-                    )}
-                  >
+                  <span className={cn('truncate text-[13.5px] font-semibold', archived && 'text-muted-foreground')}>
                     {dataset.name}
                   </span>
-                  {deleted && <DeletedBadge />}
+                  {archived && <ArchivedBadge />}
                 </div>
                 {description && <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{description}</div>}
               </TableCell>
               <TableCell column="sampleCount" className="text-center">
-                <span
-                  className={cn('font-mono text-[13px] font-medium', deleted && 'line-through text-muted-foreground')}
-                >
+                <span className={cn('font-mono text-[13px] font-medium', archived && 'text-muted-foreground')}>
                   {formatCount(dataset.sampleCount)}
                 </span>
               </TableCell>
               <TableCell column="category">
-                {deleted ? (
-                  <span className="text-[11.5px] text-muted-foreground">-</span>
-                ) : (
-                  <CategoryDistribution profile={dataset.categoryProfile} />
-                )}
+                <CategoryDistribution profile={dataset.categoryProfile} />
               </TableCell>
               <TableCell column="modality">
-                {deleted ? (
-                  <span className="text-[11.5px] text-muted-foreground">-</span>
-                ) : (
-                  <ModalityBadge modalities={dataset.modalities} />
-                )}
+                <ModalityBadge modalities={dataset.modalities} />
               </TableCell>
               <TableCell column="references">
                 <ReferenceText dataset={dataset} />
               </TableCell>
               <TableCell column="createdAt">
-                <span className="font-mono text-[11.5px] text-muted-foreground" data-testid={`dataset-created-at-${dataset.id}`}>
+                <span
+                  className="font-mono text-[11.5px] text-muted-foreground"
+                  data-testid={`dataset-created-at-${dataset.id}`}
+                >
                   {formatDateTime(dataset.createdAtRaw)}
                 </span>
               </TableCell>
@@ -367,20 +405,20 @@ function DatasetTable({
                 </span>
               </TableCell>
               <TableCell column="actions" className="text-right">
-                {deleted ? (
-                  <span className="font-mono text-[11px] text-muted-foreground">{t('datasets.readonly')}</span>
-                ) : (
-                  <DatasetActions
-                    dataset={dataset}
-                    downloading={downloadingDatasetId === dataset.id}
-                    deleting={deletingDatasetId === dataset.id}
-                    onDelete={onDelete}
-                    onDownload={onDownload}
-                    onEdit={onEdit}
-                    onStartOptimization={(item) => router.push(getOptimizationNewHref(projectId, item))}
-                    onStartExperiment={(item) => router.push(getExperimentNewHref(projectId, item))}
-                  />
-                )}
+                <DatasetActions
+                  dataset={dataset}
+                  downloading={downloadingDatasetId === dataset.id}
+                  deleting={deletingDatasetId === dataset.id}
+                  archiving={archivingDatasetId === dataset.id}
+                  restoring={restoringDatasetId === dataset.id}
+                  onDelete={onDelete}
+                  onDownload={onDownload}
+                  onEdit={onEdit}
+                  onArchive={onArchive}
+                  onRestore={onRestore}
+                  onStartOptimization={(item) => router.push(getOptimizationNewHref(projectId, item))}
+                  onStartExperiment={(item) => router.push(getExperimentNewHref(projectId, item))}
+                />
               </TableCell>
             </TableRow>
           );
@@ -394,8 +432,10 @@ export function DatasetsListPage({ projectId }: { projectId: string }) {
   const { t } = useI18n();
   const datasetsQuery = useDatasets(projectId);
   const datasetsLoading = useDelayedLoading(datasetsQuery.isLoading);
+  const archiveDatasetMutation = useArchiveDataset(projectId);
   const deleteDatasetMutation = useDeleteDataset(projectId);
   const downloadDatasetMutation = useDownloadDataset(projectId);
+  const restoreDatasetMutation = useRestoreDataset(projectId);
   const updateDatasetMutation = useUpdateDataset(projectId);
   const downloadProgress = useDatasetTransferProgress();
   const [searchQuery, setSearchQuery] = useState('');
@@ -412,8 +452,9 @@ export function DatasetsListPage({ projectId }: { projectId: string }) {
   const [editError, setEditError] = useState<string | null>(null);
   const [downloadingDatasetId, setDownloadingDatasetId] = useState<string | null>(null);
   const datasets = useMemo(() => (datasetsQuery.data?.data ?? []).map(toProjectDataset), [datasetsQuery.data]);
+  const deleteImpactQuery = useDatasetDeleteImpact(projectId, deleteTarget?.id ?? '');
 
-  const activeDatasets = datasets.filter((dataset) => dataset.status !== 'deleted');
+  const activeDatasets = datasets.filter((dataset) => dataset.status === 'active');
   const totalSamples = datasets.reduce((sum, dataset) => sum + dataset.sampleCount, 0);
   const selectedDatasets = datasets.filter((dataset) => selectedIds.includes(dataset.id));
   const selectedSamples = selectedDatasets.reduce((sum, dataset) => sum + dataset.sampleCount, 0);
@@ -439,9 +480,12 @@ export function DatasetsListPage({ projectId }: { projectId: string }) {
     );
   };
 
-  const deleteTargetHasReferences = deleteTarget ? getReferenceCount(deleteTarget) > 0 : false;
   const deleteTargetPending =
     deleteTarget !== null && deleteDatasetMutation.isPending && deleteDatasetMutation.variables === deleteTarget.id;
+  const deleteImpactItems = [
+    ...(deleteImpactQuery.data?.experiments ?? []),
+    ...(deleteImpactQuery.data?.optimizations ?? []),
+  ];
 
   const deleteDataset = (dataset: ProjectDataset) => {
     setDeleteError(null);
@@ -455,7 +499,7 @@ export function DatasetsListPage({ projectId }: { projectId: string }) {
   };
 
   const confirmDeleteDataset = async () => {
-    if (!deleteTarget || deleteTargetHasReferences) return;
+    if (!deleteTarget) return;
 
     const datasetId = deleteTarget.id;
     try {
@@ -465,10 +509,16 @@ export function DatasetsListPage({ projectId }: { projectId: string }) {
       setDeleteError(null);
     } catch (error) {
       const message = getApiErrorMessage(error);
-      setDeleteError(
-        message === 'dataset_referenced' ? t('datasets.deleteReferencedError') : message || t('datasets.deleteFailed'),
-      );
+      setDeleteError(message || t('datasets.deleteFailed'));
     }
+  };
+
+  const archiveDataset = (dataset: ProjectDataset) => {
+    void archiveDatasetMutation.mutateAsync({ datasetId: dataset.id });
+  };
+
+  const restoreDataset = (dataset: ProjectDataset) => {
+    void restoreDatasetMutation.mutateAsync({ datasetId: dataset.id });
   };
 
   const editDataset = (dataset: ProjectDataset) => {
@@ -660,9 +710,17 @@ export function DatasetsListPage({ projectId }: { projectId: string }) {
                 selectedIds={selectedIds}
                 downloadingDatasetId={downloadingDatasetId}
                 deletingDatasetId={deleteDatasetMutation.isPending ? (deleteDatasetMutation.variables ?? null) : null}
+                archivingDatasetId={
+                  archiveDatasetMutation.isPending ? (archiveDatasetMutation.variables?.datasetId ?? null) : null
+                }
+                restoringDatasetId={
+                  restoreDatasetMutation.isPending ? (restoreDatasetMutation.variables?.datasetId ?? null) : null
+                }
                 onDelete={deleteDataset}
                 onDownload={(dataset) => void downloadDataset(dataset)}
                 onEdit={editDataset}
+                onArchive={archiveDataset}
+                onRestore={restoreDataset}
                 onToggleSelected={toggleSelected}
               />
 
@@ -693,58 +751,63 @@ export function DatasetsListPage({ projectId }: { projectId: string }) {
       </div>
 
       <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && closeDeleteDialog()}>
-        <DialogContent>
+        <DialogContent data-testid="datasets-delete-dialog">
           <DialogHeader>
-            <DialogTitle>
-              {deleteTargetHasReferences ? t('datasets.deleteBlockedTitle') : t('datasets.deleteConfirmTitle')}
-            </DialogTitle>
-            <DialogDescription>
-              {deleteTargetHasReferences
-                ? t('datasets.deleteBlockedDescription')
-                : t('datasets.deleteConfirmDescription')}
-            </DialogDescription>
+            <DialogTitle>{t('datasets.deleteConfirmTitle')}</DialogTitle>
+            <DialogDescription>{t('datasets.deleteConfirmDescription')}</DialogDescription>
           </DialogHeader>
           {deleteTarget && (
-            <div
-              className={cn(
-                'rounded-md border p-3 text-sm',
-                deleteTargetHasReferences
-                  ? 'border-destructive/30 bg-destructive/5 text-destructive'
-                  : 'border-border bg-muted/35',
-              )}
-            >
+            <div className="rounded-md border border-border bg-muted/35 p-3 text-sm">
               <div className="font-medium">{deleteTarget.name}</div>
-              <div className={cn('mt-1 text-xs', !deleteTargetHasReferences && 'text-muted-foreground')}>
+              <div className="mt-1 text-xs text-muted-foreground">
                 <ReferenceText dataset={deleteTarget} />
               </div>
             </div>
           )}
+          <div className="rounded-md border border-border p-3 text-xs" data-testid="datasets-delete-impact">
+            <div className="mb-2 font-medium text-foreground">{t('datasets.deleteImpactTitle')}</div>
+            {deleteImpactQuery.isLoading ? (
+              <div className="text-muted-foreground">{t('datasets.deleteImpactLoading')}</div>
+            ) : deleteImpactItems.length === 0 ? (
+              <div className="text-muted-foreground">{t('datasets.deleteImpactEmpty')}</div>
+            ) : (
+              <div className="space-y-1.5">
+                {deleteImpactItems.slice(0, 8).map((item) => (
+                  <div key={`${item.kind}-${item.id}`} className="flex items-center justify-between gap-3">
+                    <span className="truncate">{item.name ?? item.id}</span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {item.kind === 'experiment'
+                        ? t('datasets.deleteImpactExperiment')
+                        : t('datasets.deleteImpactOptimization')}
+                    </span>
+                  </div>
+                ))}
+                {deleteImpactItems.length > 8 && (
+                  <div className="text-muted-foreground">
+                    {t('datasets.deleteImpactMore').replace('{count}', String(deleteImpactItems.length - 8))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           {deleteError && (
             <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {deleteError}
             </div>
           )}
           <DialogFooter>
-            {deleteTargetHasReferences ? (
-              <Button type="button" variant="outline" onClick={closeDeleteDialog}>
-                {t('common.close')}
-              </Button>
-            ) : (
-              <>
-                <Button type="button" variant="outline" onClick={closeDeleteDialog} disabled={deleteTargetPending}>
-                  {t('common.cancel')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => void confirmDeleteDataset()}
-                  disabled={deleteTargetPending || !deleteTarget}
-                  data-testid="datasets-delete-confirm"
-                >
-                  {deleteTargetPending ? t('datasets.deletePending') : t('datasets.deleteConfirmButton')}
-                </Button>
-              </>
-            )}
+            <Button type="button" variant="outline" onClick={closeDeleteDialog} disabled={deleteTargetPending}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void confirmDeleteDataset()}
+              disabled={deleteTargetPending || !deleteTarget}
+              data-testid="datasets-delete-confirm"
+            >
+              {deleteTargetPending ? t('datasets.deletePending') : t('datasets.deleteConfirmButton')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

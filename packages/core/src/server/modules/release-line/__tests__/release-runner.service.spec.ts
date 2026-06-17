@@ -23,7 +23,7 @@ function lane(overrides: Partial<ReleaseRunnerLaneRow> = {}): ReleaseRunnerLaneR
     id: laneType === 'production' ? productionEventId : canaryEventId,
     releaseLineId,
     projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    releaseVariantId: null,
+    releaseVersionId: null,
     laneType,
     promptName: laneType === 'production' ? 'production prompt' : 'canary prompt',
     promptVersionId:
@@ -37,6 +37,7 @@ function lane(overrides: Partial<ReleaseRunnerLaneRow> = {}): ReleaseRunnerLaneR
     trafficRatio: laneType === 'canary' ? 1 : null,
     trafficMode: laneType === 'canary' ? 'split' : null,
     recordMode: 'all',
+    recordCategories: [],
     filterRules: null,
     variableMapping: [
       { source: 'sample_id', target: 'id', required: true },
@@ -128,7 +129,13 @@ function projectResolverMock() {
   };
 }
 
-function completedRunResult() {
+function completedRunResult(
+  overrides: Partial<ReturnType<typeof completedRunResultBase>> = {},
+): ReturnType<typeof completedRunResultBase> {
+  return { ...completedRunResultBase(), ...overrides };
+}
+
+function completedRunResultBase() {
   return {
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000099',
     projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -358,5 +365,268 @@ describe('ReleaseRunnerService', () => {
         source: 'release-runner',
       }),
     );
+  });
+
+  it('records and pushes only selected decision output categories', async () => {
+    const outputConnectorId = 'aaaaaaaa-aaaa-4aaa-8aaa-000000000010';
+    const production = lane({
+      outputConnectorIds: [outputConnectorId],
+      recordMode: 'selected_categories',
+      recordCategories: ['allow'],
+    });
+    const row = line({ inputConnectorType: 'webhook', production });
+    const repo = repoMock(row);
+    repo.attachCompletedRunResults.mockResolvedValue([
+      completedRunResult({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000099', decisionOutput: 'allow' }),
+      completedRunResult({ id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000100', decisionOutput: 'deny' }),
+    ]);
+    repo.listOutputConnectorsByIds.mockResolvedValue([
+      {
+        id: outputConnectorId,
+        type: 'webhook',
+        direction: 'output',
+        config: {},
+        configEncrypted: null,
+      },
+    ]);
+    const driverFactory = {
+      consume: vi.fn(),
+      push: vi.fn().mockResolvedValue({ source: 'driver', error: null, pushed: 1 }),
+    };
+    const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
+    const service = new ReleaseRunnerService(
+      repo as unknown as ReleaseRunnerRepository,
+      driverFactory as unknown as ConnectorDriverFactory,
+      { enqueueLlmJob: vi.fn() } as unknown as BullmqService,
+      mutexMock().mutex as unknown as RedisMutexService,
+      projectResolverMock() as unknown as ProjectContextResolver,
+      usageMetering,
+    );
+
+    await service.scanOnce();
+
+    expect(usageMetering.record).toHaveBeenCalledTimes(1);
+    expect(driverFactory.push).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [
+          expect.objectContaining({
+            run_result_id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000099',
+            decision_output: 'allow',
+          }),
+        ],
+      }),
+    );
+    expect(repo.recordOutputDelivery).toHaveBeenCalledWith(productionEventId, {
+      successCount: 1,
+      failedCount: 0,
+    });
+  });
+
+  it('completes the canary when max sample stop condition is reached', async () => {
+    const canary = lane({
+      laneType: 'canary',
+      runConfig: {
+        rpmLimit: 60,
+        tpmLimit: 60_000,
+        concurrency: 1,
+        stopConditions: { maxSamples: 1, maxDurationSeconds: null },
+      },
+    });
+    const row = line({ inputConnectorType: 'webhook', canary });
+    const repo = repoMock(row);
+    repo.attachCompletedRunResults.mockImplementation(async (eventId: string) =>
+      eventId === canaryEventId ? [completedRunResult()] : [],
+    );
+    const service = new ReleaseRunnerService(
+      repo as unknown as ReleaseRunnerRepository,
+      driverFactoryMock() as unknown as ConnectorDriverFactory,
+      { enqueueLlmJob: vi.fn() } as unknown as BullmqService,
+      mutexMock().mutex as unknown as RedisMutexService,
+      projectResolverMock() as unknown as ProjectContextResolver,
+    );
+
+    await service.scanOnce();
+
+    expect(repo.transitionLaneStatus).toHaveBeenCalledWith(
+      canaryEventId,
+      'completed',
+      expect.objectContaining({
+        terminalReason: null,
+        metricsPatch: { completionReason: 'stop_conditions', stopCondition: 'maxSamples' },
+      }),
+    );
+  });
+
+  it('completes the canary when max duration stop condition is reached', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-21T10:02:00.000Z'));
+    const canary = lane({
+      laneType: 'canary',
+      startedAt: new Date('2026-05-21T10:00:00.000Z'),
+      runConfig: {
+        rpmLimit: 60,
+        tpmLimit: 60_000,
+        concurrency: 1,
+        stopConditions: { maxSamples: null, maxDurationSeconds: 60 },
+      },
+    });
+    const row = line({ inputConnectorType: 'webhook', canary });
+    const repo = repoMock(row);
+    const service = new ReleaseRunnerService(
+      repo as unknown as ReleaseRunnerRepository,
+      driverFactoryMock() as unknown as ConnectorDriverFactory,
+      { enqueueLlmJob: vi.fn() } as unknown as BullmqService,
+      mutexMock().mutex as unknown as RedisMutexService,
+      projectResolverMock() as unknown as ProjectContextResolver,
+    );
+
+    await service.scanOnce();
+
+    expect(repo.transitionLaneStatus).toHaveBeenCalledWith(
+      canaryEventId,
+      'completed',
+      expect.objectContaining({
+        terminalReason: null,
+        metricsPatch: { completionReason: 'stop_conditions', stopCondition: 'maxDurationSeconds' },
+      }),
+    );
+  });
+
+  it('completes the canary when the first stacked stop condition is reached', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-21T10:02:00.000Z'));
+    const canary = lane({
+      laneType: 'canary',
+      startedAt: new Date('2026-05-21T10:00:00.000Z'),
+      totalProcessed: 2,
+      runConfig: {
+        rpmLimit: 60,
+        tpmLimit: 60_000,
+        concurrency: 1,
+        stopConditions: { maxSamples: 10, maxDurationSeconds: 60 },
+      },
+    });
+    const row = line({ inputConnectorType: 'webhook', canary });
+    const repo = repoMock(row);
+    const service = new ReleaseRunnerService(
+      repo as unknown as ReleaseRunnerRepository,
+      driverFactoryMock() as unknown as ConnectorDriverFactory,
+      { enqueueLlmJob: vi.fn() } as unknown as BullmqService,
+      mutexMock().mutex as unknown as RedisMutexService,
+      projectResolverMock() as unknown as ProjectContextResolver,
+    );
+
+    await service.scanOnce();
+
+    expect(repo.transitionLaneStatus).toHaveBeenCalledWith(
+      canaryEventId,
+      'completed',
+      expect.objectContaining({
+        terminalReason: null,
+        metricsPatch: { completionReason: 'stop_conditions', stopCondition: 'maxDurationSeconds' },
+      }),
+    );
+  });
+
+  it('pushes connector-specific output mapping results to each downstream connector', async () => {
+    const redisConnectorId = '99999999-9999-4999-8999-000000000001';
+    const kafkaConnectorId = '99999999-9999-4999-8999-000000000002';
+    const row = line({
+      inputConnectorType: 'webhook',
+      production: lane({
+        outputConnectorIds: [redisConnectorId, kafkaConnectorId],
+        outputMapping: [
+          {
+            connectorId: redisConnectorId,
+            outputMapping: [{ source: 'ok', target: 'redis.ok' }],
+          },
+          {
+            connectorId: kafkaConnectorId,
+            outputMapping: [{ source: 'decision_output', target: 'kafka.decision' }],
+          },
+        ],
+      }),
+    });
+    const repo = repoMock(row);
+    repo.attachCompletedRunResults.mockResolvedValue([completedRunResult()]);
+    repo.listOutputConnectorsByIds.mockResolvedValue([
+      { id: redisConnectorId, type: 'redis', direction: 'output', config: {}, configEncrypted: null },
+      { id: kafkaConnectorId, type: 'kafka', direction: 'output', config: {}, configEncrypted: null },
+    ]);
+    const driverFactory = driverFactoryMock();
+    driverFactory.push.mockResolvedValue({ pushed: 1, error: null });
+    const service = new ReleaseRunnerService(
+      repo as unknown as ReleaseRunnerRepository,
+      driverFactory as unknown as ConnectorDriverFactory,
+      { enqueueLlmJob: vi.fn() } as unknown as BullmqService,
+      mutexMock().mutex as unknown as RedisMutexService,
+      projectResolverMock() as unknown as ProjectContextResolver,
+    );
+
+    await service.scanOnce();
+
+    expect(driverFactory.push).toHaveBeenCalledTimes(2);
+    expect(driverFactory.push).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'redis',
+        messages: [expect.objectContaining({ result: { redis: { ok: true } } })],
+      }),
+    );
+    expect(driverFactory.push).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'kafka',
+        messages: [expect.objectContaining({ result: { kafka: { decision: 'allow' } } })],
+      }),
+    );
+    expect(repo.recordOutputDelivery).toHaveBeenCalledWith(productionEventId, { successCount: 2, failedCount: 0 });
+  });
+
+  it('does not push raw output to a connector excluded from the per-connector mapping (BUG A6)', async () => {
+    const redisConnectorId = '99999999-9999-4999-8999-000000000001';
+    const excludedConnectorId = '99999999-9999-4999-8999-000000000003';
+    const row = line({
+      inputConnectorType: 'webhook',
+      production: lane({
+        outputConnectorIds: [redisConnectorId, excludedConnectorId],
+        // Per-connector mapping form: only redis is configured. The excluded
+        // connector must receive nothing rather than the raw default envelope.
+        outputMapping: [
+          {
+            connectorId: redisConnectorId,
+            outputMapping: [{ source: 'ok', target: 'redis.ok' }],
+          },
+        ],
+      }),
+    });
+    const repo = repoMock(row);
+    repo.attachCompletedRunResults.mockResolvedValue([completedRunResult()]);
+    repo.listOutputConnectorsByIds.mockResolvedValue([
+      { id: redisConnectorId, type: 'redis', direction: 'output', config: {}, configEncrypted: null },
+      { id: excludedConnectorId, type: 'kafka', direction: 'output', config: {}, configEncrypted: null },
+    ]);
+    const driverFactory = driverFactoryMock();
+    driverFactory.push.mockResolvedValue({ pushed: 1, error: null });
+    const service = new ReleaseRunnerService(
+      repo as unknown as ReleaseRunnerRepository,
+      driverFactory as unknown as ConnectorDriverFactory,
+      { enqueueLlmJob: vi.fn() } as unknown as BullmqService,
+      mutexMock().mutex as unknown as RedisMutexService,
+      projectResolverMock() as unknown as ProjectContextResolver,
+    );
+
+    await service.scanOnce();
+
+    // Only the mapped connector is pushed to; the excluded connector is skipped entirely.
+    expect(driverFactory.push).toHaveBeenCalledTimes(1);
+    expect(driverFactory.push).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'redis',
+        messages: [expect.objectContaining({ result: { redis: { ok: true } } })],
+      }),
+    );
+    expect(driverFactory.push).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'kafka' }));
+    expect(repo.recordOutputDelivery).toHaveBeenCalledWith(productionEventId, { successCount: 1, failedCount: 0 });
   });
 });

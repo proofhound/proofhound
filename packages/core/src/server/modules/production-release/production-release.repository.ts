@@ -20,7 +20,8 @@ export interface ProductionReleaseEventRow {
   runConfig: unknown;
   variableMapping: unknown;
   filterRules: unknown | null;
-  recordMode: 'all' | 'correct_only';
+  recordMode: 'all' | 'selected_categories' | 'correct_only';
+  recordCategories: string[];
   externalIdField: string | null;
   retentionDays: number | null;
   status: string;
@@ -197,7 +198,14 @@ export class ProductionReleaseRepository {
     const rows = await this.db
       .select({ id: prompts.id, name: prompts.name, defaultDatasetId: prompts.defaultDatasetId })
       .from(prompts)
-      .where(and(eq(prompts.projectId, projectId), eq(prompts.id, promptId), isNull(prompts.deletedAt)))
+      .where(
+        and(
+          eq(prompts.projectId, projectId),
+          eq(prompts.id, promptId),
+          eq(prompts.status, 'active'),
+          isNull(prompts.deletedAt),
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   }
@@ -326,6 +334,7 @@ function productionEventSelectSql() {
       e.variable_mapping,
       e.filter_rules,
       e.record_mode,
+      e.record_categories,
       e.external_id_field,
       e.retention_days,
       e.status,
@@ -373,7 +382,8 @@ function mapProductionEventRow(row: Record<string, unknown>): ProductionReleaseE
     runConfig: row['run_config'] ?? {},
     variableMapping: row['variable_mapping'] ?? {},
     filterRules: (row['filter_rules'] as Record<string, unknown> | null) ?? null,
-    recordMode: ((row['record_mode'] as string | null) ?? 'all') as 'all' | 'correct_only',
+    recordMode: ((row['record_mode'] as string | null) ?? 'all') as ProductionReleaseEventRow['recordMode'],
+    recordCategories: normalizeStringArray(row['record_categories']),
     externalIdField: (row['external_id_field'] as string | null) ?? null,
     retentionDays: toNumberOrNull(row['retention_days'] as number | string | null),
     status: productionStatusFromReleaseStatus(row['status'] as string),

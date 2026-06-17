@@ -6,8 +6,9 @@ export type AnnotationTaskStatus = AnnotationTaskDto['status'];
 export interface AnnotationTaskView {
   id: string;
   releaseLineId: string;
-  releaseVariantId: string;
-  releaseVariantLabel: string;
+  releaseVersionId: string;
+  releaseVersionLabel: string;
+  releaseVersionScope: AnnotationTaskDto['releaseVersionScope'];
   scope: AnnotationTaskDto['scope'];
   name: string;
   sourceName: string;
@@ -48,8 +49,9 @@ export function buildAnnotationTasks(tasks: AnnotationTaskDto[]): AnnotationTask
       return {
         id: task.id,
         releaseLineId: task.releaseLineId,
-        releaseVariantId: task.releaseVariantId,
-        releaseVariantLabel: task.releaseVariantLabel,
+        releaseVersionId: task.releaseVersionId,
+        releaseVersionLabel: task.releaseVersionLabel,
+        releaseVersionScope: task.releaseVersionScope,
         scope: task.scope,
         name: task.name,
         sourceName: task.releaseLineName,
@@ -125,8 +127,8 @@ export function filterAnnotationTasks(
       task.promptName,
       task.promptVersionLabel,
       task.modelName,
-      task.releaseVariantLabel,
-      task.releaseVariantId,
+      task.releaseVersionLabel,
+      task.releaseVersionId,
       task.id,
     ]
       .filter(Boolean)

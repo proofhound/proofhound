@@ -6,7 +6,10 @@ export const promptVersionIdParamSchema = z.string().uuid();
 export const promptVersionStatusSchema = z.enum(['editable', 'frozen']);
 export type PromptVersionStatusDto = z.infer<typeof promptVersionStatusSchema>;
 
-export const reservedPromptVersionLabelSchema = z.enum(['latest', 'gray', 'production']);
+export const promptStatusSchema = z.enum(['active', 'archived']);
+export type PromptStatusDto = z.infer<typeof promptStatusSchema>;
+
+export const reservedPromptVersionLabelSchema = z.enum(['latest', 'canary', 'production']);
 export type ReservedPromptVersionLabelDto = z.infer<typeof reservedPromptVersionLabelSchema>;
 
 export const PROMPT_VERSION_LABEL_NAME_PATTERN = /^[A-Za-z0-9\u4E00-\u9FFF][A-Za-z0-9\u4E00-\u9FFF_.:-]*$/u;
@@ -87,17 +90,19 @@ export const promptListItemSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
   name: z.string(),
+  status: promptStatusSchema,
   defaultDatasetId: z.string().uuid().nullable(),
   defaultDatasetName: z.string().nullable(),
   latestVersionNumber: z.number().int().positive(),
   currentOnlineVersionNumber: z.number().int().positive().nullable(),
-  currentGrayVersionNumber: z.number().int().positive().nullable(),
+  currentCanaryVersionNumber: z.number().int().positive().nullable(),
   customLabels: z.array(promptListCustomLabelSchema).default([]),
   latestVersionStatus: promptVersionStatusSchema,
   createdBy: z.string().uuid(),
   createdByDisplayName: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  archivedAt: z.string().datetime().nullable(),
   deletedAt: z.string().datetime().nullable(),
   activeReferences: z.number().int().nonnegative(),
 });
@@ -144,7 +149,7 @@ export type UpdatePromptVersionLabelDto = z.infer<typeof updatePromptVersionLabe
 
 export const promptDeletionImpactItemSchema = z.object({
   id: z.string().uuid(),
-  kind: z.enum(['experiment', 'optimization', 'canary_release', 'production_release']),
+  kind: z.enum(['release_line', 'experiment', 'optimization']),
   name: z.string().nullable(),
   status: z.string().nullable(),
   promptId: z.string().uuid().nullable(),
@@ -157,10 +162,9 @@ export type PromptDeletionImpactItemDto = z.infer<typeof promptDeletionImpactIte
 export const promptDeletionImpactSchema = z.object({
   promptId: z.string().uuid(),
   versionId: z.string().uuid().nullable(),
+  releaseLines: z.array(promptDeletionImpactItemSchema),
   experiments: z.array(promptDeletionImpactItemSchema),
   optimizations: z.array(promptDeletionImpactItemSchema),
-  canaryReleases: z.array(promptDeletionImpactItemSchema),
-  productionReleases: z.array(promptDeletionImpactItemSchema),
   total: z.number().int().nonnegative(),
 });
 export type PromptDeletionImpactDto = z.infer<typeof promptDeletionImpactSchema>;

@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
+import { DatasetDeletionHook, LocalDatasetDeletionHook } from '../dataset-deletion.hook';
 import { DatasetRepository, type DatasetProjectAccessRow, type DatasetRow } from '../dataset.repository';
 import { DatasetService } from '../dataset.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
@@ -23,6 +24,7 @@ const datasetRow = (overrides: Partial<DatasetRow> = {}): DatasetRow => ({
   id: '22222222-2222-4222-8222-222222222222',
   projectId: '77777777-7777-4777-8777-777777777777',
   name: 'risk-eval-v4',
+  status: 'active',
   description: 'new samples',
   sampleCount: 2,
   fieldSchema: [
@@ -36,6 +38,7 @@ const datasetRow = (overrides: Partial<DatasetRow> = {}): DatasetRow => ({
   createdByDisplayName: 'Alice',
   createdAt: new Date('2026-05-16T00:00:00Z'),
   updatedAt: new Date('2026-05-16T00:00:00Z'),
+  archivedAt: null,
   deletedAt: null,
   ...overrides,
 });
@@ -50,6 +53,9 @@ function makeRepo(): Mocked<DatasetRepository> {
     listDatasetSamplesPage: vi.fn().mockResolvedValue({ rows: [], total: 0 }),
     aggregateCategoryDistribution: vi.fn().mockResolvedValue([]),
     countDatasetReferences: vi.fn().mockResolvedValue(new Map()),
+    listDeletionImpact: vi.fn().mockResolvedValue({ experiments: [], optimizations: [] }),
+    archiveDataset: vi.fn().mockResolvedValue(undefined),
+    restoreDataset: vi.fn().mockResolvedValue(undefined),
     hardDeleteSamples: vi.fn().mockResolvedValue(0),
     decrementDatasetSampleCount: vi.fn().mockResolvedValue(undefined),
     hardDeleteDataset: vi.fn(),
@@ -72,6 +78,7 @@ describe('DatasetService', () => {
         { provide: DatasetRepository, useValue: repo },
         { provide: AccessControlService, useClass: LocalAccessControlService },
         { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
+        { provide: DatasetDeletionHook, useClass: LocalDatasetDeletionHook },
         { provide: UsageMeteringHook, useValue: usageMetering },
         DatasetService,
       ],
@@ -399,18 +406,67 @@ describe('DatasetService', () => {
     }
   });
 
-  it('rejects deleting a dataset referenced by experiments or optimizations', async () => {
+  it('cascades when deleting a dataset referenced by experiments or optimizations', async () => {
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.findDatasetById.mockResolvedValue(datasetRow());
-    repo.countDatasetReferences.mockResolvedValue(
-      new Map([['22222222-2222-4222-8222-222222222222', { experiments: 1, optimizations: 0 }]]),
+    repo.listDeletionImpact.mockResolvedValue({
+      experiments: [
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          name: 'exp',
+          status: 'success',
+          datasetId: '22222222-2222-4222-8222-222222222222',
+          promptId: null,
+          promptVersionId: null,
+          promptVersionNumber: null,
+          createdAt: new Date('2026-05-18T00:00:00Z'),
+        },
+      ],
+      optimizations: [],
+    });
+    repo.hardDeleteDataset.mockResolvedValue(1);
+
+    await service.deleteDataset('77777777-7777-4777-8777-777777777777', '22222222-2222-4222-8222-222222222222', actor);
+
+    expect(repo.listDeletionImpact).toHaveBeenCalledWith(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+    );
+    expect(repo.hardDeleteDataset).toHaveBeenCalledWith(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+    );
+  });
+
+  it('archives and restores a dataset', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findDatasetById
+      .mockResolvedValueOnce(datasetRow())
+      .mockResolvedValueOnce(datasetRow({ status: 'archived', archivedAt: new Date('2026-05-19T00:00:00Z') }))
+      .mockResolvedValueOnce(datasetRow({ status: 'archived', archivedAt: new Date('2026-05-19T00:00:00Z') }))
+      .mockResolvedValueOnce(datasetRow());
+
+    const archived = await service.archiveDataset(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      actor,
+    );
+    const restored = await service.restoreDataset(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      actor,
     );
 
-    await expect(
-      service.deleteDataset('77777777-7777-4777-8777-777777777777', '22222222-2222-4222-8222-222222222222', actor),
-    ).rejects.toThrow(ConflictException);
-
-    expect(repo.hardDeleteDataset).not.toHaveBeenCalled();
+    expect(repo.archiveDataset).toHaveBeenCalledWith(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+    );
+    expect(repo.restoreDataset).toHaveBeenCalledWith(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+    );
+    expect(archived.status).toBe('archived');
+    expect(restored.status).toBe('active');
   });
 
   it('updates dataset metadata', async () => {

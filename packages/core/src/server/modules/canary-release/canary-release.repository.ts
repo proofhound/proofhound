@@ -37,6 +37,7 @@ export interface CanaryReleaseRow {
   runMode: string;
   stopConditions: unknown;
   recordMode: string;
+  recordCategories: string[];
   filterRules: unknown;
   variableMapping: unknown;
   outputMapping: unknown;
@@ -87,8 +88,8 @@ export interface CanaryReleaseRowWithJoins extends CanaryReleaseRow {
   targetDatasetName: string | null;
   createdByName: string | null;
   annotationTaskId: string | null;
-  releaseVariantId: string | null;
-  releaseVariantNumber: number | null;
+  releaseVersionId: string | null;
+  releaseVersionLabel: string | null;
 }
 
 export interface CanaryReleaseProjectAccessRow {
@@ -255,7 +256,14 @@ export class CanaryReleaseRepository {
       })
       .from(promptVersions)
       .innerJoin(prompts, eq(prompts.id, promptVersions.promptId))
-      .where(and(eq(prompts.projectId, projectId), eq(promptVersions.id, versionId), isNull(prompts.deletedAt)))
+      .where(
+        and(
+          eq(prompts.projectId, projectId),
+          eq(promptVersions.id, versionId),
+          eq(prompts.status, 'active'),
+          isNull(prompts.deletedAt),
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   }
@@ -267,7 +275,7 @@ export class CanaryReleaseRepository {
       .where(and(eq(promptVersions.id, promptVersionId), eq(promptVersions.isFrozen, false)));
   }
 
-  async markPromptVersionGray(promptId: string, versionId: string, actorUserId: string): Promise<void> {
+  async markPromptVersionCanary(promptId: string, versionId: string, actorUserId: string): Promise<void> {
     const now = new Date();
     await this.db.transaction(async (tx) => {
       await tx
@@ -279,7 +287,7 @@ export class CanaryReleaseRepository {
         .values({
           promptId,
           versionId,
-          label: 'gray',
+          label: 'canary',
           labelType: 'system',
           createdBy: actorUserId,
           updatedAt: now,
@@ -327,7 +335,14 @@ export class CanaryReleaseRepository {
     const rows = await this.db
       .select({ id: datasets.id, name: datasets.name })
       .from(datasets)
-      .where(and(eq(datasets.projectId, projectId), eq(datasets.id, datasetId), isNull(datasets.deletedAt)))
+      .where(
+        and(
+          eq(datasets.projectId, projectId),
+          eq(datasets.id, datasetId),
+          eq(datasets.status, 'active'),
+          isNull(datasets.deletedAt),
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   }
@@ -699,8 +714,11 @@ function canaryEventSelectSql() {
       e.project_id,
       line.name,
       line.description,
-      e.release_variant_id,
-      rv.variant_number AS release_variant_number,
+      e.release_version_id,
+      rv.kind AS release_version_kind,
+      rv.production_version_number,
+      rv.target_production_version_number,
+      rv.candidate_number,
       e.prompt_id,
       e.prompt_name,
       e.prompt_version_id,
@@ -714,6 +732,7 @@ function canaryEventSelectSql() {
       e.traffic_ratio,
       e.traffic_mode,
       e.record_mode,
+      e.record_categories,
       e.filter_rules,
       e.variable_mapping,
       e.output_mapping,
@@ -740,7 +759,7 @@ function canaryEventSelectSql() {
       NULL::text AS created_by_name
     FROM ph_releases.release_line_events e
     INNER JOIN ph_releases.release_lines line ON line.id = e.release_line_id
-    LEFT JOIN ph_releases.release_variants rv ON rv.id = e.release_variant_id
+    LEFT JOIN ph_releases.release_versions rv ON rv.id = e.release_version_id
     LEFT JOIN ph_assets.models m ON m.id = e.model_id
     LEFT JOIN ph_assets.connectors ic ON ic.id = e.input_connector_id
   `;
@@ -748,6 +767,7 @@ function canaryEventSelectSql() {
 
 function mapCanaryEventRow(row: Record<string, unknown>): CanaryReleaseRowWithJoins {
   const id = row['id'] as string;
+  const runConfig = asRecord(row['run_config']);
   return {
     id,
     releaseLineId: row['release_line_id'] as string,
@@ -764,16 +784,17 @@ function mapCanaryEventRow(row: Record<string, unknown>): CanaryReleaseRowWithJo
     trafficRatio: String(row['traffic_ratio'] ?? '0'),
     trafficMode: (row['traffic_mode'] as string | null) ?? 'split',
     runMode: 'manual',
-    stopConditions: null,
+    stopConditions: runConfig['stopConditions'] ?? null,
     recordMode: (row['record_mode'] as string | null) ?? 'all',
+    recordCategories: normalizeStringArray(row['record_categories']),
     filterRules: row['filter_rules'] ?? null,
     variableMapping: row['variable_mapping'] ?? [],
     outputMapping: row['output_mapping'] ?? [],
     externalIdField: (row['external_id_field'] as string | null) ?? 'id',
     annotationSchema: [],
-    storageCategories: [],
+    storageCategories: normalizeStringArray(row['record_categories']),
     targetDatasetId: null,
-    runConfig: row['run_config'] ?? {},
+    runConfig,
     promptSnapshot: asRecord(row['prompt_snapshot']),
     promptVersionSnapshot: asRecord(row['prompt_version_snapshot']),
     totalReceived: Number(row['total_received'] ?? 0),
@@ -798,8 +819,8 @@ function mapCanaryEventRow(row: Record<string, unknown>): CanaryReleaseRowWithJo
     targetDatasetName: null,
     createdByName: null,
     annotationTaskId: null,
-    releaseVariantId: (row['release_variant_id'] as string | null) ?? null,
-    releaseVariantNumber: toNumberOrNull(row['release_variant_number'] as number | string | null),
+    releaseVersionId: (row['release_version_id'] as string | null) ?? null,
+    releaseVersionLabel: formatReleaseVersionLabel(row),
   };
 }
 
@@ -839,6 +860,16 @@ function toNumberOrNull(value: number | string | null | undefined): number | nul
   if (value === null || value === undefined) return null;
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function formatReleaseVersionLabel(row: Record<string, unknown>): string | null {
+  const kind = row['release_version_kind'];
+  const targetProductionNumber = toNumberOrNull(row['target_production_version_number'] as number | string | null);
+  if (!kind || !targetProductionNumber) return null;
+  if (kind === 'production') {
+    return `v${toNumberOrNull(row['production_version_number'] as number | string | null) ?? targetProductionNumber}`;
+  }
+  return `v${Math.max(0, targetProductionNumber - 1)}.${toNumberOrNull(row['candidate_number'] as number | string | null) ?? 0}`;
 }
 
 function normalizeStringArray(value: unknown): string[] {

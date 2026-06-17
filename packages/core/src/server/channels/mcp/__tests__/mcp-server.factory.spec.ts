@@ -1,5 +1,6 @@
 import { McpError } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { buildToolList, dispatchTool } from '../mcp-server.factory';
 import type { McpToolContext, McpToolDefinition } from '../mcp.types';
 
@@ -44,5 +45,28 @@ describe('mcp-server.factory', () => {
 
   it('dispatchTool throws McpError (MethodNotFound) for an unknown tool', async () => {
     await expect(dispatchTool(tools(), 'nope', {}, ctx)).rejects.toBeInstanceOf(McpError);
+  });
+
+  it('dispatchTool returns a structured tool error (isError) when a handler throws a ZodError', async () => {
+    const schema = z.object({ trafficRatio: z.number().min(0).max(1) });
+    const handler: McpToolDefinition['handler'] = async (input) => {
+      schema.parse(input);
+      return { ok: true };
+    };
+
+    const result = await dispatchTool(tools(handler), 'token_list', { trafficRatio: 2 }, ctx);
+
+    expect(result.isError).toBe(true);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain('invalid tool input');
+    expect(text).toContain('trafficRatio');
+  });
+
+  it('dispatchTool re-throws non-Zod handler errors (not masked as a tool error)', async () => {
+    const handler: McpToolDefinition['handler'] = async () => {
+      throw new Error('boom');
+    };
+
+    await expect(dispatchTool(tools(handler), 'token_list', {}, ctx)).rejects.toThrow('boom');
   });
 });

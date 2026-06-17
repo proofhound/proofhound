@@ -207,10 +207,6 @@ export class ExperimentService {
       throw new NotFoundException(`Experiment ${experimentId} not found`);
     }
 
-    if (await this.repo.hasProductionReleaseSourceReference(projectId, experimentId)) {
-      throw new ConflictException('experiment_delete_referenced_by_production_release');
-    }
-
     await this.repo.hardDeleteExperiment(projectId, experimentId);
   }
 
@@ -340,6 +336,7 @@ export class ExperimentService {
         outputSchema: promptVersions.outputSchema,
         judgmentRules: promptVersions.judgmentRules,
         isFrozen: promptVersions.isFrozen,
+        promptStatus: prompts.status,
         promptDeletedAt: prompts.deletedAt,
       })
       .from(promptVersions)
@@ -349,11 +346,13 @@ export class ExperimentService {
     const pv = rows[0];
     if (!pv) throw new BadRequestException('prompt_version_not_found');
     if (pv.promptDeletedAt) throw new BadRequestException('prompt_deleted');
+    if (pv.promptStatus === 'archived') throw new BadRequestException('prompt_archived');
 
     const dsRows = await this.db
       .select({
         id: datasets.id,
         sampleCount: datasets.sampleCount,
+        status: datasets.status,
         deletedAt: datasets.deletedAt,
       })
       .from(datasets)
@@ -362,6 +361,7 @@ export class ExperimentService {
     const ds = dsRows[0];
     if (!ds) throw new BadRequestException('dataset_not_found');
     if (ds.deletedAt) throw new BadRequestException('dataset_deleted');
+    if (ds.status === 'archived') throw new BadRequestException('dataset_archived');
     if (ds.sampleCount <= 0) throw new BadRequestException('dataset_empty');
 
     const model = await this.modelService.findModelAccessibleToProject(projectId, dto.modelId);

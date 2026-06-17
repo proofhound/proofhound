@@ -96,6 +96,7 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
     const effectiveModel = applyExperimentLimits(model, mergedLimits);
 
     const expectedOutput = input.judgment?.expectedOutput ?? null;
+    const hasExpectedOutput = input.judgment?.expectedOutput !== undefined && input.judgment.expectedOutput !== null;
     const evaluateJudgmentHook = input.judgment
       ? ({ parsed }: { parsed: unknown; rawResponse: string }): LLMJudgmentOutcome => {
           const outcome = evaluateJudgment('classification', parsed, {
@@ -103,6 +104,13 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
             judgmentRules: input.judgment!.judgmentRules,
             expectedOutput: input.judgment!.expectedOutput,
           });
+          if (input.source === 'release' && !hasExpectedOutput) {
+            return {
+              decisionOutput: outcome.decisionOutput,
+              isCorrect: null,
+              judgmentStatus: outcome.judgmentStatus === 'parse_error' ? 'parse_error' : null,
+            };
+          }
           return outcome;
         }
       : undefined;
@@ -149,7 +157,7 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
                 projectId: input.projectId,
                 source: input.source,
                 sourceId: input.sourceId,
-                releaseVariantId: input.releaseVariantId ?? null,
+                releaseVersionId: input.releaseVersionId ?? null,
                 promptVersionId: input.promptVersionId,
                 modelId: input.modelId,
                 sampleId: input.sampleId ?? null,

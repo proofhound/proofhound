@@ -2,7 +2,7 @@ import type { DatasetModalityDto } from '@proofhound/shared';
 import type { TranslationKey } from '../../i18n';
 
 export type DatasetModality = DatasetModalityDto;
-export type DatasetStatus = 'active' | 'deleted';
+export type DatasetStatus = 'active' | 'archived';
 export type DatasetFieldRole = 'id' | 'text' | 'image' | 'expected' | 'metadata';
 
 export interface DatasetField {

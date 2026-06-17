@@ -24,7 +24,7 @@ export function createRunResultTools(runResultService: RunResultService): McpToo
           experimentId: { type: 'string', format: 'uuid' },
           page: { type: 'integer', minimum: 1 },
           pageSize: { type: 'integer', minimum: 1, maximum: 200 },
-          status: { type: 'array', items: { type: 'string', enum: ['success', 'error', 'timeout', 'rate_limited'] } },
+          status: { type: 'array', items: { type: 'string', enum: ['running', 'success', 'failed'] } },
           judgmentStatus: {
             type: 'array',
             items: { type: 'string', enum: ['correct', 'incorrect', 'parse_error', 'judge_error'] },
@@ -70,12 +70,13 @@ export function createRunResultTools(runResultService: RunResultService): McpToo
     {
       name: 'run_result_list_for_release',
       description:
-        '按发布维度查询运行结果列表（production / canary lane，支持发布组合 / sourceIds / promptVersionIds / externalId / 状态 / 时间窗过滤）',
+        '按发布维度查询运行结果列表（production / canary lane，支持发布版本 / sourceIds / promptVersionIds / externalId / 状态 / 时间窗过滤）',
       inputSchema: {
         type: 'object',
         properties: {
           sourceIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
-          releaseVariantIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+          releaseVersionIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+          releaseVersionScope: { type: 'string', enum: ['exact', 'journey'] },
           promptVersionIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
           lane: { type: 'array', items: { type: 'string', enum: ['production', 'canary'] } },
           externalId: { type: 'string' },
@@ -83,7 +84,7 @@ export function createRunResultTools(runResultService: RunResultService): McpToo
           to: { type: 'string', format: 'date-time' },
           page: { type: 'integer', minimum: 1 },
           pageSize: { type: 'integer', minimum: 1, maximum: 200 },
-          status: { type: 'array', items: { type: 'string', enum: ['success', 'error', 'timeout', 'rate_limited'] } },
+          status: { type: 'array', items: { type: 'string', enum: ['running', 'success', 'failed'] } },
           judgmentStatus: {
             type: 'array',
             items: { type: 'string', enum: ['correct', 'incorrect', 'parse_error', 'judge_error'] },
@@ -97,7 +98,8 @@ export function createRunResultTools(runResultService: RunResultService): McpToo
         const { projectId } = resolveMcpProjectContext(ctx);
         const query = runResultReleaseListQuerySchema.parse({
           sourceIds: input.sourceIds,
-          releaseVariantIds: input.releaseVariantIds,
+          releaseVersionIds: input.releaseVersionIds,
+          releaseVersionScope: input.releaseVersionScope,
           promptVersionIds: input.promptVersionIds,
           lane: input.lane,
           externalId: input.externalId,

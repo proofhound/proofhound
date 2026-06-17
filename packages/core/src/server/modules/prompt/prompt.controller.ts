@@ -111,6 +111,24 @@ export class PromptController {
     return this.promptService.updatePrompt(project.projectId, this.parsePromptId(promptId), parse.data, actor);
   }
 
+  @Patch(':promptId/archive')
+  async archivePrompt(
+    @Param('promptId') promptId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.promptService.archivePrompt(project.projectId, this.parsePromptId(promptId), actor);
+  }
+
+  @Patch(':promptId/restore')
+  async restorePrompt(
+    @Param('promptId') promptId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.promptService.restorePrompt(project.projectId, this.parsePromptId(promptId), actor);
+  }
+
   @Patch(':promptId/labels')
   async updateVersionLabel(
     @Param('promptId') promptId: string,

@@ -30,7 +30,7 @@ describe('run result labels', () => {
     expect(getRunResultJudgmentLabelKey(runResult({ judgmentStatus: 'parse_error', isCorrect: false }))).toBe(
       'experiments.runResult.judgment.incorrect',
     );
-    expect(getRunResultJudgmentLabelKey(runResult({ status: 'error', isCorrect: false }))).toBe(
+    expect(getRunResultJudgmentLabelKey(runResult({ status: 'failed', isCorrect: false }))).toBe(
       'experiments.runResult.judgment.incorrect',
     );
   });
@@ -42,7 +42,7 @@ describe('run result labels', () => {
     expect(getRunResultJudgmentLabelKey(runResult({ isCorrect: false }))).toBe(
       'experiments.runResult.judgment.incorrect',
     );
-    expect(getRunResultJudgmentLabelKey(runResult({ status: 'timeout', isCorrect: false }))).toBe(
+    expect(getRunResultJudgmentLabelKey(runResult({ status: 'failed', isCorrect: false }))).toBe(
       'experiments.runResult.judgment.incorrect',
     );
     expect(getRunResultJudgmentLabelKey(runResult({}))).toBe('experiments.runResult.judgment.incorrect');
@@ -53,7 +53,7 @@ describe('run result labels', () => {
       'experiments.runResult.judgment.parseError',
     );
     expect(
-      formatRunResultFailureReason(runResult({ status: 'error', errorMessage: 'provider down' }), t),
-    ).toBe('experiments.runResult.status.error: provider down');
+      formatRunResultFailureReason(runResult({ status: 'failed', errorMessage: 'provider down' }), t),
+    ).toBe('experiments.runResult.status.failed: provider down');
   });
 });

@@ -6,6 +6,13 @@ A dataset is the "yardstick for evaluating prompt quality"—the foundation for 
 
 Each dataset is a collection of **samples**, and each sample has several fields (text, images, expected output, metadata, etc.). The platform does not enforce a fixed field table; whatever fields the user uploads are preserved.
 
+Datasets have two existence states:
+
+| Dataset state | Meaning                                               | New work allowed                                                                                                                                                                                                              | Existing work                                             |
+| ------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `active`      | Normal usable dataset.                                | Can be selected for new experiments and optimizations, and can be bound to prompts for alignment / autocomplete / release pre-checks.                                                                                         | Existing experiments and optimizations continue normally. |
+| `archived`    | Retained for history but removed from creation paths. | Cannot be selected for new experiments or optimizations; if it is still bound to a prompt, the prompt must be rebound to an active dataset before using dataset-dependent experiment / optimization / release creation flows. | Existing experiments and optimizations are not changed.   |
+
 ## 2. List and detail
 
 The page has two levels:
@@ -68,16 +75,21 @@ When editing the expected-output field, the UI provides an `output_schema` field
 
 - Edit a single sample (e.g., correcting a mislabel)
 - Delete a single sample or batch delete
-  - This is a **physical delete** (`dataset_samples` has no `deleted_at`; after DELETE the row no longer exists). Rejecting deletion when referenced (see §5) already guarantees that run results are reproducible, and keeping an additional delete marker at the sample level would increase storage and query-filtering overhead
+  - This is a **physical delete** (`dataset_samples` has no `deleted_at`; after DELETE the row no longer exists). Individual sample deletion is blocked while the dataset is referenced by any experiment / optimization (see §5), and keeping an additional delete marker at the sample level would increase storage and query-filtering overhead
   - Any deletion requires a second confirmation; when referenced by an experiment / optimization, deletion is rejected outright without a second confirmation
 - Stream-export all samples to CSV / JSONL (for manual sampling or external analysis); the export file is written to Storage and then a signed URL is provided
 
 ### 3.5 The dataset itself
 
-- Rename / delete
-  - A second confirmation is required before deletion; even when there is no experiment / optimization reference, it cannot be deleted directly from the list actions
-  - When deletion is allowed it is a **physical delete**: delete the `datasets` row and cascade-delete its `dataset_samples`; if a prompt only uses this dataset as its bound dataset, the binding is set to empty on deletion
-- Directly "start an experiment" or "start an optimization" from the dataset page, automatically carrying in the current dataset
+- Rename
+- Archive / restore
+  - Archiving writes `datasets.status='archived'` and `archived_at`; restoring writes `status='active'` and clears `archived_at`.
+  - Archived datasets stay visible in history / archived filters but are omitted from "start experiment" and "start optimization" selectors.
+- Permanently delete
+  - A second confirmation is required, and the backend must first run the deletion hook described in [06 §1](06-database-schema.md#1-general-conventions).
+  - The OSS hook returns an impact plan listing affected experiments, optimizations, prompt default-dataset bindings, and sample counts.
+  - After confirmation, permanent deletion physically deletes the dataset and its `dataset_samples`, clears any prompt `default_dataset_id` bindings that point to it, and deletes affected experiments / optimizations plus their owned descendants.
+- Directly "start an experiment" or "start an optimization" from the dataset page, automatically carrying in the current dataset. This action is only available when the dataset is `active`.
 
 ## 4. The meaning of field roles
 
@@ -94,8 +106,8 @@ Field roles determine the platform's runtime behavior:
 - **Experiments**: an experiment is the Cartesian product of "prompt version × dataset × model", and the dataset is one of its fixed dimensions
 - **Optimization**: each round of optimization runs one embedded experiment, reusing the same dataset
 - **Releases**: do not reference datasets at all—both canary candidates and production consume live traffic
-- **Deletion restriction**: a dataset referenced by an experiment / optimization is refused deletion; when deletion is allowed it is a physical delete. Because prompt versions are self-describing ([23 §1](23-prompts.md#1-conceptual-layering)), run results already snapshot `rendered_prompt` and `input_variables` at write time and do not depend on the dataset itself.
-- **Sample-deletion refusal** (independent of dataset-level deletion): as long as the dataset is still referenced by any experiment or optimization (regardless of status), deletion of its samples is refused (inline / batch / sidebar are all blocked); the frontend shows a refusal Dialog explaining the reason. This rule, together with the "sample physical delete" exemption above, jointly guarantees that the data snapshot referenced by run_results is not destroyed
+- **Archival / deletion**: archived datasets cannot be used to create new experiments or optimizations, nor for release creation paths that depend on a prompt-bound dataset, but existing objects continue unchanged. Permanent deletion is allowed only after the deletion hook previews impact; it deletes affected experiments / optimizations plus their owned descendants. Because prompt versions are self-describing ([23 §1](23-prompts.md#1-conceptual-layering)), retained release history still displays from prompt / release snapshots.
+- **Sample-deletion refusal** (independent of dataset-level deletion): as long as the dataset is still referenced by any experiment or optimization (regardless of status), deletion of individual samples is refused (inline / batch / sidebar are all blocked); the frontend shows a refusal Dialog explaining the reason. Dataset-level permanent deletion is the explicit resource-erasure path and removes affected experiments / optimizations plus their owned descendants instead of leaving run results that point to missing sample rows
 
 ## 6. Multimodality and image handling
 

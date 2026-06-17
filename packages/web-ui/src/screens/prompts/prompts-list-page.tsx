@@ -3,7 +3,7 @@
 import type { PromptDeletionImpactDto, PromptDeletionImpactItemDto } from '@proofhound/shared';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState, type FormEvent } from 'react';
-import { FlaskConical, History, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
+import { Archive, FlaskConical, History, Plus, RotateCcw, Search, Sparkles, Trash2, X } from 'lucide-react';
 import {
   Button,
   Dialog,
@@ -28,7 +28,14 @@ import {
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { useCreatePrompt, useDeletePrompt, usePromptDeleteImpact, usePrompts } from '../../hooks';
+import {
+  useArchivePrompt,
+  useCreatePrompt,
+  useDeletePrompt,
+  usePromptDeleteImpact,
+  usePrompts,
+  useRestorePrompt,
+} from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useDateTimeFormatter } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
@@ -103,15 +110,42 @@ function FilterChip({
   );
 }
 
-function PromptActions({ prompt, onDelete }: { prompt: ProjectPrompt; onDelete: (prompt: ProjectPrompt) => void }) {
+function ArchivedBadge() {
+  const { t } = useI18n();
+
+  return (
+    <span className="status-archived inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium">
+      <span className="dot-archived size-1.5 rounded-full" />
+      {t('prompts.status.archived')}
+    </span>
+  );
+}
+
+function PromptActions({
+  prompt,
+  pending,
+  onArchive,
+  onDelete,
+  onRestore,
+}: {
+  prompt: ProjectPrompt;
+  pending?: boolean;
+  onArchive: (prompt: ProjectPrompt) => void;
+  onDelete: (prompt: ProjectPrompt) => void;
+  onRestore: (prompt: ProjectPrompt) => void;
+}) {
   const { t } = useI18n();
   const router = useRouter();
   const openVersionsLabel = t('prompts.action.openVersions');
+  const archived = prompt.resourceStatus === 'archived';
+  const primaryDisabled = archived || pending;
 
   return (
     <div className="inline-flex items-center justify-end gap-1">
       <TableActionIconButton
         label={t('prompts.action.startExperiment')}
+        data-testid={`prompt-action-start-experiment-${prompt.id}`}
+        disabled={primaryDisabled}
         onClick={(event) => {
           event.stopPropagation();
           router.push(getPromptExperimentNewHref(prompt));
@@ -121,6 +155,8 @@ function PromptActions({ prompt, onDelete }: { prompt: ProjectPrompt; onDelete: 
       </TableActionIconButton>
       <TableActionIconButton
         label={t('prompts.action.startOptimization')}
+        data-testid={`prompt-action-start-optimization-${prompt.id}`}
+        disabled={primaryDisabled}
         onClick={(event) => {
           event.stopPropagation();
           router.push(getPromptOptimizationNewHref(prompt));
@@ -131,6 +167,8 @@ function PromptActions({ prompt, onDelete }: { prompt: ProjectPrompt; onDelete: 
       <TableActionIconButton
         label={`${openVersionsLabel} ${prompt.name}`}
         tooltipLabel={openVersionsLabel}
+        data-testid={`prompt-action-open-${prompt.id}`}
+        disabled={pending}
         onClick={(event) => {
           event.stopPropagation();
           router.push(`/prompts/${prompt.id}`);
@@ -139,8 +177,22 @@ function PromptActions({ prompt, onDelete }: { prompt: ProjectPrompt; onDelete: 
         <History className="size-3.5" />
       </TableActionIconButton>
       <TableActionIconButton
+        label={archived ? t('prompts.action.restore') : t('prompts.action.archive')}
+        data-testid={archived ? `prompt-action-restore-${prompt.id}` : `prompt-action-archive-${prompt.id}`}
+        disabled={pending}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (archived) onRestore(prompt);
+          else onArchive(prompt);
+        }}
+      >
+        {archived ? <RotateCcw className="size-3.5" /> : <Archive className="size-3.5" />}
+      </TableActionIconButton>
+      <TableActionIconButton
         label={t('prompts.action.delete')}
         className="size-7 text-destructive hover:text-destructive"
+        data-testid={`prompt-action-delete-${prompt.id}`}
+        disabled={pending}
         onClick={(event) => {
           event.stopPropagation();
           onDelete(prompt);
@@ -182,10 +234,9 @@ function CustomLabelsCell({ labels }: { labels: ProjectPrompt['customLabels'] })
 }
 
 const IMPACT_LABEL_KEYS: Record<PromptDeletionImpactItemDto['kind'], TranslationKey> = {
+  release_line: 'prompts.deleteImpactReleaseLine',
   experiment: 'prompts.deleteImpactExperiment',
   optimization: 'prompts.deleteImpactOptimization',
-  canary_release: 'prompts.deleteImpactCanaryRelease',
-  production_release: 'prompts.deleteImpactProductionRelease',
 };
 
 function ImpactRows({ items }: { items: PromptDeletionImpactItemDto[] }) {
@@ -203,7 +254,9 @@ function ImpactRows({ items }: { items: PromptDeletionImpactItemDto[] }) {
               {t(IMPACT_LABEL_KEYS[item.kind])} · {item.name ?? item.id}
             </div>
             <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-              {item.promptVersionNumber ? `v${item.promptVersionNumber}` : '-'} · {item.status ?? '-'}
+              {item.kind === 'release_line'
+                ? (item.status ?? '-')
+                : `${item.promptVersionNumber ? `v${item.promptVersionNumber}` : '-'} · ${item.status ?? '-'}`}
             </div>
           </div>
           <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">{item.id.slice(0, 8)}</span>
@@ -215,9 +268,7 @@ function ImpactRows({ items }: { items: PromptDeletionImpactItemDto[] }) {
 
 function DeleteImpactPanel({ impact, loading }: { impact: PromptDeletionImpactDto | undefined; loading: boolean }) {
   const { t } = useI18n();
-  const items = impact
-    ? [...impact.experiments, ...impact.optimizations, ...impact.canaryReleases, ...impact.productionReleases]
-    : [];
+  const items = impact ? [...impact.releaseLines, ...impact.experiments, ...impact.optimizations] : [];
 
   if (loading) {
     return (
@@ -236,7 +287,7 @@ function DeleteImpactPanel({ impact, loading }: { impact: PromptDeletionImpactDt
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-testid="prompts-delete-impact">
       <div className="text-sm font-medium">
         {t('prompts.deleteImpactTitle')} <span className="font-mono">{items.length}</span>
       </div>
@@ -248,12 +299,18 @@ function DeleteImpactPanel({ impact, loading }: { impact: PromptDeletionImpactDt
 function PromptsTable({
   prompts,
   selectedIds,
+  mutatingPromptId,
+  onArchive,
   onDelete,
+  onRestore,
   onToggleSelected,
 }: {
   prompts: ProjectPrompt[];
   selectedIds: string[];
+  mutatingPromptId: string | null;
+  onArchive: (prompt: ProjectPrompt) => void;
   onDelete: (prompt: ProjectPrompt) => void;
+  onRestore: (prompt: ProjectPrompt) => void;
   onToggleSelected: (promptId: string) => void;
 }) {
   const { t } = useI18n();
@@ -269,7 +326,7 @@ function PromptsTable({
           </TableHead>
           <TableHead column="name">{t('prompts.table.name')}</TableHead>
           <TableHead column="latestVersion">{t('prompts.table.latestVersion')}</TableHead>
-          <TableHead column="grayVersion">{t('prompts.table.grayVersion')}</TableHead>
+          <TableHead column="canaryVersion">{t('prompts.table.canaryVersion')}</TableHead>
           <TableHead column="onlineVersion">{t('prompts.table.onlineVersion')}</TableHead>
           <TableHead column="labels">{t('prompts.table.labels')}</TableHead>
           <TableHead column="createdAt">{t('prompts.table.createdAt')}</TableHead>
@@ -282,19 +339,29 @@ function PromptsTable({
       <TableBody>
         {prompts.map((prompt) => {
           const selected = selectedIds.includes(prompt.id);
+          const archived = prompt.resourceStatus === 'archived';
           return (
-            <TableRow key={prompt.id} selected={selected} onClick={() => router.push(`/prompts/${prompt.id}`)}>
+            <TableRow
+              key={prompt.id}
+              selected={selected}
+              onClick={() => router.push(`/prompts/${prompt.id}`)}
+              className={cn(archived && 'opacity-70')}
+            >
               <TableCell column="select">
                 <SelectionBox
                   checked={selected}
+                  disabled={archived}
                   ariaLabel={`${t('prompts.select')} ${prompt.name}`}
                   onClick={() => onToggleSelected(prompt.id)}
                 />
               </TableCell>
               <TableCell column="name">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-[13.5px] font-semibold">{prompt.name}</span>
-                  {prompt.tags.includes('new') && (
+                  <span className={cn('truncate text-[13.5px] font-semibold', archived && 'text-muted-foreground')}>
+                    {prompt.name}
+                  </span>
+                  {archived && <ArchivedBadge />}
+                  {!archived && prompt.tags.includes('new') && (
                     <span className="rounded bg-[var(--status-canary-bg)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--status-canary-fg)]">
                       {t('prompts.badge.new')}
                     </span>
@@ -304,8 +371,8 @@ function PromptsTable({
               <TableCell column="latestVersion">
                 <VersionCell version={prompt.latestVersion} />
               </TableCell>
-              <TableCell column="grayVersion">
-                <VersionCell version={prompt.grayVersion} />
+              <TableCell column="canaryVersion">
+                <VersionCell version={prompt.canaryVersion} />
               </TableCell>
               <TableCell column="onlineVersion">
                 <VersionCell version={prompt.onlineVersion} />
@@ -324,7 +391,13 @@ function PromptsTable({
                 </span>
               </TableCell>
               <TableCell column="actions" className="text-right">
-                <PromptActions prompt={prompt} onDelete={onDelete} />
+                <PromptActions
+                  prompt={prompt}
+                  pending={mutatingPromptId === prompt.id}
+                  onArchive={onArchive}
+                  onDelete={onDelete}
+                  onRestore={onRestore}
+                />
               </TableCell>
             </TableRow>
           );
@@ -338,7 +411,7 @@ const PROMPTS_COLUMNS: TableColumn[] = [
   { key: 'select', width: 'narrow', sticky: 'left' },
   { key: 'name', width: 'wide', sticky: 'left' },
   { key: 'latestVersion', width: 'compact' },
-  { key: 'grayVersion', width: 'compact' },
+  { key: 'canaryVersion', width: 'compact' },
   { key: 'onlineVersion', width: 'compact' },
   { key: 'labels', width: 'wide' },
   { key: 'createdAt', width: 'normal' },
@@ -358,8 +431,10 @@ export function PromptsListPage({
   const searchParams = useSearchParams();
   const promptsQuery = usePrompts(projectId);
   const promptsLoading = useDelayedLoading(promptsQuery.isLoading);
+  const archivePromptMutation = useArchivePrompt(projectId);
   const createPromptMutation = useCreatePrompt(projectId);
   const deletePromptMutation = useDeletePrompt(projectId);
+  const restorePromptMutation = useRestorePrompt(projectId);
   const prompts = useMemo(
     () => (promptsQuery.data?.data ?? []).map((prompt) => toProjectPromptListItem(prompt)),
     [promptsQuery.data?.data],
@@ -404,6 +479,14 @@ export function PromptsListPage({
     setDeleteTarget(prompt);
   };
 
+  const archivePrompt = (prompt: ProjectPrompt) => {
+    void archivePromptMutation.mutateAsync({ promptId: prompt.id });
+  };
+
+  const restorePrompt = (prompt: ProjectPrompt) => {
+    void restorePromptMutation.mutateAsync({ promptId: prompt.id });
+  };
+
   const confirmDeletePrompt = async () => {
     if (!deleteTarget) return;
     await deletePromptMutation.mutateAsync(deleteTarget.id);
@@ -442,7 +525,9 @@ export function PromptsListPage({
       router.replace(`/prompts/${created.id}`);
     } catch (error) {
       const message = getApiErrorMessage(error);
-      setCreateError(message === 'prompt_name_taken' ? t('common.formError.nameTaken') : (message ?? t('common.loadFailedRefresh')));
+      setCreateError(
+        message === 'prompt_name_taken' ? t('common.formError.nameTaken') : (message ?? t('common.loadFailedRefresh')),
+      );
     }
   };
 
@@ -538,7 +623,16 @@ export function PromptsListPage({
               <PromptsTable
                 prompts={pagedPrompts}
                 selectedIds={selectedIds}
+                mutatingPromptId={
+                  archivePromptMutation.isPending
+                    ? (archivePromptMutation.variables?.promptId ?? null)
+                    : restorePromptMutation.isPending
+                      ? (restorePromptMutation.variables?.promptId ?? null)
+                      : null
+                }
+                onArchive={archivePrompt}
                 onDelete={deletePrompt}
+                onRestore={restorePrompt}
                 onToggleSelected={toggleSelected}
               />
 
@@ -569,7 +663,7 @@ export function PromptsListPage({
       </div>
 
       <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent>
+        <DialogContent data-testid="prompts-delete-dialog">
           <DialogHeader>
             <DialogTitle>{t('prompts.deleteBlockedTitle')}</DialogTitle>
             <DialogDescription>{t('prompts.deleteBlockedDescription')}</DialogDescription>
@@ -588,6 +682,7 @@ export function PromptsListPage({
               type="button"
               variant="destructive"
               disabled={deletePromptMutation.isPending || deleteImpactQuery.isLoading}
+              data-testid="prompts-delete-confirm"
               onClick={() => void confirmDeletePrompt()}
             >
               <Trash2 className="size-4" />

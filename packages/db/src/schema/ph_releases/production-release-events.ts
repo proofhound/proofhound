@@ -49,6 +49,10 @@ export const productionReleaseEvents = phReleases.table(
       .default(sql`'{}'::jsonb`),
     filterRules: jsonb('filter_rules'),
     recordMode: text('record_mode').notNull().default('all'),
+    recordCategories: text('record_categories')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
     externalIdField: text('external_id_field'),
     retentionDays: integer('retention_days'),
 
@@ -85,7 +89,10 @@ export const productionReleaseEvents = phReleases.table(
       'production_release_events_event_type_check',
       sql`${t.eventType} IN ('from_prompt', 'from_experiment', 'from_canary', 'config_change', 'rollback', 'force_stop')`,
     ),
-    check('production_release_events_record_mode_check', sql`${t.recordMode} IN ('all', 'correct_only')`),
+    check(
+      'production_release_events_record_mode_check',
+      sql`${t.recordMode} IN ('all', 'selected_categories', 'correct_only')`,
+    ),
     check('production_release_events_status_check', sql`${t.status} IN ('running', 'success', 'failed', 'stopped')`),
     check(
       'production_release_events_control_state_check',
@@ -94,10 +101,6 @@ export const productionReleaseEvents = phReleases.table(
     check(
       'production_release_events_stop_reason_check',
       sql`${t.stopReason} IN ('replaced', 'rolled_back', 'force_stopped', 'error') OR ${t.stopReason} IS NULL`,
-    ),
-    check(
-      'production_release_events_source_experiment_required',
-      sql`${t.eventType} <> 'from_experiment' OR ${t.sourceExperimentId} IS NOT NULL`,
     ),
     check(
       'production_release_events_source_canary_required',

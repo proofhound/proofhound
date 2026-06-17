@@ -52,7 +52,8 @@ function serializeReleaseQuery(query: RunResultReleaseListQueryDto): string {
   return [
     serializeQuery(query),
     `sid=${(query.sourceIds ?? []).join(',')}`,
-    `rvid=${(query.releaseVariantIds ?? []).join(',')}`,
+    `rvid=${(query.releaseVersionIds ?? []).join(',')}`,
+    `rvscope=${query.releaseVersionScope ?? 'exact'}`,
     `pvid=${(query.promptVersionIds ?? []).join(',')}`,
     `lane=${(query.lane ?? []).join(',')}`,
     `eid=${query.externalId ?? ''}`,

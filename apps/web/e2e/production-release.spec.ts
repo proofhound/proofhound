@@ -1,11 +1,5 @@
 import { expect, test } from '@playwright/test';
-import {
-  ResourceLedger,
-  SERVER_URL,
-  seedModel,
-  seedPrompt,
-  seedPromptVersion,
-} from './support/api';
+import { ResourceLedger, SERVER_URL, seedModel, seedPrompt, seedPromptVersion } from './support/api';
 
 // Inbound-payload schema we attach to the webhook connector at creation time. The release-new
 // FieldMappingTable populates its variable/external-id <select> options from
@@ -39,10 +33,7 @@ async function seedWebhookConnectorWithSchema(
   return { connectorId: out.id };
 }
 
-test('creates a production release through the UI and lands on a running release line', async ({
-  page,
-  request,
-}) => {
+test('creates a production release through the UI and lands on a running release line', async ({ page, request }) => {
   test.setTimeout(60_000); // production release enters 'running' on submit; UI list polls.
   const ledger = new ResourceLedger(request);
   const tag = `e2e-prod-${Date.now()}`;
@@ -73,17 +64,18 @@ test('creates a production release through the UI and lands on a running release
     await page.getByTestId(`release-new-input-connector-${connectorId}`).click();
 
     // variableMapping: map prompt variable 'text' to the inbound 'text' field, and the external-id
-    // field to 'id'. Native <select>s; defaults already infer these, but set them explicitly.
-    await page.getByTestId('release-new-mapping-source-text').selectOption('text');
-    await page.getByTestId('release-new-mapping-external-id').selectOption('id');
+    // field to 'id'. Defaults already infer these, but set them explicitly through the picker.
+    await page.getByTestId('release-new-mapping-source-text').click();
+    await page.getByTestId('release-new-mapping-source-text-option-text').click();
+    await page.getByTestId('release-new-mapping-external-id').click();
+    await page.getByTestId('release-new-mapping-external-id-option-id').click();
 
     // Webhook input is not a queue, so traffic is fixed at 100% (no release-new-traffic control).
 
     // ---- Submit -> POST /production-releases; capture the event id from the response ----
     const [createResponse] = await Promise.all([
       page.waitForResponse(
-        (response) =>
-          response.url().endsWith('/production-releases') && response.request().method() === 'POST',
+        (response) => response.url().endsWith('/production-releases') && response.request().method() === 'POST',
       ),
       page.getByTestId('release-new-submit').click(),
     ]);

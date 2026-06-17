@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDownToLine, ArrowUpFromLine, type LucideIcon, MessagesSquare, Plug, Webhook } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, Check, type LucideIcon, MessagesSquare, Plug, Webhook } from 'lucide-react';
 import { Badge, cn } from '@proofhound/ui';
 import { useI18n } from '../../i18n';
 import { CONNECTOR_LOCALE, type ConnectorDirection, type ConnectorHealthStatus, type ConnectorType } from './connector-types';
@@ -59,5 +59,36 @@ export function HealthBadge({ status, className }: { status: ConnectorHealthStat
     <Badge variant="outline" className={cn('border', HEALTH_CLASS[status], className)}>
       {t(CONNECTOR_LOCALE.health[status])}
     </Badge>
+  );
+}
+
+export function SelectionBox({
+  checked,
+  ariaLabel,
+  disabled,
+  onClick,
+}: {
+  checked: boolean;
+  ariaLabel: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        'inline-flex size-4 items-center justify-center rounded-[3px] border transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+        checked ? 'border-primary bg-primary text-primary-foreground' : 'border-foreground/50 bg-background',
+      )}
+      aria-label={ariaLabel}
+      aria-pressed={checked}
+    >
+      {checked && <Check className="size-3" />}
+    </button>
   );
 }

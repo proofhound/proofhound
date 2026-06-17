@@ -1,11 +1,27 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { createLogger } from '@proofhound/logger';
 import type {
+  ArchiveReleaseLineInputDto,
+  DeleteReleaseLineInputDto,
+  ReleaseLineDeletionImpactDto,
   ReleaseLineDto,
   ReleaseLineEventDto,
   ReleaseLineEventOperationDto,
   ReleaseLineEventStatusDto,
   ReleaseLineEventTerminalReasonDto,
+  RestoreReleaseLineHistoryInputDto,
+  StartReleaseLineInputDto,
+  StopReleaseLineInputDto,
+  UnarchiveReleaseLineInputDto,
+  UpdateReleaseLineInputRouteInputDto,
+  UpdateReleaseLineOutputRouteInputDto,
   UpdateReleaseLineRunConfigInputDto,
   UpdateReleaseLineTrafficRatioInputDto,
 } from '@proofhound/shared';
@@ -13,21 +29,29 @@ import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { isUniqueViolation } from '../../common/errors/db-error';
-import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
+import { UsageMeteringHook, safeRecordUsageEvent } from '../../common/contracts/usage-metering.hook';
 import {
   ReleaseLineRepository,
   type ReleaseLineIdentity,
   type ReleaseLineMirrorSnapshot,
 } from './release-line.repository';
+import { ReleaseLineDeletionHook } from './release-line-deletion.hook';
+import { assertReleasePromptVariableMapping } from './release-variable-mapping';
 
 @Injectable()
 export class ReleaseLineService {
   private readonly logger = createLogger('release-line.service', { service: 'server' });
 
   constructor(
+    @Inject(ReleaseLineRepository)
     private readonly repo: ReleaseLineRepository,
+    @Inject(AccessControlService)
     private readonly accessControl: AccessControlService,
-    @Optional() private readonly usageMetering?: UsageMeteringHook,
+    @Inject(ReleaseLineDeletionHook)
+    private readonly deletionHook: ReleaseLineDeletionHook,
+    @Inject(UsageMeteringHook)
+    @Optional()
+    private readonly usageMetering?: UsageMeteringHook,
   ) {}
 
   async list(projectId: string, actor: CurrentUserPayload): Promise<{ data: ReleaseLineDto[]; total: number }> {
@@ -74,6 +98,190 @@ export class ReleaseLineService {
     return updated;
   }
 
+  async promoteCanary(projectId: string, releaseLineId: string, actor: CurrentUserPayload): Promise<ReleaseLineDto> {
+    await this.assertWriteAccess(projectId, actor);
+    const updated = await this.repo.promoteActiveCanary(projectId, releaseLineId, actor.sub);
+    if (!updated) throw new BadRequestException(`Release line ${releaseLineId} has no promotable canary lane`);
+    this.logger.info({ releaseLineId }, 'release_line_canary_promoted');
+    await this.recordLineMutationEvents(updated, actor.sub, 'canary_promoted');
+    return updated;
+  }
+
+  async stopLine(
+    projectId: string,
+    releaseLineId: string,
+    input: StopReleaseLineInputDto,
+    actor: CurrentUserPayload,
+  ): Promise<ReleaseLineDto> {
+    await this.assertWriteAccess(projectId, actor);
+    const updated = await this.repo.stopLine(projectId, releaseLineId, input.reason, actor.sub);
+    if (!updated) throw new BadRequestException(`Release line ${releaseLineId} has no running lane to stop`);
+    this.logger.info({ releaseLineId }, 'release_line_stopped');
+    await this.recordLineMutationEvents(updated, actor.sub, 'line_stopped');
+    return updated;
+  }
+
+  async startLine(
+    projectId: string,
+    releaseLineId: string,
+    input: StartReleaseLineInputDto,
+    actor: CurrentUserPayload,
+  ): Promise<ReleaseLineDto> {
+    await this.assertWriteAccess(projectId, actor);
+    try {
+      const updated = await this.repo.startLine(projectId, releaseLineId, input.reason, actor.sub);
+      if (!updated) throw new BadRequestException(`Release line ${releaseLineId} has no stopped lane to start`);
+      this.logger.info({ releaseLineId }, 'release_line_started');
+      await this.recordLineMutationEvents(updated, actor.sub, 'line_started');
+      return updated;
+    } catch (error) {
+      if (isUniqueViolation(error, /uniq_running_production_event_per_(prompt|line)|uniq_active_canary_event_per_line/)) {
+        throw new ConflictException('release_line_start_conflict');
+      }
+      throw error;
+    }
+  }
+
+  async archiveLine(
+    projectId: string,
+    releaseLineId: string,
+    input: ArchiveReleaseLineInputDto,
+    actor: CurrentUserPayload,
+  ): Promise<ReleaseLineDto> {
+    await this.assertWriteAccess(projectId, actor);
+    const updated = await this.repo.archiveLine(projectId, releaseLineId, input.reason, actor.sub);
+    if (!updated) throw new BadRequestException(`Release line ${releaseLineId} must be stopped before archive`);
+    this.logger.info({ releaseLineId }, 'release_line_archived');
+    await this.recordLineMutationEvents(updated, actor.sub, 'line_archived');
+    return updated;
+  }
+
+  async unarchiveLine(
+    projectId: string,
+    releaseLineId: string,
+    input: UnarchiveReleaseLineInputDto,
+    actor: CurrentUserPayload,
+  ): Promise<ReleaseLineDto> {
+    await this.assertWriteAccess(projectId, actor);
+    try {
+      const updated = await this.repo.unarchiveLine(projectId, releaseLineId, input.reason, actor.sub);
+      if (!updated) throw new BadRequestException(`Release line ${releaseLineId} is not archived`);
+      this.logger.info({ releaseLineId }, 'release_line_unarchived');
+      await this.recordLineMutationEvents(updated, actor.sub, 'line_unarchived');
+      return updated;
+    } catch (error) {
+      if (isUniqueViolation(error, /uniq_active_release_line_per_input_connector/)) {
+        throw new ConflictException('release_line_unarchive_conflict');
+      }
+      throw error;
+    }
+  }
+
+  async restoreHistoryToProduction(
+    projectId: string,
+    releaseLineId: string,
+    input: RestoreReleaseLineHistoryInputDto,
+    actor: CurrentUserPayload,
+  ): Promise<ReleaseLineDto> {
+    await this.assertWriteAccess(projectId, actor);
+    try {
+      const updated = await this.repo.restoreHistoryToLane(
+        projectId,
+        releaseLineId,
+        input.sourceEventId,
+        'production',
+        input.reason,
+        actor.sub,
+      );
+      if (!updated) throw new BadRequestException(`Release line ${releaseLineId} cannot restore that history event`);
+      this.logger.info(
+        { releaseLineId, sourceEventId: input.sourceEventId },
+        'release_line_history_restored_production',
+      );
+      await this.recordLineMutationEvents(updated, actor.sub, 'history_restored_to_production');
+      return updated;
+    } catch (error) {
+      if (
+        isUniqueViolation(error, /uniq_running_production_event_per_(prompt|line)|uniq_active_canary_event_per_line/)
+      ) {
+        throw new ConflictException('release_line_restore_conflict');
+      }
+      throw error;
+    }
+  }
+
+  async restoreHistoryToCanary(
+    projectId: string,
+    releaseLineId: string,
+    input: RestoreReleaseLineHistoryInputDto,
+    actor: CurrentUserPayload,
+  ): Promise<ReleaseLineDto> {
+    await this.assertWriteAccess(projectId, actor);
+    try {
+      const updated = await this.repo.restoreHistoryToLane(
+        projectId,
+        releaseLineId,
+        input.sourceEventId,
+        'canary',
+        input.reason,
+        actor.sub,
+      );
+      if (!updated) throw new BadRequestException(`Release line ${releaseLineId} cannot restore that history event`);
+      this.logger.info({ releaseLineId, sourceEventId: input.sourceEventId }, 'release_line_history_restored_canary');
+      await this.recordLineMutationEvents(updated, actor.sub, 'history_restored_to_canary');
+      return updated;
+    } catch (error) {
+      if (
+        isUniqueViolation(error, /uniq_running_production_event_per_(prompt|line)|uniq_active_canary_event_per_line/)
+      ) {
+        throw new ConflictException('release_line_restore_conflict');
+      }
+      throw error;
+    }
+  }
+
+  async getDeletionImpact(
+    projectId: string,
+    releaseLineId: string,
+    actor: CurrentUserPayload,
+  ): Promise<ReleaseLineDeletionImpactDto> {
+    await this.assertReadAccess(projectId, actor);
+    const impact = await this.deletionHook.prepareReleaseLineDeletion({ projectId, releaseLineId });
+    if (!impact) throw new NotFoundException(`Release line ${releaseLineId} not found`);
+    return impact;
+  }
+
+  async deleteLine(
+    projectId: string,
+    releaseLineId: string,
+    input: DeleteReleaseLineInputDto,
+    actor: CurrentUserPayload,
+  ): Promise<void> {
+    await this.assertWriteAccess(projectId, actor);
+    const line = await this.repo.findById(projectId, releaseLineId);
+    if (!line) throw new NotFoundException(`Release line ${releaseLineId} not found`);
+    if (input.confirmationName !== line.name) throw new BadRequestException('release_line_delete_confirmation_mismatch');
+    await this.deletionHook.prepareReleaseLineDeletion({ projectId, releaseLineId });
+    // Force-stop any running lane first (its own transaction) so the runner stops dispatching before we
+    // physically delete the line — a best-effort barrier against in-flight jobs racing the cascade.
+    await this.repo.forceStopRunningLanesForDelete(projectId, releaseLineId);
+    const deleted = await this.repo.hardDeleteLine(projectId, releaseLineId);
+    if (deleted === 0) throw new NotFoundException(`Release line ${releaseLineId} not found`);
+    this.logger.info({ releaseLineId, reason: input.reason ?? null }, 'release_line_deleted');
+    if (this.usageMetering) {
+      await safeRecordUsageEvent(this.usageMetering, {
+        idempotencyKey: `release_line:${releaseLineId}:deleted`,
+        dimension: 'release',
+        eventType: 'release_line.deleted',
+        projectId,
+        actorId: actor.sub,
+        occurredAt: new Date(),
+        source: 'server',
+        payload: { releaseLineId, reason: input.reason ?? null },
+      });
+    }
+  }
+
   async updateRunConfig(
     projectId: string,
     releaseLineId: string,
@@ -84,10 +292,73 @@ export class ReleaseLineService {
     const updated = await this.repo.updateActiveLaneRunConfig(projectId, releaseLineId, input, actor.sub);
     if (!updated) throw new BadRequestException(`Release line ${releaseLineId} has no editable ${input.laneType} lane`);
     this.logger.info(
-      { releaseLineId, laneType: input.laneType, modelId: input.modelId ?? null, runConfig: input.runConfig },
+      {
+        releaseLineId,
+        laneType: input.laneType,
+        modelId: input.modelId ?? null,
+        runConfig: input.runConfig,
+        recordMode: input.recordMode ?? null,
+        recordCategories: input.recordCategories ?? null,
+      },
       'release_line_run_config_updated',
     );
     await this.recordLineMutationEvents(updated, actor.sub, 'run_config_updated');
+    return updated;
+  }
+
+  async updateOutputRoute(
+    projectId: string,
+    releaseLineId: string,
+    input: UpdateReleaseLineOutputRouteInputDto,
+    actor: CurrentUserPayload,
+  ): Promise<ReleaseLineDto> {
+    await this.assertWriteAccess(projectId, actor);
+    await this.assertOutputConnectors(projectId, input.outputConnectorIds);
+    this.assertOutputMappingConnectors(input.outputConnectorIds, input.outputMapping);
+    const updated = await this.repo.updateActiveLaneOutputRoute(projectId, releaseLineId, input, actor.sub);
+    if (!updated) throw new BadRequestException(`Release line ${releaseLineId} has no editable ${input.laneType} lane`);
+    this.logger.info(
+      {
+        releaseLineId,
+        laneType: input.laneType,
+        outputConnectorIds: input.outputConnectorIds,
+        outputMapping: input.outputMapping,
+      },
+      'release_line_output_route_updated',
+    );
+    await this.recordLineMutationEvents(updated, actor.sub, 'output_route_updated');
+    return updated;
+  }
+
+  async updateInputRoute(
+    projectId: string,
+    releaseLineId: string,
+    input: UpdateReleaseLineInputRouteInputDto,
+    actor: CurrentUserPayload,
+  ): Promise<ReleaseLineDto> {
+    await this.assertWriteAccess(projectId, actor);
+    const line = await this.repo.findById(projectId, releaseLineId);
+    const lane = input.laneType === 'production' ? line?.currentProductionEvent : line?.activeCanaryEvent;
+    if (lane && (lane.status === 'running' || lane.status === 'stopped')) {
+      assertReleasePromptVariableMapping({
+        variableMapping: input.variableMapping,
+        promptVersionSnapshot: lane.promptVersionSnapshot,
+        externalIdField: input.externalIdField,
+      });
+    }
+    const updated = await this.repo.updateActiveLaneInputRoute(projectId, releaseLineId, input, actor.sub);
+    if (!updated) throw new BadRequestException(`Release line ${releaseLineId} has no editable ${input.laneType} lane`);
+    this.logger.info(
+      {
+        releaseLineId,
+        laneType: input.laneType,
+        externalIdField: input.externalIdField,
+        variableMapping: input.variableMapping,
+        filterRules: input.filterRules,
+      },
+      'release_line_input_route_updated',
+    );
+    await this.recordLineMutationEvents(updated, actor.sub, 'input_route_updated');
     return updated;
   }
 
@@ -142,6 +413,7 @@ export class ReleaseLineService {
       outputMapping: [],
       filterRules: input.filterRules,
       recordMode: input.recordMode,
+      recordCategories: input.recordCategories,
       externalIdField: input.externalIdField,
       retentionDays: input.retentionDays,
       sourceExperimentId: input.sourceExperimentId,
@@ -217,6 +489,7 @@ export class ReleaseLineService {
       outputMapping: input.outputMapping,
       filterRules: input.filterRules,
       recordMode: input.recordMode,
+      recordCategories: input.recordCategories,
       externalIdField: input.externalIdField,
       submitReason: input.description ?? input.name ?? '',
       metrics: input.metrics,
@@ -248,7 +521,41 @@ export class ReleaseLineService {
     await this.assertReadAccess(projectId, actor);
   }
 
+  private async assertOutputConnectors(projectId: string, outputConnectorIds: string[]): Promise<void> {
+    if (outputConnectorIds.length === 0) return;
+    const connectors = await this.repo.listConnectorsForProject(projectId, outputConnectorIds);
+    const found = new Set(connectors.map((connector) => connector.id));
+    for (const id of outputConnectorIds) {
+      if (!found.has(id)) throw new NotFoundException(`Output connector ${id} not found in project`);
+    }
+    for (const connector of connectors) {
+      if (connector.direction !== 'output') {
+        throw new BadRequestException(`Connector ${connector.id} is not an output connector`);
+      }
+    }
+  }
+
+  private assertOutputMappingConnectors(outputConnectorIds: string[], outputMapping: unknown): void {
+    if (!Array.isArray(outputMapping)) return;
+    const selected = new Set(outputConnectorIds);
+    for (const item of outputMapping) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      const connectorId = (item as Record<string, unknown>)['connectorId'];
+      if (typeof connectorId === 'string' && !selected.has(connectorId)) {
+        throw new BadRequestException(`Output mapping connector ${connectorId} is not selected`);
+      }
+    }
+  }
+
   private async recordOrThrowNameConflict(snapshot: ReleaseLineMirrorSnapshot): Promise<ReleaseLineDto> {
+    if (snapshot.status === 'running' || snapshot.status === 'completed') {
+      assertReleasePromptVariableMapping({
+        variableMapping: snapshot.variableMapping,
+        promptVersionSnapshot: snapshot.promptVersionSnapshot,
+        externalIdField: snapshot.externalIdField,
+      });
+    }
+
     await this.assertNameAvailable(snapshot.projectId, snapshot.lineName, {
       promptId: snapshot.promptId,
       inputConnectorId: snapshot.inputConnectorId,
@@ -264,6 +571,9 @@ export class ReleaseLineService {
     } catch (error) {
       if (isReleaseLineNameUniqueViolation(error)) {
         throw new ConflictException('release_name_taken');
+      }
+      if (isReleaseVersionNumberUniqueViolation(error)) {
+        throw new ConflictException('release_version_conflict');
       }
       throw error;
     }
@@ -372,7 +682,8 @@ export interface LegacyProductionEventMirrorInput {
   runConfig: unknown;
   variableMapping: unknown;
   filterRules: unknown | null;
-  recordMode: 'all' | 'correct_only';
+  recordMode: ReleaseLineMirrorSnapshot['recordMode'];
+  recordCategories: string[];
   externalIdField: string | null;
   retentionDays: number | null;
   status: string;
@@ -414,7 +725,8 @@ export interface LegacyCanaryEventMirrorInput {
   variableMapping: unknown;
   outputMapping: unknown;
   filterRules: unknown | null;
-  recordMode: 'all' | 'correct_only';
+  recordMode: ReleaseLineMirrorSnapshot['recordMode'];
+  recordCategories: string[];
   externalIdField: string;
   metrics: Record<string, unknown> | null;
   totalReceived: number;
@@ -499,4 +811,11 @@ function firstNonBlank(...values: Array<string | null | undefined>) {
 
 function isReleaseLineNameUniqueViolation(error: unknown): boolean {
   return isUniqueViolation(error, /uniq_release_lines_project_name/);
+}
+
+function isReleaseVersionNumberUniqueViolation(error: unknown): boolean {
+  return isUniqueViolation(
+    error,
+    /uniq_release_versions_line_production_number|uniq_release_versions_line_candidate_number/,
+  );
 }

@@ -59,7 +59,7 @@ export function toProjectDataset(dataset: DatasetListItemDto): ProjectDataset {
     uploadSource: getStorageFileName(dataset.storagePrefix),
     modalities: deriveDatasetModalities(dataset.fieldSchema),
     hasImages: dataset.hasImages,
-    status: dataset.deletedAt ? 'deleted' : 'active',
+    status: dataset.status,
     sampleCount: dataset.sampleCount,
     sizeMb: 0,
     fieldCount: dataset.fieldSchema.length,

@@ -1,7 +1,7 @@
 import type { PromptLanguageDto } from '@proofhound/shared';
 
 export type LLMSource = 'experiment' | 'optimization_analysis' | 'optimization_generate' | 'release';
-export type LLMRunStatus = 'success' | 'error' | 'timeout' | 'rate_limited';
+export type LLMRunStatus = 'running' | 'success' | 'failed';
 
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -72,7 +72,7 @@ export interface RunResultContext {
   projectId: string;
   source: LLMSource;
   sourceId: string;
-  releaseVariantId?: string | null;
+  releaseVersionId?: string | null;
   promptVersionId: string;
   modelId: string;
   sampleId?: string | null;
@@ -157,7 +157,7 @@ export interface LLMRunResultRecord {
   projectId: string;
   source: LLMSource;
   sourceId: string;
-  releaseVariantId?: string | null;
+  releaseVersionId?: string | null;
   promptVersionId: string;
   modelId: string;
   sampleId?: string | null;

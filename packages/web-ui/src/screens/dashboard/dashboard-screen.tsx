@@ -3,7 +3,12 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import type { ExperimentListItemDto, ExperimentStatusDto, OptimizationListItemDto, OptimizationStatusDto } from '@proofhound/shared';
+import type {
+  ExperimentListItemDto,
+  ExperimentStatusDto,
+  OptimizationListItemDto,
+  OptimizationStatusDto,
+} from '@proofhound/shared';
 import type { LucideIcon } from 'lucide-react';
 import {
   AlertCircle,
@@ -235,13 +240,17 @@ function workFeedTone(status: ExperimentStatusDto | OptimizationStatusDto): Feed
 }
 
 function releaseFeedStatus(line: ReleaseLineView): FeedStatus {
-  if (line.status === 'canary' || line.status === 'production_canary') return 'running';
+  if (hasRunningCanary(line)) return 'running';
   if (line.status === 'stopped') return 'failed';
   return 'success';
 }
 
 function releaseFeedTone(line: ReleaseLineView): FeedTone | undefined {
-  return line.status === 'canary' || line.status === 'production_canary' ? 'running' : undefined;
+  return hasRunningCanary(line) ? 'running' : undefined;
+}
+
+function hasRunningCanary(line: ReleaseLineView) {
+  return line.canary?.status === 'running';
 }
 
 function progressPercent(value: number, max: number) {
@@ -264,12 +273,13 @@ function buildExperimentMetrics(experiment: ExperimentListItemDto, t: (key: Tran
     { label: t('projectOverview.metric.f1'), value: formatMetricValue(experiment.metrics.f1), highlight: true },
   ];
 
-  return metrics
-    .filter((metric): metric is FeedMetric => metric.value !== null)
-    .slice(0, 4);
+  return metrics.filter((metric): metric is FeedMetric => metric.value !== null).slice(0, 4);
 }
 
-function buildOptimizationMetrics(optimization: OptimizationListItemDto, t: (key: TranslationKey) => string): FeedMetric[] {
+function buildOptimizationMetrics(
+  optimization: OptimizationListItemDto,
+  t: (key: TranslationKey) => string,
+): FeedMetric[] {
   const firstGoal = optimization.goals[0];
   if (!firstGoal) return [];
 
@@ -321,7 +331,9 @@ function buildFeedItems({
           kind: 'dataset',
           href: `/datasets/${experiment.datasetId}`,
           label: experiment.datasetName,
-          detail: interpolate(t('projectOverview.resource.samples'), { count: formatNumber(experiment.datasetSamples) }),
+          detail: interpolate(t('projectOverview.resource.samples'), {
+            count: formatNumber(experiment.datasetSamples),
+          }),
         },
         {
           kind: 'model',
@@ -373,7 +385,9 @@ function buildFeedItems({
           kind: 'dataset',
           href: `/datasets/${optimization.datasetId}`,
           label: optimization.datasetName,
-          detail: interpolate(t('projectOverview.resource.samples'), { count: formatNumber(optimization.datasetSamples) }),
+          detail: interpolate(t('projectOverview.resource.samples'), {
+            count: formatNumber(optimization.datasetSamples),
+          }),
         },
         {
           kind: 'model',
@@ -401,7 +415,7 @@ function buildFeedItems({
   });
 
   const releaseItems: FeedItem[] = releaseLines.map((line) => {
-    const isCanary = line.status === 'canary' || line.status === 'production_canary';
+    const isCanary = hasRunningCanary(line);
 
     return {
       id: `release-${line.id}`,
@@ -438,8 +452,8 @@ function buildFeedItems({
       ],
       metrics: [
         {
-          label: t('projectOverview.metric.variants'),
-          value: formatNumber(line.variants.length),
+          label: t('projectOverview.metric.versions'),
+          value: formatNumber(line.versions.length),
           highlight: isCanary,
         },
         ...(line.outputConnectors.length > 0
@@ -466,7 +480,12 @@ function FeedStatusBadge({ status }: { status: FeedStatus }) {
   const config = STATUS_CONFIG[status];
 
   return (
-    <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] font-medium', config.className)}>
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] font-medium',
+        config.className,
+      )}
+    >
       {config.dotClassName && <span className={cn('size-1 rounded-full', config.dotClassName)} />}
       {t(config.labelKey)}
     </span>
@@ -597,7 +616,9 @@ function ActivityFeed({
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[15px] font-medium">{item.title}</span>
                       <FeedStatusBadge status={item.status} />
-                      {item.eventType && <span className="font-mono text-xs text-muted-foreground">{item.eventType}</span>}
+                      {item.eventType && (
+                        <span className="font-mono text-xs text-muted-foreground">{item.eventType}</span>
+                      )}
                     </div>
                     {item.description && <div className="mt-1 text-sm text-muted-foreground">{item.description}</div>}
                     {item.resources && item.resources.length > 0 && <FeedResources resources={item.resources} />}
@@ -612,7 +633,9 @@ function ActivityFeed({
                     {item.metrics && item.metrics.length > 0 && <FeedMetrics metrics={item.metrics} />}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <span className="font-mono text-[12px] text-muted-foreground">{formatDateTime(item.occurredAt)}</span>
+                    <span className="font-mono text-[12px] text-muted-foreground">
+                      {formatDateTime(item.occurredAt)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -652,7 +675,10 @@ function SummaryRow({ item }: { item: SummaryItem }) {
     <li className="flex items-center gap-3 px-5 py-3 transition hover:bg-muted/40">
       <Link
         href={item.href}
-        className={cn('flex size-8 shrink-0 items-center justify-center rounded-md', shouldHighlight ? 'status-pending' : 'bg-muted text-primary')}
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-md',
+          shouldHighlight ? 'status-pending' : 'bg-muted text-primary',
+        )}
         aria-label={label}
       >
         <Icon className="size-3.5" />
@@ -666,16 +692,22 @@ function SummaryRow({ item }: { item: SummaryItem }) {
             href={item.createHref}
             className={cn(
               'inline-flex size-5 shrink-0 items-center justify-center rounded border text-muted-foreground transition hover:bg-muted hover:text-foreground',
-              shouldHighlight && 'status-pending hover:bg-[var(--status-pending-bg)] hover:text-[var(--status-pending-fg)]',
+              shouldHighlight &&
+                'status-pending hover:bg-[var(--status-pending-bg)] hover:text-[var(--status-pending-fg)]',
             )}
             aria-label={`${t('projectOverview.summary.create')} ${label}`}
           >
             <Plus className="size-3" />
           </Link>
         </div>
-        {item.detail && <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{item.detail}</div>}
+        {item.detail && (
+          <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{item.detail}</div>
+        )}
       </div>
-      <Link href={item.href} className={cn('text-lg font-semibold tabular-nums', shouldHighlight && 'text-[var(--status-pending-fg)]')}>
+      <Link
+        href={item.href}
+        className={cn('text-lg font-semibold tabular-nums', shouldHighlight && 'text-[var(--status-pending-fg)]')}
+      >
         {formatNumber(item.count)}
       </Link>
     </li>
@@ -787,7 +819,7 @@ export function DashboardScreen({ projectId }: DashboardScreenProps) {
 
   const summaryItems = useMemo<SummaryItem[]>(() => {
     const onlinePrompts = prompts.filter((prompt) => prompt.currentOnlineVersionNumber !== null).length;
-    const grayPrompts = prompts.filter((prompt) => prompt.currentGrayVersionNumber !== null).length;
+    const canaryPrompts = prompts.filter((prompt) => prompt.currentCanaryVersionNumber !== null).length;
     const datasetSamples = datasets.reduce((total, dataset) => total + dataset.sampleCount, 0);
     const imageModels = models.filter((model) => model.capabilities.image !== 'none').length;
     const textModels = Math.max(models.length - imageModels, 0);
@@ -801,7 +833,10 @@ export function DashboardScreen({ projectId }: DashboardScreenProps) {
         href: '/prompts',
         createHref: '/prompts/new',
         count: promptsQuery.data?.total ?? prompts.length,
-        detail: interpolate(t('projectOverview.summary.promptsDetail'), { online: onlinePrompts, gray: grayPrompts }),
+        detail: interpolate(t('projectOverview.summary.promptsDetail'), {
+          online: onlinePrompts,
+          canary: canaryPrompts,
+        }),
       },
       {
         key: 'datasets',
@@ -822,7 +857,10 @@ export function DashboardScreen({ projectId }: DashboardScreenProps) {
         href: '/connectors',
         createHref: '/connectors/new',
         count: connectorsQuery.data?.total ?? connectors.length,
-        detail: interpolate(t('projectOverview.summary.connectorsDetail'), { input: inputConnectors, output: outputConnectors }),
+        detail: interpolate(t('projectOverview.summary.connectorsDetail'), {
+          input: inputConnectors,
+          output: outputConnectors,
+        }),
       },
       {
         key: 'releases',

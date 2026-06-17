@@ -184,7 +184,7 @@ export async function seedWebhookConnector(request: APIRequestContext, name: str
 // ---- Canary release ------------------------------------------------------------------------
 // POST /canary-releases creates the event AND auto-sets status='running' (no separate /start
 // call is needed — verified against the running stack). The response `.id` is the canary EVENT
-// id; `.releaseLineId` / `.releaseVariantId` identify the line+variant used by annotation options.
+// id; `.releaseLineId` / `.releaseVersionId` identify the line+version used by annotation options.
 // variableMapping MUST include a row with target='id' (DTO superRefine); externalIdField='id'
 // maps the inbound payload `id` to the run result's externalId.
 export async function seedCanaryRelease(
@@ -194,7 +194,7 @@ export async function seedCanaryRelease(
   const out = await postJson<{
     id: string;
     releaseLineId: string;
-    releaseVariantId: string | null;
+    releaseVersionId: string | null;
     status: string;
   }>(request, '/canary-releases', {
     name: args.name,
@@ -217,7 +217,7 @@ export async function seedCanaryRelease(
   if (out.status !== 'running') {
     await request.post(`${SERVER_URL}/canary-releases/${out.id}/start`, { data: {} });
   }
-  return { eventId: out.id, releaseLineId: out.releaseLineId, releaseVariantId: out.releaseVariantId };
+  return { eventId: out.id, releaseLineId: out.releaseLineId, releaseVersionId: out.releaseVersionId };
 }
 
 // ---- Inbound webhook traffic ---------------------------------------------------------------
@@ -236,20 +236,20 @@ export async function postWebhook(
   return (await res.json()) as { status: string; run_result_id: string; external_id: string | null };
 }
 
-// ---- Wait for run results to be attributed to a release variant ----------------------------
-// GET /annotation-tasks/options exposes per-variant counts. Poll until the variant's count for
+// ---- Wait for run results to be attributed to a release version ----------------------------
+// GET /annotation-tasks/options exposes per-version counts. Poll until the version's count for
 // the requested scope ('canary'|'online') reaches `min`. Timeout 60s.
 type AnnotationOptionsResponse = {
   data: Array<{
     id: string;
-    variants: Array<{ id: string; canaryCount: number; onlineCount: number; categoryOptions: string[] }>;
+    versions: Array<{ id: string; canaryCount: number; onlineCount: number; categoryOptions: string[] }>;
   }>;
 };
 export async function waitForReleaseRunResults(
   request: APIRequestContext,
   args: {
     releaseLineId: string;
-    releaseVariantId: string;
+    releaseVersionId: string;
     scope?: 'canary' | 'online';
     min: number;
     timeoutMs?: number;
@@ -260,14 +260,14 @@ export async function waitForReleaseRunResults(
   let count = 0;
   for (;;) {
     const opts = await getJson<AnnotationOptionsResponse>(request, '/annotation-tasks/options');
-    const variant = opts.data
+    const version = opts.data
       .find((line) => line.id === args.releaseLineId)
-      ?.variants.find((v) => v.id === args.releaseVariantId);
-    count = variant ? (scope === 'canary' ? variant.canaryCount : variant.onlineCount) : 0;
+      ?.versions.find((v) => v.id === args.releaseVersionId);
+    count = version ? (scope === 'canary' ? version.canaryCount : version.onlineCount) : 0;
     if (count >= args.min) return count;
     if (Date.now() >= deadline) {
       throw new Error(
-        `waitForReleaseRunResults timed out: ${scope}Count=${count} < ${args.min} for variant ${args.releaseVariantId}`,
+        `waitForReleaseRunResults timed out: ${scope}Count=${count} < ${args.min} for version ${args.releaseVersionId}`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));

@@ -37,7 +37,11 @@ describe('deriveRecordCategoryOptions', () => {
 });
 
 describe('releaseRecordModeFromCategories', () => {
-  it('maps single correct category to correct_only', () => {
-    expect(releaseRecordModeFromCategories(['正确'], ['正确', '错误'])).toBe('correct_only');
+  it('maps a subset of output categories to selected_categories', () => {
+    expect(releaseRecordModeFromCategories(['退款'], ['退款', '物流'])).toBe('selected_categories');
+  });
+
+  it('maps all selected categories to all', () => {
+    expect(releaseRecordModeFromCategories(['退款', '物流'], ['退款', '物流'])).toBe('all');
   });
 });

@@ -172,7 +172,7 @@ describe('LlmConsumer.onFailed — final-error run_result write on attempts exha
       expect.objectContaining({
         id: validUuid('05555'),
         projectId: validUuid('01111'),
-        status: 'error',
+        status: 'failed',
         errorClass: 'Error',
         errorMessage: 'provider 500',
         attempt: 5,

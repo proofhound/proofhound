@@ -7,6 +7,13 @@ Prompts are split into two layers in the platform:
 - **Prompt (the shell)**: a logical object that users can name and reference, e.g. "Content Moderation Prompt". It carries no body text itself; the user-facing surface only displays and selects the prompt by name, and does not require the user to maintain extra "identifier" or "description" fields. The shell layer also holds a **bound dataset** field (`default_dataset_id`, **nullable**, can be bound later in the editor), representing the dataset that all versions of this prompt align with by default — used for variable autocompletion in the editor, the default data source for optimization, and pre-checks before experiments / releases. When unbound, every capability that depends on this field (variable autocompletion, judgment field derivation, alignment validation) falls back to an empty state or placeholder.
 - **Prompt version**: the actual content snapshot, containing the template body, the **variable list**, output field definitions, and judgment rules. Every edit produces a new version, and versions are immutable.
 
+Prompt shells have two existence states:
+
+| Prompt state | Meaning                                               | New work allowed                                                                                      | Existing work                                                                                                                                |
+| ------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `active`     | Normal usable prompt.                                 | Can create new versions, experiments, optimizations, canary releases, and production releases.        | Existing objects continue normally.                                                                                                          |
+| `archived`   | Retained for history but removed from creation paths. | Cannot create new versions or new downstream experiments / optimizations / releases from this prompt. | Existing experiments, optimizations, releases, and run results continue from the prompt version / release snapshots they already referenced. |
+
 Prompt names are unique within a project; when creating a prompt, or when a from_dataset_only optimization auto-creates a prompt, the name must not collide with a non-deleted prompt in the same project. When the user enters a name, if the frontend detects a duplicate within the project it should prompt "This name is already in use", and the backend still enforces this via a uniqueness constraint as a fallback.
 
 > The point of immutability: once an experiment, canary release, or production release references a particular version, the metrics shown will always correspond to the prompt content at that moment; you will never end up in a situation where "the metrics look good, but someone has quietly changed the prompt."
@@ -32,7 +39,7 @@ Lists all prompts within the instance, with each row showing:
 
 - Name, current latest version number
 - Current canary version number, current production version number
-- User-defined labels (the system labels `latest / gray / production` are not shown in this column)
+- User-defined labels (the system labels `latest / canary / production` are not shown in this column)
 - Created time, last updated time
 
 The list page only provides a table view, and no longer provides a board view. The OSS UI does not show a "creator" column; the platform edition can keep `created_by / created_by_display_name` as an extension hook, but when actually displayed it must use the user's name / display name and must not directly display the user id.
@@ -40,8 +47,9 @@ The list page only provides a table view, and no longer provides a board view. T
 Available actions:
 
 - Create a new prompt (the dialog on the list page only asks for the **name**; the bound dataset is no longer chosen in the dialog — binding is instead done at any time inside the editor, and when unbound the top of the editor shows a red "No dataset bound" notice using the destructive token. On submit, an empty editable v1 is automatically generated and the user is redirected to the editor).
-- Delete / batch delete. Before deletion, the affected experiments, optimizations, canary candidates, and production release events must be listed; after confirmation, the prompt and its versions are physically deleted. The affected pages may no longer open, and the release environment can no longer continue updating versions based on the deleted prompt; an already-running production keeps serving its current version based on the release event snapshot.
-- Directly "start experiment / start optimization / create release / add canary on production" from a row, prefilling that prompt + its latest version
+- Archive / restore. Archiving writes `prompts.status='archived'` and `archived_at`; restoring writes `status='active'` and clears `archived_at`. Archiving does not touch existing experiments, optimizations, release lanes, or run results.
+- Permanently delete. Before deletion, the deletion hook described in [06 §1](06-database-schema.md#1-general-conventions) must return an impact plan. The OSS plan lists affected release lines first, then experiments and optimizations; release impact is shown only at release-line granularity, not as individual canary / production events. After confirmation, the prompt and its versions are physically deleted, affected experiments / optimizations plus their owned descendants are deleted, and any running release lane that depends on the prompt is stopped. Stopped releases keep their snapshots for history unless the release itself is permanently deleted.
+- Directly "start experiment / start optimization / create release / add canary on production" from a row, prefilling that prompt + its latest version. These actions are only available when the prompt is `active`.
 
 ## 4. Detail page (core interaction)
 
@@ -80,9 +88,9 @@ The detail page is built around a specific prompt, split into two blocks by tabs
 The version control approach references Langfuse's "immutable versions + movable labels" model, but retains ProofHound's canary release / production business semantics:
 
 - **Versions** form a history chain via `version_number`; unfrozen versions can continue to be edited, and after freezing the body, variables, output schema, judgment rules, and prompt language cannot be modified
-- **Labels** are movable pointers to a specific version. The system reserves three labels — `latest`, `gray`, `production`:
+- **Labels** are movable pointers to a specific version. The system reserves three labels — `latest`, `canary`, `production`:
   - `latest` is automatically derived by the system, always points to the version with the highest version number, and cannot be moved or deleted manually
-  - `gray` represents the current canary candidate version on the unified release page; it does not replace the candidate lane state machine in the release line
+  - `canary` represents the current canary candidate version on the unified release page; it does not replace the candidate lane state machine in the release line
   - `production` represents the version the current production lane is using; when the next version is still in canary or dual-run, this label stays on the current production version until the candidate's split is promoted to 100%
 - Users can add custom labels, e.g. `回归集`, `staging`, `ab-a`, `tenant-demo`. Within the same prompt, a label can point to only one version at a time; assigning a label to a new version moves the same-named label off the old version
 - Custom labels may only contain Chinese characters, letters, digits, underscores, dots, colons, and hyphens; the first character must be a Chinese character, letter, or digit; the length is 1-64; and they cannot use system semantics beyond the reserved label names
@@ -95,8 +103,8 @@ The version control approach references Langfuse's "immutable versions + movable
 - Comparing the diff of two selected versions is supported; the diff is no longer a permanently resident page area, but is instead shown in a dialog after clicking "Compare diff", making it convenient for the editor and version list to share one screen
 - The "New version" button in the left-hand version list creates an **editable version with an empty body** by default: `body=''`, `parent_version_id=null`, used to explore a new branch from scratch; if the current editing context already has a bound dataset selected, the new version inherits the variable list and judgment fields derived from that dataset
 - The top-right corner of the current editor provides **Copy as new**: copy a derived new version based on the currently active version. The new version inherits body / variables / output_schema / judgment_rules / prompt_language, with `parent_version_id` pointing to the copied version; multiple unfrozen versions are allowed to coexist within the same prompt
-- Physical deletion of any prompt version is supported. Freeze status only constrains whether the execution contract can be edited, and no longer blocks deletion.
-- Before deleting a version, the affected experiments, optimizations, canary candidates, and production release events must be queried and displayed; after confirmation, simply `DELETE FROM ph_assets.prompt_versions WHERE id = $1`. The affected pages may no longer open, and the release environment can no longer continue releasing / updating based on this version; an already-running production keeps serving its current version based on the release event snapshot.
+- Physical deletion of an individual prompt version is supported as a separate advanced action. Freeze status only constrains whether the execution contract can be edited, and no longer blocks deletion.
+- Before deleting a version, the affected release lines, experiments, and optimizations must be queried and displayed in that order; release impact is shown only at release-line granularity, not as individual canary / production events. After confirmation, the version is deleted according to the same permanent-delete impact semantics as prompt deletion, scoped to that version. Stopping running lanes is itself scoped to the version: only lanes whose live production / canary slot runs the deleted version are force-stopped, after which each affected release line's aggregate status is recomputed from its slot pointers — a line whose live slot runs a different version stays `running` (the line status can never disagree with the events the runner actually executes). This is intentionally different from archiving the prompt shell: prompt archival keeps versions for history, while version deletion can remove the exact execution snapshot used by downstream objects and therefore must show the affected object list first.
 - Both deleting a version and copying a version must be completed within the same transaction; on transaction rollback the whole thing is reverted.
 
 ### 4.3 Metrics tab

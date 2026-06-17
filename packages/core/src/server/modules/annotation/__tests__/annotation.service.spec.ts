@@ -10,7 +10,7 @@ const actorId = '22222222-2222-4222-8222-222222222222';
 const taskId = '33333333-3333-4333-8333-333333333333';
 const annotationId = '44444444-4444-4444-8444-444444444444';
 const releaseLineId = '55555555-5555-4555-8555-555555555555';
-const releaseVariantId = '66666666-6666-4666-8666-666666666666';
+const releaseVersionId = '66666666-6666-4666-8666-666666666666';
 
 const actor: CurrentUserPayload = {
   sub: actorId,
@@ -22,8 +22,10 @@ const actor: CurrentUserPayload = {
 const createInput: CreateAnnotationTaskInputDto = {
   name: 'annotation-20260524',
   releaseLineId,
-  releaseVariantId,
-  scope: 'canary',
+  releaseVersionId,
+  releaseVersionScope: 'exact',
+  scope: 'all',
+  samplingMode: 'random',
   sampleSize: 2,
 };
 
@@ -32,11 +34,12 @@ function task(overrides: Partial<AnnotationTaskDto> = {}): AnnotationTaskDto {
     id: taskId,
     projectId,
     name: 'annotation-20260524',
-    scope: 'canary',
+    scope: 'all',
     releaseLineId,
     releaseLineName: 'support-line',
-    releaseVariantId,
-    releaseVariantLabel: '#1',
+    releaseVersionId,
+    releaseVersionLabel: 'v1',
+    releaseVersionScope: 'exact',
     promptName: 'support-classifier',
     promptVersionId: '77777777-7777-4777-8777-777777777777',
     promptVersionNumber: 1,
@@ -92,7 +95,11 @@ function repoMock(overrides: Record<string, unknown> = {}) {
     listOptions: vi.fn(),
     findTask: vi.fn().mockResolvedValue(task()),
     countMatchingRunResults: vi.fn().mockResolvedValue(2),
-    findVariantCategoryOptions: vi.fn().mockResolvedValue(['退款', '物流', '其他']),
+    countMatchingRunResultsByCategory: vi.fn().mockResolvedValue(new Map([['退款', 1]])),
+    findReleaseVersionCategoryOptions: vi.fn().mockResolvedValue({
+      compatible: true,
+      options: ['退款', '物流', '其他'],
+    }),
     createTask: vi.fn().mockResolvedValue(taskId),
     listSamples: vi.fn(),
     countSamples: vi.fn(),
@@ -105,7 +112,9 @@ function repoMock(overrides: Record<string, unknown> = {}) {
 
 describe('AnnotationService', () => {
   it('requires prompt-derived category options when creating a task', async () => {
-    const repo = repoMock({ findVariantCategoryOptions: vi.fn().mockResolvedValue([]) });
+    const repo = repoMock({
+      findReleaseVersionCategoryOptions: vi.fn().mockResolvedValue({ compatible: true, options: [] }),
+    });
     const service = new AnnotationService(repo as never, new LocalAccessControlService());
 
     await expect(service.createTask(projectId, createInput, actor)).rejects.toBeInstanceOf(BadRequestException);
@@ -119,6 +128,28 @@ describe('AnnotationService', () => {
     await service.createTask(projectId, createInput, actor);
 
     expect(repo.createTask).toHaveBeenCalledWith(projectId, createInput, actorId, 2, ['退款', '物流', '其他']);
+  });
+
+  it('rejects per-category sample counts that exceed current run result categories', async () => {
+    const repo = repoMock({
+      countMatchingRunResults: vi.fn().mockResolvedValue(3),
+      countMatchingRunResultsByCategory: vi.fn().mockResolvedValue(new Map([['退款', 1]])),
+    });
+    const service = new AnnotationService(repo as never, new LocalAccessControlService());
+
+    await expect(
+      service.createTask(
+        projectId,
+        {
+          ...createInput,
+          samplingMode: 'per_category',
+          sampleSize: 2,
+          categorySampleCounts: [{ category: '退款', sampleSize: 2 }],
+        },
+        actor,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repo.createTask).not.toHaveBeenCalled();
   });
 
   it('submits the selected category as the expected_output annotation value', async () => {

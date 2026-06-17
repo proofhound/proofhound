@@ -194,10 +194,46 @@ export class ExperimentRepository {
     await this.db.transaction(async (tx) => {
       const now = new Date();
 
+      await tx.execute(sql`
+        WITH target_run_results AS (
+          SELECT id, created_at
+          FROM ph_runs.run_results
+          WHERE source = 'experiment'
+            AND source_id = ${experimentId}::uuid
+        )
+        DELETE FROM ph_runs.annotations annotation
+        USING target_run_results rr
+        WHERE annotation.run_result_id = rr.id
+          AND annotation.run_result_created_at = rr.created_at
+      `);
+
+      await tx.execute(sql`
+        WITH target_run_results AS (
+          SELECT id, created_at
+          FROM ph_runs.run_results
+          WHERE source = 'experiment'
+            AND source_id = ${experimentId}::uuid
+        )
+        DELETE FROM ph_runs.run_results rr
+        USING target_run_results target
+        WHERE rr.id = target.id
+          AND rr.created_at = target.created_at
+      `);
+
       await tx
         .update(optimizations)
         .set({ sourceExperimentId: null, updatedAt: now })
         .where(and(eq(optimizations.projectId, projectId), eq(optimizations.sourceExperimentId, experimentId)));
+
+      await tx
+        .update(productionReleaseEvents)
+        .set({ sourceExperimentId: null, updatedAt: now })
+        .where(
+          and(
+            eq(productionReleaseEvents.projectId, projectId),
+            eq(productionReleaseEvents.sourceExperimentId, experimentId),
+          ),
+        );
 
       await tx
         .update(releaseLineEvents)

@@ -35,6 +35,7 @@ const createInput: CreateCanaryReleaseInputDto = {
   trafficMode: 'split',
   runMode: 'manual',
   recordMode: 'all',
+  recordCategories: [],
   variableMapping: [{ source: 'msg.id', target: 'id', required: true }],
   outputMapping: [],
   filterRules: null,
@@ -66,6 +67,7 @@ function canaryRow(overrides: Partial<CanaryReleaseRowWithJoins> = {}): CanaryRe
     runMode: 'manual',
     stopConditions: null,
     recordMode: 'all',
+    recordCategories: [],
     filterRules: null,
     variableMapping: createInput.variableMapping,
     outputMapping: [],
@@ -107,8 +109,8 @@ function canaryRow(overrides: Partial<CanaryReleaseRowWithJoins> = {}): CanaryRe
     targetDatasetName: null,
     createdByName: null,
     annotationTaskId: '88888888-8888-4888-8888-888888888888',
-    releaseVariantId: null,
-    releaseVariantNumber: null,
+    releaseVersionId: null,
+    releaseVersionLabel: null,
     ...overrides,
   };
 }
@@ -142,7 +144,7 @@ function repoMock(row = canaryRow()) {
     listConnectorsForProject: vi.fn().mockResolvedValue([]),
     findRunningProductionByInputConnector: vi.fn().mockResolvedValue(null),
     findRunningByInputConnector: vi.fn().mockResolvedValue(null),
-    markPromptVersionGray: vi.fn().mockResolvedValue(undefined),
+    markPromptVersionCanary: vi.fn().mockResolvedValue(undefined),
     findByIdWithJoins: vi.fn().mockResolvedValue(row),
     aggregateUsageByCanaryIds: vi.fn().mockResolvedValue(new Map()),
   };
@@ -205,8 +207,32 @@ describe('CanaryReleaseService.create', () => {
       'create_canary',
       'running',
     );
-    expect(repo.markPromptVersionGray).toHaveBeenCalledWith(promptId, promptVersionId, actorId);
+    expect(repo.markPromptVersionCanary).toHaveBeenCalledWith(promptId, promptVersionId, actorId);
     expect(canary.id).toBe(canaryEventId);
+  });
+
+  it('allows a new canary to replace the current active canary on the same release line', async () => {
+    const repo = repoMock();
+    repo.findRunningByInputConnector = vi.fn().mockResolvedValue(canaryRow());
+    const releaseLines = releaseLineServiceMock('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    const workflowAuth = workflowAuthMock();
+    const service = new CanaryReleaseService(
+      repo as unknown as CanaryReleaseRepository,
+      releaseLines as unknown as ReleaseLineService,
+      new LocalAccessControlService(),
+      workflowAuth,
+    );
+
+    await service.create(projectId, createInput, actor, orgId);
+
+    expect(releaseLines.recordCanaryEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputConnectorId,
+        status: 'running',
+      }),
+      'create_canary',
+      'running',
+    );
   });
 
   it('does not record a running canary when the workflow hook rejects', async () => {
@@ -230,7 +256,43 @@ describe('CanaryReleaseService.create', () => {
       'release',
     );
     expect(releaseLines.recordCanaryEvent).not.toHaveBeenCalled();
-    expect(repo.markPromptVersionGray).not.toHaveBeenCalled();
+    expect(repo.markPromptVersionCanary).not.toHaveBeenCalled();
+  });
+
+  it('rejects canaries that do not map every prompt variable before starting workflow', async () => {
+    const repo = repoMock();
+    repo.findPromptVersionForProject.mockResolvedValue({
+      id: promptVersionId,
+      promptId,
+      promptName: '分类提示词',
+      promptDefaultDatasetId: null,
+      versionNumber: 3,
+      body: '判断 {{text}}',
+      variables: [{ name: 'text', type: 'text', required: true }],
+      outputSchema: null,
+      judgmentRules: null,
+      promptLanguage: 'zh-CN',
+      isFrozen: false,
+      createdBy: actorId,
+      createdAt: new Date('2026-05-19T00:00:00.000Z'),
+      frozenAt: null,
+    });
+    const releaseLines = releaseLineServiceMock();
+    const workflowAuth = workflowAuthMock();
+    const service = new CanaryReleaseService(
+      repo as unknown as CanaryReleaseRepository,
+      releaseLines as unknown as ReleaseLineService,
+      new LocalAccessControlService(),
+      workflowAuth,
+    );
+
+    await expect(service.create(projectId, createInput, actor)).rejects.toThrow(
+      'release_variable_mapping_missing_prompt_variables:text',
+    );
+
+    expect(workflowAuth.assertCanStart).not.toHaveBeenCalled();
+    expect(releaseLines.recordCanaryEvent).not.toHaveBeenCalled();
+    expect(repo.markPromptVersionCanary).not.toHaveBeenCalled();
   });
 });
 

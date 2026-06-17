@@ -9,17 +9,22 @@ import type {
   ReleaseLineEventStatusDto,
   ReleaseLineEventTerminalReasonDto,
   ReleaseLineLaneTypeDto,
+  ReleaseLineRecordModeDto,
   ReleaseLineStatusDto,
+  ReleaseVersionKindDto,
+  UpdateReleaseLineInputRouteInputDto,
+  UpdateReleaseLineOutputRouteInputDto,
   UpdateReleaseLineRunConfigInputDto,
 } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 
-const { annotationTasks, connectors, models, projects, releaseLineEvents, releaseLines, releaseVariants } = schema;
+const { annotationTasks, connectors, models, projects, prompts, releaseLineEvents, releaseLines, releaseVersions } =
+  schema;
 
 type ReleaseLineRow = typeof releaseLines.$inferSelect;
 type ReleaseLineEventRow = typeof releaseLineEvents.$inferSelect;
 type ReleaseLineEventInsert = typeof releaseLineEvents.$inferInsert;
-type ReleaseVariantRow = typeof releaseVariants.$inferSelect;
+type ReleaseVersionRow = typeof releaseVersions.$inferSelect;
 type ReleaseLineDbExecutor = Pick<DbClient, 'select' | 'insert' | 'update'>;
 
 interface ReleaseLineModelSnapshotUpdate {
@@ -32,6 +37,22 @@ interface ReleaseLineModelSnapshotUpdate {
 export interface ReleaseLineIdentity {
   promptId?: string | null;
   inputConnectorId?: string | null;
+}
+
+export interface ReleaseLineDeletionImpactRow {
+  id: string;
+  name: string | null;
+  status: string | null;
+  detail: string | null;
+  createdAt: Date | null;
+}
+
+export interface ReleaseLineDeletionImpactRows {
+  line: { id: string; name: string };
+  events: ReleaseLineDeletionImpactRow[];
+  versions: ReleaseLineDeletionImpactRow[];
+  annotationTasks: ReleaseLineDeletionImpactRow[];
+  runResults: number;
 }
 
 export interface ReleaseLineMirrorSnapshot {
@@ -64,7 +85,8 @@ export interface ReleaseLineMirrorSnapshot {
   variableMapping: unknown;
   outputMapping?: unknown;
   filterRules?: unknown | null;
-  recordMode: 'all' | 'correct_only';
+  recordMode: ReleaseLineRecordModeDto;
+  recordCategories: string[];
   externalIdField?: string | null;
   retentionDays?: number | null;
   sourceExperimentId?: string | null;
@@ -75,6 +97,7 @@ export interface ReleaseLineMirrorSnapshot {
   totalFiltered?: number;
   totalCorrect?: number;
   totalErrors?: number;
+  releaseVersionId?: string | null;
   controlState?: string | null;
   controlStatePayload?: Record<string, unknown> | null;
   startedAt?: Date | null;
@@ -147,6 +170,26 @@ export class ReleaseLineRepository {
     return this.hydrateEvents(rows);
   }
 
+  async findEventById(
+    projectId: string,
+    releaseLineId: string,
+    eventId: string,
+  ): Promise<ReleaseLineEventDto | null> {
+    const rows = await this.db
+      .select()
+      .from(releaseLineEvents)
+      .where(
+        and(
+          eq(releaseLineEvents.projectId, projectId),
+          eq(releaseLineEvents.releaseLineId, releaseLineId),
+          eq(releaseLineEvents.id, eventId),
+        ),
+      )
+      .limit(1);
+    const hydrated = await this.hydrateEvents(rows);
+    return hydrated[0] ?? null;
+  }
+
   async record(snapshot: ReleaseLineMirrorSnapshot): Promise<ReleaseLineDto> {
     const releaseLineId = await this.db.transaction(async (tx) => {
       const now = snapshot.updatedAt ?? new Date();
@@ -182,6 +225,26 @@ export class ReleaseLineRepository {
               eq(releaseLineEvents.releaseLineId, line.id),
               eq(releaseLineEvents.laneType, 'production'),
               eq(releaseLineEvents.status, 'running'),
+            ),
+          );
+      }
+
+      if (snapshot.laneType === 'production' && productionOperationReleasesCanarySlot(snapshot.operation)) {
+        await tx
+          .update(releaseLineEvents)
+          .set({
+            status: 'cancelled',
+            terminalReason: 'cancelled',
+            finishedAt: now,
+            controlState: null,
+            controlStatePayload: null,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(releaseLineEvents.releaseLineId, line.id),
+              eq(releaseLineEvents.laneType, 'canary'),
+              sql`${releaseLineEvents.status} IN ('running', 'stopped')`,
             ),
           );
       }
@@ -236,8 +299,14 @@ export class ReleaseLineRepository {
           );
       }
 
-      const releaseVariant = await this.findOrCreateVariant(tx, line.id, snapshot, now);
-      const eventValues = await this.buildEventInsert(snapshot, line.id, supersedesEventId, releaseVariant?.id ?? null, now);
+      const releaseVersion = await this.resolveReleaseVersion(tx, line.id, snapshot, now);
+      const eventValues = await this.buildEventInsert(
+        snapshot,
+        line.id,
+        supersedesEventId,
+        releaseVersion?.id ?? null,
+        now,
+      );
       const inserted = await tx.insert(releaseLineEvents).values(eventValues).returning();
       const event = inserted[0];
       if (!event) throw new Error('release_line_events insert returned no row');
@@ -259,26 +328,7 @@ export class ReleaseLineRepository {
     const canary = line?.activeCanaryEvent;
     if (!line || !canary || (canary.status !== 'running' && canary.status !== 'stopped')) return null;
     if (canary.status === 'running' && canary.trafficMode === 'split' && trafficRatio >= 1) {
-      const promoted = await this.record(
-        resetRuntimeStats({
-          ...eventDtoToSnapshot(line, canary),
-          laneType: 'production',
-          operation: 'promote_canary',
-          status: 'running',
-          terminalReason: null,
-          sourceEventId: canary.id,
-          trafficMode: null,
-          trafficRatio: null,
-          submitReason: promotionSubmitReason(line),
-          createdBy: actorUserId,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          legacySource: null,
-          legacySourceId: null,
-        }),
-      );
-      await this.completeCanaryEvent(canary.id, 'promoted');
-      return this.findById(projectId, promoted.id);
+      return this.promoteCanaryEvent(line, canary, actorUserId);
     }
 
     await this.record(
@@ -296,6 +346,553 @@ export class ReleaseLineRepository {
       }),
     );
     return this.findById(projectId, releaseLineId);
+  }
+
+  async promoteActiveCanary(
+    projectId: string,
+    releaseLineId: string,
+    actorUserId: string,
+  ): Promise<ReleaseLineDto | null> {
+    const line = await this.findById(projectId, releaseLineId);
+    const canary = line?.activeCanaryEvent;
+    if (!line || !canary || canary.status !== 'running') return null;
+    return this.promoteCanaryEvent(line, canary, actorUserId);
+  }
+
+  async stopLine(
+    projectId: string,
+    releaseLineId: string,
+    reason: string,
+    actorUserId: string,
+  ): Promise<ReleaseLineDto | null> {
+    const line = await this.findById(projectId, releaseLineId);
+    if (!line || line.status === 'archived') return null;
+
+    const runningProduction = line.currentProductionEvent?.status === 'running' ? line.currentProductionEvent : null;
+    const runningCanary = line.activeCanaryEvent?.status === 'running' ? line.activeCanaryEvent : null;
+    if (!runningProduction && !runningCanary) return null;
+
+    const now = new Date();
+    if (runningProduction) {
+      const stopped = await this.record(
+        resetRuntimeStats({
+          ...eventDtoToSnapshot(line, runningProduction),
+          operation: 'force_stop',
+          status: 'stopped',
+          terminalReason: 'force_stopped',
+          submitReason: reason,
+          createdBy: actorUserId,
+          createdAt: now,
+          updatedAt: now,
+          legacySource: null,
+          legacySourceId: null,
+        }),
+      );
+      await this.clearPromptProductionVersion(runningProduction.promptId);
+      return this.findById(projectId, stopped.id);
+    }
+
+    if (!runningCanary) return null;
+    const stopped = await this.record(
+      resetRuntimeStats({
+        ...eventDtoToSnapshot(line, runningCanary),
+        operation: 'stop_lane',
+        status: 'stopped',
+        terminalReason: null,
+        supersedesEventId: runningCanary.id,
+        submitReason: reason,
+        createdBy: actorUserId,
+        createdAt: now,
+        updatedAt: now,
+        legacySource: null,
+        legacySourceId: null,
+      }),
+    );
+    return this.findById(projectId, stopped.id);
+  }
+
+  async startLine(
+    projectId: string,
+    releaseLineId: string,
+    reason: string | undefined,
+    actorUserId: string,
+  ): Promise<ReleaseLineDto | null> {
+    const line = await this.findById(projectId, releaseLineId);
+    if (!line || line.status !== 'stopped') return null;
+
+    const resumableEvents = findResumableEvents(line);
+    if (resumableEvents.length === 0) return null;
+
+    const now = new Date();
+    let started: ReleaseLineDto | null = null;
+    for (const resumable of resumableEvents) {
+      started = await this.record(
+        resetRuntimeStats({
+          ...eventDtoToSnapshot(line, resumable),
+          operation: 'resume_lane',
+          status: 'running',
+          terminalReason: null,
+          supersedesEventId: resumable.id,
+          submitReason: reason ?? 'start release line',
+          controlState: null,
+          controlStatePayload: null,
+          startedAt: now,
+          finishedAt: null,
+          createdBy: actorUserId,
+          createdAt: now,
+          updatedAt: now,
+          legacySource: null,
+          legacySourceId: null,
+        }),
+      );
+      if (resumable.laneType === 'production') {
+        await this.setPromptProductionVersion(projectId, resumable.promptId, resumable.promptVersionId);
+      }
+    }
+    return this.findById(projectId, started?.id ?? releaseLineId);
+  }
+
+  async archiveLine(
+    projectId: string,
+    releaseLineId: string,
+    reason: string | undefined,
+    actorUserId: string,
+  ): Promise<ReleaseLineDto | null> {
+    const line = await this.findById(projectId, releaseLineId);
+    if (!line) return null;
+    if (line.status === 'archived') return line;
+
+    const hasRunningLane =
+      line.currentProductionEvent?.status === 'running' || line.activeCanaryEvent?.status === 'running';
+    if (hasRunningLane) return null;
+
+    const slotEvents = findVisibleSlotEvents(line);
+    const fallbackEvent = line.latestEvent ?? line.activeCanaryEvent ?? line.currentProductionEvent ?? null;
+    const archiveTargets = slotEvents.length > 0 || !fallbackEvent ? slotEvents : [fallbackEvent];
+    const now = new Date();
+    await this.db.transaction(async (tx) => {
+      let currentProductionEventId = line.currentProductionEventId;
+      let activeCanaryEventId = line.activeCanaryEventId;
+      for (const target of archiveTargets) {
+        const eventValues = await this.buildEventInsert(
+          {
+            ...eventDtoToSnapshot(line, target),
+            operation: 'archive_line',
+            status: 'archived',
+            terminalReason: 'archived',
+            supersedesEventId: target.id,
+            submitReason: reason ?? 'archive release line',
+            controlState: null,
+            controlStatePayload: null,
+            finishedAt: now,
+            createdBy: actorUserId,
+            createdAt: now,
+            updatedAt: now,
+            legacySource: null,
+            legacySourceId: null,
+          },
+          line.id,
+          target.id,
+          target.releaseVersionId,
+          now,
+        );
+        const inserted = await tx.insert(releaseLineEvents).values(eventValues).returning({ id: releaseLineEvents.id });
+        const archivedEventId = inserted[0]?.id ?? null;
+        if (target.laneType === 'production') currentProductionEventId = archivedEventId;
+        if (target.laneType === 'canary') activeCanaryEventId = archivedEventId;
+      }
+      await tx
+        .update(releaseLines)
+        .set({ status: 'archived', currentProductionEventId, activeCanaryEventId, archivedAt: now, updatedAt: now })
+        .where(and(eq(releaseLines.projectId, projectId), eq(releaseLines.id, releaseLineId)));
+    });
+    return this.findById(projectId, releaseLineId);
+  }
+
+  async unarchiveLine(
+    projectId: string,
+    releaseLineId: string,
+    reason: string | undefined,
+    actorUserId: string,
+  ): Promise<ReleaseLineDto | null> {
+    const line = await this.findById(projectId, releaseLineId);
+    if (!line || line.status !== 'archived') return null;
+
+    const slotEvents = findArchivedSlotEvents(line);
+    const fallbackEvent = line.latestEvent ?? line.activeCanaryEvent ?? line.currentProductionEvent ?? null;
+    const restoreTargets = slotEvents.length > 0 || !fallbackEvent ? slotEvents : [fallbackEvent];
+    const now = new Date();
+    if (restoreTargets.length === 0) {
+      await this.db
+        .update(releaseLines)
+        .set({ status: 'stopped', archivedAt: null, updatedAt: now })
+        .where(and(eq(releaseLines.projectId, projectId), eq(releaseLines.id, releaseLineId)));
+      return this.findById(projectId, releaseLineId);
+    }
+
+    let restored: ReleaseLineDto | null = null;
+    for (const target of restoreTargets) {
+      restored = await this.record(
+        resetRuntimeStats({
+          ...eventDtoToSnapshot(line, target),
+          operation: 'unarchive_line',
+          status: 'stopped',
+          terminalReason: null,
+          supersedesEventId: target.id,
+          submitReason: reason ?? 'unarchive release line',
+          controlState: null,
+          controlStatePayload: null,
+          finishedAt: now,
+          createdBy: actorUserId,
+          createdAt: now,
+          updatedAt: now,
+          legacySource: null,
+          legacySourceId: null,
+        }),
+      );
+    }
+    return this.findById(projectId, restored?.id ?? releaseLineId);
+  }
+
+  async restoreHistoryToLane(
+    projectId: string,
+    releaseLineId: string,
+    sourceEventId: string,
+    targetLaneType: ReleaseLineLaneTypeDto,
+    reason: string | undefined,
+    actorUserId: string,
+  ): Promise<ReleaseLineDto | null> {
+    const line = await this.findById(projectId, releaseLineId);
+    if (!line || line.status === 'archived') return null;
+    const source = await this.findEventById(projectId, releaseLineId, sourceEventId);
+    if (!source || !source.promptVersionId || !source.modelId) return null;
+
+    const currentCanary = line.activeCanaryEvent;
+    const status: ReleaseLineEventStatusDto = line.status === 'running' ? 'running' : 'stopped';
+    const now = new Date();
+    const restored = await this.record(
+      resetRuntimeStats({
+        ...eventDtoToSnapshot(line, source),
+        laneType: targetLaneType,
+        operation: targetLaneType === 'production' ? 'restore_to_production' : 'restore_to_canary',
+        status,
+        terminalReason: null,
+        releaseVersionId: null,
+        sourceEventId: source.id,
+        supersedesEventId:
+          targetLaneType === 'production' ? line.currentProductionEvent?.id : line.activeCanaryEvent?.id,
+        rollbackTargetEventId: targetLaneType === 'production' ? source.id : null,
+        trafficMode:
+          targetLaneType === 'canary' ? (source.trafficMode ?? currentCanary?.trafficMode ?? 'split') : null,
+        trafficRatio:
+          targetLaneType === 'canary' ? (source.trafficRatio ?? currentCanary?.trafficRatio ?? 0.1) : null,
+        submitReason:
+          reason ??
+          (targetLaneType === 'production'
+            ? 'restore history to production slot'
+            : 'restore history to canary slot'),
+        controlState: null,
+        controlStatePayload: null,
+        startedAt: status === 'running' ? now : null,
+        finishedAt: null,
+        createdBy: actorUserId,
+        createdAt: now,
+        updatedAt: now,
+        legacySource: null,
+        legacySourceId: null,
+      }),
+    );
+
+    if (targetLaneType === 'production' && status === 'running') {
+      await this.setPromptProductionVersion(projectId, source.promptId, source.promptVersionId);
+    }
+    return this.findById(projectId, restored.id);
+  }
+
+  async listDeletionImpact(projectId: string, releaseLineId: string): Promise<ReleaseLineDeletionImpactRows | null> {
+    const lineRows = await this.db
+      .select({ id: releaseLines.id, name: releaseLines.name })
+      .from(releaseLines)
+      .where(and(eq(releaseLines.projectId, projectId), eq(releaseLines.id, releaseLineId)))
+      .limit(1);
+    const line = lineRows[0];
+    if (!line) return null;
+
+    const eventRows = await this.db
+      .select({
+        id: releaseLineEvents.id,
+        operation: releaseLineEvents.operation,
+        laneType: releaseLineEvents.laneType,
+        status: releaseLineEvents.status,
+        createdAt: releaseLineEvents.createdAt,
+      })
+      .from(releaseLineEvents)
+      .where(and(eq(releaseLineEvents.projectId, projectId), eq(releaseLineEvents.releaseLineId, releaseLineId)))
+      .orderBy(desc(releaseLineEvents.createdAt));
+
+    const versionRows = await this.db
+      .select()
+      .from(releaseVersions)
+      .where(and(eq(releaseVersions.projectId, projectId), eq(releaseVersions.releaseLineId, releaseLineId)))
+      .orderBy(releaseVersions.targetProductionVersionNumber, releaseVersions.kind, releaseVersions.candidateNumber);
+
+    const taskRows = await this.db
+      .select({
+        id: annotationTasks.id,
+        name: annotationTasks.name,
+        status: annotationTasks.status,
+        scope: annotationTasks.scope,
+        createdAt: annotationTasks.createdAt,
+      })
+      .from(annotationTasks)
+      .where(sql`
+        ${annotationTasks.releaseLineEventId} IN (
+          SELECT id FROM ph_releases.release_line_events
+          WHERE project_id = ${projectId}::uuid AND release_line_id = ${releaseLineId}::uuid
+        )
+        OR ${annotationTasks.releaseVersionId} IN (
+          SELECT id FROM ph_releases.release_versions
+          WHERE project_id = ${projectId}::uuid AND release_line_id = ${releaseLineId}::uuid
+        )
+      `)
+      .orderBy(desc(annotationTasks.createdAt));
+
+    const runResultRows = await this.db.execute(sql`
+      SELECT COUNT(*)::int AS count
+      FROM ph_runs.run_results rr
+      WHERE rr.project_id = ${projectId}::uuid
+        AND rr.source = 'release'
+        AND (
+          rr.source_id IN (
+            SELECT id FROM ph_releases.release_line_events
+            WHERE project_id = ${projectId}::uuid AND release_line_id = ${releaseLineId}::uuid
+          )
+          OR rr.release_version_id IN (
+            SELECT id FROM ph_releases.release_versions
+            WHERE project_id = ${projectId}::uuid AND release_line_id = ${releaseLineId}::uuid
+          )
+        )
+    `);
+    const runResults = Number(unwrapRows<Record<string, unknown>>(runResultRows)[0]?.['count'] ?? 0);
+
+    return {
+      line,
+      events: eventRows.map((row) => ({
+        id: row.id,
+        name: row.operation,
+        status: row.status,
+        detail: row.laneType,
+        createdAt: row.createdAt,
+      })),
+      versions: versionRows.map((row) => ({
+        id: row.id,
+        name: formatReleaseVersionLabel(row),
+        status: row.kind,
+        detail: row.promptName,
+        createdAt: row.createdAt,
+      })),
+      annotationTasks: taskRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        detail: row.scope,
+        createdAt: row.createdAt,
+      })),
+      runResults,
+    };
+  }
+
+  /**
+   * Force-stop every running lane of a release line and drop it out of the runner's runnable set,
+   * committed in its OWN transaction ahead of hardDeleteLine. Once the line's slot events are no longer
+   * 'running', the next runner scan's findRunnableLine returns null and stops dispatching — a best-effort
+   * barrier before the physical delete. A residual LLM job already enqueued before this call may still
+   * write a run result; hardDeleteLine's cascade removes those, and any landing after deletion either fail
+   * the run_results.release_version_id FK or leave a harmless orphan (permanent delete is a confirmed
+   * dangerous action). Archived lines stay archived.
+   */
+  async forceStopRunningLanesForDelete(projectId: string, releaseLineId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const now = new Date();
+      await tx
+        .update(releaseLineEvents)
+        .set({
+          status: 'stopped',
+          terminalReason: 'force_stopped',
+          finishedAt: now,
+          controlState: null,
+          controlStatePayload: null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(releaseLineEvents.projectId, projectId),
+            eq(releaseLineEvents.releaseLineId, releaseLineId),
+            eq(releaseLineEvents.status, 'running'),
+          ),
+        );
+      await tx
+        .update(releaseLines)
+        .set({
+          status: sql`CASE WHEN ${releaseLines.status} = 'archived' THEN 'archived' ELSE 'stopped' END`,
+          updatedAt: now,
+        })
+        .where(and(eq(releaseLines.projectId, projectId), eq(releaseLines.id, releaseLineId)));
+    });
+  }
+
+  async hardDeleteLine(projectId: string, releaseLineId: string): Promise<number> {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(sql`
+        WITH target_events AS (
+          SELECT id, prompt_id, prompt_version_id
+          FROM ph_releases.release_line_events
+          WHERE project_id = ${projectId}::uuid
+            AND release_line_id = ${releaseLineId}::uuid
+        ),
+        target_versions AS (
+          SELECT id
+          FROM ph_releases.release_versions
+          WHERE project_id = ${projectId}::uuid
+            AND release_line_id = ${releaseLineId}::uuid
+        ),
+        target_tasks AS (
+          SELECT id
+          FROM ph_releases.annotation_tasks
+          WHERE release_line_event_id IN (SELECT id FROM target_events)
+             OR release_version_id IN (SELECT id FROM target_versions)
+        ),
+        target_run_results AS (
+          SELECT rr.id, rr.created_at
+          FROM ph_runs.run_results rr
+          WHERE rr.project_id = ${projectId}::uuid
+            AND rr.source = 'release'
+            AND (
+              rr.source_id IN (SELECT id FROM target_events)
+              OR rr.release_version_id IN (SELECT id FROM target_versions)
+            )
+        )
+        DELETE FROM ph_runs.annotations annotation
+        WHERE annotation.task_id IN (SELECT id FROM target_tasks)
+           OR EXISTS (
+             SELECT 1
+             FROM target_run_results rr
+             WHERE annotation.run_result_id = rr.id
+               AND annotation.run_result_created_at = rr.created_at
+           )
+      `);
+
+      await tx.execute(sql`
+        WITH target_events AS (
+          SELECT id
+          FROM ph_releases.release_line_events
+          WHERE project_id = ${projectId}::uuid
+            AND release_line_id = ${releaseLineId}::uuid
+        ),
+        target_versions AS (
+          SELECT id
+          FROM ph_releases.release_versions
+          WHERE project_id = ${projectId}::uuid
+            AND release_line_id = ${releaseLineId}::uuid
+        ),
+        target_run_results AS (
+          SELECT rr.id, rr.created_at
+          FROM ph_runs.run_results rr
+          WHERE rr.project_id = ${projectId}::uuid
+            AND rr.source = 'release'
+            AND (
+              rr.source_id IN (SELECT id FROM target_events)
+              OR rr.release_version_id IN (SELECT id FROM target_versions)
+            )
+        )
+        DELETE FROM ph_runs.run_results rr
+        USING target_run_results target
+        WHERE rr.id = target.id
+          AND rr.created_at = target.created_at
+      `);
+
+      await tx.execute(sql`
+        WITH target_events AS (
+          SELECT id, prompt_id, prompt_version_id
+          FROM ph_releases.release_line_events
+          WHERE project_id = ${projectId}::uuid
+            AND release_line_id = ${releaseLineId}::uuid
+        ),
+        target_versions AS (
+          SELECT id
+          FROM ph_releases.release_versions
+          WHERE project_id = ${projectId}::uuid
+            AND release_line_id = ${releaseLineId}::uuid
+        )
+        UPDATE ph_assets.prompts prompt
+        SET current_online_version_id = NULL,
+            updated_at = NOW()
+        WHERE prompt.project_id = ${projectId}::uuid
+          AND prompt.current_online_version_id IN (
+            SELECT prompt_version_id
+            FROM target_events
+            WHERE prompt_id = prompt.id
+              AND prompt_version_id IS NOT NULL
+          )
+      `);
+
+      await tx.execute(sql`
+        WITH target_events AS (
+          SELECT id
+          FROM ph_releases.release_line_events
+          WHERE project_id = ${projectId}::uuid
+            AND release_line_id = ${releaseLineId}::uuid
+        ),
+        target_versions AS (
+          SELECT id
+          FROM ph_releases.release_versions
+          WHERE project_id = ${projectId}::uuid
+            AND release_line_id = ${releaseLineId}::uuid
+        )
+        DELETE FROM ph_releases.annotation_tasks task
+        WHERE task.release_line_event_id IN (SELECT id FROM target_events)
+           OR task.release_version_id IN (SELECT id FROM target_versions)
+      `);
+
+      await tx
+        .delete(releaseLineEvents)
+        .where(and(eq(releaseLineEvents.projectId, projectId), eq(releaseLineEvents.releaseLineId, releaseLineId)));
+      await tx
+        .delete(releaseVersions)
+        .where(and(eq(releaseVersions.projectId, projectId), eq(releaseVersions.releaseLineId, releaseLineId)));
+      const deleted = await tx
+        .delete(releaseLines)
+        .where(and(eq(releaseLines.projectId, projectId), eq(releaseLines.id, releaseLineId)))
+        .returning({ id: releaseLines.id });
+      return deleted.length;
+    });
+  }
+
+  private async promoteCanaryEvent(
+    line: ReleaseLineDto,
+    canary: ReleaseLineEventDto,
+    actorUserId: string,
+  ): Promise<ReleaseLineDto | null> {
+    const promoted = await this.record(
+      resetRuntimeStats({
+        ...eventDtoToSnapshot(line, canary),
+        laneType: 'production',
+        operation: 'promote_canary',
+        status: 'running',
+        terminalReason: null,
+        sourceEventId: canary.id,
+        trafficMode: null,
+        trafficRatio: null,
+        submitReason: promotionSubmitReason(line),
+        createdBy: actorUserId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        legacySource: null,
+        legacySourceId: null,
+      }),
+    );
+    await this.completeCanaryEvent(canary.id, 'promoted');
+    return this.findById(line.projectId, promoted.id);
   }
 
   async updateActiveLaneRunConfig(
@@ -317,17 +914,26 @@ export class ReleaseLineRepository {
         ? await this.findModelSnapshotForProject(projectId, input.modelId)
         : null;
     if (input.modelId && input.modelId !== event.modelId && (!nextModel || !nextModel.isActive)) return null;
+    const nextRunConfig = inheritCanaryStopConditions(input.laneType, event.runConfig, input.runConfig);
+    const releaseVersionId =
+      nextModel || hasTemperatureChanged(event.runConfig, nextRunConfig) ? null : event.releaseVersionId;
 
     const updated = await this.record(
       resetRuntimeStats({
         ...eventDtoToSnapshot(line, event),
+        releaseVersionId,
         operation: 'config_changed',
         terminalReason: null,
         supersedesEventId: event.id,
         modelId: nextModel?.id ?? event.modelId,
         modelName: nextModel?.name ?? event.modelName,
         modelProvider: nextModel?.providerType ?? event.modelProvider,
-        runConfig: input.runConfig,
+        runConfig: nextRunConfig,
+        recordMode: input.recordMode ?? event.recordMode,
+        recordCategories: normalizeRecordCategoriesForMode(
+          input.recordMode ?? event.recordMode,
+          input.recordCategories ?? event.recordCategories,
+        ),
         submitReason:
           nextModel && input.laneType === 'production'
             ? '正式发布模型与运行配置变更'
@@ -344,6 +950,110 @@ export class ReleaseLineRepository {
       }),
     );
     return this.findById(projectId, updated.id);
+  }
+
+  async updateActiveLaneOutputRoute(
+    projectId: string,
+    releaseLineId: string,
+    input: UpdateReleaseLineOutputRouteInputDto,
+    actorUserId: string,
+  ): Promise<ReleaseLineDto | null> {
+    const line = await this.findById(projectId, releaseLineId);
+    if (!line) return null;
+
+    const event = input.laneType === 'production' ? line.currentProductionEvent : line.activeCanaryEvent;
+    if (!event) return null;
+    if (event.status !== 'running' && event.status !== 'stopped') return null;
+
+    const now = new Date();
+    const outputMappingChanged = JSON.stringify(event.outputMapping ?? []) !== JSON.stringify(input.outputMapping);
+    const updated = await this.record(
+      resetRuntimeStats({
+        ...eventDtoToSnapshot(line, event),
+        releaseVersionId: outputMappingChanged ? null : event.releaseVersionId,
+        operation: 'config_changed',
+        terminalReason: null,
+        supersedesEventId: event.id,
+        outputConnectorIds: input.outputConnectorIds,
+        outputMapping: input.outputMapping,
+        submitReason: input.laneType === 'production' ? '正式发布输出路由变更' : '灰度发布输出路由变更',
+        createdBy: actorUserId,
+        createdAt: now,
+        updatedAt: now,
+        legacySource: null,
+        legacySourceId: null,
+      }),
+    );
+    return this.findById(projectId, updated.id);
+  }
+
+  async updateActiveLaneInputRoute(
+    projectId: string,
+    releaseLineId: string,
+    input: UpdateReleaseLineInputRouteInputDto,
+    actorUserId: string,
+  ): Promise<ReleaseLineDto | null> {
+    const line = await this.findById(projectId, releaseLineId);
+    if (!line) return null;
+
+    const event = input.laneType === 'production' ? line.currentProductionEvent : line.activeCanaryEvent;
+    if (!event) return null;
+    if (event.status !== 'running' && event.status !== 'stopped') return null;
+
+    const now = new Date();
+    const variableMappingChanged =
+      JSON.stringify(event.variableMapping ?? {}) !== JSON.stringify(input.variableMapping);
+    const externalIdFieldChanged = (event.externalIdField ?? '') !== input.externalIdField;
+    const updated = await this.record(
+      resetRuntimeStats({
+        ...eventDtoToSnapshot(line, event),
+        releaseVersionId: variableMappingChanged || externalIdFieldChanged ? null : event.releaseVersionId,
+        operation: 'config_changed',
+        terminalReason: null,
+        supersedesEventId: event.id,
+        variableMapping: input.variableMapping,
+        filterRules: input.filterRules,
+        externalIdField: input.externalIdField,
+        submitReason: input.laneType === 'production' ? '正式发布输入路由变更' : '灰度发布输入路由变更',
+        createdBy: actorUserId,
+        createdAt: now,
+        updatedAt: now,
+        legacySource: null,
+        legacySourceId: null,
+      }),
+    );
+    return this.findById(projectId, updated.id);
+  }
+
+  async listConnectorsForProject(
+    projectId: string,
+    ids: string[],
+  ): Promise<Array<{ id: string; name: string; type: string; direction: string }>> {
+    if (ids.length === 0) return [];
+    return this.db
+      .select({ id: connectors.id, name: connectors.name, type: connectors.type, direction: connectors.direction })
+      .from(connectors)
+      .where(and(eq(connectors.projectId, projectId), inArray(connectors.id, ids), isNull(connectors.deletedAt)));
+  }
+
+  private async clearPromptProductionVersion(promptId: string | null): Promise<void> {
+    if (!promptId) return;
+    await this.db
+      .update(prompts)
+      .set({ currentOnlineVersionId: null, updatedAt: new Date() })
+      .where(eq(prompts.id, promptId));
+  }
+
+  private async setPromptProductionVersion(
+    projectId: string,
+    promptId: string | null,
+    promptVersionId: string | null,
+  ): Promise<void> {
+    if (!promptId || !promptVersionId) return;
+    await this.db
+      .update(prompts)
+      .set({ currentOnlineVersionId: promptVersionId, updatedAt: new Date() })
+      .where(and(eq(prompts.projectId, projectId), eq(prompts.id, promptId)));
   }
 
   private async findModelSnapshotForProject(
@@ -407,27 +1117,27 @@ export class ReleaseLineRepository {
             .from(releaseLineEvents)
             .where(inArray(releaseLineEvents.id, Array.from(eventIds)))
         : [];
-    const variantRows = await this.db
+    const versionRows = await this.db
       .select()
-      .from(releaseVariants)
+      .from(releaseVersions)
       .where(
         inArray(
-          releaseVariants.releaseLineId,
+          releaseVersions.releaseLineId,
           lines.map((line) => line.id),
         ),
       )
-      .orderBy(releaseVariants.variantNumber);
+      .orderBy(releaseVersions.targetProductionVersionNumber, releaseVersions.kind, releaseVersions.candidateNumber);
     const hydratedEvents = await this.hydrateEvents([...latestRows, ...explicitEvents]);
     const eventById = new Map(hydratedEvents.map((event) => [event.id, event]));
     const latestByLine = new Map<string, ReleaseLineEventDto>();
     for (const event of hydratedEvents) {
       if (!latestByLine.has(event.releaseLineId)) latestByLine.set(event.releaseLineId, event);
     }
-    const variantsByLine = new Map<string, ReturnType<typeof toReleaseVariantDto>[]>();
-    for (const variant of variantRows) {
-      const list = variantsByLine.get(variant.releaseLineId) ?? [];
-      list.push(toReleaseVariantDto(variant));
-      variantsByLine.set(variant.releaseLineId, list);
+    const versionsByLine = new Map<string, ReturnType<typeof toReleaseVersionDto>[]>();
+    for (const version of versionRows) {
+      const list = versionsByLine.get(version.releaseLineId) ?? [];
+      list.push(toReleaseVersionDto(version));
+      versionsByLine.set(version.releaseLineId, list);
     }
 
     return lines.map((line) => {
@@ -452,7 +1162,7 @@ export class ReleaseLineRepository {
         activeCanaryEventId: line.activeCanaryEventId,
         currentProductionEvent,
         activeCanaryEvent,
-        variants: variantsByLine.get(line.id) ?? [],
+        versions: versionsByLine.get(line.id) ?? [],
         outputConnectors: mergeOutputConnectors(currentProductionEvent, activeCanaryEvent),
         latestEvent: latestByLine.get(line.id) ?? null,
         createdBy: line.createdBy,
@@ -468,12 +1178,12 @@ export class ReleaseLineRepository {
     const outputIds = new Set<string>();
     const sourceEventIds = new Set<string>();
     const eventIds = new Set<string>();
-    const variantIds = new Set<string>();
+    const versionIds = new Set<string>();
     for (const row of rows) {
       eventIds.add(row.id);
       for (const id of row.outputConnectorIds ?? []) outputIds.add(id);
       if (row.sourceEventId) sourceEventIds.add(row.sourceEventId);
-      if (row.releaseVariantId) variantIds.add(row.releaseVariantId);
+      if (row.releaseVersionId) versionIds.add(row.releaseVersionId);
     }
     const outputMap = new Map<string, { id: string; name: string; type: string }>();
     if (outputIds.size > 0) {
@@ -503,13 +1213,13 @@ export class ReleaseLineRepository {
         });
       }
     }
-    const variantMap = new Map<string, ReleaseVariantRow>();
-    if (variantIds.size > 0) {
-      const variantRows = await this.db
+    const versionMap = new Map<string, ReleaseVersionRow>();
+    if (versionIds.size > 0) {
+      const versionRows = await this.db
         .select()
-        .from(releaseVariants)
-        .where(inArray(releaseVariants.id, Array.from(variantIds)));
-      for (const variant of variantRows) variantMap.set(variant.id, variant);
+        .from(releaseVersions)
+        .where(inArray(releaseVersions.id, Array.from(versionIds)));
+      for (const version of versionRows) versionMap.set(version.id, version);
     }
     const annotationTaskMap = new Map<string, string>();
     if (eventIds.size > 0) {
@@ -524,7 +1234,7 @@ export class ReleaseLineRepository {
       }
     }
     return rows.map((row) => {
-      const variant = row.releaseVariantId ? (variantMap.get(row.releaseVariantId) ?? null) : null;
+      const version = row.releaseVersionId ? (versionMap.get(row.releaseVersionId) ?? null) : null;
       const outputSnapshots = asArrayOfRecords(row.outputConnectorSnapshots);
       const outputConnectors = (row.outputConnectorIds ?? []).map((id) => {
         const fromJoin = outputMap.get(id);
@@ -542,9 +1252,12 @@ export class ReleaseLineRepository {
         id: row.id,
         projectId: row.projectId,
         releaseLineId: row.releaseLineId,
-        releaseVariantId: row.releaseVariantId,
-        releaseVariantNumber: variant?.variantNumber ?? null,
-        releaseVariantLabel: variant ? formatReleaseVariantLabel(variant.variantNumber) : null,
+        releaseVersionId: row.releaseVersionId,
+        releaseVersionKind: (version?.kind as ReleaseVersionKindDto | undefined) ?? null,
+        releaseVersionLabel: version ? formatReleaseVersionLabel(version) : null,
+        releaseVersionProductionNumber: version?.productionVersionNumber ?? null,
+        releaseVersionTargetProductionNumber: version?.targetProductionVersionNumber ?? null,
+        releaseVersionCandidateNumber: version?.candidateNumber ?? null,
         annotationTaskId: annotationTaskMap.get(row.id) ?? null,
         laneType: row.laneType as ReleaseLineLaneTypeDto,
         operation: row.operation as ReleaseLineEventOperationDto,
@@ -583,6 +1296,7 @@ export class ReleaseLineRepository {
         outputMapping: row.outputMapping,
         filterRules: row.filterRules,
         recordMode: row.recordMode as ReleaseLineEventDto['recordMode'],
+        recordCategories: row.recordCategories ?? [],
         externalIdField: row.externalIdField,
         retentionDays: row.retentionDays,
         sourceExperimentId: row.sourceExperimentId,
@@ -652,7 +1366,7 @@ export class ReleaseLineRepository {
           snapshot.inputConnectorName,
           snapshot.inputConnectorType,
         ) as never,
-        status: snapshot.laneType === 'production' ? 'production' : 'canary',
+        status: snapshot.status === 'running' ? 'running' : 'stopped',
         createdBy: snapshot.createdBy,
         createdAt: snapshot.createdAt ?? now,
         updatedAt: now,
@@ -663,52 +1377,67 @@ export class ReleaseLineRepository {
     return line;
   }
 
-  private async findOrCreateVariant(
+  private async resolveReleaseVersion(
     tx: ReleaseLineDbExecutor,
     releaseLineId: string,
     snapshot: ReleaseLineMirrorSnapshot,
     now: Date,
-  ): Promise<ReleaseVariantRow | null> {
+  ): Promise<ReleaseVersionRow | null> {
     if (!snapshot.promptVersionId || !snapshot.modelId) return null;
-    const existing = await tx
-      .select()
-      .from(releaseVariants)
-      .where(
-        and(
-          eq(releaseVariants.releaseLineId, releaseLineId),
-          eq(releaseVariants.promptVersionId, snapshot.promptVersionId),
-          eq(releaseVariants.modelId, snapshot.modelId),
-        ),
-      )
-      .limit(1);
-    const found = existing[0];
-    if (found) {
-      const updated = await tx
-        .update(releaseVariants)
-        .set({
-          promptName: snapshot.promptName,
-          promptVersionNumber: snapshot.promptVersionNumber ?? null,
-          promptSnapshot: snapshot.promptSnapshot as never,
-          promptVersionSnapshot: snapshot.promptVersionSnapshot as never,
-          modelSnapshot: modelSnapshot(snapshot.modelId, snapshot.modelName, snapshot.modelProvider) as never,
-          updatedAt: now,
-        })
-        .where(eq(releaseVariants.id, found.id))
-        .returning();
-      return updated[0] ?? found;
+
+    if (shouldReuseReleaseVersion(snapshot) && snapshot.releaseVersionId) {
+      const existing = await tx
+        .select()
+        .from(releaseVersions)
+        .where(eq(releaseVersions.id, snapshot.releaseVersionId))
+        .limit(1);
+      if (existing[0]) return existing[0];
     }
 
-    const maxRows = await tx
-      .select({ maxVariantNumber: sql<number | null>`MAX(${releaseVariants.variantNumber})::int` })
-      .from(releaseVariants)
-      .where(eq(releaseVariants.releaseLineId, releaseLineId));
-    const variantNumber = Number(maxRows[0]?.maxVariantNumber ?? 0) + 1;
+    const promotedFromReleaseVersionId =
+      snapshot.operation === 'promote_canary'
+        ? (snapshot.releaseVersionId ?? (await this.findEventReleaseVersionId(tx, snapshot.sourceEventId)))
+        : null;
+
+    return this.createReleaseVersion(tx, releaseLineId, snapshot, promotedFromReleaseVersionId, now);
+  }
+
+  private async createReleaseVersion(
+    tx: ReleaseLineDbExecutor,
+    releaseLineId: string,
+    snapshot: ReleaseLineMirrorSnapshot,
+    promotedFromReleaseVersionId: string | null,
+    now: Date,
+  ): Promise<ReleaseVersionRow | null> {
+    if (!snapshot.promptVersionId || !snapshot.modelId) return null;
+
+    const kind: ReleaseVersionKindDto = snapshot.laneType === 'canary' ? 'candidate' : 'production';
+    const maxProductionRows = await tx
+      .select({
+        maxProductionVersionNumber: sql<number | null>`MAX(${releaseVersions.productionVersionNumber})::int`,
+      })
+      .from(releaseVersions)
+      .where(and(eq(releaseVersions.releaseLineId, releaseLineId), eq(releaseVersions.kind, 'production')));
+    const nextProductionVersionNumber = Number(maxProductionRows[0]?.maxProductionVersionNumber ?? 0) + 1;
+
+    const targetProductionVersionNumber =
+      kind === 'production'
+        ? nextProductionVersionNumber
+        : Number(maxProductionRows[0]?.maxProductionVersionNumber ?? 0) + 1;
+
+    const candidateNumber =
+      kind === 'candidate' ? await this.nextCandidateNumber(tx, releaseLineId, targetProductionVersionNumber) : null;
+
     const inserted = await tx
-      .insert(releaseVariants)
+      .insert(releaseVersions)
       .values({
         projectId: snapshot.projectId,
         releaseLineId,
-        variantNumber,
+        kind,
+        productionVersionNumber: kind === 'production' ? nextProductionVersionNumber : null,
+        targetProductionVersionNumber,
+        candidateNumber,
+        promotedFromReleaseVersionId,
         promptId: snapshot.promptId ?? null,
         promptName: snapshot.promptName,
         promptVersionId: snapshot.promptVersionId,
@@ -723,6 +1452,38 @@ export class ReleaseLineRepository {
       })
       .returning();
     return inserted[0] ?? null;
+  }
+
+  private async nextCandidateNumber(
+    tx: ReleaseLineDbExecutor,
+    releaseLineId: string,
+    targetProductionVersionNumber: number,
+  ): Promise<number> {
+    const maxCandidateRows = await tx
+      .select()
+      .from(releaseVersions)
+      .where(
+        and(
+          eq(releaseVersions.releaseLineId, releaseLineId),
+          eq(releaseVersions.kind, 'candidate'),
+          eq(releaseVersions.targetProductionVersionNumber, targetProductionVersionNumber),
+        ),
+      );
+    const maxCandidateNumber = maxCandidateRows.reduce((max, row) => Math.max(max, row.candidateNumber ?? 0), 0);
+    return maxCandidateNumber + 1;
+  }
+
+  private async findEventReleaseVersionId(
+    tx: ReleaseLineDbExecutor,
+    eventId: string | null | undefined,
+  ): Promise<string | null> {
+    if (!eventId) return null;
+    const rows = await tx
+      .select({ releaseVersionId: releaseLineEvents.releaseVersionId })
+      .from(releaseLineEvents)
+      .where(eq(releaseLineEvents.id, eventId))
+      .limit(1);
+    return rows[0]?.releaseVersionId ?? null;
   }
 
   private async findExistingLegacyEvent(tx: ReleaseLineDbExecutor, snapshot: ReleaseLineMirrorSnapshot) {
@@ -745,7 +1506,7 @@ export class ReleaseLineRepository {
     snapshot: ReleaseLineMirrorSnapshot,
     releaseLineId: string,
     supersedesEventId: string | null,
-    releaseVariantId: string | null,
+    releaseVersionId: string | null,
     now: Date,
   ): Promise<ReleaseLineEventInsert> {
     const outputSnapshots = await this.loadOutputConnectorSnapshots(snapshot.outputConnectorIds);
@@ -761,7 +1522,7 @@ export class ReleaseLineRepository {
       rollbackTargetEventId: snapshot.rollbackTargetEventId ?? null,
       legacySource: snapshot.legacySource ?? null,
       legacySourceId: snapshot.legacySourceId ?? null,
-      releaseVariantId,
+      releaseVersionId,
       promptId: snapshot.promptId ?? null,
       promptName: snapshot.promptName,
       promptVersionId: snapshot.promptVersionId ?? null,
@@ -786,6 +1547,7 @@ export class ReleaseLineRepository {
       outputMapping: (snapshot.outputMapping ?? []) as never,
       filterRules: snapshot.filterRules as never,
       recordMode: snapshot.recordMode,
+      recordCategories: normalizeRecordCategoriesForMode(snapshot.recordMode, snapshot.recordCategories),
       externalIdField: snapshot.externalIdField ?? null,
       retentionDays: snapshot.retentionDays ?? null,
       sourceExperimentId: snapshot.sourceExperimentId ?? null,
@@ -812,33 +1574,46 @@ export class ReleaseLineRepository {
     event: ReleaseLineEventRow,
     now: Date,
   ) {
+    const lineRows = await tx
+      .select({ status: releaseLines.status, archivedAt: releaseLines.archivedAt })
+      .from(releaseLines)
+      .where(eq(releaseLines.id, releaseLineId))
+      .limit(1);
     const productionRows = await tx
-      .select({ id: releaseLineEvents.id })
+      .select({ id: releaseLineEvents.id, status: releaseLineEvents.status })
       .from(releaseLineEvents)
       .where(
         and(
           eq(releaseLineEvents.releaseLineId, releaseLineId),
           eq(releaseLineEvents.laneType, 'production'),
-          eq(releaseLineEvents.status, 'running'),
+          sql`${releaseLineEvents.status} IN ('running', 'stopped', 'archived')`,
         ),
       )
       .orderBy(desc(releaseLineEvents.createdAt))
       .limit(1);
     const canaryRows = await tx
-      .select({ id: releaseLineEvents.id })
+      .select({ id: releaseLineEvents.id, status: releaseLineEvents.status })
       .from(releaseLineEvents)
       .where(
         and(
           eq(releaseLineEvents.releaseLineId, releaseLineId),
           eq(releaseLineEvents.laneType, 'canary'),
-          sql`${releaseLineEvents.status} IN ('running', 'stopped')`,
+          sql`${releaseLineEvents.status} IN ('running', 'stopped', 'archived')`,
         ),
       )
       .orderBy(desc(releaseLineEvents.createdAt))
       .limit(1);
     const currentProductionEventId = productionRows[0]?.id ?? null;
     const activeCanaryEventId = canaryRows[0]?.id ?? null;
-    const status = lineStatus(currentProductionEventId, activeCanaryEventId);
+    // Mirror release-runner.repository.refreshLinePointersByEvent: an archived line is
+    // non-runnable and must NEVER be silently resurrected by a new mirror event. The only
+    // legitimate departure from 'archived' is an explicit unarchive (operation 'unarchive_line',
+    // which records a 'stopped' event); every other event leaves status/archivedAt untouched.
+    const lineCurrentlyArchived = (lineRows[0]?.status ?? null) === 'archived' && event.operation !== 'unarchive_line';
+    const status = lineCurrentlyArchived
+      ? 'archived'
+      : lineStatus(productionRows[0]?.status ?? null, canaryRows[0]?.status ?? null);
+    const archivedAt = lineCurrentlyArchived ? (lineRows[0]?.archivedAt ?? null) : null;
     await tx
       .update(releaseLines)
       .set({
@@ -846,7 +1621,7 @@ export class ReleaseLineRepository {
         activeCanaryEventId,
         status,
         updatedAt: now,
-        archivedAt: status === 'archived' ? now : null,
+        archivedAt,
       })
       .where(eq(releaseLines.id, releaseLineId));
   }
@@ -862,11 +1637,37 @@ export class ReleaseLineRepository {
   }
 }
 
-function lineStatus(currentProductionEventId: string | null, activeCanaryEventId: string | null): ReleaseLineStatusDto {
-  if (currentProductionEventId && activeCanaryEventId) return 'production_with_canary';
-  if (currentProductionEventId) return 'production';
-  if (activeCanaryEventId) return 'canary';
+function lineStatus(productionStatus: string | null, activeCanaryStatus: string | null): ReleaseLineStatusDto {
+  if (productionStatus === 'running' || activeCanaryStatus === 'running') return 'running';
   return 'stopped';
+}
+
+function findResumableEvents(line: ReleaseLineDto): ReleaseLineEventDto[] {
+  const slotEvents = findVisibleSlotEvents(line).filter((event) => event.status === 'stopped');
+  if (slotEvents.length > 0) return slotEvents;
+  return line.latestEvent?.status === 'stopped' ? [line.latestEvent] : [];
+}
+
+function findVisibleSlotEvents(line: ReleaseLineDto): ReleaseLineEventDto[] {
+  const events = [line.currentProductionEvent, line.activeCanaryEvent].filter(
+    (event): event is ReleaseLineEventDto => Boolean(event),
+  );
+  return dedupeEvents(events);
+}
+
+function findArchivedSlotEvents(line: ReleaseLineDto): ReleaseLineEventDto[] {
+  return findVisibleSlotEvents(line).filter((event) => event.status === 'archived');
+}
+
+function dedupeEvents(events: ReleaseLineEventDto[]): ReleaseLineEventDto[] {
+  const seen = new Set<string>();
+  const result: ReleaseLineEventDto[] = [];
+  for (const event of events) {
+    if (seen.has(event.id)) continue;
+    seen.add(event.id);
+    result.push(event);
+  }
+  return result;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -879,6 +1680,17 @@ function asArrayOfRecords(value: unknown): Record<string, unknown>[] {
         (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item),
       )
     : [];
+}
+
+function inheritCanaryStopConditions(
+  laneType: ReleaseLineLaneTypeDto,
+  previousRunConfig: unknown,
+  nextRunConfig: unknown,
+): Record<string, unknown> {
+  const next = asRecord(nextRunConfig);
+  if (laneType !== 'canary' || Object.prototype.hasOwnProperty.call(next, 'stopConditions')) return next;
+  const previousStopConditions = asRecord(previousRunConfig)['stopConditions'];
+  return previousStopConditions === undefined ? next : { ...next, stopConditions: previousStopConditions };
 }
 
 function stringFromSnapshot(snapshot: unknown, key: string): string | null {
@@ -904,34 +1716,47 @@ function modelSnapshot(id: string | null, name: string | null, providerType: str
   return { id, name, providerType };
 }
 
-function formatReleaseVariantLabel(variantNumber: number) {
-  return `#${variantNumber}`;
+function formatReleaseVersionLabel(
+  version: Pick<
+    ReleaseVersionRow,
+    'kind' | 'productionVersionNumber' | 'targetProductionVersionNumber' | 'candidateNumber'
+  >,
+) {
+  if (version.kind === 'production')
+    return `v${version.productionVersionNumber ?? version.targetProductionVersionNumber}`;
+  const baseProductionNumber = Math.max(0, version.targetProductionVersionNumber - 1);
+  return `v${baseProductionNumber}.${version.candidateNumber ?? 0}`;
 }
 
-function toReleaseVariantDto(variant: ReleaseVariantRow) {
+function toReleaseVersionDto(version: ReleaseVersionRow) {
   const promptVersionNumber =
-    variant.promptVersionNumber ?? numberFromSnapshot(variant.promptVersionSnapshot, 'versionNumber');
+    version.promptVersionNumber ?? numberFromSnapshot(version.promptVersionSnapshot, 'versionNumber');
   return {
-    id: variant.id,
-    projectId: variant.projectId,
-    releaseLineId: variant.releaseLineId,
-    variantNumber: variant.variantNumber,
-    label: formatReleaseVariantLabel(variant.variantNumber),
-    promptId: variant.promptId,
-    promptName: variant.promptName,
-    promptVersionId: variant.promptVersionId,
+    id: version.id,
+    projectId: version.projectId,
+    releaseLineId: version.releaseLineId,
+    kind: version.kind as ReleaseVersionKindDto,
+    productionVersionNumber: version.productionVersionNumber,
+    targetProductionVersionNumber: version.targetProductionVersionNumber,
+    candidateNumber: version.candidateNumber,
+    promotedFromReleaseVersionId: version.promotedFromReleaseVersionId,
+    label: formatReleaseVersionLabel(version),
+    promptId: version.promptId,
+    promptName: version.promptName,
+    promptVersionId: version.promptVersionId,
     promptVersionNumber,
     promptVersionLabel: promptVersionNumber ? `v${promptVersionNumber}` : null,
-    promptSnapshot: asRecord(variant.promptSnapshot),
-    promptVersionSnapshot: asRecord(variant.promptVersionSnapshot),
-    modelId: variant.modelId,
-    modelName: stringFromSnapshot(variant.modelSnapshot, 'name'),
+    promptSnapshot: asRecord(version.promptSnapshot),
+    promptVersionSnapshot: asRecord(version.promptVersionSnapshot),
+    modelId: version.modelId,
+    modelName: stringFromSnapshot(version.modelSnapshot, 'name'),
     modelProvider:
-      stringFromSnapshot(variant.modelSnapshot, 'providerType') ?? stringFromSnapshot(variant.modelSnapshot, 'provider'),
-    modelSnapshot: asRecord(variant.modelSnapshot),
-    createdBy: variant.createdBy,
-    createdAt: variant.createdAt.toISOString(),
-    updatedAt: variant.updatedAt.toISOString(),
+      stringFromSnapshot(version.modelSnapshot, 'providerType') ??
+      stringFromSnapshot(version.modelSnapshot, 'provider'),
+    modelSnapshot: asRecord(version.modelSnapshot),
+    createdBy: version.createdBy,
+    createdAt: version.createdAt.toISOString(),
+    updatedAt: version.updatedAt.toISOString(),
   };
 }
 
@@ -940,6 +1765,19 @@ function mergeOutputConnectors(production: ReleaseLineEventDto | null, canary: R
   for (const connector of production?.outputConnectors ?? []) map.set(connector.id, connector);
   for (const connector of canary?.outputConnectors ?? []) map.set(connector.id, connector);
   return [...map.values()];
+}
+
+function normalizeRecordCategoriesForMode(mode: ReleaseLineRecordModeDto, categories: string[] | null | undefined) {
+  if (mode === 'all') return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const category of categories ?? []) {
+    const trimmed = category.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+  return normalized;
 }
 
 function eventDtoToSnapshot(line: ReleaseLineDto, event: ReleaseLineEventDto): ReleaseLineMirrorSnapshot {
@@ -974,6 +1812,7 @@ function eventDtoToSnapshot(line: ReleaseLineDto, event: ReleaseLineEventDto): R
     outputMapping: event.outputMapping,
     filterRules: event.filterRules,
     recordMode: event.recordMode,
+    recordCategories: event.recordCategories,
     externalIdField: event.externalIdField,
     retentionDays: event.retentionDays,
     sourceExperimentId: event.sourceExperimentId,
@@ -984,6 +1823,7 @@ function eventDtoToSnapshot(line: ReleaseLineDto, event: ReleaseLineEventDto): R
     totalFiltered: event.totalFiltered,
     totalCorrect: event.totalCorrect,
     totalErrors: event.totalErrors,
+    releaseVersionId: event.releaseVersionId,
     controlState: event.controlState,
     controlStatePayload: event.controlStatePayload,
     startedAt: event.startedAt ? new Date(event.startedAt) : null,
@@ -1029,9 +1869,44 @@ function resetRuntimeStats(snapshot: ReleaseLineMirrorSnapshot): ReleaseLineMirr
   };
 }
 
+function shouldReuseReleaseVersion(snapshot: ReleaseLineMirrorSnapshot): boolean {
+  if (!snapshot.releaseVersionId) return false;
+  return (
+    [
+      'traffic_updated',
+      'mode_updated',
+      'stop_lane',
+      'resume_lane',
+      'cancel_canary',
+      'force_stop',
+      'archive_line',
+      'unarchive_line',
+    ].includes(snapshot.operation) || snapshot.operation === 'config_changed'
+  );
+}
+
+function productionOperationReleasesCanarySlot(operation: ReleaseLineEventOperationDto): boolean {
+  return operation === 'rollback' || operation === 'restore_to_production';
+}
+
+function hasTemperatureChanged(previousRunConfig: unknown, nextRunConfig: unknown): boolean {
+  const previous = asRecord(previousRunConfig)['temperature'];
+  const next = asRecord(nextRunConfig)['temperature'];
+  if (previous === undefined && next === undefined) return false;
+  return Number(previous) !== Number(next);
+}
+
 function releaseLineIdentityCondition(identity: ReleaseLineIdentity) {
   if (identity.inputConnectorId) return eq(releaseLines.inputConnectorId, identity.inputConnectorId);
   if (identity.promptId)
     return and(isNull(releaseLines.inputConnectorId), eq(releaseLines.promptId, identity.promptId));
   return isNull(releaseLines.inputConnectorId);
+}
+
+function unwrapRows<T = unknown>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  if (result && typeof result === 'object' && 'rows' in (result as Record<string, unknown>)) {
+    return ((result as { rows?: T[] }).rows ?? []) as T[];
+  }
+  return [];
 }

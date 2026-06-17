@@ -565,7 +565,7 @@ function sourceBucketPredicateSql(source: SourceBucket): SQL {
 
 function runFailureSql(): SQL {
   return sql`
-    status <> 'success'
+    status = 'failed'
     OR judgment_status = 'parse_error'
     OR (judgment_status = 'judge_error' AND expected_output IS NOT NULL)
   `;

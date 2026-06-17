@@ -56,7 +56,7 @@ export const llmJobPayloadSchema = z.object({
   orgId: z.string().uuid().optional(),
   source: z.enum(LLM_SOURCES),
   sourceId: z.string().uuid(),
-  releaseVariantId: z.string().uuid().nullable().optional(),
+  releaseVersionId: z.string().uuid().nullable().optional(),
   promptVersionId: z.string().uuid(),
   modelId: z.string().uuid(),
   runResultId: z.string().uuid().optional(),

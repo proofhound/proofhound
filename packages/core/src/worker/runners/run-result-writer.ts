@@ -39,7 +39,7 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
     const dbosWorkflowId = record.dbosWorkflowId ?? null;
     const bullmqJobId = record.bullmqJobId ?? null;
     const roundIndex = record.roundIndex ?? null;
-    const releaseVariantId = record.releaseVariantId ?? null;
+    const releaseVersionId = record.releaseVersionId ?? null;
     const webhookTokenId = record.webhookTokenId ?? null;
     await this.quotaPolicy.assertCanStore({
       bytes: estimateRunResultBytes(record),
@@ -55,7 +55,7 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
         RETURNING id, created_at
       )
       INSERT INTO ph_runs.run_results (
-        id, project_id, source, source_id, release_variant_id, prompt_version_id, model_id,
+        id, project_id, source, source_id, release_version_id, prompt_version_id, model_id,
         sample_id, external_id, rendered_prompt, input_variables,
         raw_response, parsed_output, decision_output, expected_output, is_correct, judgment_status,
         status, error_class, error_message,
@@ -64,7 +64,7 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
       )
       SELECT
         reserved_run_result.id, ${record.projectId}::uuid, ${record.source},
-        ${record.sourceId}::uuid, ${releaseVariantId}::uuid, ${record.promptVersionId}::uuid, ${record.modelId}::uuid,
+        ${record.sourceId}::uuid, ${releaseVersionId}::uuid, ${record.promptVersionId}::uuid, ${record.modelId}::uuid,
         ${sampleId}::uuid, ${externalId},
         ${JSON.stringify(record.renderedPrompt)}::jsonb,
         ${JSON.stringify(inputVariables)}::jsonb,

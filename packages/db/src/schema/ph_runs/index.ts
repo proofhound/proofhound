@@ -17,7 +17,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { annotationTasks } from '../ph_releases/annotation-tasks';
-import { releaseVariants } from '../ph_releases/release-lines';
+import { releaseVersions } from '../ph_releases/release-lines';
 import { projects, tokens } from '../ph_core/index';
 import { phRuns } from './_schema';
 import { optimizations } from './experiments';
@@ -75,7 +75,7 @@ export const runResults = phRuns.table(
       .references(() => projects.id, { onDelete: 'cascade' }),
     source: text('source').notNull(),
     sourceId: uuid('source_id').notNull(),
-    releaseVariantId: uuid('release_variant_id').references((): AnyPgColumn => releaseVariants.id),
+    releaseVersionId: uuid('release_version_id').references((): AnyPgColumn => releaseVersions.id),
     promptVersionId: uuid('prompt_version_id').notNull(),
     modelId: uuid('model_id').notNull(),
     sampleId: uuid('sample_id'),
@@ -117,13 +117,13 @@ export const runResults = phRuns.table(
       'run_results_judgment_status_check',
       sql`${t.judgmentStatus} IN ('correct', 'incorrect', 'parse_error', 'judge_error') OR ${t.judgmentStatus} IS NULL`,
     ),
-    check('run_results_status_check', sql`${t.status} IN ('success', 'error', 'timeout', 'rate_limited')`),
+    check('run_results_status_check', sql`${t.status} IN ('running', 'success', 'failed')`),
     index('idx_run_results_source_source_time').on(t.source, t.sourceId, t.createdAt.desc()),
     index('idx_run_results_project_time').on(t.projectId, t.createdAt.desc()),
     index('idx_run_results_project_source_time').on(t.projectId, t.source, t.createdAt.desc()),
-    index('idx_run_results_release_variant_time')
-      .on(t.projectId, t.releaseVariantId, t.createdAt.desc())
-      .where(sql`${t.releaseVariantId} IS NOT NULL`),
+    index('idx_run_results_release_version_time')
+      .on(t.projectId, t.releaseVersionId, t.createdAt.desc())
+      .where(sql`${t.releaseVersionId} IS NOT NULL`),
     index('idx_run_results_external_id')
       .on(t.externalId)
       .where(sql`${t.externalId} IS NOT NULL`),

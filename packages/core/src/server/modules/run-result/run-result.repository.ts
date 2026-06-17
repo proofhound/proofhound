@@ -284,10 +284,8 @@ export class RunResultRepository {
       conditions.push(sql`rr.source_id IN (${uuidList(query.sourceIds)})`);
     }
 
-    if (query.releaseVariantIds && query.releaseVariantIds.length > 0) {
-      conditions.push(
-        sql`COALESCE(rr.release_variant_id, release_event.release_variant_id) IN (${uuidList(query.releaseVariantIds)})`,
-      );
+    if (query.releaseVersionIds && query.releaseVersionIds.length > 0) {
+      conditions.push(releaseVersionConditionSql(query.releaseVersionIds, query.releaseVersionScope));
     }
 
     if (query.promptVersionIds && query.promptVersionIds.length > 0) {
@@ -328,9 +326,9 @@ export class RunResultRepository {
         sql`(
           rr.external_id ILIKE ${pattern}
           OR rr.source_id::text ILIKE ${pattern}
-          OR COALESCE(rr.release_variant_id, release_event.release_variant_id)::text ILIKE ${pattern}
+          OR COALESCE(rr.release_version_id, release_event.release_version_id)::text ILIKE ${pattern}
           OR release_event.prompt_name ILIKE ${pattern}
-          OR COALESCE(release_variant.model_snapshot->>'name', release_event.model_snapshot->>'name') ILIKE ${pattern}
+          OR COALESCE(release_version.model_snapshot->>'name', release_event.model_snapshot->>'name') ILIKE ${pattern}
           OR rr.raw_response ILIKE ${pattern}
           OR rr.input_variables::text ILIKE ${pattern}
           OR rr.decision_output ILIKE ${pattern}
@@ -358,21 +356,24 @@ export class RunResultRepository {
         rr.source,
         rr.source_id,
         release_event.id AS release_event_id,
-        COALESCE(rr.release_variant_id, release_event.release_variant_id) AS release_variant_id,
-        release_variant.variant_number AS release_variant_number,
+        COALESCE(rr.release_version_id, release_event.release_version_id) AS release_version_id,
+        release_version.kind AS release_version_kind,
+        release_version.production_version_number AS release_version_production_number,
+        release_version.target_production_version_number AS release_version_target_production_number,
+        release_version.candidate_number AS release_version_candidate_number,
         rr.external_id,
         release_event.prompt_name AS prompt_name,
         rr.prompt_version_id,
         COALESCE(release_event.prompt_version_number, pv.version_number) AS prompt_version_number,
         rr.model_id,
         COALESCE(
-          release_variant.model_snapshot->>'name',
+          release_version.model_snapshot->>'name',
           release_event.model_snapshot->>'name',
           model.name
         ) AS model_name,
         COALESCE(
-          release_variant.model_snapshot->>'providerType',
-          release_variant.model_snapshot->>'provider',
+          release_version.model_snapshot->>'providerType',
+          release_version.model_snapshot->>'provider',
           release_event.model_snapshot->>'providerType',
           release_event.model_snapshot->>'provider',
           model.provider_type
@@ -397,8 +398,8 @@ export class RunResultRepository {
       JOIN ph_releases.release_line_events release_event
         ON release_event.id = rr.source_id
        AND release_event.project_id = rr.project_id
-      LEFT JOIN ph_releases.release_variants release_variant
-        ON release_variant.id = COALESCE(rr.release_variant_id, release_event.release_variant_id)
+      LEFT JOIN ph_releases.release_versions release_version
+        ON release_version.id = COALESCE(rr.release_version_id, release_event.release_version_id)
       LEFT JOIN ph_assets.prompt_versions pv ON pv.id = rr.prompt_version_id
       LEFT JOIN ph_assets.models model ON model.id = rr.model_id
       WHERE ${whereSql}
@@ -413,8 +414,8 @@ export class RunResultRepository {
       JOIN ph_releases.release_line_events release_event
         ON release_event.id = rr.source_id
        AND release_event.project_id = rr.project_id
-      LEFT JOIN ph_releases.release_variants release_variant
-        ON release_variant.id = COALESCE(rr.release_variant_id, release_event.release_variant_id)
+      LEFT JOIN ph_releases.release_versions release_version
+        ON release_version.id = COALESCE(rr.release_version_id, release_event.release_version_id)
       WHERE ${whereSql}
     `);
     const totalList = unwrapRows<{ total: number | string }>(totalResult);
@@ -520,8 +521,11 @@ interface ReleaseRunResultRowShape {
   source: 'release';
   source_id: string;
   release_event_id: string | null;
-  release_variant_id: string | null;
-  release_variant_number: number | string | null;
+  release_version_id: string | null;
+  release_version_kind: 'candidate' | 'production' | null;
+  release_version_production_number: number | string | null;
+  release_version_target_production_number: number | string | null;
+  release_version_candidate_number: number | string | null;
   lane_type: ReleaseRunResultLaneDto;
   external_id: string | null;
   prompt_name: string | null;
@@ -600,7 +604,7 @@ function toNumberOrNull(value: number | string | null | undefined): number | nul
 
 function runResultFailureSql(): SQL {
   return sql`
-    status <> 'success'
+    status = 'failed'
     OR judgment_status = 'parse_error'
     OR (judgment_status = 'judge_error' AND expected_output IS NOT NULL)
   `;
@@ -618,6 +622,27 @@ function stringList(values: readonly string[]): SQL {
     values.map((value) => sql`${value}`),
     sql`, `,
   );
+}
+
+function releaseVersionConditionSql(ids: readonly string[], scope: 'exact' | 'journey'): SQL {
+  const currentVersionId = sql`COALESCE(rr.release_version_id, release_event.release_version_id)`;
+  if (scope === 'exact') return sql`${currentVersionId} IN (${uuidList(ids)})`;
+  return sql`release_version.target_production_version_number IN (
+    SELECT selected.target_production_version_number
+    FROM ph_releases.release_versions selected
+    WHERE selected.id IN (${uuidList(ids)})
+  )`;
+}
+
+function formatReleaseVersionLabel(
+  kind: 'candidate' | 'production' | null,
+  productionNumber: number | null,
+  targetProductionNumber: number | null,
+  candidateNumber: number | null,
+): string | null {
+  if (!kind || !targetProductionNumber) return null;
+  if (kind === 'production') return `v${productionNumber ?? targetProductionNumber}`;
+  return `v${Math.max(0, targetProductionNumber - 1)}.${candidateNumber ?? 0}`;
 }
 
 function toListItem(row: RunResultRowShape): RunResultListItemDto {
@@ -650,7 +675,9 @@ function toListItem(row: RunResultRowShape): RunResultListItemDto {
 
 function toReleaseListItem(row: ReleaseRunResultRowShape): ReleaseRunResultListItemDto {
   const lane = row.lane_type;
-  const releaseVariantNumber = toNumberOrNull(row.release_variant_number);
+  const targetProductionNumber = toNumberOrNull(row.release_version_target_production_number);
+  const candidateNumber = toNumberOrNull(row.release_version_candidate_number);
+  const productionNumber = toNumberOrNull(row.release_version_production_number);
   return {
     id: row.id,
     projectId: row.project_id,
@@ -659,9 +686,17 @@ function toReleaseListItem(row: ReleaseRunResultRowShape): ReleaseRunResultListI
     lane,
     eventId: row.release_event_id ?? row.source_id,
     canaryId: lane === 'canary' ? (row.release_event_id ?? row.source_id) : null,
-    releaseVariantId: row.release_variant_id ?? null,
-    releaseVariantNumber,
-    releaseVariantLabel: releaseVariantNumber ? `#${releaseVariantNumber}` : null,
+    releaseVersionId: row.release_version_id ?? null,
+    releaseVersionKind: row.release_version_kind ?? null,
+    releaseVersionLabel: formatReleaseVersionLabel(
+      row.release_version_kind,
+      productionNumber,
+      targetProductionNumber,
+      candidateNumber,
+    ),
+    releaseVersionProductionNumber: productionNumber,
+    releaseVersionTargetProductionNumber: targetProductionNumber,
+    releaseVersionCandidateNumber: candidateNumber,
     externalId: row.external_id,
     promptName: row.prompt_name ?? null,
     promptVersionId: row.prompt_version_id,

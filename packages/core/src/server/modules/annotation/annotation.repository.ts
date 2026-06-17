@@ -38,28 +38,78 @@ export class AnnotationRepository {
         line.status AS release_line_status,
         line.prompt_name AS prompt_name,
         line.input_connector_name AS input_connector_name,
-        variant.id AS release_variant_id,
-        variant.variant_number,
-        variant.prompt_version_id,
-        variant.prompt_version_number,
-        variant.prompt_version_snapshot,
-        COALESCE(variant.model_snapshot->>'name', model.name) AS model_name,
+        version.id AS release_version_id,
+        version.kind AS release_version_kind,
+        version.production_version_number,
+        version.target_production_version_number,
+        version.candidate_number,
+        version.prompt_version_id,
+        version.prompt_version_number,
+        version.prompt_version_snapshot,
+        COALESCE(version.model_snapshot->>'name', model.name) AS model_name,
         COALESCE(
-          variant.model_snapshot->>'providerType',
-          variant.model_snapshot->>'provider',
+          version.model_snapshot->>'providerType',
+          version.model_snapshot->>'provider',
           model.provider_type
         ) AS model_provider,
-        variant.model_id,
+        version.model_id,
+        COUNT(rr.id)::int AS run_result_count,
         COUNT(rr.id) FILTER (WHERE event.lane_type = 'canary')::int AS canary_count,
-        COUNT(rr.id) FILTER (WHERE event.lane_type = 'production')::int AS online_count
+        COUNT(rr.id) FILTER (WHERE event.lane_type = 'production')::int AS online_count,
+        (
+          SELECT COALESCE(jsonb_object_agg(category_counts.category, category_counts.total), '{}'::jsonb)
+          FROM (
+            SELECT category_rr.decision_output AS category, COUNT(*)::int AS total
+            FROM ph_runs.run_results category_rr
+            INNER JOIN ph_releases.release_line_events category_event
+              ON category_event.id = category_rr.source_id
+             AND category_event.project_id = category_rr.project_id
+            INNER JOIN ph_releases.release_versions category_version
+              ON category_version.id = COALESCE(category_rr.release_version_id, category_event.release_version_id)
+            WHERE category_rr.project_id = line.project_id
+              AND category_rr.source = 'release'
+              AND category_event.release_line_id = line.id
+              AND category_version.id = version.id
+              AND category_rr.decision_output IS NOT NULL
+            GROUP BY category_rr.decision_output
+          ) category_counts
+        ) AS category_counts,
+        (
+          SELECT COUNT(*)::int
+          FROM ph_runs.run_results journey_rr
+          INNER JOIN ph_releases.release_line_events journey_event
+            ON journey_event.id = journey_rr.source_id
+           AND journey_event.project_id = journey_rr.project_id
+          INNER JOIN ph_releases.release_versions journey_version
+            ON journey_version.id = COALESCE(journey_rr.release_version_id, journey_event.release_version_id)
+          WHERE journey_rr.project_id = line.project_id
+            AND journey_rr.source = 'release'
+            AND journey_event.release_line_id = line.id
+            AND journey_event.lane_type = 'canary'
+            AND journey_version.target_production_version_number = version.target_production_version_number
+        ) AS journey_canary_count,
+        (
+          SELECT COUNT(*)::int
+          FROM ph_runs.run_results journey_rr
+          INNER JOIN ph_releases.release_line_events journey_event
+            ON journey_event.id = journey_rr.source_id
+           AND journey_event.project_id = journey_rr.project_id
+          INNER JOIN ph_releases.release_versions journey_version
+            ON journey_version.id = COALESCE(journey_rr.release_version_id, journey_event.release_version_id)
+          WHERE journey_rr.project_id = line.project_id
+            AND journey_rr.source = 'release'
+            AND journey_event.release_line_id = line.id
+            AND journey_event.lane_type = 'production'
+            AND journey_version.target_production_version_number = version.target_production_version_number
+        ) AS journey_online_count
       FROM ph_releases.release_lines line
-      INNER JOIN ph_releases.release_variants variant
-        ON variant.release_line_id = line.id
-       AND variant.project_id = line.project_id
-      LEFT JOIN ph_assets.models model ON model.id = variant.model_id
+      INNER JOIN ph_releases.release_versions version
+        ON version.release_line_id = line.id
+       AND version.project_id = line.project_id
+      LEFT JOIN ph_assets.models model ON model.id = version.model_id
       LEFT JOIN ph_releases.release_line_events event
         ON event.release_line_id = line.id
-       AND event.release_variant_id = variant.id
+       AND event.release_version_id = version.id
        AND event.project_id = line.project_id
       LEFT JOIN ph_runs.run_results rr
         ON rr.source = 'release'
@@ -73,16 +123,19 @@ export class AnnotationRepository {
         line.status,
         line.prompt_name,
         line.input_connector_name,
-        variant.id,
-        variant.variant_number,
-        variant.prompt_version_id,
-        variant.prompt_version_number,
-        variant.prompt_version_snapshot,
-        variant.model_id,
-        variant.model_snapshot,
+        version.id,
+        version.kind,
+        version.production_version_number,
+        version.target_production_version_number,
+        version.candidate_number,
+        version.prompt_version_id,
+        version.prompt_version_number,
+        version.prompt_version_snapshot,
+        version.model_id,
+        version.model_snapshot,
         model.name,
         model.provider_type
-      ORDER BY line.updated_at DESC, variant.variant_number ASC
+      ORDER BY line.updated_at DESC, version.target_production_version_number ASC, version.kind DESC, version.candidate_number ASC
     `);
 
     const byLine = new Map<string, AnnotationReleaseLineOptionDto>();
@@ -94,24 +147,48 @@ export class AnnotationRepository {
         status: String(row['release_line_status'] ?? ''),
         promptName: String(row['prompt_name'] ?? ''),
         inputConnectorName: (row['input_connector_name'] as string | null) ?? null,
-        variants: [],
+        versions: [],
       };
-      const variantNumber = Number(row['variant_number'] ?? 0);
-      line.variants.push({
-        id: row['release_variant_id'] as string,
+      const categoryOptions = deriveClassificationOptionsFromPromptVersionSnapshot(row['prompt_version_snapshot']);
+      line.versions.push({
+        id: row['release_version_id'] as string,
         releaseLineId: lineId,
-        label: formatVariantLabel(variantNumber),
+        label: formatReleaseVersionLabel(row),
+        kind: row['release_version_kind'] as 'candidate' | 'production',
+        productionVersionNumber: toNumberOrNull(row['production_version_number'] as number | string | null),
+        targetProductionVersionNumber: Number(row['target_production_version_number'] ?? 1),
+        candidateNumber: toNumberOrNull(row['candidate_number'] as number | string | null),
         promptVersionId: row['prompt_version_id'] as string,
         promptVersionNumber: toNumberOrNull(row['prompt_version_number'] as number | string | null),
         promptVersionLabel: formatPromptVersionLabel(row['prompt_version_number'] as number | string | null),
-        categoryOptions: deriveClassificationOptionsFromPromptVersionSnapshot(row['prompt_version_snapshot']),
+        categoryOptions,
         modelId: row['model_id'] as string,
         modelName: (row['model_name'] as string | null) ?? null,
         modelProvider: (row['model_provider'] as string | null) ?? null,
+        runResultCount: Number(row['run_result_count'] ?? 0),
         canaryCount: Number(row['canary_count'] ?? 0),
         onlineCount: Number(row['online_count'] ?? 0),
+        journeyCanaryCount: Number(row['journey_canary_count'] ?? 0),
+        journeyOnlineCount: Number(row['journey_online_count'] ?? 0),
+        journeyCompatible: true,
+        categoryCounts: parseCategoryCounts(row['category_counts'], categoryOptions),
       });
       byLine.set(lineId, line);
+    }
+    for (const line of byLine.values()) {
+      const targetCategoryKeys = new Map<number, string | null>();
+      for (const version of line.versions) {
+        const currentKey = categoryOptionsKey(version.categoryOptions);
+        const previousKey = targetCategoryKeys.get(version.targetProductionVersionNumber);
+        targetCategoryKeys.set(
+          version.targetProductionVersionNumber,
+          previousKey === undefined || previousKey === currentKey ? currentKey : null,
+        );
+      }
+      for (const version of line.versions) {
+        version.journeyCompatible =
+          targetCategoryKeys.get(version.targetProductionVersionNumber) === categoryOptionsKey(version.categoryOptions);
+      }
     }
     return Array.from(byLine.values());
   }
@@ -119,44 +196,92 @@ export class AnnotationRepository {
   async countMatchingRunResults(
     projectId: string,
     releaseLineId: string,
-    releaseVariantId: string,
+    releaseVersionId: string,
+    releaseVersionScope: 'exact' | 'journey',
     scope: AnnotationTaskScopeDto,
   ): Promise<number> {
+    const versionFilter = releaseVersionFilterSql(releaseVersionId, releaseVersionScope);
+    const scopeFilter = scopeFilterSql(scope);
     const rows = await this.db.execute(sql`
       SELECT COUNT(*)::int AS total
       FROM ph_runs.run_results rr
       INNER JOIN ph_releases.release_line_events event
         ON event.id = rr.source_id
        AND event.project_id = rr.project_id
+      LEFT JOIN ph_releases.release_versions version
+        ON version.id = COALESCE(rr.release_version_id, event.release_version_id)
       WHERE rr.project_id = ${projectId}::uuid
         AND rr.source = 'release'
         AND event.release_line_id = ${releaseLineId}::uuid
-        AND event.lane_type = ${scopeToLane(scope)}
-        AND COALESCE(rr.release_variant_id, event.release_variant_id) = ${releaseVariantId}::uuid
+        AND ${scopeFilter}
+        AND ${versionFilter}
     `);
     return Number(unwrapRows<Record<string, unknown>>(rows)[0]?.['total'] ?? 0);
   }
 
-  async findVariantCategoryOptions(
+  async countMatchingRunResultsByCategory(
     projectId: string,
     releaseLineId: string,
-    releaseVariantId: string,
-  ): Promise<string[]> {
+    releaseVersionId: string,
+    releaseVersionScope: 'exact' | 'journey',
+    scope: AnnotationTaskScopeDto,
+  ): Promise<Map<string, number>> {
+    const versionFilter = releaseVersionFilterSql(releaseVersionId, releaseVersionScope);
+    const scopeFilter = scopeFilterSql(scope);
     const rows = await this.db.execute(sql`
-      SELECT variant.prompt_version_snapshot
-      FROM ph_releases.release_variants variant
-      INNER JOIN ph_releases.release_lines line
-        ON line.id = variant.release_line_id
-       AND line.project_id = variant.project_id
-      WHERE variant.project_id = ${projectId}::uuid
-        AND variant.id = ${releaseVariantId}::uuid
-        AND variant.release_line_id = ${releaseLineId}::uuid
-        AND line.status <> 'archived'
-      LIMIT 1
+      SELECT rr.decision_output AS category, COUNT(*)::int AS total
+      FROM ph_runs.run_results rr
+      INNER JOIN ph_releases.release_line_events event
+        ON event.id = rr.source_id
+       AND event.project_id = rr.project_id
+      LEFT JOIN ph_releases.release_versions version
+        ON version.id = COALESCE(rr.release_version_id, event.release_version_id)
+      WHERE rr.project_id = ${projectId}::uuid
+        AND rr.source = 'release'
+        AND event.release_line_id = ${releaseLineId}::uuid
+        AND ${scopeFilter}
+        AND ${versionFilter}
+        AND rr.decision_output IS NOT NULL
+      GROUP BY rr.decision_output
     `);
-    return deriveClassificationOptionsFromPromptVersionSnapshot(
-      unwrapRows<Record<string, unknown>>(rows)[0]?.['prompt_version_snapshot'],
+    return new Map(
+      unwrapRows<Record<string, unknown>>(rows).map((row) => [String(row['category']), Number(row['total'] ?? 0)]),
     );
+  }
+
+  async findReleaseVersionCategoryOptions(
+    projectId: string,
+    releaseLineId: string,
+    releaseVersionId: string,
+    releaseVersionScope: 'exact' | 'journey',
+  ): Promise<{ options: string[]; compatible: boolean }> {
+    const versionFilter =
+      releaseVersionScope === 'journey'
+        ? sql`version.target_production_version_number = selected.target_production_version_number`
+        : sql`version.id = selected.id`;
+    const rows = await this.db.execute(sql`
+      SELECT version.prompt_version_snapshot
+      FROM ph_releases.release_versions selected
+      INNER JOIN ph_releases.release_versions version
+        ON version.project_id = selected.project_id
+       AND version.release_line_id = selected.release_line_id
+      INNER JOIN ph_releases.release_lines line
+        ON line.id = version.release_line_id
+       AND line.project_id = version.project_id
+      WHERE selected.project_id = ${projectId}::uuid
+        AND selected.id = ${releaseVersionId}::uuid
+        AND selected.release_line_id = ${releaseLineId}::uuid
+        AND ${versionFilter}
+        AND line.status <> 'archived'
+      ORDER BY version.kind, version.candidate_number NULLS FIRST, version.production_version_number NULLS LAST
+    `);
+    const optionSets = unwrapRows<Record<string, unknown>>(rows).map((row) =>
+      deriveClassificationOptionsFromPromptVersionSnapshot(row['prompt_version_snapshot']),
+    );
+    if (optionSets.length === 0) return { options: [], compatible: true };
+    const firstKey = categoryOptionsKey(optionSets[0] ?? []);
+    const compatible = optionSets.every((options) => categoryOptionsKey(options) === firstKey);
+    return { options: compatible ? (optionSets[0] ?? []) : [], compatible };
   }
 
   async createTask(
@@ -167,11 +292,14 @@ export class AnnotationRepository {
     categoryOptions: string[],
   ): Promise<string> {
     const annotationSchema = JSON.stringify(buildAnnotationSchema(categoryOptions));
+    const requestedSampleSize = getRequestedSampleSize(input);
+    const categorySampleCounts = getPositiveCategorySampleCounts(input);
     return this.db.transaction(async (tx) => {
       const taskRows = await tx.execute(sql`
         INSERT INTO ph_releases.annotation_tasks (
           scope,
-          release_variant_id,
+          release_version_id,
+          release_version_scope,
           name,
           annotation_schema,
           sampling_config,
@@ -184,15 +312,19 @@ export class AnnotationRepository {
         )
         SELECT
           ${input.scope},
-          variant.id,
+          version.id,
+          ${input.releaseVersionScope},
           ${input.name},
           ${annotationSchema}::jsonb,
           ${JSON.stringify({
             releaseLineId: input.releaseLineId,
-            releaseVariantId: input.releaseVariantId,
+            releaseVersionId: input.releaseVersionId,
+            releaseVersionScope: input.releaseVersionScope,
             scope: input.scope,
+            samplingMode: input.samplingMode,
             availableCount,
-            sampleSize: input.sampleSize,
+            sampleSize: requestedSampleSize,
+            categorySampleCounts,
           })}::jsonb,
           0,
           0,
@@ -200,13 +332,13 @@ export class AnnotationRepository {
           ${actorUserId}::uuid,
           NOW(),
           NOW()
-        FROM ph_releases.release_variants variant
+        FROM ph_releases.release_versions version
         INNER JOIN ph_releases.release_lines line
-          ON line.id = variant.release_line_id
-         AND line.project_id = variant.project_id
-        WHERE variant.project_id = ${projectId}::uuid
-          AND variant.id = ${input.releaseVariantId}::uuid
-          AND variant.release_line_id = ${input.releaseLineId}::uuid
+          ON line.id = version.release_line_id
+         AND line.project_id = version.project_id
+        WHERE version.project_id = ${projectId}::uuid
+          AND version.id = ${input.releaseVersionId}::uuid
+          AND version.release_line_id = ${input.releaseLineId}::uuid
           AND line.status <> 'archived'
         RETURNING id
       `);
@@ -214,20 +346,7 @@ export class AnnotationRepository {
       if (!taskId) throw new Error('annotation_task_source_not_found');
 
       const insertedRows = await tx.execute(sql`
-        WITH candidates AS (
-          SELECT rr.id, rr.created_at
-          FROM ph_runs.run_results rr
-          INNER JOIN ph_releases.release_line_events event
-            ON event.id = rr.source_id
-           AND event.project_id = rr.project_id
-          WHERE rr.project_id = ${projectId}::uuid
-            AND rr.source = 'release'
-            AND event.release_line_id = ${input.releaseLineId}::uuid
-            AND event.lane_type = ${scopeToLane(input.scope)}
-            AND COALESCE(rr.release_variant_id, event.release_variant_id) = ${input.releaseVariantId}::uuid
-          ORDER BY rr.created_at DESC
-          LIMIT ${input.sampleSize}
-        ),
+        WITH ${sampleCandidateCtesSql(projectId, input, requestedSampleSize, categorySampleCounts)},
         inserted AS (
           INSERT INTO ph_runs.annotations (
             run_result_id,
@@ -264,13 +383,13 @@ export class AnnotationRepository {
   }
 
   async listTasks(projectId: string): Promise<AnnotationTaskDto[]> {
-    const rows = await this.db.execute(taskSelectSql(sql`variant.project_id = ${projectId}::uuid`));
+    const rows = await this.db.execute(taskSelectSql(sql`version.project_id = ${projectId}::uuid`));
     return unwrapRows<Record<string, unknown>>(rows).map(mapTaskRow);
   }
 
   async findTask(projectId: string, taskId: string): Promise<AnnotationTaskDto | null> {
     const rows = await this.db.execute(
-      taskSelectSql(sql`variant.project_id = ${projectId}::uuid AND task.id = ${taskId}::uuid`),
+      taskSelectSql(sql`version.project_id = ${projectId}::uuid AND task.id = ${taskId}::uuid`),
     );
     return unwrapRows<Record<string, unknown>>(rows).map(mapTaskRow)[0] ?? null;
   }
@@ -415,9 +534,10 @@ function taskSelectSql(whereSql: SQL): SQL {
   return sql`
     SELECT
       task.id,
-      variant.project_id,
+      version.project_id,
       task.name,
       task.scope,
+      task.release_version_scope,
       task.status,
       task.annotation_schema,
       task.created_by,
@@ -425,17 +545,20 @@ function taskSelectSql(whereSql: SQL): SQL {
       task.updated_at,
       line.id AS release_line_id,
       line.name AS release_line_name,
-      variant.id AS release_variant_id,
-      variant.variant_number,
-      variant.prompt_name,
-      variant.prompt_version_id,
-      variant.prompt_version_number,
-      variant.prompt_version_snapshot,
-      variant.model_id,
-      COALESCE(variant.model_snapshot->>'name', model.name) AS model_name,
+      version.id AS release_version_id,
+      version.kind AS release_version_kind,
+      version.production_version_number,
+      version.target_production_version_number,
+      version.candidate_number,
+      version.prompt_name,
+      version.prompt_version_id,
+      version.prompt_version_number,
+      version.prompt_version_snapshot,
+      version.model_id,
+      COALESCE(version.model_snapshot->>'name', model.name) AS model_name,
       COALESCE(
-        variant.model_snapshot->>'providerType',
-        variant.model_snapshot->>'provider',
+        version.model_snapshot->>'providerType',
+        version.model_snapshot->>'provider',
         model.provider_type
       ) AS model_provider,
       COUNT(annotation.id)::int AS total,
@@ -457,17 +580,18 @@ function taskSelectSql(whereSql: SQL): SQL {
           AND (rr.decision_output IS NULL OR annotation.fields->>'expected_output' <> rr.decision_output)
       )::int AS mismatched
     FROM ph_releases.annotation_tasks task
-    INNER JOIN ph_releases.release_variants variant ON variant.id = task.release_variant_id
-    INNER JOIN ph_releases.release_lines line ON line.id = variant.release_line_id
-    LEFT JOIN ph_assets.models model ON model.id = variant.model_id
+    INNER JOIN ph_releases.release_versions version ON version.id = task.release_version_id
+    INNER JOIN ph_releases.release_lines line ON line.id = version.release_line_id
+    LEFT JOIN ph_assets.models model ON model.id = version.model_id
     LEFT JOIN ph_runs.annotations annotation ON annotation.task_id = task.id
     LEFT JOIN ph_runs.run_results rr ON rr.id = annotation.run_result_id
     WHERE ${whereSql}
     GROUP BY
       task.id,
-      variant.project_id,
+      version.project_id,
       task.name,
       task.scope,
+      task.release_version_scope,
       task.status,
       task.annotation_schema,
       task.created_by,
@@ -475,14 +599,17 @@ function taskSelectSql(whereSql: SQL): SQL {
       task.updated_at,
       line.id,
       line.name,
-      variant.id,
-      variant.variant_number,
-      variant.prompt_name,
-      variant.prompt_version_id,
-      variant.prompt_version_number,
-      variant.prompt_version_snapshot,
-      variant.model_id,
-      variant.model_snapshot,
+      version.id,
+      version.kind,
+      version.production_version_number,
+      version.target_production_version_number,
+      version.candidate_number,
+      version.prompt_name,
+      version.prompt_version_id,
+      version.prompt_version_number,
+      version.prompt_version_snapshot,
+      version.model_id,
+      version.model_snapshot,
       model.name,
       model.provider_type
     ORDER BY task.created_at DESC
@@ -543,7 +670,6 @@ function mapTaskRow(row: Record<string, unknown>): AnnotationTaskDto {
   const matched = Number(row['matched'] ?? 0);
   const mismatched = Number(row['mismatched'] ?? 0);
   const judged = matched + mismatched;
-  const variantNumber = Number(row['variant_number'] ?? 0);
   return {
     id: row['id'] as string,
     projectId: row['project_id'] as string,
@@ -551,8 +677,9 @@ function mapTaskRow(row: Record<string, unknown>): AnnotationTaskDto {
     scope: row['scope'] as AnnotationTaskScopeDto,
     releaseLineId: row['release_line_id'] as string,
     releaseLineName: String(row['release_line_name'] ?? ''),
-    releaseVariantId: row['release_variant_id'] as string,
-    releaseVariantLabel: formatVariantLabel(variantNumber),
+    releaseVersionId: row['release_version_id'] as string,
+    releaseVersionLabel: formatReleaseVersionLabel(row),
+    releaseVersionScope: (row['release_version_scope'] as AnnotationTaskDto['releaseVersionScope']) ?? 'exact',
     promptName: String(row['prompt_name'] ?? ''),
     promptVersionId: row['prompt_version_id'] as string,
     promptVersionNumber: toNumberOrNull(row['prompt_version_number'] as number | string | null),
@@ -619,14 +746,155 @@ function buildAnnotationSchema(categoryOptions: string[]) {
   ];
 }
 
+function sampleCandidateCtesSql(
+  projectId: string,
+  input: CreateAnnotationTaskInputDto,
+  sampleSize: number,
+  categorySampleCounts: Array<{ category: string; sampleSize: number }>,
+): SQL {
+  const scopeFilter = scopeFilterSql(input.scope);
+  const versionFilter = releaseVersionFilterSql(input.releaseVersionId, input.releaseVersionScope);
+  if (input.samplingMode === 'per_category') {
+    const categoryRequestsJson = JSON.stringify(
+      categorySampleCounts.map((item) => ({ category: item.category, sample_size: item.sampleSize })),
+    );
+    return sql`
+      requested_categories AS (
+        SELECT category, sample_size
+        FROM jsonb_to_recordset(${categoryRequestsJson}::jsonb) AS requested(category text, sample_size int)
+        WHERE sample_size > 0
+      ),
+      ranked_candidates AS (
+        SELECT
+          rr.id,
+          rr.created_at,
+          rr.decision_output,
+          ROW_NUMBER() OVER (PARTITION BY rr.decision_output ORDER BY random()) AS category_rank
+        FROM ph_runs.run_results rr
+        INNER JOIN ph_releases.release_line_events event
+          ON event.id = rr.source_id
+         AND event.project_id = rr.project_id
+        LEFT JOIN ph_releases.release_versions version
+          ON version.id = COALESCE(rr.release_version_id, event.release_version_id)
+        INNER JOIN requested_categories requested
+          ON requested.category = rr.decision_output
+        WHERE rr.project_id = ${projectId}::uuid
+          AND rr.source = 'release'
+          AND event.release_line_id = ${input.releaseLineId}::uuid
+          AND ${scopeFilter}
+          AND ${versionFilter}
+      ),
+      candidates AS (
+        SELECT ranked_candidates.id, ranked_candidates.created_at
+        FROM ranked_candidates
+        INNER JOIN requested_categories requested
+          ON requested.category = ranked_candidates.decision_output
+        WHERE ranked_candidates.category_rank <= requested.sample_size
+      )
+    `;
+  }
+
+  return sql`
+    candidates AS (
+      SELECT rr.id, rr.created_at
+      FROM ph_runs.run_results rr
+      INNER JOIN ph_releases.release_line_events event
+        ON event.id = rr.source_id
+       AND event.project_id = rr.project_id
+      LEFT JOIN ph_releases.release_versions version
+        ON version.id = COALESCE(rr.release_version_id, event.release_version_id)
+      WHERE rr.project_id = ${projectId}::uuid
+        AND rr.source = 'release'
+        AND event.release_line_id = ${input.releaseLineId}::uuid
+        AND ${scopeFilter}
+        AND ${versionFilter}
+      ORDER BY random()
+      LIMIT ${sampleSize}
+    )
+  `;
+}
+
+function getRequestedSampleSize(input: CreateAnnotationTaskInputDto): number {
+  if (input.samplingMode === 'per_category') {
+    return getPositiveCategorySampleCounts(input).reduce((sum, item) => sum + item.sampleSize, 0);
+  }
+  return input.sampleSize ?? 0;
+}
+
+function getPositiveCategorySampleCounts(
+  input: CreateAnnotationTaskInputDto,
+): Array<{ category: string; sampleSize: number }> {
+  return (input.categorySampleCounts ?? []).filter((item) => item.sampleSize > 0);
+}
+
 function getTaskCategoryOptions(row: Record<string, unknown>): string[] {
   const fromSchema = deriveClassificationOptionsFromAnnotationSchema(row['annotation_schema']);
   if (fromSchema.length > 0) return fromSchema;
   return deriveClassificationOptionsFromPromptVersionSnapshot(row['prompt_version_snapshot']);
 }
 
-function scopeToLane(scope: AnnotationTaskScopeDto): 'canary' | 'production' {
+function scopeFilterSql(scope: AnnotationTaskScopeDto): SQL {
+  if (scope === 'all') return sql`TRUE`;
+  return sql`event.lane_type = ${scopeToLane(scope)}`;
+}
+
+function scopeToLane(scope: Exclude<AnnotationTaskScopeDto, 'all'>): 'canary' | 'production' {
   return scope === 'online' ? 'production' : 'canary';
+}
+
+function parseCategoryCounts(value: unknown, categoryOptions: string[]): Array<{ category: string; count: number }> {
+  const counts = parseCountMap(value);
+  const categories = categoryOptions.length > 0 ? categoryOptions : Array.from(counts.keys()).sort();
+  return categories.map((category) => ({ category, count: counts.get(category) ?? 0 }));
+}
+
+function parseCountMap(value: unknown): Map<string, number> {
+  const raw = parseRecord(value);
+  return new Map(
+    Object.entries(raw)
+      .map(([category, count]) => [category, Number(count)] as const)
+      .filter((entry): entry is readonly [string, number] => entry[0].length > 0 && Number.isFinite(entry[1])),
+  );
+}
+
+function parseRecord(value: unknown): Record<string, unknown> {
+  if (isRecord(value)) return value;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function releaseVersionFilterSql(releaseVersionId: string, releaseVersionScope: 'exact' | 'journey'): SQL {
+  // The version table is LEFT JOINed so that release-line traffic whose
+  // release_version_id was nulled out by a run-config / route change (both
+  // rr.release_version_id and event.release_version_id NULL) is still reachable.
+  // For the version-scoped ('exact') path we restrict to the specific version,
+  // and a NULL-version row legitimately does not match it. For the
+  // non-version-scoped ('journey') path the task spans the whole release-line
+  // journey, so those detached NULL-version rows must be included.
+  if (releaseVersionScope === 'exact') return sql`version.id = ${releaseVersionId}::uuid`;
+  return sql`(
+    version.id IS NULL
+    OR version.target_production_version_number = (
+      SELECT selected.target_production_version_number
+      FROM ph_releases.release_versions selected
+      WHERE selected.id = ${releaseVersionId}::uuid
+        AND selected.release_line_id = version.release_line_id
+      LIMIT 1
+    )
+  )`;
+}
+
+function categoryOptionsKey(options: string[]): string {
+  // Canonicalize for set-equality comparison only: identical category sets in
+  // different declaration order must produce the same key. This key is used
+  // solely for compatibility checks, never to derive the displayed/stored
+  // option order (which is preserved from the source snapshot).
+  return JSON.stringify([...options].sort());
 }
 
 function unwrapRows<T = unknown>(result: unknown): T[] {
@@ -661,8 +929,14 @@ function toNumberOrNull(value: number | string | null | undefined): number | nul
   return Number.isFinite(n) ? n : null;
 }
 
-function formatVariantLabel(value: number): string {
-  return value > 0 ? `#${value}` : '#?';
+function formatReleaseVersionLabel(row: Record<string, unknown>): string {
+  const kind = row['release_version_kind'] ?? row['kind'];
+  const productionVersionNumber = toNumberOrNull(row['production_version_number'] as number | string | null);
+  const targetProductionVersionNumber =
+    toNumberOrNull(row['target_production_version_number'] as number | string | null) ?? 1;
+  const candidateNumber = toNumberOrNull(row['candidate_number'] as number | string | null) ?? 0;
+  if (kind === 'production') return `v${productionVersionNumber ?? targetProductionVersionNumber}`;
+  return `v${Math.max(0, targetProductionVersionNumber - 1)}.${candidateNumber}`;
 }
 
 function formatPromptVersionLabel(value: number | string | null): string | null {

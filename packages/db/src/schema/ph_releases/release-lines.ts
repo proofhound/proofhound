@@ -2,7 +2,18 @@
 // See docs/specs/06-database-schema.md §6 and docs/specs/27-releases.md
 
 import { sql } from 'drizzle-orm';
-import { check, index, integer, jsonb, numeric, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  type AnyPgColumn,
+  check,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { connectors, models } from '../ph_assets/index';
 import { projects } from '../ph_core/index';
 import { experiments } from '../ph_runs/experiments';
@@ -31,7 +42,7 @@ export const releaseLines = phReleases.table(
       .notNull()
       .default(sql`'{}'::jsonb`),
 
-    status: text('status').notNull().default('canary'),
+    status: text('status').notNull().default('running'),
     currentProductionEventId: uuid('current_production_event_id'),
     activeCanaryEventId: uuid('active_canary_event_id'),
 
@@ -41,10 +52,7 @@ export const releaseLines = phReleases.table(
     archivedAt: timestamp('archived_at', { withTimezone: true }),
   },
   (t) => [
-    check(
-      'release_lines_status_check',
-      sql`${t.status} IN ('canary', 'production', 'production_with_canary', 'stopped', 'archived')`,
-    ),
+    check('release_lines_status_check', sql`${t.status} IN ('running', 'stopped', 'archived')`),
     uniqueIndex('uniq_active_release_line_per_input_connector')
       .on(t.inputConnectorId)
       .where(sql`${t.status} <> 'archived' AND ${t.inputConnectorId} IS NOT NULL`),
@@ -55,8 +63,8 @@ export const releaseLines = phReleases.table(
   ],
 );
 
-export const releaseVariants = phReleases.table(
-  'release_variants',
+export const releaseVersions = phReleases.table(
+  'release_versions',
   {
     id: uuid('id')
       .primaryKey()
@@ -67,7 +75,13 @@ export const releaseVariants = phReleases.table(
     releaseLineId: uuid('release_line_id')
       .notNull()
       .references(() => releaseLines.id, { onDelete: 'cascade' }),
-    variantNumber: integer('variant_number').notNull(),
+    kind: text('kind').notNull(),
+    productionVersionNumber: integer('production_version_number'),
+    targetProductionVersionNumber: integer('target_production_version_number').notNull(),
+    candidateNumber: integer('candidate_number'),
+    promotedFromReleaseVersionId: uuid('promoted_from_release_version_id').references(
+      (): AnyPgColumn => releaseVersions.id,
+    ),
     promptId: uuid('prompt_id'),
     promptName: text('prompt_name').notNull(),
     promptVersionId: uuid('prompt_version_id').notNull(),
@@ -89,11 +103,38 @@ export const releaseVariants = phReleases.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    check('release_variants_number_positive_check', sql`${t.variantNumber} > 0`),
-    uniqueIndex('uniq_release_variants_line_number').on(t.releaseLineId, t.variantNumber),
-    uniqueIndex('uniq_release_variants_line_prompt_model').on(t.releaseLineId, t.promptVersionId, t.modelId),
-    index('idx_release_variants_project_line').on(t.projectId, t.releaseLineId),
-    index('idx_release_variants_project_prompt_model').on(t.projectId, t.promptVersionId, t.modelId),
+    check('release_versions_kind_check', sql`${t.kind} IN ('candidate', 'production')`),
+    check('release_versions_target_positive_check', sql`${t.targetProductionVersionNumber} > 0`),
+    check(
+      'release_versions_production_number_positive_check',
+      sql`${t.productionVersionNumber} IS NULL OR ${t.productionVersionNumber} > 0`,
+    ),
+    check(
+      'release_versions_candidate_number_positive_check',
+      sql`${t.candidateNumber} IS NULL OR ${t.candidateNumber} > 0`,
+    ),
+    check(
+      'release_versions_shape_check',
+      sql`(
+        ${t.kind} = 'production'
+        AND ${t.productionVersionNumber} IS NOT NULL
+        AND ${t.candidateNumber} IS NULL
+        AND ${t.targetProductionVersionNumber} = ${t.productionVersionNumber}
+      ) OR (
+        ${t.kind} = 'candidate'
+        AND ${t.productionVersionNumber} IS NULL
+        AND ${t.candidateNumber} IS NOT NULL
+      )`,
+    ),
+    uniqueIndex('uniq_release_versions_line_production_number')
+      .on(t.releaseLineId, t.productionVersionNumber)
+      .where(sql`${t.kind} = 'production'`),
+    uniqueIndex('uniq_release_versions_line_candidate_number')
+      .on(t.releaseLineId, t.targetProductionVersionNumber, t.candidateNumber)
+      .where(sql`${t.kind} = 'candidate'`),
+    index('idx_release_versions_project_line').on(t.projectId, t.releaseLineId),
+    index('idx_release_versions_project_prompt_model').on(t.projectId, t.promptVersionId, t.modelId),
+    index('idx_release_versions_target').on(t.releaseLineId, t.targetProductionVersionNumber, t.kind),
   ],
 );
 
@@ -119,7 +160,7 @@ export const releaseLineEvents = phReleases.table(
     rollbackTargetEventId: uuid('rollback_target_event_id'),
     legacySource: text('legacy_source'),
     legacySourceId: uuid('legacy_source_id'),
-    releaseVariantId: uuid('release_variant_id').references(() => releaseVariants.id),
+    releaseVersionId: uuid('release_version_id').references(() => releaseVersions.id),
 
     promptId: uuid('prompt_id'),
     promptName: text('prompt_name').notNull(),
@@ -161,6 +202,10 @@ export const releaseLineEvents = phReleases.table(
       .default(sql`'[]'::jsonb`),
     filterRules: jsonb('filter_rules'),
     recordMode: text('record_mode').notNull().default('all'),
+    recordCategories: text('record_categories')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
     externalIdField: text('external_id_field'),
     retentionDays: integer('retention_days'),
 
@@ -197,8 +242,11 @@ export const releaseLineEvents = phReleases.table(
         'cancel_canary',
         'promote_canary',
         'rollback',
+        'restore_to_production',
+        'restore_to_canary',
         'force_stop',
-        'archive_line'
+        'archive_line',
+        'unarchive_line'
       )`,
     ),
     check(
@@ -214,10 +262,13 @@ export const releaseLineEvents = phReleases.table(
       sql`${t.trafficMode} IN ('split', 'dual_run') OR ${t.trafficMode} IS NULL`,
     ),
     check(
+      'release_line_events_record_mode_check',
+      sql`${t.recordMode} IN ('all', 'selected_categories', 'correct_only')`,
+    ),
+    check(
       'release_line_events_traffic_ratio_check',
       sql`${t.trafficRatio} IS NULL OR (${t.trafficRatio} >= 0 AND ${t.trafficRatio} <= 1)`,
     ),
-    check('release_line_events_record_mode_check', sql`${t.recordMode} IN ('all', 'correct_only')`),
     check(
       'release_line_events_rollback_target_required',
       sql`${t.operation} <> 'rollback' OR ${t.rollbackTargetEventId} IS NOT NULL`,
@@ -245,6 +296,6 @@ export const releaseLineEvents = phReleases.table(
     index('idx_release_line_events_line_created').on(t.releaseLineId, t.createdAt),
     index('idx_release_line_events_project_lane_status').on(t.projectId, t.laneType, t.status, t.createdAt),
     index('idx_release_line_events_project_prompt').on(t.projectId, t.promptId, t.createdAt),
-    index('idx_release_line_events_variant').on(t.releaseVariantId),
+    index('idx_release_line_events_version').on(t.releaseVersionId),
   ],
 );

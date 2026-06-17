@@ -10,8 +10,8 @@ Run results are immutable once written; manual annotations are written to `ph_ru
 
 All run-result-based "failure count / failed samples / failure rate" metrics use one and the same definition:
 
-- An LLM call failure causes `run_results.status <> 'success'`.
-- The run result status is not `success`.
+- An LLM call failure causes `run_results.status = 'failed'`.
+- The run result status is `failed`; `running` is an in-progress state and is not counted as failure.
 - Structured output parsing failed, `judgment_status = 'parse_error'`.
 - An expected result exists and the judgment logic failed to run, `judgment_status = 'judge_error'`.
 
@@ -23,6 +23,8 @@ failed_run_results / total_run_results
 
 Here `failed_run_results` is counted only under the run-result failure definition above; `incorrect` is a quality judgment result and is not equivalent to a run failure. When the model produces output normally but the output does not match the expected result, only the quality judgment is written — it is not counted in the failure count / failure rate. Downstream delivery success / failure belongs to the delivery-path metrics and must be named explicitly as downstream delivery metrics; do not reuse "failure rate" for the run failure rate definition.
 
+The run result status state machine has only `running` / `success` / `failed`. Failure forms such as `error`, `time_out`, and `rate_limit` are represented as error type / error detail under `status='failed'`; they are not separate run-result states.
+
 ## 2. List
 
 Each row shows:
@@ -30,7 +32,7 @@ Each row shows:
 - Time
 - Source: experiment / optimization / canary candidate / production
 - Source object
-- Release variant (release source)
+- Release version (release source)
 - Prompt version
 - Model
 - Input preview
@@ -47,7 +49,7 @@ Each row shows:
 
 - Time window
 - Source type
-- Release variant
+- Release version
 - Prompt / prompt version / model
 - Status / error type
 - Judgment value
@@ -100,7 +102,8 @@ Pagination query parameters:
 - `search`
 - `sort`
 - `sourceIds[]`: `release_line_events.id`.
-- `releaseVariantIds[]`: release variant ID; the same prompt version + model combination remains stable across the canary and production release stages.
+- `releaseVersionIds[]`: release version ID; exact release version filtering is preferred for day-to-day release result review.
+- `releaseVersionScope`: `exact` / `journey`. `exact` only includes the selected `releaseVersionIds[]`; `journey` expands a selected production version to its related candidate versions plus the production version when annotation categories are compatible.
 - `promptVersionIds[]`
 - `lane[]`: `production` / `canary`
 - `externalId`
@@ -113,7 +116,7 @@ MCP:
 
 - `run_result_list_for_release`
 
-The release run results list must show the release variant short label, prompt version, and model name together; users should not see only a UUID.
+The release run results list must show the release version label, prompt version, and model name together; users should not see only a UUID.
 
 ## 5. Detail
 
@@ -134,9 +137,10 @@ The detail view shows:
 Annotations are used for manual correction or to supplement the judgment:
 
 - Annotation records are written to `ph_runs.annotations`.
-- An annotation can be associated with a canary or production annotation task; tasks are created manually by the user and are not generated automatically by a release or runner.
+- An annotation can be associated with a release-version annotation task; tasks are created manually by the user and are not generated automatically by a release or runner. New tasks sample from all current run results under the selected release version by default; compatibility tasks may still target only canary or production lane data.
 - The manual annotation field is fixed as `expected_output`, representing the correct business classification / field value for the current data sample, rather than a binary judgment of "whether the model output is correct".
 - Classification annotation uses a single-select control; the available classifications are derived from the `output_schema.fields[].value` of the prompt version bound to the annotation task, preferring the output field with `isJudgment=true`. The single-select result is written to `fields.expected_output` by classification label.
+- Annotation task sampling supports `random` sampling by total count and `per_category` sampling by requested counts per prompt classification category. Per-category availability is counted from the current `run_results.decision_output` distribution under the selected release version.
 - An annotation sample can be claimed and locked first and then submitted, or submitted directly from an unlocked or expired-lock state; on direct submission the server atomically claims the sample and writes the annotation. It still cannot submit a sample currently held under a valid lock by another user.
 - Annotations do not update the business result fields of `run_results`.
 

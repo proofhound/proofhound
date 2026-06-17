@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { ConsumeMessage } from '@proofhound/connector-client';
 import { createLogger } from '@proofhound/logger';
 import type { ConnectorConfigShape, ConnectorDirection, ConnectorType, ProjectContext } from '@proofhound/shared';
@@ -6,7 +6,7 @@ import { BullmqService } from '../../infrastructure/orchestration/bullmq.service
 import { RedisMutexService, type RedisMutexLease } from '../../../shared/redis/redis-mutex.service';
 import type { ActorContext } from '../../common/actor-context';
 import { ProjectContextResolver } from '../../common/contracts/project-context.resolver';
-import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
+import { UsageMeteringHook, safeRecordUsageEvent } from '../../common/contracts/usage-metering.hook';
 import { ConnectorDriverFactory } from '../connector/connector.driver-factory';
 import {
   buildReleaseLlmPayload,
@@ -16,8 +16,10 @@ import {
   mapCanaryVariables,
   matchesCanaryFilter,
   normalizeQueuePayload,
+  OUTPUT_MAPPING_CONNECTOR_EXCLUDED,
   passesTrafficRatio,
   readReleaseExternalId,
+  selectOutputMappingForConnector,
   type CanaryRuntimeConfig,
 } from '../canary-release/canary-runtime';
 import {
@@ -51,12 +53,19 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
   private scanning = false;
 
   constructor(
+    @Inject(ReleaseRunnerRepository)
     private readonly repo: ReleaseRunnerRepository,
+    @Inject(ConnectorDriverFactory)
     private readonly driverFactory: ConnectorDriverFactory,
+    @Inject(BullmqService)
     private readonly bullmq: BullmqService,
+    @Inject(RedisMutexService)
     private readonly mutex: RedisMutexService,
+    @Inject(ProjectContextResolver)
     private readonly projectResolver: ProjectContextResolver,
-    @Optional() private readonly usageMetering?: UsageMeteringHook,
+    @Inject(UsageMeteringHook)
+    @Optional()
+    private readonly usageMetering?: UsageMeteringHook,
   ) {}
 
   onModuleInit(): void {
@@ -90,6 +99,7 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
       for (const line of lines) {
         await this.syncCompletedResults(line);
         if (await this.applyControlState(line)) continue;
+        if (await this.applyCanaryStopConditions(line)) continue;
         if (line.inputConnectorType === 'webhook') continue;
         if (!this.active.has(line.id)) await this.startLineTask(line);
       }
@@ -238,14 +248,43 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
       if (!lane) continue;
       const attached = await this.repo.attachCompletedRunResults(lane.id);
       if (attached.length > 0) {
+        const recorded = filterRunResultsForRecordMode(lane, attached);
         this.logger.info(
-          { releaseLineEventId: lane.id, lane: lane.laneType, completed: attached.length },
+          { releaseLineEventId: lane.id, lane: lane.laneType, completed: attached.length, recorded: recorded.length },
           'release_runner_results_collected',
         );
-        await this.recordRunResultAttachments(lane, attached);
-        if (lane.outputConnectorIds.length > 0) await this.pushCompletedResults(lane, attached);
+        await this.recordRunResultAttachments(lane, recorded);
+        if (lane.outputConnectorIds.length > 0) await this.pushCompletedResults(lane, recorded);
+        lane.totalProcessed += attached.length;
       }
     }
+  }
+
+  private async applyCanaryStopConditions(line: ReleaseRunnerLineRow): Promise<boolean> {
+    const canary = line.canary;
+    if (!canary) return false;
+    const trigger = resolveCanaryStopCondition(canary, new Date());
+    if (!trigger) return false;
+
+    await this.repo.transitionLaneStatus(canary.id, 'completed', {
+      terminalReason: null,
+      metricsPatch: {
+        completionReason: 'stop_conditions',
+        stopCondition: trigger.kind,
+      },
+    });
+    this.logger.info(
+      {
+        releaseLineId: line.id,
+        releaseLineEventId: canary.id,
+        stopCondition: trigger.kind,
+        threshold: trigger.threshold,
+        actual: trigger.actual,
+      },
+      'release_runner_canary_stop_condition_met',
+    );
+    this.stopTask(line.id);
+    return true;
   }
 
   private async recordRunResultAttachments(
@@ -269,7 +308,7 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
               releaseLineId: lane.releaseLineId,
               releaseLineEventId: lane.id,
               laneType: lane.laneType,
-              releaseVariantId: lane.releaseVariantId,
+              releaseVersionId: lane.releaseVersionId,
               runResultId: runResult.id,
               externalId: runResult.externalId,
               status: runResult.status,
@@ -293,23 +332,35 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
     const outputConnectors = await this.repo.listOutputConnectorsByIds(lane.projectId, lane.outputConnectorIds);
     this.logMissingOutputConnectors(lane, outputConnectors);
 
-    const runtimeConfig = toRuntimeConfig(lane);
-    const messages = runResults.map((runResult) =>
-      buildReleaseOutputPayload({
-        release: runtimeConfig,
-        runResult,
-      }),
-    );
-
     let successCount = 0;
-    let failedCount = this.countMissingOutputDeliveries(lane, outputConnectors, messages.length);
+    let failedCount = this.countMissingOutputDeliveries(lane, outputConnectors, runResults.length);
 
     if (outputConnectors.length === 0) {
       await this.repo.recordOutputDelivery(lane.id, { successCount, failedCount });
       return;
     }
 
+    const runtimeConfig = toRuntimeConfig(lane);
     for (const connector of outputConnectors) {
+      const connectorMapping = selectOutputMappingForConnector(runtimeConfig.outputMapping, connector.id);
+      // A per-connector output mapping is configured but this connector is excluded
+      // from it: deliver nothing rather than leaking the default raw envelope.
+      if (connectorMapping === OUTPUT_MAPPING_CONNECTOR_EXCLUDED) {
+        this.logger.info(
+          { releaseLineEventId: lane.id, connectorId: connector.id },
+          'release_runner_output_connector_excluded',
+        );
+        continue;
+      }
+      const messages = runResults.map((runResult) =>
+        buildReleaseOutputPayload({
+          release: {
+            ...runtimeConfig,
+            outputMapping: connectorMapping,
+          },
+          runResult,
+        }),
+      );
       const result = await this.driverFactory.push({
         configEncrypted: connector.configEncrypted,
         type: connector.type as ConnectorType,
@@ -474,6 +525,21 @@ function selectLanesForMessage(line: ReleaseRunnerLineRow, externalId: string): 
   return canaryHit ? [canary] : [production];
 }
 
+function filterRunResultsForRecordMode(
+  lane: ReleaseRunnerLaneRow,
+  runResults: ReleaseCompletedRunResultRow[],
+): ReleaseCompletedRunResultRow[] {
+  if (lane.recordMode !== 'selected_categories' && lane.recordMode !== 'correct_only') return runResults;
+  const categories = new Set(lane.recordCategories.map(normalizeRecordCategory).filter(Boolean));
+  if (lane.recordMode === 'correct_only' && categories.size === 0) return runResults;
+  if (categories.size === 0) return [];
+  return runResults.filter((runResult) => categories.has(normalizeRecordCategory(runResult.decisionOutput)));
+}
+
+function normalizeRecordCategory(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
 function resolveRenewIntervalMs(ttlMs: number): number {
   return Math.max(1_000, Math.floor(ttlMs / 3));
 }
@@ -483,7 +549,7 @@ function toRuntimeConfig(lane: ReleaseRunnerLaneRow, orgId?: string): CanaryRunt
     id: lane.id,
     projectId: lane.projectId,
     ...(orgId ? { orgId } : {}),
-    releaseVariantId: lane.releaseVariantId,
+    releaseVersionId: lane.releaseVersionId,
     promptVersionId: lane.promptVersionId,
     promptId: lane.promptId,
     modelId: lane.modelId,
@@ -521,4 +587,53 @@ function resolveInputConnectorConfig(line: ReleaseRunnerLineRow): ConnectorConfi
     ...line.inputConnectorConfig,
     consumerGroup: `proofhound-dual-run-${line.id}`,
   } as ConnectorConfigShape;
+}
+
+type CanaryStopConditionTrigger = {
+  kind: 'maxSamples' | 'maxDurationSeconds';
+  threshold: number;
+  actual: number;
+};
+
+function resolveCanaryStopCondition(lane: ReleaseRunnerLaneRow, now: Date): CanaryStopConditionTrigger | null {
+  const stopConditions = readStopConditions(lane.runConfig);
+  if (!stopConditions) return null;
+
+  if (typeof stopConditions.maxSamples === 'number' && lane.totalProcessed >= stopConditions.maxSamples) {
+    return {
+      kind: 'maxSamples',
+      threshold: stopConditions.maxSamples,
+      actual: lane.totalProcessed,
+    };
+  }
+
+  if (typeof stopConditions.maxDurationSeconds === 'number' && lane.startedAt) {
+    const elapsedSeconds = Math.floor((now.getTime() - lane.startedAt.getTime()) / 1000);
+    if (elapsedSeconds >= stopConditions.maxDurationSeconds) {
+      return {
+        kind: 'maxDurationSeconds',
+        threshold: stopConditions.maxDurationSeconds,
+        actual: elapsedSeconds,
+      };
+    }
+  }
+
+  return null;
+}
+
+function readStopConditions(runConfig: Record<string, unknown>): {
+  maxSamples?: number;
+  maxDurationSeconds?: number;
+} | null {
+  const raw = runConfig['stopConditions'];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const maxSamples = positiveInteger(record['maxSamples']);
+  const maxDurationSeconds = positiveInteger(record['maxDurationSeconds']);
+  if (maxSamples === undefined && maxDurationSeconds === undefined) return null;
+  return { maxSamples, maxDurationSeconds };
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
 }

@@ -1,6 +1,7 @@
 import { datasetClient, type DatasetTransferOptions } from '@proofhound/api-client';
 import type {
   CreateDatasetDto,
+  DatasetDeletionImpactDto,
   DatasetExportFormatDto,
   DatasetListItemDto,
   DeleteDatasetSamplesDto,
@@ -22,6 +23,10 @@ interface UpdateDatasetVariables {
   body: UpdateDatasetMetadataDto;
 }
 
+interface DatasetLifecycleVariables {
+  datasetId: string;
+}
+
 type DatasetListResponse = { data: DatasetListItemDto[]; total: number };
 
 export function useDatasets(projectId: string) {
@@ -37,6 +42,14 @@ export function useDataset(projectId: string, datasetId: string) {
   return useQuery({
     queryKey: ['datasets', projectId, datasetId],
     queryFn: () => datasetClient.getDataset(projectId, datasetId),
+    enabled: projectId.length > 0 && datasetId.length > 0,
+  });
+}
+
+export function useDatasetDeleteImpact(projectId: string, datasetId: string) {
+  return useQuery<DatasetDeletionImpactDto>({
+    queryKey: ['datasets', projectId, datasetId, 'delete-impact'],
+    queryFn: () => datasetClient.getDatasetDeleteImpact(projectId, datasetId),
     enabled: projectId.length > 0 && datasetId.length > 0,
   });
 }
@@ -100,6 +113,30 @@ export function useDownloadDataset(projectId: string) {
   return useMutation({
     mutationFn: ({ datasetId, format, onProgress }: DownloadDatasetVariables) =>
       datasetClient.downloadDataset(projectId, datasetId, format, { onProgress }),
+  });
+}
+
+export function useArchiveDataset(projectId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ datasetId }: DatasetLifecycleVariables) => datasetClient.archiveDataset(projectId, datasetId),
+    onSuccess: (dataset) => {
+      void queryClient.invalidateQueries({ queryKey: ['datasets', projectId] });
+      queryClient.setQueryData(['datasets', projectId, dataset.id], dataset);
+    },
+  });
+}
+
+export function useRestoreDataset(projectId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ datasetId }: DatasetLifecycleVariables) => datasetClient.restoreDataset(projectId, datasetId),
+    onSuccess: (dataset) => {
+      void queryClient.invalidateQueries({ queryKey: ['datasets', projectId] });
+      queryClient.setQueryData(['datasets', projectId, dataset.id], dataset);
+    },
   });
 }
 

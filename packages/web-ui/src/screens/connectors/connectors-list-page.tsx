@@ -41,7 +41,7 @@ import {
   getConnectorSearchText,
   getReferenceTotal,
 } from './connector-types';
-import { ConnectorTypeBadge, DirectionBadge, HealthBadge } from './connector-ui';
+import { ConnectorTypeBadge, DirectionBadge, HealthBadge, SelectionBox } from './connector-ui';
 
 const FILTER_CHIPS: Array<{ filter: ConnectorFilter; labelKey: TranslationKey }> = [
   { filter: { kind: 'all' }, labelKey: 'connectors.filter.all' },
@@ -366,7 +366,7 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  className="size-4 cursor-pointer"
+                  className="size-4 cursor-pointer accent-primary"
                   checked={deleteState.force}
                   onChange={(event) => setDeleteState((prev) => ({ ...prev, force: event.target.checked }))}
                 />
@@ -428,12 +428,11 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
           <TableHeader>
             <TableRow>
               <TableHead column="select">
-                <input
-                  type="checkbox"
-                  aria-label="select-all-connectors"
-                  className="size-4 cursor-pointer"
+                <SelectionBox
+                  ariaLabel="select-all-connectors"
                   checked={items.length > 0 && allSelected}
-                  onChange={(event) => onToggleAll(event.target.checked)}
+                  disabled={items.length === 0}
+                  onClick={() => onToggleAll(!(items.length > 0 && allSelected))}
                 />
               </TableHead>
               <TableHead column="name">{t('connectors.table.name')}</TableHead>
@@ -460,12 +459,10 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
                   data-testid={`project-connector-row-${item.id}`}
                 >
                   <TableCell column="select">
-                    <input
-                      type="checkbox"
-                      aria-label={`select-${item.name}`}
-                      className="size-4 cursor-pointer"
+                    <SelectionBox
+                      ariaLabel={`select-${item.name}`}
                       checked={selected}
-                      onChange={() => onToggle(item.id)}
+                      onClick={() => onToggle(item.id)}
                     />
                   </TableCell>
                   <TableCell column="name" stopPropagation={false}>
@@ -547,12 +544,10 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    aria-label={`select-${item.name}`}
-                    className="size-4 cursor-pointer"
+                  <SelectionBox
+                    ariaLabel={`select-${item.name}`}
                     checked={selected}
-                    onChange={() => onToggle(item.id)}
+                    onClick={() => onToggle(item.id)}
                   />
                   <Link href={`/connectors/${item.id}`} className="font-medium hover:underline">
                     {item.name}

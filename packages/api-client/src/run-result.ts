@@ -23,9 +23,10 @@ function buildParams(query: RunResultListQueryDto): Record<string, unknown> {
 function buildReleaseParams(query: RunResultReleaseListQueryDto): Record<string, unknown> {
   const out = buildParams(query);
   if (query.sourceIds && query.sourceIds.length > 0) out['sourceIds'] = query.sourceIds.join(',');
-  if (query.releaseVariantIds && query.releaseVariantIds.length > 0) {
-    out['releaseVariantIds'] = query.releaseVariantIds.join(',');
+  if (query.releaseVersionIds && query.releaseVersionIds.length > 0) {
+    out['releaseVersionIds'] = query.releaseVersionIds.join(',');
   }
+  if (query.releaseVersionScope) out['releaseVersionScope'] = query.releaseVersionScope;
   if (query.promptVersionIds && query.promptVersionIds.length > 0) {
     out['promptVersionIds'] = query.promptVersionIds.join(',');
   }

@@ -20,8 +20,10 @@ export type ProductionReleaseStatusDto = z.infer<typeof productionReleaseStatusS
 export const productionReleaseStopReasonSchema = z.enum(['replaced', 'rolled_back', 'force_stopped', 'error']);
 export type ProductionReleaseStopReasonDto = z.infer<typeof productionReleaseStopReasonSchema>;
 
-export const productionReleaseRecordModeSchema = z.enum(['all', 'correct_only']);
+export const productionReleaseRecordModeSchema = z.enum(['all', 'selected_categories', 'correct_only']);
 export type ProductionReleaseRecordModeDto = z.infer<typeof productionReleaseRecordModeSchema>;
+export const productionReleaseRecordCategoriesSchema = z.array(z.string().trim().min(1).max(200)).default([]);
+export type ProductionReleaseRecordCategoriesDto = z.infer<typeof productionReleaseRecordCategoriesSchema>;
 
 // Aggregated online status (derived)
 export const productionReleaseAggregateStatusSchema = z.enum(['online', 'offline']);
@@ -68,6 +70,7 @@ export const productionReleaseEventSchema = z.object({
   variableMapping: productionReleaseVariableMappingSchema,
   filterRules: productionReleaseFilterRulesSchema,
   recordMode: productionReleaseRecordModeSchema,
+  recordCategories: productionReleaseRecordCategoriesSchema,
   externalIdField: z.string().nullable(),
   retentionDays: z.number().int().positive().nullable(),
   status: productionReleaseStatusSchema,
@@ -158,6 +161,7 @@ export const createProductionReleaseInputSchema = z.object({
   variableMapping: productionReleaseVariableMappingSchema.default({}),
   filterRules: productionReleaseFilterRulesSchema.default(null),
   recordMode: productionReleaseRecordModeSchema.default('all'),
+  recordCategories: productionReleaseRecordCategoriesSchema,
   externalIdField: z.string().min(1).nullable().default(null),
   retentionDays: z.number().int().positive().nullable().default(null),
   submitReason: z.string().min(1, 'submit_reason is required').max(2000),

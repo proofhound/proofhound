@@ -384,7 +384,6 @@ describe('ExperimentService', () => {
   it('hard-deletes an experiment', async () => {
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.findExperimentById.mockResolvedValue(experimentRow());
-    repo.hasProductionReleaseSourceReference.mockResolvedValue(false);
 
     await service.deleteExperiment(
       '77777777-7777-4777-8777-777777777777',
@@ -396,17 +395,6 @@ describe('ExperimentService', () => {
       '77777777-7777-4777-8777-777777777777',
       '22222222-2222-4222-8222-222222222222',
     );
-  });
-
-  it('blocks hard delete when a production release still references the experiment', async () => {
-    repo.findProjectAccess.mockResolvedValue(projectAccess());
-    repo.findExperimentById.mockResolvedValue(experimentRow());
-    repo.hasProductionReleaseSourceReference.mockResolvedValue(true);
-
-    await expect(
-      service.deleteExperiment('77777777-7777-4777-8777-777777777777', '22222222-2222-4222-8222-222222222222', actor),
-    ).rejects.toBeInstanceOf(ConflictException);
-    expect(repo.hardDeleteExperiment).not.toHaveBeenCalled();
   });
 
   it('derives datasetModalities from dataset fieldSchema (text + image)', async () => {
@@ -517,7 +505,7 @@ describe('ExperimentService', () => {
         decisionOutput: null,
         expectedOutput: 'yes',
         judgmentStatus: null,
-        status: 'error',
+        status: 'failed',
         count: 1,
         inputTokens: 1000,
         outputTokens: 0,
@@ -542,7 +530,7 @@ describe('ExperimentService', () => {
     );
 
     expect(runResults.aggregateExperiment).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222');
-    // failed = status != success + parse_error / judge_error
+    // failed = status failed + parse_error / judge_error
     expect(result.processedSamples).toBe(12);
     expect(result.failedSamples).toBe(3);
     expect(result.metrics?.inputTokens).toBe(10200);

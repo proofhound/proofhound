@@ -26,6 +26,8 @@ import { inArray, like, sql } from 'drizzle-orm';
 import { DATABASE_CLIENT } from '../../src/shared/database/database.constants';
 import { BullmqService } from '../../src/server/infrastructure/orchestration/bullmq.service';
 import { LOCAL_ACTOR_ID } from '../../src/server/common/actor-context';
+import { AccessControlService } from '../../src/server/common/contracts/access-control.service';
+import { LocalAccessControlService } from '../../src/server/common/contracts/local-access-control.service';
 import { ExperimentWorkflowRegistrar } from '../../src/server/modules/experiment/experiment.workflow';
 import { RunResultRepository } from '../../src/server/modules/run-result/run-result.repository';
 import { RunResultService } from '../../src/server/modules/run-result/run-result.service';
@@ -100,6 +102,7 @@ export function describeDbosIntegration(name: string, fn: (getCtx: () => DbosTes
         providers: [
           { provide: DATABASE_CLIENT, useValue: db },
           { provide: BullmqService, useValue: mockBullmq },
+          { provide: AccessControlService, useClass: LocalAccessControlService },
           RunResultRepository,
           RunResultService,
           ExperimentWorkflowRegistrar,

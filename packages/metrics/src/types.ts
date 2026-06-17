@@ -2,7 +2,7 @@
 export type ProjectType = 'classification' | 'generative' | 'agent';
 
 export type JudgmentStatus = 'correct' | 'incorrect' | 'parse_error' | 'judge_error';
-export type RunStatus = 'success' | 'error' | 'timeout' | 'rate_limited';
+export type RunStatus = 'running' | 'success' | 'failed';
 
 /** One row of SQL aggregation output — already bucketed by (decisionOutput, expectedOutput, judgmentStatus, status) */
 export interface ClassificationAggregateRow {

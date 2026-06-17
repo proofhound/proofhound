@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { createLogger } from '@proofhound/logger';
 import type {
   CreateDatasetDto,
@@ -13,6 +13,7 @@ import type {
   DatasetSampleDto,
   DatasetSamplesListResponseDto,
   DatasetSamplesQueryDto,
+  DatasetStatusDto,
   DeleteDatasetSamplesDto,
   DeleteDatasetSamplesResponseDto,
   UpdateDatasetMetadataDto,
@@ -22,6 +23,7 @@ import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
+import { DatasetDeletionHook } from './dataset-deletion.hook';
 import { buildDatasetFieldSchema } from './dataset-field-schema.util';
 import {
   DatasetRepository,
@@ -46,6 +48,8 @@ export class DatasetService {
     private readonly repo: DatasetRepository,
     private readonly accessControl: AccessControlService,
     private readonly quotaPolicy: QuotaPolicyHook,
+    @Inject(DatasetDeletionHook)
+    private readonly deletionHook: DatasetDeletionHook,
     @Optional() private readonly usageMetering?: UsageMeteringHook,
   ) {}
 
@@ -180,6 +184,7 @@ export class DatasetService {
     if (!row) {
       throw new NotFoundException(`Dataset ${datasetId} not found`);
     }
+    this.assertDatasetActive(row);
 
     const referencesMap = await this.repo.countDatasetReferences([datasetId]);
     const references = referencesMap.get(datasetId) ?? this.emptyReferences();
@@ -211,6 +216,7 @@ export class DatasetService {
     if (!row) {
       throw new NotFoundException(`Dataset ${datasetId} not found`);
     }
+    this.assertDatasetActive(row);
 
     if (dto.name !== row.name) {
       const existing = await this.repo.findDatasetByProjectAndName(projectId, dto.name);
@@ -236,6 +242,45 @@ export class DatasetService {
     return this.toDatasetListItem(updated, distribution, references.get(datasetId) ?? this.emptyReferences());
   }
 
+  async getDatasetDeleteImpact(projectId: string, datasetId: string, actor: CurrentUserPayload) {
+    await this.getAccessibleProject(projectId, actor);
+
+    const row = await this.repo.findDatasetById(projectId, datasetId);
+    if (!row) {
+      throw new NotFoundException(`Dataset ${datasetId} not found`);
+    }
+
+    return this.deletionHook.prepareDatasetDeletion({ projectId, datasetId });
+  }
+
+  async archiveDataset(projectId: string, datasetId: string, actor: CurrentUserPayload): Promise<DatasetListItemDto> {
+    await this.getWritableProject(projectId, actor);
+
+    const row = await this.repo.findDatasetById(projectId, datasetId);
+    if (!row) {
+      throw new NotFoundException(`Dataset ${datasetId} not found`);
+    }
+    if (row.status !== 'archived') {
+      await this.repo.archiveDataset(projectId, datasetId);
+    }
+
+    return this.getDataset(projectId, datasetId, actor);
+  }
+
+  async restoreDataset(projectId: string, datasetId: string, actor: CurrentUserPayload): Promise<DatasetListItemDto> {
+    await this.getWritableProject(projectId, actor);
+
+    const row = await this.repo.findDatasetById(projectId, datasetId);
+    if (!row) {
+      throw new NotFoundException(`Dataset ${datasetId} not found`);
+    }
+    if (row.status !== 'active') {
+      await this.repo.restoreDataset(projectId, datasetId);
+    }
+
+    return this.getDataset(projectId, datasetId, actor);
+  }
+
   async deleteDataset(projectId: string, datasetId: string, actor: CurrentUserPayload): Promise<void> {
     await this.getWritableProject(projectId, actor);
 
@@ -244,11 +289,7 @@ export class DatasetService {
       throw new NotFoundException(`Dataset ${datasetId} not found`);
     }
 
-    const referencesMap = await this.repo.countDatasetReferences([datasetId]);
-    const references = referencesMap.get(datasetId) ?? this.emptyReferences();
-    if (references.experiments > 0 || references.optimizations > 0) {
-      throw new ConflictException('dataset_referenced');
-    }
+    await this.deletionHook.prepareDatasetDeletion({ projectId, datasetId });
 
     const deleted = await this.repo.hardDeleteDataset(projectId, datasetId);
     if (deleted === 0) {
@@ -383,6 +424,7 @@ export class DatasetService {
       id: row.id,
       projectId: row.projectId,
       name: row.name,
+      status: this.toDatasetStatus(row.status),
       description: row.description,
       sampleCount: row.sampleCount,
       fieldSchema,
@@ -394,8 +436,19 @@ export class DatasetService {
       createdByDisplayName: row.createdByDisplayName ?? null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      archivedAt: row.archivedAt?.toISOString() ?? null,
       deletedAt: row.deletedAt?.toISOString() ?? null,
     };
+  }
+
+  private toDatasetStatus(status: string): DatasetStatusDto {
+    return status === 'archived' ? 'archived' : 'active';
+  }
+
+  private assertDatasetActive(row: DatasetRow): void {
+    if (row.status === 'archived') {
+      throw new ConflictException('dataset_archived');
+    }
   }
 
   private emptyReferences(): DatasetReferencesDto {

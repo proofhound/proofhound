@@ -1,7 +1,7 @@
 // Canary release compatibility service. The source of truth is release_lines / release_line_events.
 // See docs/specs/27-releases.md and docs/specs/03-orchestration.md §3.3
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createLogger } from '@proofhound/logger';
 import type {
   CanaryAnnotationDto,
@@ -18,6 +18,7 @@ import { AccessControlService } from '../../common/contracts/access-control.serv
 import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { ReleaseLineService } from '../release-line/release-line.service';
+import { assertReleasePromptVariableMapping } from '../release-line/release-variable-mapping';
 import {
   CanaryReleaseRepository,
   type AnnotationRow,
@@ -41,9 +42,13 @@ export class CanaryReleaseService {
   private readonly logger = createLogger('canary-release.service', { service: 'server' });
 
   constructor(
+    @Inject(CanaryReleaseRepository)
     private readonly repo: CanaryReleaseRepository,
+    @Inject(ReleaseLineService)
     private readonly releaseLineService: ReleaseLineService,
+    @Inject(AccessControlService)
     private readonly accessControl: AccessControlService,
+    @Inject(WorkflowAuthorizationHook)
     private readonly workflowAuth: WorkflowAuthorizationHook,
   ) {}
 
@@ -135,16 +140,15 @@ export class CanaryReleaseService {
       if (!ds) throw new NotFoundException(`Dataset ${input.targetDatasetId} not found`);
     }
 
-    const occupied = await this.repo.findRunningByInputConnector(input.inputConnectorId);
-    if (occupied) {
-      throw new ConflictException(
-        `Input connector ${input.inputConnectorId} already has active canary event ${occupied.id}`,
-      );
-    }
+    const snapshots = buildPromptSnapshots(version);
+    assertReleasePromptVariableMapping({
+      variableMapping: createValues.variableMapping,
+      promptVersionSnapshot: snapshots.promptVersionSnapshot,
+      externalIdField: createValues.externalIdField,
+    });
 
     await this.assertReleaseWorkflowStart(projectId, actor, orgId);
 
-    const snapshots = buildPromptSnapshots(version);
     const now = new Date();
     const line = await this.releaseLineService.recordCanaryEvent(
       {
@@ -161,11 +165,12 @@ export class CanaryReleaseService {
         controlStatePayload: null,
         trafficRatio: input.trafficRatio,
         trafficMode: createValues.trafficMode,
-        runConfig: input.runConfig,
+        runConfig: withCanaryStopConditions(input.runConfig, input.stopConditions),
         variableMapping: createValues.variableMapping,
         outputMapping: input.outputMapping,
         filterRules: createValues.filterRules,
         recordMode: input.recordMode,
+        recordCategories: input.recordCategories.length > 0 ? input.recordCategories : input.storageCategories,
         externalIdField: createValues.externalIdField,
         metrics: null,
         totalReceived: 0,
@@ -193,7 +198,7 @@ export class CanaryReleaseService {
     );
     const eventId = line.activeCanaryEvent?.id;
     if (!eventId) throw new Error('Canary release event was not recorded');
-    await this.repo.markPromptVersionGray(version.promptId, input.promptVersionId, actor.sub);
+    await this.repo.markPromptVersionCanary(version.promptId, input.promptVersionId, actor.sub);
     return this.getDetail(projectId, eventId, actor);
   }
 
@@ -459,7 +464,8 @@ export class CanaryReleaseService {
         variableMapping: row.variableMapping,
         outputMapping: row.outputMapping,
         filterRules: row.filterRules,
-        recordMode: row.recordMode as 'all' | 'correct_only',
+        recordMode: row.recordMode as Parameters<ReleaseLineService['recordCanaryEvent']>[0]['recordMode'],
+        recordCategories: row.recordCategories ?? row.storageCategories ?? [],
         externalIdField: row.externalIdField,
         metrics: (row.metrics ?? null) as Record<string, unknown> | null,
         totalReceived: row.totalReceived,
@@ -517,6 +523,7 @@ export class CanaryReleaseService {
       runMode: row.runMode as CanaryReleaseDto['runMode'],
       stopConditions: row.stopConditions as CanaryReleaseDto['stopConditions'],
       recordMode: row.recordMode as CanaryReleaseDto['recordMode'],
+      recordCategories: row.recordCategories ?? [],
       filterRules: row.filterRules as CanaryReleaseDto['filterRules'],
       variableMapping: normalizeCanaryVariableMapping(row.variableMapping),
       outputMapping: (Array.isArray(row.outputMapping) ? row.outputMapping : []) as CanaryReleaseDto['outputMapping'],
@@ -547,9 +554,8 @@ export class CanaryReleaseService {
       targetDatasetName: row.targetDatasetName,
       createdByName: row.createdByName,
       annotationTaskId: row.annotationTaskId,
-      releaseVariantId: row.releaseVariantId,
-      releaseVariantNumber: row.releaseVariantNumber,
-      releaseVariantLabel: row.releaseVariantNumber ? `#${row.releaseVariantNumber}` : null,
+      releaseVersionId: row.releaseVersionId,
+      releaseVersionLabel: row.releaseVersionLabel,
     };
   }
 
@@ -618,6 +624,20 @@ function buildPromptSnapshots(version: {
       frozenAt: version.frozenAt?.toISOString() ?? null,
     },
   };
+}
+
+function withCanaryStopConditions(
+  runConfig: CreateCanaryReleaseInputDto['runConfig'],
+  stopConditions: CreateCanaryReleaseInputDto['stopConditions'],
+): CreateCanaryReleaseInputDto['runConfig'] {
+  const next = { ...runConfig };
+  const effectiveStopConditions = stopConditions ?? runConfig.stopConditions ?? null;
+  if (effectiveStopConditions) {
+    next.stopConditions = effectiveStopConditions;
+  } else {
+    delete next.stopConditions;
+  }
+  return next;
 }
 
 function mergeCanaryUsageMetrics(

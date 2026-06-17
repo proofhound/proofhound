@@ -4,12 +4,9 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  CANARY_RELEASE_FILTER_MAX_DEPTH,
-  CANARY_RELEASE_FILTER_OPS,
   DEFAULT_PROMPT_LANGUAGE,
   canaryReleaseFilterRulesSchema,
   type CanaryReleaseFilterNodeDto,
-  type CanaryReleaseFilterOpDto,
   type ConnectorDetailDto,
   type ConnectorListItemDto,
   type CreateCanaryReleaseInputDto,
@@ -21,15 +18,9 @@ import {
   type PromptVariableTypeDto,
   type PromptVersionDto,
 } from '@proofhound/shared';
-import { AlertCircle, Check, Filter, ImageIcon, Loader2, Plus, Search, X } from 'lucide-react';
+import { AlertCircle, Check, ImageIcon, Loader2, Plus, Search } from 'lucide-react';
 import { Main } from '@proofhound/ui/layout';
-import {
-  ModalityIconGroup,
-  Button,
-  Input,
-  Label,
-  cn,
-} from '@proofhound/ui';
+import { ModalityIconGroup, Button, Input, Label, cn } from '@proofhound/ui';
 import type { ModalityKind } from '@proofhound/ui';
 import { PromptVersionPickerRow, PromptVersionPickerTag } from '../../components';
 import { useConnector, useConnectors } from '../../hooks';
@@ -40,11 +31,12 @@ import { useCreateProductionRelease } from '../../hooks';
 import { usePrompt, usePrompts } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useReleaseLineList } from '../../hooks';
-import { useI18n, type TranslationKey } from '../../i18n';
+import { useI18n } from '../../i18n';
 import { getApiErrorMessage, getReleaseLineId } from '../../lib';
 import { composePromptPreview } from '../prompts/prompt-preview';
 import { renderPromptPreviewParts } from '../prompts/prompt-preview-parts';
 import { VARIABLE_TONE_CLASSES } from '../prompts/prompt-ui';
+import { FieldMappingTable, FilterRulesBuilder, ReadOnlyFilterRules } from './release-input-route-editor';
 import { deriveRecordCategoryOptions, releaseRecordModeFromCategories } from './release-new-model';
 
 interface ReleaseNewPageProps {
@@ -77,6 +69,7 @@ const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_QUEUE_TRAFFIC_PERCENT = 10;
 const TRAFFIC_PERCENT_PRESETS = [1, 5, 20, 50, 100] as const;
 type ReleaseTrafficMode = CreateCanaryReleaseInputDto['trafficMode'];
+type CanaryStopConditions = NonNullable<CreateCanaryReleaseInputDto['stopConditions']>;
 
 function buildDefaultReleaseName(): string {
   const now = new Date();
@@ -144,6 +137,42 @@ function temperatureFromText(value: string): number | null {
 function trafficPercentFromText(value: string): number | null {
   const parsed = Number(value.trim());
   return Number.isInteger(parsed) && parsed > 0 && parsed <= 100 ? parsed : null;
+}
+
+function stopConditionsFromDraft(
+  useMaxSamples: boolean,
+  useMaxDurationSeconds: boolean,
+  maxSamples: string,
+  maxDurationSeconds: string,
+): CanaryStopConditions | null {
+  if (!useMaxSamples && !useMaxDurationSeconds) return null;
+
+  const parsedMaxSamples = useMaxSamples ? positiveIntegerFromText(maxSamples) : null;
+  const parsedMaxDurationSeconds = useMaxDurationSeconds ? positiveIntegerFromText(maxDurationSeconds) : null;
+  if ((useMaxSamples && parsedMaxSamples === null) || (useMaxDurationSeconds && parsedMaxDurationSeconds === null)) {
+    return null;
+  }
+
+  return {
+    maxSamples: parsedMaxSamples,
+    maxDurationSeconds: parsedMaxDurationSeconds,
+  };
+}
+
+function formatStopConditionSummary(
+  stopConditions: CanaryStopConditions | null,
+  labels: {
+    manual: string;
+    byCount: string;
+    byTime: string;
+  },
+) {
+  if (!stopConditions) return labels.manual;
+
+  const parts = [];
+  if (stopConditions.maxSamples) parts.push(`${labels.byCount} · ${stopConditions.maxSamples}`);
+  if (stopConditions.maxDurationSeconds) parts.push(`${labels.byTime} · ${stopConditions.maxDurationSeconds}s`);
+  return parts.length > 0 ? parts.join(' / ') : labels.manual;
 }
 
 function initialTrafficPercentFromParams(params: Pick<URLSearchParams, 'get'>): string {
@@ -776,355 +805,6 @@ function ReadOnlyConnectorRow({
   );
 }
 
-function FieldMappingTable({
-  fields,
-  promptVariables,
-  externalIdField,
-  mapping,
-  readOnly = false,
-  onExternalIdFieldChange,
-  onMappingChange,
-}: {
-  fields: FieldOption[];
-  promptVariables: PromptVariableDto[];
-  externalIdField: string;
-  mapping: Record<string, string>;
-  readOnly?: boolean;
-  onExternalIdFieldChange: (next: string) => void;
-  onMappingChange: (target: string, source: string) => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="space-y-3">
-      <div className="rounded-md border bg-background p-3">
-        <label className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(180px,0.8fr)_minmax(0,1.2fr)]">
-          <span className="text-xs font-medium">
-            {t('canaryReleases.new.field.externalIdField')} <span className="text-destructive">*</span>
-          </span>
-          {readOnly ? (
-            <div className="min-h-9 rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs">
-              {externalIdField || '—'}
-            </div>
-          ) : (
-            <select
-              value={externalIdField}
-              onChange={(event) => onExternalIdFieldChange(event.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              data-testid="release-new-mapping-external-id"
-            >
-              <option value="">{t('canaryReleases.new.fieldSelectPlaceholder')}</option>
-              {fields.map((field) => (
-                <option key={field.key} value={field.key}>
-                  {field.key}
-                </option>
-              ))}
-            </select>
-          )}
-        </label>
-      </div>
-      <div className="overflow-hidden rounded-md border bg-background">
-        <div className="grid grid-cols-[minmax(180px,0.9fr)_minmax(0,1.1fr)_96px] gap-2 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
-          <span>{t('canaryReleases.new.mapping.variable')}</span>
-          <span>{t('canaryReleases.new.mapping.source')}</span>
-          <span>{t('canaryReleases.new.mapping.type')}</span>
-        </div>
-        {promptVariables.length === 0 ? (
-          <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-            {t('canaryReleases.new.promptVariablesEmpty')}
-          </div>
-        ) : (
-          promptVariables.map((variable) => (
-            <div
-              key={variable.name}
-              className="grid grid-cols-[minmax(180px,0.9fr)_minmax(0,1.1fr)_96px] items-center gap-2 border-t px-3 py-2"
-            >
-              <div className="min-w-0">
-                <div className="truncate font-mono text-xs font-semibold">{variable.name}</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {variable.required
-                    ? t('canaryReleases.new.mapping.required')
-                    : t('canaryReleases.new.mapping.optional')}
-                </div>
-              </div>
-              {readOnly ? (
-                <div className="min-h-8 rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-xs">
-                  {mapping[variable.name] || t('canaryReleases.new.mapping.unmapped')}
-                </div>
-              ) : (
-                <select
-                  value={mapping[variable.name] ?? ''}
-                  onChange={(event) => onMappingChange(variable.name, event.target.value)}
-                  className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  data-testid={`release-new-mapping-source-${variable.name}`}
-                >
-                  <option value="">{t('canaryReleases.new.mapping.unmapped')}</option>
-                  {fields.map((field) => (
-                    <option key={field.key} value={field.key}>
-                      {field.key}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <span className="font-mono text-[11px] text-muted-foreground">{variable.type}</span>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ReadOnlyFilterRules({ value }: { value: CanaryReleaseFilterNodeDto | null }) {
-  const { t } = useI18n();
-  if (!value) {
-    return (
-      <div className="rounded-md border bg-muted/35 px-3 py-2 text-[12px] text-muted-foreground">
-        {t('canaryReleases.new.filter.empty')}
-      </div>
-    );
-  }
-  return (
-    <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted px-3 py-2 font-mono text-[11.5px] leading-relaxed text-foreground">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  );
-}
-
-function FilterRulesBuilder({
-  value,
-  fields,
-  onChange,
-}: {
-  value: CanaryReleaseFilterNodeDto | null;
-  fields: FieldOption[];
-  onChange: (next: CanaryReleaseFilterNodeDto | null) => void;
-}) {
-  const { t } = useI18n();
-  const createAtom = (): CanaryReleaseFilterNodeDto => ({
-    type: 'atom',
-    field: fields[0]?.key ?? '',
-    op: 'eq',
-    value: '',
-  });
-
-  if (!value) {
-    return (
-      <div className="rounded-md border border-dashed bg-background px-3 py-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs text-muted-foreground">{t('canaryReleases.new.filter.empty')}</div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onChange({ type: 'and', children: [createAtom()] })}
-          >
-            <Filter className="size-3.5" />
-            {t('canaryReleases.new.filter.enable')}
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2 rounded-md border bg-background p-3">
-      <FilterNodeEditor node={value} depth={1} fields={fields} onChange={onChange} onRemove={() => onChange(null)} />
-    </div>
-  );
-}
-
-function FilterNodeEditor({
-  node,
-  depth,
-  fields,
-  onChange,
-  onRemove,
-}: {
-  node: CanaryReleaseFilterNodeDto;
-  depth: number;
-  fields: FieldOption[];
-  onChange: (next: CanaryReleaseFilterNodeDto) => void;
-  onRemove: () => void;
-}) {
-  const { t } = useI18n();
-  const canNest = depth < CANARY_RELEASE_FILTER_MAX_DEPTH;
-  const createAtom = (): CanaryReleaseFilterNodeDto => ({
-    type: 'atom',
-    field: fields[0]?.key ?? '',
-    op: 'eq',
-    value: '',
-  });
-  const createGroup = (type: 'and' | 'or'): CanaryReleaseFilterNodeDto => ({ type, children: [createAtom()] });
-
-  if (node.type === 'atom') {
-    const needsValue = node.op !== 'exists';
-    return (
-      <div className="grid grid-cols-1 items-center gap-2 rounded-md border bg-card p-2 md:grid-cols-[minmax(0,1fr)_132px_minmax(0,1fr)_32px]">
-        <select
-          value={node.field}
-          onChange={(event) => onChange({ ...node, field: event.target.value })}
-          className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <option value="">{t('canaryReleases.new.fieldSelectPlaceholder')}</option>
-          {fields.map((field) => (
-            <option key={field.key} value={field.key}>
-              {field.key}
-            </option>
-          ))}
-        </select>
-        <select
-          value={node.op}
-          onChange={(event) => {
-            const op = event.target.value as CanaryReleaseFilterOpDto;
-            onChange(
-              op === 'exists' ? { type: 'atom', field: node.field, op } : { ...node, op, value: node.value ?? '' },
-            );
-          }}
-          className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {CANARY_RELEASE_FILTER_OPS.map((op) => (
-            <option key={op} value={op}>
-              {t(`canaryReleases.new.filter.op.${op}` as TranslationKey)}
-            </option>
-          ))}
-        </select>
-        <Input
-          value={needsValue ? String(node.value ?? '') : ''}
-          disabled={!needsValue}
-          onChange={(event) => onChange({ ...node, value: event.target.value })}
-          placeholder={
-            needsValue ? t('canaryReleases.new.filter.valuePlaceholder') : t('canaryReleases.new.filter.valueDisabled')
-          }
-          className="h-8 font-mono text-xs"
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          onClick={onRemove}
-          aria-label={t('canaryReleases.new.filter.remove')}
-        >
-          <X className="size-3.5" />
-        </Button>
-      </div>
-    );
-  }
-
-  if (node.type === 'not') {
-    return (
-      <div className="space-y-2 rounded-md border bg-muted/25 p-2">
-        <div className="flex items-center justify-between gap-2">
-          <Tag tone="warning">NOT</Tag>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-8"
-            onClick={onRemove}
-            aria-label={t('canaryReleases.new.filter.remove')}
-          >
-            <X className="size-3.5" />
-          </Button>
-        </div>
-        <FilterNodeEditor
-          node={node.child}
-          depth={depth + 1}
-          fields={fields}
-          onChange={(child) => onChange({ type: 'not', child })}
-          onRemove={() => onChange({ type: 'not', child: createAtom() })}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2 rounded-md border bg-muted/25 p-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <select
-            value={node.type}
-            onChange={(event) => onChange({ type: event.target.value as 'and' | 'or', children: node.children })}
-            className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="and">AND</option>
-            <option value="or">OR</option>
-          </select>
-          <span className="text-xs text-muted-foreground">
-            {formatTemplate(t('canaryReleases.new.filter.depth'), { depth })}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8"
-            onClick={() => onChange({ ...node, children: [...node.children, createAtom()] })}
-          >
-            <Plus className="size-3.5" />
-            {t('canaryReleases.new.filter.addCondition')}
-          </Button>
-          {canNest ? (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8"
-                onClick={() => onChange({ ...node, children: [...node.children, createGroup('and')] })}
-              >
-                {t('canaryReleases.new.filter.addGroup')}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8"
-                onClick={() =>
-                  onChange({ ...node, children: [...node.children, { type: 'not', child: createAtom() }] })
-                }
-              >
-                NOT
-              </Button>
-            </>
-          ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-8"
-            onClick={onRemove}
-            aria-label={t('canaryReleases.new.filter.remove')}
-          >
-            <X className="size-3.5" />
-          </Button>
-        </div>
-      </div>
-      <div className="space-y-2 border-l pl-3">
-        {node.children.map((child, index) => (
-          <FilterNodeEditor
-            key={index}
-            node={child}
-            depth={depth + 1}
-            fields={fields}
-            onChange={(nextChild) =>
-              onChange({
-                ...node,
-                children: node.children.map((item, itemIndex) => (itemIndex === index ? nextChild : item)),
-              })
-            }
-            onRemove={() => {
-              const nextChildren = node.children.filter((_, itemIndex) => itemIndex !== index);
-              onChange({ ...node, children: nextChildren.length > 0 ? nextChildren : [createAtom()] });
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function RecordCategoriesField({
   value,
   options,
@@ -1325,6 +1005,95 @@ function TrafficSelectionField({
   );
 }
 
+function TerminationConditionField({
+  useMaxSamples,
+  useMaxDurationSeconds,
+  maxSamples,
+  maxDurationSeconds,
+  onUseMaxSamplesChange,
+  onUseMaxDurationSecondsChange,
+  onMaxSamplesChange,
+  onMaxDurationSecondsChange,
+}: {
+  useMaxSamples: boolean;
+  useMaxDurationSeconds: boolean;
+  maxSamples: string;
+  maxDurationSeconds: string;
+  onUseMaxSamplesChange: (value: boolean) => void;
+  onUseMaxDurationSecondsChange: (value: boolean) => void;
+  onMaxSamplesChange: (value: string) => void;
+  onMaxDurationSecondsChange: (value: string) => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <div className="space-y-3 rounded-md border bg-background p-3">
+      <div className="grid gap-2 md:grid-cols-2">
+        {[
+          {
+            key: 'samples',
+            checked: useMaxSamples,
+            title: t('canaryReleases.new.field.termination.byCount'),
+            inputLabel: t('canaryReleases.new.field.termination.maxSamples'),
+            value: maxSamples,
+            placeholder: t('canaryReleases.new.field.termination.maxSamplesPlaceholder'),
+            onCheckedChange: onUseMaxSamplesChange,
+            onValueChange: onMaxSamplesChange,
+          },
+          {
+            key: 'duration',
+            checked: useMaxDurationSeconds,
+            title: t('canaryReleases.new.field.termination.byTime'),
+            inputLabel: t('canaryReleases.new.field.termination.maxDuration'),
+            value: maxDurationSeconds,
+            placeholder: t('canaryReleases.new.field.termination.maxDurationPlaceholder'),
+            onCheckedChange: onUseMaxDurationSecondsChange,
+            onValueChange: onMaxDurationSecondsChange,
+          },
+        ].map((option) => (
+          <div
+            key={option.key}
+            className={cn(
+              'rounded-md border transition-colors',
+              option.checked ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/50',
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => option.onCheckedChange(!option.checked)}
+              aria-pressed={option.checked}
+              className="w-full px-3 py-2 text-left"
+            >
+              <div className="flex items-start gap-2">
+                <CheckBox checked={option.checked} />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold">{option.title}</div>
+                </div>
+              </div>
+            </button>
+            {option.checked ? (
+              <div className="space-y-1.5 px-3 pb-3">
+                <Label className="text-[12.5px]">
+                  {option.inputLabel} <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={option.value}
+                  placeholder={option.placeholder}
+                  onChange={(event) => option.onValueChange(event.target.value)}
+                  className="h-9 font-mono text-[13px]"
+                />
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -1434,6 +1203,10 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
   const [filterRules, setFilterRules] = useState<CanaryReleaseFilterNodeDto | null>(null);
   const [trafficPercent, setTrafficPercent] = useState(() => initialTrafficPercentFromParams(searchParams));
   const [trafficMode, setTrafficMode] = useState<ReleaseTrafficMode>(() => initialTrafficModeFromParams(searchParams));
+  const [useStopMaxSamples, setUseStopMaxSamples] = useState(false);
+  const [useStopMaxDurationSeconds, setUseStopMaxDurationSeconds] = useState(false);
+  const [stopMaxSamples, setStopMaxSamples] = useState('');
+  const [stopMaxDurationSeconds, setStopMaxDurationSeconds] = useState('');
   const [recordCategorySelection, setRecordCategorySelection] = useState<string[] | null>(null);
   const [rpm, setRpm] = useState(searchParams.get('rpmLimit') ?? '');
   const [tpm, setTpm] = useState(searchParams.get('tpmLimit') ?? '');
@@ -1578,16 +1351,22 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
   const tpmValue = positiveIntegerFromText(tpm);
   const concurrencyValue = positiveIntegerFromText(concurrency);
   const temperatureValue = temperatureFromText(temperature);
+  const stopConditions = stopConditionsFromDraft(
+    useStopMaxSamples,
+    useStopMaxDurationSeconds,
+    stopMaxSamples,
+    stopMaxDurationSeconds,
+  );
 
-  const sourceForVariable = (variable: PromptVariableDto) => {
+  const sourceForVariableWithOverrides = (variable: PromptVariableDto, overrides: Record<string, string>): string => {
     if (isAddCanaryToProduction) return inheritedVariableMapping[variable.name] ?? '';
-    const override = mappingOverrides[variable.name];
+    const override = overrides[variable.name];
     if (override && inputFieldKeySet.has(override)) return override;
     return inferSourceForVariable(variable, inputFieldOptions);
   };
+  const sourceForVariable = (variable: PromptVariableDto) => sourceForVariableWithOverrides(variable, mappingOverrides);
   const requiredVariableMappingComplete =
-    !selectedVersion ||
-    selectedVersion.variables.every((variable) => !variable.required || sourceForVariable(variable).trim().length > 0);
+    !selectedVersion || selectedVersion.variables.every((variable) => sourceForVariable(variable).trim().length > 0);
   const effectiveFilterRules = isAddCanaryToProduction ? inheritedFilterRules : filterRules;
   const filterRulesValid = canaryReleaseFilterRulesSchema.safeParse(effectiveFilterRules).success;
   const runConfigValid =
@@ -1595,6 +1374,8 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
     numberTextWithinLimit(tpm, selectedModel?.tpm.limit) &&
     numberTextWithinLimit(concurrency, selectedModel?.concurrency.limit) &&
     temperatureValue !== null;
+  const hasAutomaticStopConditions = useStopMaxSamples || useStopMaxDurationSeconds;
+  const stopConditionsValid = !hasAutomaticStopConditions || stopConditions !== null;
   const effectiveReleaseName = isAddCanaryToProduction ? '' : releaseName.trim();
   const effectiveDescription = isAddCanaryToProduction ? '' : description.trim();
   const basicComplete = Boolean((isAddCanaryToProduction || effectiveReleaseName) && selectedVersion && selectedModel);
@@ -1606,7 +1387,14 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
     filterRulesValid &&
     trafficRatioValue !== null;
   const runtimeComplete =
-    runConfigValid && (recordCategoryOptions.length === 0 || effectiveRecordCategories.length > 0);
+    runConfigValid &&
+    (!shouldCreateCanaryRelease || stopConditionsValid) &&
+    (recordCategoryOptions.length === 0 || effectiveRecordCategories.length > 0);
+  const stopConditionSummary = formatStopConditionSummary(stopConditions, {
+    manual: t('canaryReleases.new.field.termination.manual'),
+    byCount: t('canaryReleases.new.field.termination.byCount'),
+    byTime: t('canaryReleases.new.field.termination.byTime'),
+  });
   const canSubmit = basicComplete && connectorComplete && runtimeComplete && !isSubmitting;
 
   const handlePromptSelect = (promptId: string) => {
@@ -1640,6 +1428,18 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
     setFilterRules(null);
   };
 
+  const handleMappingTargetChange = (target: string, nextTarget: string) => {
+    const variables = selectedVersion?.variables ?? [];
+    const currentVariable = variables.find((variable) => variable.name === target);
+    const nextVariable = variables.find((variable) => variable.name === nextTarget);
+    if (!currentVariable || !nextVariable) return;
+    setMappingOverrides((current) => ({
+      ...current,
+      [target]: sourceForVariableWithOverrides(nextVariable, current),
+      [nextTarget]: sourceForVariableWithOverrides(currentVariable, current),
+    }));
+  };
+
   const handleOutputConnectorToggle = (connectorId: string, selected: boolean) => {
     if (isAddCanaryToProduction) {
       if (trafficMode !== 'dual_run' || inheritedOutputConnectorIdSet.has(connectorId)) return;
@@ -1652,6 +1452,14 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
   const formatCreateError = (error: unknown) => {
     const message = getApiErrorMessage(error);
     if (message === 'release_name_taken') return t('common.formError.nameTaken');
+    if (message?.startsWith('release_variable_mapping_missing_prompt_variables:')) {
+      return formatTemplate(t('releases.new.error.variableMappingMissing'), {
+        fields: message.split(':')[1] || '',
+      });
+    }
+    if (message?.startsWith('release_variable_mapping_')) {
+      return t('releases.new.error.variableMappingInvalid');
+    }
     return message ?? t('releases.new.error.createFailed');
   };
 
@@ -1699,6 +1507,10 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
       : effectiveReleaseName;
     const variableMapping = buildVariableMapping();
     const recordMode = releaseRecordModeFromCategories(effectiveRecordCategories, recordCategoryOptions);
+    const recordCategories =
+      recordMode === 'selected_categories'
+        ? effectiveRecordCategories.filter((category) => recordCategoryOptions.includes(category))
+        : [];
     const productionRunConfig: CreateProductionReleaseInputDto['runConfig'] = {
       rpmLimit: rpmValue,
       tpmLimit: tpmValue,
@@ -1710,6 +1522,7 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
       tpmLimit: tpmValue,
       concurrency: concurrencyValue,
       temperature: temperatureValue,
+      ...(stopConditions ? { stopConditions } : {}),
     };
 
     if (shouldCreateCanaryRelease) {
@@ -1728,10 +1541,11 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
         trafficMode,
         runMode: 'manual',
         recordMode,
+        recordCategories,
         variableMapping: buildCanaryVariableMapping(variableMapping),
         outputMapping: [],
         filterRules: effectiveFilterRules,
-        stopConditions: null,
+        stopConditions,
         externalIdField: effectiveExternalIdField,
         annotationSchema: [],
         storageCategories:
@@ -1761,6 +1575,7 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
       variableMapping,
       filterRules: effectiveFilterRules as Record<string, unknown> | null,
       recordMode,
+      recordCategories,
       externalIdField: effectiveExternalIdField || null,
       retentionDays: null,
       submitReason,
@@ -2068,10 +1883,12 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                       ]),
                     )}
                     readOnly={isAddCanaryToProduction}
+                    testIdPrefix="release-new"
                     onExternalIdFieldChange={setExternalIdFieldOverride}
                     onMappingChange={(target, source) =>
                       setMappingOverrides((current) => ({ ...current, [target]: source }))
                     }
+                    onMappingTargetChange={handleMappingTargetChange}
                   />
                 </div>
                 {effectiveInputConnectorId && inputFieldOptions.length === 0 ? (
@@ -2218,6 +2035,25 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                 </div>
               </div>
 
+              {shouldCreateCanaryRelease ? (
+                <div className="border-t border-dashed pt-5">
+                  <Label>{t('canaryReleases.new.field.termination')}</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('canaryReleases.new.field.terminationHelp')}</p>
+                  <div className="mt-3">
+                    <TerminationConditionField
+                      useMaxSamples={useStopMaxSamples}
+                      useMaxDurationSeconds={useStopMaxDurationSeconds}
+                      maxSamples={stopMaxSamples}
+                      maxDurationSeconds={stopMaxDurationSeconds}
+                      onUseMaxSamplesChange={setUseStopMaxSamples}
+                      onUseMaxDurationSecondsChange={setUseStopMaxDurationSeconds}
+                      onMaxSamplesChange={setStopMaxSamples}
+                      onMaxDurationSecondsChange={setStopMaxDurationSeconds}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
               <div className="border-t border-dashed pt-5">
                 <Label>{t('canaryReleases.new.field.recordCategories')}</Label>
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -2288,6 +2124,9 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                       : '—'
                   }
                 />
+                {shouldCreateCanaryRelease ? (
+                  <SummaryRow label={t('canaryReleases.new.field.termination')} value={stopConditionSummary} />
+                ) : null}
               </div>
 
               <div className="mt-4 rounded-md border bg-muted/35 px-3 py-2 text-[12px] text-muted-foreground">

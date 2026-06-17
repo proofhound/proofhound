@@ -1,6 +1,7 @@
 import type {
   CreateDatasetDto,
   DatasetCreateResponseDto,
+  DatasetDeletionImpactDto,
   DatasetExportFormatDto,
   DatasetListItemDto,
   DatasetSamplesListResponseDto,
@@ -56,6 +57,8 @@ export const datasetClient = {
       .then((r) => r.data),
   getDataset: (projectId: string, datasetId: string) =>
     httpClient.get<DatasetListItemDto>(`/datasets/${datasetId}`).then((r) => r.data),
+  getDatasetDeleteImpact: (projectId: string, datasetId: string) =>
+    httpClient.get<DatasetDeletionImpactDto>(`/datasets/${datasetId}/delete-impact`).then((r) => r.data),
   listDatasetSamples: (
     projectId: string,
     datasetId: string,
@@ -76,6 +79,10 @@ export const datasetClient = {
     httpClient
       .patch<DatasetListItemDto>(`/datasets/${datasetId}`, body)
       .then((r) => r.data),
+  archiveDataset: (projectId: string, datasetId: string) =>
+    httpClient.patch<DatasetListItemDto>(`/datasets/${datasetId}/archive`).then((r) => r.data),
+  restoreDataset: (projectId: string, datasetId: string) =>
+    httpClient.patch<DatasetListItemDto>(`/datasets/${datasetId}/restore`).then((r) => r.data),
   downloadDataset: (
     projectId: string,
     datasetId: string,

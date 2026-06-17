@@ -622,7 +622,7 @@ function SampleResultsSection({
     if (filter === 'ok') return { isCorrect: true, judgmentStatus: undefined, status: undefined, search };
     if (filter === 'bad') return { isCorrect: false, judgmentStatus: undefined, status: undefined, search };
     if (filter === 'error')
-      return { isCorrect: undefined, judgmentStatus: undefined, status: ['error', 'timeout', 'rate_limited'], search };
+      return { isCorrect: undefined, judgmentStatus: undefined, status: ['failed'], search };
     return { isCorrect: undefined, judgmentStatus: undefined, status: undefined, search };
   }, [filter, search]);
 

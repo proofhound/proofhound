@@ -1,12 +1,18 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, Plus, Search } from 'lucide-react';
+import { Archive, ArrowRight, Play, Plus, RotateCcw, Search, Square } from 'lucide-react';
 import { Main } from '@proofhound/ui/layout';
 import {
   Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
   Input,
   Table,
   TableBody,
@@ -17,40 +23,38 @@ import {
   TableRow,
   TableSkeletonRows,
   TableActionIconButton,
-  cn,
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh, useDateTimeFormatter } from '../../hooks';
-import { useReleaseLineList } from '../../hooks';
+import {
+  useArchiveReleaseLine,
+  useReleaseLineList,
+  useStartReleaseLine,
+  useStopReleaseLine,
+  useUnarchiveReleaseLine,
+} from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
-import { useI18n, type TranslationKey } from '../../i18n';
-import { filterReleaseLines, summarizeReleaseLines } from '../../lib';
-import type { ReleaseLineFilter, ReleaseLineView } from '../../lib';
+import { useI18n } from '../../i18n';
+import { filterReleaseLines, getReleaseStopConfirmationName, summarizeReleaseLines } from '../../lib';
+import type { ReleaseLineView } from '../../lib';
 import {
   ConnectorTypeBadge,
   ReleaseMetricCard,
+  ReleaseLineStatusBadge,
   ReleaseTrafficBar,
   formatCount,
   formatPercent,
 } from './release-line-ui';
 
-const FILTERS: Array<{ value: ReleaseLineFilter; key: TranslationKey }> = [
-  { value: 'all', key: 'releases.filter.all' },
-  { value: 'production', key: 'releases.filter.production' },
-  { value: 'production_canary', key: 'releases.filter.productionCanary' },
-  { value: 'canary', key: 'releases.filter.canary' },
-  { value: 'stopped', key: 'releases.filter.stopped' },
-];
-
 const RELEASE_COLUMNS: TableColumn[] = [
-  { key: 'line', width: 'flex', minPx: 230 },
+  { key: 'line', width: 'wide' },
   { key: 'production', width: 'normal' },
   { key: 'canary', width: 'normal' },
-  { key: 'traffic', width: 'wide' },
-  { key: 'connectors', width: 'wide' },
+  { key: 'traffic', width: 'compact' },
+  { key: 'connectors', width: 'flex', minPx: 380 },
   { key: 'createdAt', width: 'compact' },
   { key: 'updatedAt', width: 'compact' },
-  { key: 'actions', width: 'narrow', sticky: 'right' },
+  { key: 'actions', width: 'compact', sticky: 'right' },
 ];
 
 function hasRunningRelease(line: ReleaseLineView) {
@@ -63,10 +67,18 @@ export function ReleasesListPage({ projectId }: { projectId: string }) {
   const { t } = useI18n();
   const { formatDateTime } = useDateTimeFormatter();
   const releaseLineQuery = useReleaseLineList(projectId);
+  const stopLineMutation = useStopReleaseLine(projectId);
+  const startLineMutation = useStartReleaseLine(projectId);
+  const archiveLineMutation = useArchiveReleaseLine(projectId);
+  const unarchiveLineMutation = useUnarchiveReleaseLine(projectId);
   const releaseLineLoading = useDelayedLoading(releaseLineQuery.isLoading);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<ReleaseLineFilter>('all');
+  const [stopTarget, setStopTarget] = useState<ReleaseLineView | null>(null);
+  const [stopConfirmationText, setStopConfirmationText] = useState('');
+  const [archiveTarget, setArchiveTarget] = useState<ReleaseLineView | null>(null);
   const lines = releaseLineQuery.data;
+  const stopTargetName = useMemo(() => getReleaseStopConfirmationName(stopTarget), [stopTarget]);
+  const canConfirmStop = stopConfirmationText === stopTargetName && stopTargetName.length > 0;
   const formatReleaseDateTime = useCallback(
     (value: string | null | undefined) => (value ? formatDateTime(value, { fallback: '—' }) : '—'),
     [formatDateTime],
@@ -88,14 +100,74 @@ export function ReleasesListPage({ projectId }: { projectId: string }) {
   });
 
   const summary = useMemo(() => summarizeReleaseLines(lines), [lines]);
-  const filtered = useMemo(() => filterReleaseLines(lines, filter, search), [filter, lines, search]);
-  const counts: Record<ReleaseLineFilter, number> = {
-    all: summary.total,
-    production: summary.production,
-    production_canary: summary.productionCanary,
-    canary: summary.canary,
-    stopped: summary.stopped,
-  };
+  const filtered = useMemo(() => filterReleaseLines(lines, 'all', search), [lines, search]);
+
+  function openStopDialog(event: MouseEvent, line: ReleaseLineView) {
+    event.stopPropagation();
+    setStopTarget(line);
+    setStopConfirmationText('');
+  }
+
+  function closeStopDialog() {
+    if (stopLineMutation.isPending) return;
+    setStopTarget(null);
+    setStopConfirmationText('');
+  }
+
+  function confirmStopLine() {
+    if (!stopTarget || !canConfirmStop) return;
+    stopLineMutation.mutate(
+      {
+        releaseLineId: stopTarget.id,
+        body: { reason: t('releases.stopReason') },
+      },
+      {
+        onSuccess: () => {
+          setStopTarget(null);
+          setStopConfirmationText('');
+        },
+      },
+    );
+  }
+
+  function startLine(event: MouseEvent, line: ReleaseLineView) {
+    event.stopPropagation();
+    startLineMutation.mutate({
+      releaseLineId: line.id,
+      body: { reason: t('releases.startReason') },
+    });
+  }
+
+  function openArchiveDialog(event: MouseEvent, line: ReleaseLineView) {
+    event.stopPropagation();
+    setArchiveTarget(line);
+  }
+
+  function closeArchiveDialog() {
+    if (archiveLineMutation.isPending) return;
+    setArchiveTarget(null);
+  }
+
+  function confirmArchiveLine() {
+    if (!archiveTarget) return;
+    archiveLineMutation.mutate(
+      {
+        releaseLineId: archiveTarget.id,
+        body: { reason: t('releases.archiveReason') },
+      },
+      {
+        onSuccess: () => setArchiveTarget(null),
+      },
+    );
+  }
+
+  function unarchiveLine(event: MouseEvent, line: ReleaseLineView) {
+    event.stopPropagation();
+    unarchiveLineMutation.mutate({
+      releaseLineId: line.id,
+      body: { reason: t('releases.unarchiveReason') },
+    });
+  }
 
   return (
     <Main fixed className="gap-5 overflow-auto bg-muted/35">
@@ -121,15 +193,15 @@ export function ReleasesListPage({ projectId }: { projectId: string }) {
           />
           <ReleaseMetricCard
             tone="production"
-            label={t('releases.metric.production')}
-            value={formatCount(summary.production + summary.productionCanary)}
-            detail={t('releases.metric.productionHint').replace('{count}', formatCount(summary.productionCanary))}
+            label={t('releases.metric.running')}
+            value={formatCount(summary.running)}
+            detail={t('releases.metric.runningHint')}
           />
           <ReleaseMetricCard
             tone="canary"
-            label={t('releases.metric.canary')}
-            value={formatCount(summary.productionCanary + summary.canary)}
-            detail={t('releases.metric.canaryHint').replace('{count}', formatCount(summary.annotationOpen))}
+            label={t('releases.metric.stopped')}
+            value={formatCount(summary.stopped)}
+            detail={t('releases.metric.stoppedHint').replace('{count}', formatCount(summary.archived))}
           />
           <ReleaseMetricCard
             label={t('releases.metric.failureRate')}
@@ -154,15 +226,6 @@ export function ReleasesListPage({ projectId }: { projectId: string }) {
                 className="pl-9"
               />
             </div>
-            {FILTERS.map((item) => (
-              <FilterChip
-                key={item.value}
-                active={filter === item.value}
-                label={t(item.key)}
-                count={counts[item.value]}
-                onClick={() => setFilter(item.value)}
-              />
-            ))}
           </div>
           {releaseLineQuery.isError ? (
             <div className="mt-2 text-[12px] text-destructive">{t('releases.loadPartialFailed')}</div>
@@ -195,7 +258,10 @@ export function ReleasesListPage({ projectId }: { projectId: string }) {
                   <TableRow key={line.id} onClick={() => router.push(`/releases/${encodeURIComponent(line.id)}`)}>
                     <TableCell column="line">
                       <div className="flex min-w-0 flex-col gap-1">
-                        <span className="truncate font-semibold">{line.label}</span>
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span className="truncate font-semibold">{line.label}</span>
+                          <ReleaseLineStatusBadge status={line.status} />
+                        </div>
                         <span className="font-mono text-[11px] text-muted-foreground">{line.promptName}</span>
                       </div>
                     </TableCell>
@@ -222,12 +288,48 @@ export function ReleasesListPage({ projectId }: { projectId: string }) {
                       </span>
                     </TableCell>
                     <TableCell column="actions" className="text-right">
-                      <TableActionIconButton
-                        label={t('releases.action.enter')}
-                        onClick={() => router.push(`/releases/${encodeURIComponent(line.id)}`)}
+                      <div
+                        className="inline-flex items-center justify-end gap-1"
+                        onClick={(event) => event.stopPropagation()}
                       >
-                        <ChevronRight className="size-4" />
-                      </TableActionIconButton>
+                        {line.status === 'running' ? (
+                          <TableActionIconButton
+                            label={t('releases.action.stop')}
+                            onClick={(event) => openStopDialog(event, line)}
+                            disabled={stopLineMutation.isPending}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Square className="size-4" />
+                          </TableActionIconButton>
+                        ) : null}
+                        {line.status === 'stopped' ? (
+                          <TableActionIconButton
+                            label={t('releases.action.start')}
+                            onClick={(event) => startLine(event, line)}
+                            disabled={startLineMutation.isPending}
+                          >
+                            <Play className="size-4" />
+                          </TableActionIconButton>
+                        ) : null}
+                        {line.status === 'stopped' ? (
+                          <TableActionIconButton
+                            label={t('releases.action.archive')}
+                            onClick={(event) => openArchiveDialog(event, line)}
+                            disabled={archiveLineMutation.isPending}
+                          >
+                            <Archive className="size-4" />
+                          </TableActionIconButton>
+                        ) : null}
+                        {line.status === 'archived' ? (
+                          <TableActionIconButton
+                            label={t('releases.action.unarchive')}
+                            onClick={(event) => unarchiveLine(event, line)}
+                            disabled={unarchiveLineMutation.isPending}
+                          >
+                            <RotateCcw className="size-4" />
+                          </TableActionIconButton>
+                        ) : null}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -236,35 +338,75 @@ export function ReleasesListPage({ projectId }: { projectId: string }) {
           </Table>
         </div>
       </div>
+      <Dialog open={Boolean(stopTarget)} onOpenChange={(open) => (open ? undefined : closeStopDialog())}>
+        <DialogContent data-testid="release-line-stop-dialog">
+          <DialogHeader>
+            <DialogTitle>{t('releases.detail.stopDialog.title')}</DialogTitle>
+            <DialogDescription>{t('releases.detail.stopDialog.description')}</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border bg-muted/40 p-3">
+            <div className="text-[11.5px] font-medium text-muted-foreground">
+              {t('releases.detail.stopDialog.releaseName')}
+            </div>
+            <div className="mt-1 break-all font-mono text-[13px] font-semibold">{stopTargetName || '—'}</div>
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="release-line-stop-name" className="text-[12.5px] font-medium">
+              {t('releases.detail.stopDialog.inputLabel')}
+            </label>
+            <Input
+              id="release-line-stop-name"
+              value={stopConfirmationText}
+              onChange={(event) => setStopConfirmationText(event.target.value)}
+              placeholder={t('releases.detail.stopDialog.inputPlaceholder').replace('{name}', stopTargetName)}
+              autoComplete="off"
+            />
+            {stopConfirmationText.length > 0 && !canConfirmStop ? (
+              <p className="text-[12px] text-destructive">{t('releases.detail.stopDialog.mismatch')}</p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeStopDialog} disabled={stopLineMutation.isPending}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={confirmStopLine}
+              disabled={!canConfirmStop || stopLineMutation.isPending}
+            >
+              <Square className="size-4" />
+              {stopLineMutation.isPending
+                ? t('releases.detail.stopDialog.stopping')
+                : t('releases.detail.stopDialog.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(archiveTarget)} onOpenChange={(open) => (open ? undefined : closeArchiveDialog())}>
+        <DialogContent data-testid="release-line-archive-dialog">
+          <DialogHeader>
+            <DialogTitle>{t('releases.archiveDialog.title')}</DialogTitle>
+            <DialogDescription>{t('releases.archiveDialog.description')}</DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border bg-muted/40 p-3">
+            <div className="text-[11.5px] font-medium text-muted-foreground">
+              {t('releases.detail.stopDialog.releaseName')}
+            </div>
+            <div className="mt-1 break-all font-mono text-[13px] font-semibold">{archiveTarget?.label ?? '—'}</div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeArchiveDialog} disabled={archiveLineMutation.isPending}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="button" onClick={confirmArchiveLine} disabled={archiveLineMutation.isPending}>
+              <Archive className="size-4" />
+              {archiveLineMutation.isPending ? t('releases.archiveDialog.archiving') : t('releases.archiveDialog.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Main>
-  );
-}
-
-function FilterChip({
-  active,
-  label,
-  count,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  count: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium transition-colors',
-        active
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-    >
-      {label}
-      <span className="font-mono opacity-70">{count}</span>
-    </button>
   );
 }
 
@@ -281,23 +423,37 @@ function LaneVersion({ version, model }: { version: string | null; model: string
 }
 
 function ConnectorStack({ line }: { line: ReleaseLineView }) {
+  const { t } = useI18n();
   const output = line.outputConnectors.slice(0, 2);
   const extra = line.outputConnectors.length - output.length;
 
   return (
-    <div className="min-w-0 space-y-1 font-mono text-[12px]">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <ConnectorTypeBadge type={line.inputConnectorType} />
-        <span className="truncate">{line.inputConnectorName ?? '—'}</span>
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 font-mono text-[12px]">
+      <div
+        className="flex min-w-0 items-center gap-1.5"
+        aria-label={t('releases.detail.field.upstream')}
+        title={t('releases.detail.field.upstream')}
+      >
+        <span className="shrink-0">
+          <ConnectorTypeBadge type={line.inputConnectorType} />
+        </span>
+        <span className="min-w-0 truncate">{line.inputConnectorName ?? '—'}</span>
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-muted-foreground">
+      <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div
+        className="flex min-w-0 flex-col gap-1 text-muted-foreground"
+        aria-label={t('releases.detail.field.downstream')}
+        title={t('releases.detail.field.downstream')}
+      >
         {output.length === 0 ? (
           <span>—</span>
         ) : (
           output.map((connector) => (
-            <span key={connector.id} className="inline-flex min-w-0 items-center gap-1">
-              <ConnectorTypeBadge type={connector.type} />
-              <span className="max-w-28 truncate">{connector.name}</span>
+            <span key={connector.id} className="inline-flex min-w-0 items-center gap-1.5">
+              <span className="shrink-0">
+                <ConnectorTypeBadge type={connector.type} />
+              </span>
+              <span className="min-w-0 truncate">{connector.name}</span>
             </span>
           ))
         )}

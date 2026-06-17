@@ -51,7 +51,7 @@ export { computePrecisionRecall, precisionRecallStrategy } from './precision-rec
 
 function isRunResultFailure(row: ClassificationAggregateRow): boolean {
   return (
-    row.status !== 'success' ||
+    row.status === 'failed' ||
     row.judgmentStatus === 'parse_error' ||
     (row.judgmentStatus === 'judge_error' && row.expectedOutput !== null)
   );

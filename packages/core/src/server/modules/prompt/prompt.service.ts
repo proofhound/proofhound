@@ -1,17 +1,16 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   DEFAULT_PROMPT_LANGUAGE,
   promptVariableSchema,
   promptLanguageSchema,
   type CreatePromptDraftVersionDto,
   type CreatePromptDto,
-  type PromptDeletionImpactDto,
-  type PromptDeletionImpactItemDto,
   type PromptDetailDto,
   type PromptJudgmentRulesDto,
   type PromptMetricsDto,
   type PromptListItemDto,
   type PromptOutputSchemaDto,
+  type PromptStatusDto,
   type PromptVariableDto,
   type PromptVersionDto,
   type PromptVersionLabelDto,
@@ -24,23 +23,27 @@ import type { CurrentUserPayload } from '../../common/decorators/current-user.de
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { isUniqueViolation } from '../../common/errors/db-error';
+import { PromptDeletionHook } from './prompt-deletion.hook';
 import {
   PromptRepository,
-  type PromptDeletionImpactRow,
   type PromptProjectAccessRow,
   type PromptRow,
   type PromptVersionLabelRow,
   type PromptVersionRow,
 } from './prompt.repository';
 
-const MOVABLE_SYSTEM_LABELS = new Set(['gray', 'production']);
+const MOVABLE_SYSTEM_LABELS = new Set(['canary', 'production']);
 const DERIVED_LATEST_LABEL = 'latest';
 
 @Injectable()
 export class PromptService {
   constructor(
+    @Inject(PromptRepository)
     private readonly repo: PromptRepository,
+    @Inject(AccessControlService)
     private readonly accessControl: AccessControlService,
+    @Inject(PromptDeletionHook)
+    private readonly deletionHook: PromptDeletionHook,
   ) {}
 
   async listPrompts(
@@ -107,6 +110,7 @@ export class PromptService {
     if (!prompt) {
       throw new NotFoundException(`Prompt ${promptId} not found`);
     }
+    this.assertPromptActive(prompt);
 
     const dataset = await this.repo.findDatasetInProject(projectId, dto.defaultDatasetId);
     if (!dataset) {
@@ -133,6 +137,7 @@ export class PromptService {
     if (!prompt) {
       throw new NotFoundException(`Prompt ${promptId} not found`);
     }
+    this.assertPromptActive(prompt);
 
     const versions = await this.repo.listVersionsByPromptIds([promptId]);
     const version = versions.find((item) => item.id === versionId);
@@ -160,6 +165,7 @@ export class PromptService {
     if (!prompt) {
       throw new NotFoundException(`Prompt ${promptId} not found`);
     }
+    this.assertPromptActive(prompt);
 
     if (dto.sourceVersionId) {
       const sourceVersion = await this.repo.findVersionInPrompt(promptId, dto.sourceVersionId);
@@ -194,21 +200,23 @@ export class PromptService {
     if (!prompt) {
       throw new NotFoundException(`Prompt ${promptId} not found`);
     }
+    this.assertPromptActive(prompt);
 
     const version = await this.repo.findVersionInPrompt(promptId, versionId);
     if (!version) {
       throw new NotFoundException(`Prompt version ${versionId} not found`);
     }
-    await this.buildDeletionImpact(projectId, promptId, [version], false);
+    await this.deletionHook.preparePromptDeletion({
+      projectId,
+      promptId,
+      versions: [version],
+      includePromptShell: false,
+    });
 
-    await this.repo.deleteDraftVersionHard(promptId, versionId);
+    await this.repo.deleteDraftVersionHard(projectId, promptId, versionId);
   }
 
-  async getPromptDeleteImpact(
-    projectId: string,
-    promptId: string,
-    actor: CurrentUserPayload,
-  ): Promise<PromptDeletionImpactDto> {
+  async getPromptDeleteImpact(projectId: string, promptId: string, actor: CurrentUserPayload) {
     await this.getAccessibleProject(projectId, actor);
 
     const prompt = await this.repo.findPromptById(projectId, promptId);
@@ -217,7 +225,12 @@ export class PromptService {
     }
 
     const versions = await this.repo.listVersionsByPromptIds([promptId]);
-    return this.buildDeletionImpact(projectId, promptId, versions, true);
+    return this.deletionHook.preparePromptDeletion({
+      projectId,
+      promptId,
+      versions,
+      includePromptShell: true,
+    });
   }
 
   async getPromptVersionDeleteImpact(
@@ -225,7 +238,7 @@ export class PromptService {
     promptId: string,
     versionId: string,
     actor: CurrentUserPayload,
-  ): Promise<PromptDeletionImpactDto> {
+  ) {
     await this.getAccessibleProject(projectId, actor);
 
     const prompt = await this.repo.findPromptById(projectId, promptId);
@@ -238,7 +251,12 @@ export class PromptService {
       throw new NotFoundException(`Prompt version ${versionId} not found`);
     }
 
-    return this.buildDeletionImpact(projectId, promptId, [version], false);
+    return this.deletionHook.preparePromptDeletion({
+      projectId,
+      promptId,
+      versions: [version],
+      includePromptShell: false,
+    });
   }
 
   async deletePrompt(projectId: string, promptId: string, actor: CurrentUserPayload): Promise<void> {
@@ -250,9 +268,42 @@ export class PromptService {
     }
 
     const versions = await this.repo.listVersionsByPromptIds([promptId]);
-    await this.buildDeletionImpact(projectId, promptId, versions, true);
+    await this.deletionHook.preparePromptDeletion({
+      projectId,
+      promptId,
+      versions,
+      includePromptShell: true,
+    });
 
     await this.repo.hardDeletePrompt(projectId, promptId);
+  }
+
+  async archivePrompt(projectId: string, promptId: string, actor: CurrentUserPayload): Promise<PromptDetailDto> {
+    await this.getWritableProject(projectId, actor);
+
+    const prompt = await this.repo.findPromptById(projectId, promptId);
+    if (!prompt) {
+      throw new NotFoundException(`Prompt ${promptId} not found`);
+    }
+    if (prompt.status !== 'archived') {
+      await this.repo.archivePrompt(projectId, promptId);
+    }
+
+    return this.getPrompt(projectId, promptId, actor);
+  }
+
+  async restorePrompt(projectId: string, promptId: string, actor: CurrentUserPayload): Promise<PromptDetailDto> {
+    await this.getWritableProject(projectId, actor);
+
+    const prompt = await this.repo.findPromptById(projectId, promptId);
+    if (!prompt) {
+      throw new NotFoundException(`Prompt ${promptId} not found`);
+    }
+    if (prompt.status !== 'active') {
+      await this.repo.restorePrompt(projectId, promptId);
+    }
+
+    return this.getPrompt(projectId, promptId, actor);
   }
 
   async updateVersionLabel(
@@ -267,6 +318,7 @@ export class PromptService {
     if (!prompt) {
       throw new NotFoundException(`Prompt ${promptId} not found`);
     }
+    this.assertPromptActive(prompt);
 
     const label = dto.label.trim();
     if (label === DERIVED_LATEST_LABEL) {
@@ -421,58 +473,6 @@ export class PromptService {
     return counts;
   }
 
-  private async buildDeletionImpact(
-    projectId: string,
-    promptId: string,
-    versions: PromptVersionRow[],
-    includePromptShell: boolean,
-  ): Promise<PromptDeletionImpactDto> {
-    const versionIds = versions.map((version) => version.id);
-    const generatedOptimizationIds = versions
-      .map((version) => version.generatedByOptimizationId)
-      .filter((id): id is string => Boolean(id));
-    const rows = await this.repo.listDeletionImpact({
-      projectId,
-      promptId,
-      versionIds,
-      generatedOptimizationIds,
-      includePromptShell,
-    });
-
-    const experiments = rows.experiments.map((row) => this.toDeletionImpactItem(row, 'experiment'));
-    const optimizations = rows.optimizations.map((row) => this.toDeletionImpactItem(row, 'optimization'));
-    const canaryReleases = rows.canaryReleases.map((row) => this.toDeletionImpactItem(row, 'canary_release'));
-    const productionReleases = rows.productionReleases.map((row) =>
-      this.toDeletionImpactItem(row, 'production_release'),
-    );
-
-    return {
-      promptId,
-      versionId: includePromptShell ? null : (versions[0]?.id ?? null),
-      experiments,
-      optimizations,
-      canaryReleases,
-      productionReleases,
-      total: experiments.length + optimizations.length + canaryReleases.length + productionReleases.length,
-    };
-  }
-
-  private toDeletionImpactItem(
-    row: PromptDeletionImpactRow,
-    kind: PromptDeletionImpactItemDto['kind'],
-  ): PromptDeletionImpactItemDto {
-    return {
-      id: row.id,
-      kind,
-      name: row.name,
-      status: row.status,
-      promptId: row.promptId,
-      promptVersionId: row.promptVersionId,
-      promptVersionNumber: row.promptVersionNumber,
-      createdAt: row.createdAt?.toISOString() ?? null,
-    };
-  }
-
   private toPromptListItem(
     row: PromptRow,
     versions: PromptVersionRow[],
@@ -485,7 +485,7 @@ export class PromptService {
       ? sortedVersions.find((version) => version.id === row.currentOnlineVersionId)
       : null;
     const versionsById = new Map(sortedVersions.map((version) => [version.id, version]));
-    const grayVersion = labels.find((label) => label.label === 'gray');
+    const canaryVersion = labels.find((label) => label.label === 'canary');
     const customLabels = labels
       .filter((label) => label.labelType === 'custom')
       .map((label) => {
@@ -504,17 +504,21 @@ export class PromptService {
       id: row.id,
       projectId: row.projectId,
       name: row.name,
+      status: this.toPromptStatus(row.status),
       defaultDatasetId: row.defaultDatasetId,
       defaultDatasetName: row.defaultDatasetName,
       latestVersionNumber: latest?.versionNumber ?? 1,
       currentOnlineVersionNumber: onlineVersion?.versionNumber ?? null,
-      currentGrayVersionNumber: grayVersion ? (versionsById.get(grayVersion.versionId)?.versionNumber ?? null) : null,
+      currentCanaryVersionNumber: canaryVersion
+        ? (versionsById.get(canaryVersion.versionId)?.versionNumber ?? null)
+        : null,
       customLabels,
       latestVersionStatus: this.toVersionStatus(latest?.isFrozen ?? false),
       createdBy: row.createdBy,
       createdByDisplayName: row.createdByDisplayName ?? null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      archivedAt: row.archivedAt?.toISOString() ?? null,
       deletedAt: row.deletedAt?.toISOString() ?? null,
       activeReferences,
     };
@@ -560,6 +564,16 @@ export class PromptService {
 
   private toVersionStatus(isFrozen: boolean): PromptVersionStatusDto {
     return isFrozen ? 'frozen' : 'editable';
+  }
+
+  private toPromptStatus(status: string): PromptStatusDto {
+    return status === 'archived' ? 'archived' : 'active';
+  }
+
+  private assertPromptActive(prompt: PromptRow): void {
+    if (prompt.status === 'archived') {
+      throw new ConflictException('prompt_archived');
+    }
   }
 
   private toPromptLanguage(language: string) {
@@ -627,7 +641,7 @@ export class PromptService {
   private sortLabels(labels: PromptVersionLabelDto[]): PromptVersionLabelDto[] {
     const rank = new Map([
       [DERIVED_LATEST_LABEL, 0],
-      ['gray', 1],
+      ['canary', 1],
       ['production', 2],
     ]);
     return Array.from(new Map(labels.map((label) => [label.name, label])).values()).sort((left, right) => {

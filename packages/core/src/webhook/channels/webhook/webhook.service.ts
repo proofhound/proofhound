@@ -18,12 +18,12 @@ import {
   type WebhookAsyncCallContext,
   type WebhookAsyncCallReceipt,
 } from '@proofhound/orchestration-shared';
-import type {
-  CanaryReleaseFilterNodeDto,
-  CanaryReleaseVariableMappingItemDto,
-  PromptLanguageDto,
-  PromptOutputSchemaDto,
-  PromptVariableDto,
+import {
+  type CanaryReleaseFilterNodeDto,
+  type CanaryReleaseVariableMappingItemDto,
+  type PromptLanguageDto,
+  type PromptOutputSchemaDto,
+  type PromptVariableDto,
 } from '@proofhound/shared';
 import type Redis from 'ioredis';
 import { ConnectorContextResolver } from '../../../server/common/contracts/connector-context.resolver';
@@ -505,6 +505,11 @@ function resolveSyncTimeoutMs(config: Record<string, unknown>): number {
 }
 
 function formatResult(result: WebhookRunResultRow, callId: string) {
+  // Gate the error/no-output branch on the INFERENCE outcome only (run_results.status), NOT on
+  // isRunResultFailure: that helper folds in judgment failure (judge_error / parse_error), which is
+  // correct for metrics/failure-rate accounting but wrong here — a synchronous caller wants the model
+  // output whenever inference succeeded, even if the optional judge step errored. Judgment diagnostics
+  // are surfaced in the success payload (judgment_status / is_correct) for visibility.
   if (result.status !== 'success') {
     return {
       status: 'error',
@@ -527,6 +532,7 @@ function formatResult(result: WebhookRunResultRow, callId: string) {
     parsed_output: result.parsedOutput ?? null,
     decision_output: result.decisionOutput,
     judgment_status: result.judgmentStatus,
+    is_correct: result.isCorrect,
     latency_ms: toNumberOrNull(result.latencyMs),
     input_tokens: toNumberOrNull(result.inputTokens),
     output_tokens: toNumberOrNull(result.outputTokens),

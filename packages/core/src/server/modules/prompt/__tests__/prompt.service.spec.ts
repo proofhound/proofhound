@@ -6,6 +6,7 @@ import {
   type PromptRow,
   type PromptVersionRow,
 } from '../prompt.repository';
+import { LocalPromptDeletionHook, PromptDeletionHook } from '../prompt-deletion.hook';
 import { PromptService } from '../prompt.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
@@ -33,6 +34,7 @@ const promptRow = (overrides: Partial<PromptRow> = {}): PromptRow => ({
   id: promptId,
   projectId,
   name: 'ChnSentiCorp 情感判定',
+  status: 'active',
   currentOnlineVersionId: onlineVersionId,
   defaultDatasetId: datasetId,
   defaultDatasetName: '@datasets/chnsenticorp/subsets/random-50',
@@ -40,6 +42,7 @@ const promptRow = (overrides: Partial<PromptRow> = {}): PromptRow => ({
   createdByDisplayName: 'Alice',
   createdAt: new Date('2026-05-18T08:00:00Z'),
   updatedAt: new Date('2026-05-18T09:00:00Z'),
+  archivedAt: null,
   deletedAt: null,
   ...overrides,
 });
@@ -76,12 +79,13 @@ function makeRepo(): Mocked<PromptRepository> {
     aggregateMetricsByVersionIds: vi.fn().mockResolvedValue([]),
     listExperimentReferencesByVersionIds: vi.fn().mockResolvedValue([]),
     listDeletionImpact: vi.fn().mockResolvedValue({
+      releaseLines: [],
       experiments: [],
       optimizations: [],
-      canaryReleases: [],
-      productionReleases: [],
     }),
     createPrompt: vi.fn(),
+    archivePrompt: vi.fn(),
+    restorePrompt: vi.fn(),
     updateDraftVersion: vi.fn(),
     updatePromptDefaultDataset: vi.fn(),
     hardDeletePrompt: vi.fn(),
@@ -105,6 +109,7 @@ describe('PromptService', () => {
       providers: [
         { provide: PromptRepository, useValue: repo },
         { provide: AccessControlService, useClass: LocalAccessControlService },
+        { provide: PromptDeletionHook, useClass: LocalPromptDeletionHook },
         PromptService,
       ],
     }).compile();
@@ -123,7 +128,7 @@ describe('PromptService', () => {
       {
         promptId,
         versionId: draftVersionId,
-        label: 'gray',
+        label: 'canary',
         labelType: 'system',
         createdAt: new Date('2026-05-18T08:00:00Z'),
         updatedAt: new Date('2026-05-18T08:00:00Z'),
@@ -145,7 +150,7 @@ describe('PromptService', () => {
       id: promptId,
       latestVersionNumber: 2,
       currentOnlineVersionNumber: 1,
-      currentGrayVersionNumber: 2,
+      currentCanaryVersionNumber: 2,
       customLabels: [{ name: 'staging', versionNumber: 1 }],
       latestVersionStatus: 'editable',
       activeReferences: 0,
@@ -257,6 +262,35 @@ describe('PromptService', () => {
     await service.updatePrompt(projectId, promptId, { defaultDatasetId: datasetId }, actor);
 
     expect(repo.updatePromptDefaultDataset).not.toHaveBeenCalled();
+  });
+
+  it('archives and restores a prompt', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findPromptById
+      .mockResolvedValueOnce(promptRow())
+      .mockResolvedValueOnce(promptRow({ status: 'archived', archivedAt: new Date('2026-05-19T00:00:00Z') }))
+      .mockResolvedValueOnce(promptRow({ status: 'archived', archivedAt: new Date('2026-05-19T00:00:00Z') }))
+      .mockResolvedValueOnce(promptRow());
+    repo.listVersionsByPromptIds.mockResolvedValue([versionRow()]);
+
+    const archived = await service.archivePrompt(projectId, promptId, actor);
+    const restored = await service.restorePrompt(projectId, promptId, actor);
+
+    expect(repo.archivePrompt).toHaveBeenCalledWith(projectId, promptId);
+    expect(repo.restorePrompt).toHaveBeenCalledWith(projectId, promptId);
+    expect(archived.status).toBe('archived');
+    expect(restored.status).toBe('active');
+  });
+
+  it('rejects creating a draft version for archived prompts', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findPromptById.mockResolvedValue(
+      promptRow({ status: 'archived', archivedAt: new Date('2026-05-19T00:00:00Z') }),
+    );
+
+    await expect(service.createDraftVersion(projectId, promptId, {}, actor)).rejects.toBeInstanceOf(ConflictException);
+
+    expect(repo.createBlankDraftVersion).not.toHaveBeenCalled();
   });
 
   it('returns persisted labels plus the derived latest label in prompt detail', async () => {
@@ -487,7 +521,7 @@ describe('PromptService', () => {
 
       await service.deleteDraftVersion(projectId, promptId, draftVersionId, actor);
 
-      expect(repo.deleteDraftVersionHard).toHaveBeenCalledWith(promptId, draftVersionId);
+      expect(repo.deleteDraftVersionHard).toHaveBeenCalledWith(projectId, promptId, draftVersionId);
       const deleteOrder = repo.deleteDraftVersionHard.mock.invocationCallOrder[0];
       expect(deleteOrder).toBeDefined();
     });
@@ -506,7 +540,23 @@ describe('PromptService', () => {
         generatedOptimizationIds: [],
         includePromptShell: false,
       });
-      expect(repo.deleteDraftVersionHard).toHaveBeenCalledWith(promptId, draftVersionId);
+      expect(repo.deleteDraftVersionHard).toHaveBeenCalledWith(projectId, promptId, draftVersionId);
+    });
+
+    it('lists impact before cascading the version delete', async () => {
+      repo.findProjectAccess.mockResolvedValue(projectAccess());
+      repo.findPromptById.mockResolvedValue(promptRow());
+      repo.findVersionInPrompt.mockResolvedValue(versionRow());
+
+      const impactSpy = vi.spyOn(repo, 'listDeletionImpact');
+
+      await service.deleteDraftVersion(projectId, promptId, draftVersionId, actor);
+
+      const impactOrder = impactSpy.mock.invocationCallOrder[0];
+      const deleteOrder = repo.deleteDraftVersionHard.mock.invocationCallOrder[0];
+      expect(impactOrder).toBeDefined();
+      expect(deleteOrder).toBeDefined();
+      expect(impactOrder ?? 0).toBeLessThan(deleteOrder ?? 0);
     });
 
     it('allows deleting the currently online version because releases keep snapshots', async () => {
@@ -516,7 +566,7 @@ describe('PromptService', () => {
 
       await service.deleteDraftVersion(projectId, promptId, draftVersionId, actor);
 
-      expect(repo.deleteDraftVersionHard).toHaveBeenCalledWith(promptId, draftVersionId);
+      expect(repo.deleteDraftVersionHard).toHaveBeenCalledWith(projectId, promptId, draftVersionId);
     });
 
     it('returns 404 when version not found', async () => {
@@ -531,13 +581,24 @@ describe('PromptService', () => {
   });
 
   describe('getPromptDeleteImpact', () => {
-    it('returns affected experiments, optimizations and releases', async () => {
+    it('returns affected release lines, experiments and optimizations', async () => {
       repo.findProjectAccess.mockResolvedValue(projectAccess());
       repo.findPromptById.mockResolvedValue(promptRow());
       repo.listVersionsByPromptIds.mockResolvedValue([
         versionRow({ id: draftVersionId, generatedByOptimizationId: '77774000-0000-4000-8000-000000000001' }),
       ]);
       repo.listDeletionImpact.mockResolvedValue({
+        releaseLines: [
+          {
+            id: '77776000-0000-4000-8000-000000000001',
+            name: 'production line',
+            status: 'running',
+            promptId,
+            promptVersionId: null,
+            promptVersionNumber: null,
+            createdAt: new Date('2026-05-18T11:00:00Z'),
+          },
+        ],
         experiments: [
           {
             id: '77775000-0000-4000-8000-000000000001',
@@ -550,8 +611,6 @@ describe('PromptService', () => {
           },
         ],
         optimizations: [],
-        canaryReleases: [],
-        productionReleases: [],
       });
 
       const impact = await service.getPromptDeleteImpact(projectId, promptId, actor);
@@ -563,7 +622,8 @@ describe('PromptService', () => {
         generatedOptimizationIds: ['77774000-0000-4000-8000-000000000001'],
         includePromptShell: true,
       });
-      expect(impact.total).toBe(1);
+      expect(impact.total).toBe(2);
+      expect(impact.releaseLines[0]?.name).toBe('production line');
       expect(impact.experiments[0]?.name).toBe('baseline');
     });
   });

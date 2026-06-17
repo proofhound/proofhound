@@ -36,6 +36,10 @@ interface DeletePromptDraftVersionVariables {
   versionId: string;
 }
 
+interface PromptLifecycleVariables {
+  promptId: string;
+}
+
 export function usePrompts(projectId: string) {
   return useQuery({
     queryKey: ['prompts', projectId],
@@ -105,6 +109,30 @@ export function useUpdatePrompt(projectId: string) {
 
   return useMutation({
     mutationFn: ({ promptId, body }: UpdatePromptVariables) => promptClient.updatePrompt(projectId, promptId, body),
+    onSuccess: (prompt) => {
+      void queryClient.invalidateQueries({ queryKey: ['prompts', projectId] });
+      queryClient.setQueryData(['prompts', projectId, prompt.id], prompt);
+    },
+  });
+}
+
+export function useArchivePrompt(projectId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ promptId }: PromptLifecycleVariables) => promptClient.archivePrompt(projectId, promptId),
+    onSuccess: (prompt) => {
+      void queryClient.invalidateQueries({ queryKey: ['prompts', projectId] });
+      queryClient.setQueryData(['prompts', projectId, prompt.id], prompt);
+    },
+  });
+}
+
+export function useRestorePrompt(projectId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ promptId }: PromptLifecycleVariables) => promptClient.restorePrompt(projectId, promptId),
     onSuccess: (prompt) => {
       void queryClient.invalidateQueries({ queryKey: ['prompts', projectId] });
       queryClient.setQueryData(['prompts', projectId, prompt.id], prompt);

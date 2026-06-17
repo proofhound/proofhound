@@ -91,6 +91,15 @@ export class DatasetController {
     return this.datasetService.getDataset(project.projectId, this.parseDatasetId(datasetId), actor);
   }
 
+  @Get(':datasetId/delete-impact')
+  async getDatasetDeleteImpact(
+    @Param('datasetId') datasetId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.datasetService.getDatasetDeleteImpact(project.projectId, this.parseDatasetId(datasetId), actor);
+  }
+
   @Post()
   async createDataset(
     @Body() rawBody: unknown,
@@ -123,6 +132,24 @@ export class DatasetController {
       parse.data,
       actor,
     );
+  }
+
+  @Patch(':datasetId/archive')
+  async archiveDataset(
+    @Param('datasetId') datasetId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.datasetService.archiveDataset(project.projectId, this.parseDatasetId(datasetId), actor);
+  }
+
+  @Patch(':datasetId/restore')
+  async restoreDataset(
+    @Param('datasetId') datasetId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    return this.datasetService.restoreDataset(project.projectId, this.parseDatasetId(datasetId), actor);
   }
 
   @Delete(':datasetId/samples')

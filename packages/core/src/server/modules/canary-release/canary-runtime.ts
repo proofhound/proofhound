@@ -26,7 +26,7 @@ export interface CanaryRuntimeConfig {
   id: string;
   projectId: string;
   orgId?: string;
-  releaseVariantId?: string | null;
+  releaseVersionId?: string | null;
   promptVersionId: string;
   promptId: string;
   modelId: string;
@@ -128,13 +128,15 @@ export function buildReleaseLlmPayload(input: {
     inputVariables: input.inputVariables,
     rawPayload: input.rawPayload,
   });
+  const shouldEvaluateJudgment =
+    expectedOutput !== undefined || hasDecisionOutputField(input.release.promptOutputSchema);
 
   return {
     projectId: input.release.projectId,
     ...(input.release.orgId ? { orgId: input.release.orgId } : {}),
     source: 'release',
     sourceId: input.release.id,
-    releaseVariantId: input.release.releaseVariantId ?? null,
+    releaseVersionId: input.release.releaseVersionId ?? null,
     promptVersionId: input.release.promptVersionId,
     promptId: input.release.promptId,
     modelId: input.release.modelId,
@@ -146,14 +148,13 @@ export function buildReleaseLlmPayload(input: {
     inference: pickInference(input.release.runConfig),
     limits: pickLimits(input.release.runConfig),
     retry: pickRetry(input.release.runConfig),
-    judgment:
-      expectedOutput === undefined
-        ? undefined
-        : {
-            outputSchema: input.release.promptOutputSchema ?? null,
-            judgmentRules: input.release.promptJudgmentRules ?? null,
-            expectedOutput,
-          },
+    judgment: shouldEvaluateJudgment
+      ? {
+          outputSchema: input.release.promptOutputSchema ?? null,
+          judgmentRules: input.release.promptJudgmentRules ?? null,
+          ...(expectedOutput === undefined ? {} : { expectedOutput }),
+        }
+      : undefined,
   };
 }
 
@@ -191,6 +192,36 @@ export function buildReleaseOutputPayload(input: {
     },
     created_at: runResult.createdAt.toISOString(),
   };
+}
+
+/**
+ * Sentinel returned by {@link selectOutputMappingForConnector} when a per-connector
+ * output mapping IS configured but the given connector is excluded from it (no matching
+ * entry). The runner must NOT deliver the default raw envelope in this case — it must
+ * skip delivery to that connector entirely. This is distinct from the legacy/unconfigured
+ * cases, which return a (possibly empty) mapping array and keep emitting the raw envelope.
+ */
+export const OUTPUT_MAPPING_CONNECTOR_EXCLUDED = Symbol('OUTPUT_MAPPING_CONNECTOR_EXCLUDED');
+
+export function selectOutputMappingForConnector(
+  outputMapping: unknown,
+  connectorId: string,
+): CanaryReleaseOutputMappingItemDto[] | typeof OUTPUT_MAPPING_CONNECTOR_EXCLUDED {
+  // No mapping configured at all (undefined / null / non-array) → legacy lane-wide
+  // fallback: emit the default raw envelope.
+  if (!Array.isArray(outputMapping)) return [];
+  // Legacy flat array form (applies to every connector) → emit per its rows.
+  if (outputMapping.every(isOutputMappingItem)) return outputMapping;
+
+  // Per-connector form is configured. Only the matching connector receives output;
+  // an excluded connector is signalled distinctly so the runner skips delivery to it.
+  for (const item of outputMapping) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    if (record['connectorId'] !== connectorId) continue;
+    return normalizeOutputMapping(record['outputMapping']);
+  }
+  return OUTPUT_MAPPING_CONNECTOR_EXCLUDED;
 }
 
 function uuidFromSeed(seed: string): string {
@@ -233,7 +264,7 @@ function normalizeVariableMapping(value: unknown): CanaryReleaseVariableMappingI
 }
 
 function buildOutputResult(outputMapping: unknown, runResult: CanaryRunResultForOutput): unknown {
-  const mapping = Array.isArray(outputMapping) ? (outputMapping as CanaryReleaseOutputMappingItemDto[]) : [];
+  const mapping = normalizeOutputMapping(outputMapping);
   if (mapping.length === 0) {
     return runResult.parsedOutput ?? runResult.decisionOutput ?? runResult.rawResponse ?? null;
   }
@@ -244,6 +275,21 @@ function buildOutputResult(outputMapping: unknown, runResult: CanaryRunResultFor
     if (value !== undefined) writePath(result, item.target, value);
   }
   return result;
+}
+
+function normalizeOutputMapping(value: unknown): CanaryReleaseOutputMappingItemDto[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isOutputMappingItem);
+}
+
+function isOutputMappingItem(value: unknown): value is CanaryReleaseOutputMappingItemDto {
+  return (
+    Boolean(value) &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    typeof (value as Record<string, unknown>)['source'] === 'string' &&
+    typeof (value as Record<string, unknown>)['target'] === 'string'
+  );
 }
 
 function readOutputSource(runResult: CanaryRunResultForOutput, source: string): unknown {
@@ -315,6 +361,17 @@ function readExpectedField(judgmentRules: unknown): string {
     }
   }
   return 'expected_output';
+}
+
+function hasDecisionOutputField(outputSchema: unknown): boolean {
+  if (!outputSchema || typeof outputSchema !== 'object' || Array.isArray(outputSchema)) return false;
+  const fields = (outputSchema as Record<string, unknown>)['fields'];
+  if (!Array.isArray(fields)) return false;
+  return fields.some((field) => {
+    if (!field || typeof field !== 'object' || Array.isArray(field)) return false;
+    const record = field as Record<string, unknown>;
+    return record['isJudgment'] === true || record['is_decision'] === true || record['judgment'] === true;
+  });
 }
 
 function evaluateFilter(node: CanaryReleaseFilterNodeDto, payload: Record<string, unknown>): boolean {

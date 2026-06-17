@@ -6,6 +6,7 @@ import {
   type PromptListCustomLabelDto,
   type PromptListItemDto,
   type PromptOutputSchemaDto,
+  type PromptStatusDto,
   type PromptVariableDto,
   type PromptVariableTypeDto,
   type PromptVersionLabelDto,
@@ -15,6 +16,7 @@ import {
 import type { TranslationKey } from '../../i18n';
 
 export type PromptVersionStatus = PromptVersionStatusDto;
+export type PromptResourceStatus = PromptStatusDto;
 export type PromptVariableType = PromptVariableTypeDto;
 export type PromptLanguage = PromptLanguageDto;
 
@@ -68,9 +70,11 @@ export interface ProjectPrompt {
   id: string;
   name: string;
   latestVersion: number;
-  grayVersion?: number;
+  canaryVersion?: number;
   onlineVersion?: number;
   status: PromptVersionStatus;
+  resourceStatus: PromptResourceStatus;
+  archivedAt: string | null;
   owner: string;
   createdAt: string;
   updatedAt: string;
@@ -202,9 +206,11 @@ export function toProjectPromptListItem(prompt: PromptListItemDto): ProjectPromp
     id: prompt.id,
     name: prompt.name,
     latestVersion: prompt.latestVersionNumber,
-    grayVersion: prompt.currentGrayVersionNumber ?? undefined,
+    canaryVersion: prompt.currentCanaryVersionNumber ?? undefined,
     onlineVersion: prompt.currentOnlineVersionNumber ?? undefined,
     status: prompt.latestVersionStatus,
+    resourceStatus: prompt.status,
+    archivedAt: prompt.archivedAt,
     owner: prompt.createdByDisplayName ?? '',
     createdAt: prompt.createdAt,
     updatedAt: prompt.updatedAt,

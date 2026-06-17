@@ -19,7 +19,7 @@ export interface ReleaseRunnerLaneRow {
   id: string;
   releaseLineId: string;
   projectId: string;
-  releaseVariantId: string | null;
+  releaseVersionId: string | null;
   laneType: 'production' | 'canary';
   promptName: string;
   promptVersionId: string;
@@ -32,6 +32,7 @@ export interface ReleaseRunnerLaneRow {
   trafficRatio: number | null;
   trafficMode: 'split' | 'dual_run' | null;
   recordMode: string;
+  recordCategories: string[];
   filterRules: unknown;
   variableMapping: unknown;
   outputMapping: unknown;
@@ -349,32 +350,34 @@ export class ReleaseRunnerRepository {
       current_production AS (
         SELECT DISTINCT ON (release_line_id)
           release_line_id,
-          id
+          id,
+          status
         FROM ph_releases.release_line_events
         WHERE release_line_id IN (SELECT release_line_id FROM target_line)
           AND lane_type = 'production'
-          AND status = 'running'
+          AND status IN ('running', 'stopped', 'archived')
         ORDER BY release_line_id, created_at DESC
       ),
       active_canary AS (
         SELECT DISTINCT ON (release_line_id)
           release_line_id,
-          id
+          id,
+          status
         FROM ph_releases.release_line_events
         WHERE release_line_id IN (SELECT release_line_id FROM target_line)
           AND lane_type = 'canary'
-          AND status IN ('running', 'stopped')
+          AND status IN ('running', 'stopped', 'archived')
         ORDER BY release_line_id, created_at DESC
       )
       UPDATE ph_releases.release_lines line
       SET current_production_event_id = current_production.id,
           active_canary_event_id = active_canary.id,
           status = CASE
-            WHEN current_production.id IS NOT NULL AND active_canary.id IS NOT NULL THEN 'production_with_canary'
-            WHEN current_production.id IS NOT NULL THEN 'production'
-            WHEN active_canary.id IS NOT NULL THEN 'canary'
+            WHEN line.status = 'archived' THEN 'archived'
+            WHEN current_production.status = 'running' OR active_canary.status = 'running' THEN 'running'
             ELSE 'stopped'
           END,
+          archived_at = CASE WHEN line.status = 'archived' THEN line.archived_at ELSE NULL END,
           updated_at = NOW()
       FROM target_line
       LEFT JOIN current_production ON current_production.release_line_id = target_line.release_line_id
@@ -389,7 +392,7 @@ function laneSelectSql(alias: 'prod' | 'canary') {
         ${alias}.id AS ${alias}_id,
         ${alias}.release_line_id AS ${alias}_release_line_id,
         ${alias}.project_id AS ${alias}_project_id,
-        ${alias}.release_variant_id AS ${alias}_release_variant_id,
+        ${alias}.release_version_id AS ${alias}_release_version_id,
         ${alias}.lane_type AS ${alias}_lane_type,
         ${alias}.prompt_name AS ${alias}_prompt_name,
         ${alias}.prompt_version_id AS ${alias}_prompt_version_id,
@@ -402,6 +405,7 @@ function laneSelectSql(alias: 'prod' | 'canary') {
         ${alias}.traffic_ratio AS ${alias}_traffic_ratio,
         ${alias}.traffic_mode AS ${alias}_traffic_mode,
         ${alias}.record_mode AS ${alias}_record_mode,
+        ${alias}.record_categories AS ${alias}_record_categories,
         ${alias}.filter_rules AS ${alias}_filter_rules,
         ${alias}.variable_mapping AS ${alias}_variable_mapping,
         ${alias}.output_mapping AS ${alias}_output_mapping,
@@ -440,7 +444,7 @@ function mapLaneRow(row: Record<string, unknown>, prefix: 'prod' | 'canary'): Re
     id,
     releaseLineId: row[`${prefix}_release_line_id`] as string,
     projectId: row[`${prefix}_project_id`] as string,
-    releaseVariantId: (row[`${prefix}_release_variant_id`] as string | null) ?? null,
+    releaseVersionId: (row[`${prefix}_release_version_id`] as string | null) ?? null,
     laneType: row[`${prefix}_lane_type`] as 'production' | 'canary',
     promptName: (row[`${prefix}_prompt_name`] as string | null) ?? 'release',
     promptVersionId: row[`${prefix}_prompt_version_id`] as string,
@@ -453,6 +457,7 @@ function mapLaneRow(row: Record<string, unknown>, prefix: 'prod' | 'canary'): Re
     trafficRatio: toNumberOrNull(row[`${prefix}_traffic_ratio`] as number | string | null),
     trafficMode: (row[`${prefix}_traffic_mode`] as 'split' | 'dual_run' | null) ?? null,
     recordMode: (row[`${prefix}_record_mode`] as string | null) ?? 'all',
+    recordCategories: normalizeStringArray(row[`${prefix}_record_categories`]),
     filterRules: row[`${prefix}_filter_rules`],
     variableMapping: row[`${prefix}_variable_mapping`],
     outputMapping: row[`${prefix}_output_mapping`],
@@ -491,7 +496,7 @@ function mapCompletedRunResult(row: Record<string, unknown>): ReleaseCompletedRu
 
 function runResultFailureSql() {
   return sql`
-    status <> 'success'
+    status = 'failed'
     OR judgment_status = 'parse_error'
     OR (judgment_status = 'judge_error' AND expected_output IS NOT NULL)
   `;

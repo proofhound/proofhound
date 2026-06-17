@@ -322,6 +322,44 @@ describe('WebhookService', () => {
     });
   });
 
+  it('returns the model output when inference succeeded but the optional judge step errored', async () => {
+    const repo = makeRepo();
+    // Successful inference (status='success') whose optional judge step errored: expected output was
+    // provided but judgment failed. The sync caller must still receive the model output (success branch),
+    // not the stripped error branch.
+    const judgeErrored: WebhookRunResultRow = {
+      ...runResult,
+      status: 'success',
+      judgmentStatus: 'judge_error',
+      expectedOutput: 'positive',
+      isCorrect: null,
+      errorClass: null,
+      errorMessage: null,
+    };
+    repo.findRunResult.mockReset();
+    repo.findRunResult.mockResolvedValueOnce(null).mockResolvedValueOnce(judgeErrored);
+    const service = makeService(repo);
+
+    const response = await service.receive({
+      webhookSlug: 'wh-a3a1b2c3',
+      pathName: '',
+      body: { id: 'sample-1', text: 'hello', expected_output: 'positive' },
+      authorization: `Bearer ${TOKEN}`,
+      ipAddress: '127.0.0.1',
+      userAgent: 'vitest',
+    });
+
+    expect(response).toMatchObject({
+      status: 'success',
+      external_id: 'sample-1',
+      result: { label: 'positive' },
+      raw_response: '{"label":"positive"}',
+      parsed_output: { label: 'positive' },
+      decision_output: 'positive',
+      judgment_status: 'judge_error',
+    });
+  });
+
   it('does not dedupe repeated webhook calls by external id', async () => {
     const repo = makeRepo();
     repo.findConnectorWithValidToken.mockResolvedValue({

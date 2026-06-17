@@ -140,6 +140,61 @@ describe('runLlmJob — webhook 入口归因透传', () => {
   });
 });
 
+describe('runLlmJob — release 分类记录', () => {
+  it('extracts decision output without marking correctness when release traffic has no expected output', async () => {
+    invokeLLMMock.mockResolvedValue({
+      content: '{"label":"allow"}',
+      parsed: { label: 'allow' },
+      decisionOutput: 'allow',
+      isCorrect: null,
+      judgmentStatus: null,
+      usage: { inputTokens: 1, outputTokens: 1 },
+      costEstimate: 0,
+      durationMs: 1,
+    });
+    const runLlmJob = createLlmRunner({
+      db: fakeDb(activeModel),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new LocalLimiterKeyStrategy(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
+      usageMetering: new NoopUsageMeteringHook(),
+      logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
+    });
+
+    await runLlmJob(
+      {
+        projectId: '22222222-2222-4222-8222-222222222222',
+        source: 'release',
+        sourceId: '33333333-3333-4333-8333-333333333333',
+        promptVersionId: '44444444-4444-4444-8444-444444444444',
+        modelId: activeModel.id,
+        runResultId: '11111111-1111-4111-8111-111111111111',
+        renderedPrompt: { prompt: 'hi' },
+        judgment: {
+          outputSchema: { fields: [{ key: 'label', value: 'allow or deny', isJudgment: true }] },
+          judgmentRules: null,
+        },
+      } as never,
+      { bullmqJobId: 'job-1', bullmqQueue: 'llm', attempt: 1 },
+    );
+
+    const [args] = invokeLLMMock.mock.calls.at(-1)! as [
+      {
+        runResult: { expectedOutput: string | null };
+        evaluateJudgment: (input: { parsed: unknown; rawResponse: string }) => unknown;
+      },
+    ];
+    expect(args.runResult.expectedOutput).toBeNull();
+    expect(args.evaluateJudgment({ parsed: { label: 'allow' }, rawResponse: '{"label":"allow"}' })).toEqual({
+      decisionOutput: 'allow',
+      isCorrect: null,
+      judgmentStatus: null,
+    });
+  });
+});
+
 describe('runLlmJob — orgId 透传至限流 key 的 ProjectContext', () => {
   class SpyStrategy extends LimiterKeyStrategy {
     seen?: ProjectContext;

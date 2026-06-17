@@ -11,8 +11,10 @@ export type CanaryReleaseStatusDto = z.infer<typeof canaryReleaseStatusSchema>;
 export const canaryReleaseRunModeSchema = z.enum(['fixed_duration', 'manual']);
 export type CanaryReleaseRunModeDto = z.infer<typeof canaryReleaseRunModeSchema>;
 
-export const canaryReleaseRecordModeSchema = z.enum(['all', 'correct_only']);
+export const canaryReleaseRecordModeSchema = z.enum(['all', 'selected_categories', 'correct_only']);
 export type CanaryReleaseRecordModeDto = z.infer<typeof canaryReleaseRecordModeSchema>;
+export const canaryReleaseRecordCategoriesSchema = z.array(z.string().trim().min(1).max(200)).default([]);
+export type CanaryReleaseRecordCategoriesDto = z.infer<typeof canaryReleaseRecordCategoriesSchema>;
 
 export const canaryReleaseTrafficModeSchema = z.enum(['split', 'dual_run']);
 export type CanaryReleaseTrafficModeDto = z.infer<typeof canaryReleaseTrafficModeSchema>;
@@ -126,14 +128,12 @@ export const canaryReleaseStopConditionsSchema = z
   .object({
     maxDurationSeconds: z.number().int().positive().nullable().default(null),
     maxSamples: z.number().int().positive().nullable().default(null),
-    maxFailureRate: z.number().min(0).max(1).nullable().default(null),
   })
   .superRefine((value, ctx) => {
-    if (value.maxDurationSeconds === null && value.maxSamples === null && value.maxFailureRate === null) {
+    if (value.maxDurationSeconds === null && value.maxSamples === null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          'at least one of maxDurationSeconds / maxSamples / maxFailureRate must be set when stop_conditions present',
+        message: 'at least one of maxDurationSeconds / maxSamples must be set when stop_conditions present',
       });
     }
   });
@@ -144,6 +144,7 @@ export const canaryReleaseRunConfigSchema = z.object({
   tpmLimit: z.number().int().positive(),
   concurrency: z.number().int().positive().default(1),
   temperature: z.number().min(0).max(2).default(0.3),
+  stopConditions: canaryReleaseStopConditionsSchema.nullable().optional(),
 });
 export type CanaryReleaseRunConfigDto = z.infer<typeof canaryReleaseRunConfigSchema>;
 
@@ -184,6 +185,7 @@ export const canaryReleaseSchema = z.object({
   runMode: canaryReleaseRunModeSchema,
   stopConditions: canaryReleaseStopConditionsSchema.nullable(),
   recordMode: canaryReleaseRecordModeSchema,
+  recordCategories: canaryReleaseRecordCategoriesSchema,
   filterRules: canaryReleaseFilterRulesSchema,
   variableMapping: canaryReleaseVariableMappingSchema,
   outputMapping: canaryReleaseOutputMappingSchema,
@@ -215,9 +217,8 @@ export const canaryReleaseSchema = z.object({
   targetDatasetName: z.string().nullable(),
   createdByName: z.string().nullable(),
   annotationTaskId: z.string().uuid().nullable(),
-  releaseVariantId: z.string().uuid().nullable(),
-  releaseVariantNumber: z.number().int().positive().nullable(),
-  releaseVariantLabel: z.string().nullable(),
+  releaseVersionId: z.string().uuid().nullable(),
+  releaseVersionLabel: z.string().nullable(),
 });
 export type CanaryReleaseDto = z.infer<typeof canaryReleaseSchema>;
 
@@ -252,6 +253,7 @@ export const createCanaryReleaseInputSchema = z.object({
   trafficMode: canaryReleaseTrafficModeSchema.default('split'),
   runMode: canaryReleaseRunModeSchema,
   recordMode: canaryReleaseRecordModeSchema.default('all'),
+  recordCategories: canaryReleaseRecordCategoriesSchema,
   variableMapping: canaryReleaseVariableMappingSchema,
   outputMapping: canaryReleaseOutputMappingSchema.default([]),
   filterRules: canaryReleaseFilterRulesSchema.default(null),

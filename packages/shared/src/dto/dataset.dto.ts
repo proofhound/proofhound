@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 export const datasetIdParamSchema = z.string().uuid();
 
+export const datasetStatusSchema = z.enum(['active', 'archived']);
+export type DatasetStatusDto = z.infer<typeof datasetStatusSchema>;
+
 export const datasetExportFormatSchema = z.enum(['csv', 'jsonl']);
 export type DatasetExportFormatDto = z.infer<typeof datasetExportFormatSchema>;
 
@@ -87,6 +90,7 @@ export const datasetListItemSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
   name: z.string(),
+  status: datasetStatusSchema,
   description: z.string().nullable(),
   sampleCount: z.number().int().nonnegative(),
   fieldSchema: z.array(datasetFieldSchema),
@@ -98,9 +102,31 @@ export const datasetListItemSchema = z.object({
   createdByDisplayName: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  archivedAt: z.string().datetime().nullable(),
   deletedAt: z.string().datetime().nullable(),
 });
 export type DatasetListItemDto = z.infer<typeof datasetListItemSchema>;
+
+export const datasetDeletionImpactItemSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(['experiment', 'optimization']),
+  name: z.string().nullable(),
+  status: z.string().nullable(),
+  datasetId: z.string().uuid().nullable(),
+  promptId: z.string().uuid().nullable(),
+  promptVersionId: z.string().uuid().nullable(),
+  promptVersionNumber: z.number().int().positive().nullable(),
+  createdAt: z.string().datetime().nullable(),
+});
+export type DatasetDeletionImpactItemDto = z.infer<typeof datasetDeletionImpactItemSchema>;
+
+export const datasetDeletionImpactSchema = z.object({
+  datasetId: z.string().uuid(),
+  experiments: z.array(datasetDeletionImpactItemSchema),
+  optimizations: z.array(datasetDeletionImpactItemSchema),
+  total: z.number().int().nonnegative(),
+});
+export type DatasetDeletionImpactDto = z.infer<typeof datasetDeletionImpactSchema>;
 
 export const datasetSampleSchema = z.object({
   id: z.string().uuid(),

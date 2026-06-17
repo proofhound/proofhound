@@ -300,7 +300,7 @@ describe('MonitoringRepository', () => {
     await repo.getPromptRanking(PROJECT_ID, FILTER, 'requests');
 
     expect(query).not.toBeNull();
-    expect(query!.sql).toContain("status <> 'success'");
+    expect(query!.sql).toContain("status = 'failed'");
     expect(query!.sql).toContain("judgment_status = 'parse_error'");
     expect(query!.sql).toContain("judgment_status = 'judge_error' AND expected_output IS NOT NULL");
     expect(query!.sql).not.toContain("'incorrect'");

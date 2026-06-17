@@ -21,7 +21,7 @@ const validBaseInput = {
   trafficRatio: 0.1,
   runMode: 'fixed_duration' as const,
   variableMapping: validVariableMapping,
-  stopConditions: { maxDurationSeconds: 86_400, maxSamples: null, maxFailureRate: null },
+  stopConditions: { maxDurationSeconds: 86_400, maxSamples: null },
   externalIdField: 'msg.id',
   runConfig: { rpmLimit: 60, tpmLimit: 60_000, concurrency: 1, temperature: 0.3 },
 };
@@ -35,6 +35,7 @@ describe('createCanaryReleaseInputSchema', () => {
     expect(parsed.storageCategories).toEqual([]);
     expect(parsed.targetDatasetId).toBeNull();
     expect(parsed.recordMode).toBe('all');
+    expect(parsed.recordCategories).toEqual([]);
     expect(parsed.trafficMode).toBe('split');
     expect(parsed.name).toBeUndefined();
     expect(parsed.description).toBeUndefined();
@@ -72,12 +73,11 @@ describe('createCanaryReleaseInputSchema', () => {
 });
 
 describe('canaryReleaseStopConditionsSchema', () => {
-  it('rejects when all three knobs are null', () => {
+  it('rejects when both knobs are null', () => {
     expect(() =>
       canaryReleaseStopConditionsSchema.parse({
         maxDurationSeconds: null,
         maxSamples: null,
-        maxFailureRate: null,
       }),
     ).toThrow();
   });
@@ -87,7 +87,6 @@ describe('canaryReleaseStopConditionsSchema', () => {
       canaryReleaseStopConditionsSchema.parse({
         maxDurationSeconds: null,
         maxSamples: 1000,
-        maxFailureRate: null,
       }),
     ).not.toThrow();
   });

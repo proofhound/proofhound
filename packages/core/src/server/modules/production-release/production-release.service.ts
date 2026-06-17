@@ -14,6 +14,7 @@ import { AccessControlService } from '../../common/contracts/access-control.serv
 import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { ReleaseLineService } from '../release-line/release-line.service';
+import { assertReleasePromptVariableMapping } from '../release-line/release-variable-mapping';
 import {
   ProductionReleaseRepository,
   type ProductionReleaseEventRowWithJoins,
@@ -155,12 +156,18 @@ export class ProductionReleaseService {
     // Source ID consistency
     this.assertSourceConsistency(input);
 
+    const snapshots = this.buildPromptSnapshots(prompt, version);
+    assertReleasePromptVariableMapping({
+      variableMapping: input.variableMapping,
+      promptVersionSnapshot: snapshots.promptVersionSnapshot,
+      externalIdField: input.externalIdField,
+    });
+
     await this.assertReleaseWorkflowStart(projectId, actor, orgId);
 
     if (!version.isFrozen) {
       await this.repo.freezePromptVersionIfNeeded(input.promptVersionId);
     }
-    const snapshots = this.buildPromptSnapshots(prompt, version);
 
     if (!this.releaseLineService) {
       throw new ConflictException('Release line service is unavailable');
@@ -180,6 +187,7 @@ export class ProductionReleaseService {
       variableMapping: input.variableMapping,
       filterRules: input.filterRules ?? null,
       recordMode: input.recordMode,
+      recordCategories: input.recordCategories,
       externalIdField: input.externalIdField ?? null,
       retentionDays: input.retentionDays ?? null,
       status: 'running',
@@ -246,6 +254,7 @@ export class ProductionReleaseService {
       variableMapping: current.variableMapping,
       filterRules: current.filterRules,
       recordMode: current.recordMode,
+      recordCategories: current.recordCategories,
       externalIdField: current.externalIdField,
       retentionDays: current.retentionDays,
       status: 'stopped',
@@ -337,6 +346,7 @@ export class ProductionReleaseService {
       variableMapping: (row.variableMapping ?? {}) as ProductionReleaseEventDto['variableMapping'],
       filterRules: row.filterRules as ProductionReleaseEventDto['filterRules'],
       recordMode: row.recordMode as ProductionReleaseEventDto['recordMode'],
+      recordCategories: row.recordCategories ?? [],
       externalIdField: row.externalIdField,
       retentionDays: row.retentionDays,
       status: row.status as ProductionReleaseEventDto['status'],

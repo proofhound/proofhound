@@ -41,6 +41,10 @@ export const canaryReleases = phReleases.table(
     runMode: text('run_mode').notNull(),
     stopConditions: jsonb('stop_conditions'),
     recordMode: text('record_mode').notNull().default('all'),
+    recordCategories: text('record_categories')
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
     filterRules: jsonb('filter_rules'),
     variableMapping: jsonb('variable_mapping').notNull(),
     outputMapping: jsonb('output_mapping')
@@ -86,7 +90,7 @@ export const canaryReleases = phReleases.table(
     ),
     check('canary_releases_run_mode_check', sql`${t.runMode} IN ('fixed_duration', 'manual')`),
     check('canary_releases_traffic_mode_check', sql`${t.trafficMode} IN ('split', 'dual_run')`),
-    check('canary_releases_record_mode_check', sql`${t.recordMode} IN ('all', 'correct_only')`),
+    check('canary_releases_record_mode_check', sql`${t.recordMode} IN ('all', 'selected_categories', 'correct_only')`),
     check('canary_releases_traffic_ratio_check', sql`${t.trafficRatio} >= 0 AND ${t.trafficRatio} <= 1`),
     // One input connector can be occupied by at most one running canary at a time (mutual exclusion with production releases is enforced by the application layer)
     uniqueIndex('uniq_running_canary_per_input_connector')

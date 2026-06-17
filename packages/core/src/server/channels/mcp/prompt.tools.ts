@@ -164,8 +164,40 @@ export function createPromptTools(
       },
     },
     {
+      name: 'prompt_archive_prompt',
+      description: '将提示词从活跃状态归档；归档后不能继续创建实验、优化或发布',
+      inputSchema: {
+        type: 'object',
+        required: ['promptId'],
+        properties: {
+          promptId: { type: 'string', format: 'uuid' },
+        },
+      },
+      handler: async (input, ctx) => {
+        const { projectId } = resolveMcpProjectContext(ctx);
+        const promptId = promptIdParamSchema.parse(input.promptId);
+        return promptService.archivePrompt(projectId, promptId, getMcpActor(ctx));
+      },
+    },
+    {
+      name: 'prompt_restore_prompt',
+      description: '将归档提示词恢复为活跃状态',
+      inputSchema: {
+        type: 'object',
+        required: ['promptId'],
+        properties: {
+          promptId: { type: 'string', format: 'uuid' },
+        },
+      },
+      handler: async (input, ctx) => {
+        const { projectId } = resolveMcpProjectContext(ctx);
+        const promptId = promptIdParamSchema.parse(input.promptId);
+        return promptService.restorePrompt(projectId, promptId, getMcpActor(ctx));
+      },
+    },
+    {
       name: 'prompt_get_delete_impact',
-      description: '查看删除提示词会影响的实验、优化、灰度发布与正式发布',
+      description: '查看删除提示词会影响的发布线、实验与优化',
       inputSchema: {
         type: 'object',
         required: ['promptId'],
@@ -181,7 +213,7 @@ export function createPromptTools(
     },
     {
       name: 'prompt_get_version_delete_impact',
-      description: '查看删除提示词版本会影响的实验、优化、灰度发布与正式发布',
+      description: '查看删除提示词版本会影响的发布线、实验与优化',
       inputSchema: {
         type: 'object',
         required: ['promptId', 'versionId'],

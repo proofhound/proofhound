@@ -33,6 +33,7 @@ const createInput: CreateProductionReleaseInputDto = {
   variableMapping: {},
   filterRules: null,
   recordMode: 'all',
+  recordCategories: [],
   externalIdField: null,
   retentionDays: null,
   submitReason: '上线新版本',
@@ -57,6 +58,7 @@ function releaseRow(overrides: Partial<ProductionReleaseEventRowWithJoins> = {})
     variableMapping: {},
     filterRules: null,
     recordMode: 'all',
+    recordCategories: [],
     externalIdField: null,
     retentionDays: null,
     status: 'running',
@@ -223,6 +225,40 @@ describe('ProductionReleaseService.create', () => {
     expect(repo.freezePromptVersionIfNeeded).not.toHaveBeenCalled();
     expect(releaseLines.recordProductionEvent).not.toHaveBeenCalled();
     expect(repo.markPromptVersionProduction).not.toHaveBeenCalled();
+  });
+
+  it('rejects releases that do not map every prompt variable before starting workflow', async () => {
+    const repo = createRepoMock(false);
+    repo.findPromptVersionForPrompt.mockResolvedValue({
+      id: promptVersionId,
+      promptId,
+      versionNumber: 3,
+      body: '判断 {{text}}',
+      variables: [{ name: 'text', type: 'text', required: true }],
+      outputSchema: null,
+      judgmentRules: null,
+      promptLanguage: 'zh-CN',
+      isFrozen: false,
+      createdBy: actorId,
+      createdAt: new Date('2026-05-19T00:00:00.000Z'),
+      frozenAt: null,
+    });
+    const releaseLines = releaseLineServiceMock();
+    const workflowAuth = workflowAuthMock();
+    const service = new ProductionReleaseService(
+      repo as unknown as ProductionReleaseRepository,
+      new LocalAccessControlService(),
+      workflowAuth,
+      releaseLines as unknown as ReleaseLineService,
+    );
+
+    await expect(service.create(projectId, createInput, actor)).rejects.toThrow(
+      'release_variable_mapping_missing_prompt_variables:text',
+    );
+
+    expect(workflowAuth.assertCanStart).not.toHaveBeenCalled();
+    expect(repo.freezePromptVersionIfNeeded).not.toHaveBeenCalled();
+    expect(releaseLines.recordProductionEvent).not.toHaveBeenCalled();
   });
 });
 

@@ -57,32 +57,65 @@ export class AnnotationService {
     actor: CurrentUserPayload,
   ): Promise<AnnotationTaskDto> {
     await this.assertWriteAccess(projectId, actor);
-    const [availableCount, categoryOptions] = await Promise.all([
-      this.repo.countMatchingRunResults(projectId, input.releaseLineId, input.releaseVariantId, input.scope),
-      this.repo.findVariantCategoryOptions(projectId, input.releaseLineId, input.releaseVariantId),
+    const requestedSampleSize = getRequestedSampleSize(input);
+    const [availableCount, categoryResult, categoryAvailability] = await Promise.all([
+      this.repo.countMatchingRunResults(
+        projectId,
+        input.releaseLineId,
+        input.releaseVersionId,
+        input.releaseVersionScope,
+        input.scope,
+      ),
+      this.repo.findReleaseVersionCategoryOptions(
+        projectId,
+        input.releaseLineId,
+        input.releaseVersionId,
+        input.releaseVersionScope,
+      ),
+      input.samplingMode === 'per_category'
+        ? this.repo.countMatchingRunResultsByCategory(
+            projectId,
+            input.releaseLineId,
+            input.releaseVersionId,
+            input.releaseVersionScope,
+            input.scope,
+          )
+        : Promise.resolve(new Map<string, number>()),
     ]);
-    if (input.sampleSize > availableCount) {
+    if (requestedSampleSize > availableCount) {
       throw new BadRequestException({
         code: 'annotation_sample_size_exceeds_available',
         availableCount,
-        sampleSize: input.sampleSize,
+        sampleSize: requestedSampleSize,
       });
     }
-    if (categoryOptions.length === 0) {
+    if (!categoryResult.compatible) {
+      throw new BadRequestException({
+        code: 'annotation_release_journey_categories_incompatible',
+        message: 'Release journey annotation requires compatible category options',
+      });
+    }
+    if (categoryResult.options.length === 0) {
       throw new BadRequestException({
         code: 'annotation_category_options_required',
         message: 'Annotation task requires prompt classification options',
       });
     }
-    const taskId = await this.repo.createTask(projectId, input, actor.sub, availableCount, categoryOptions);
+    if (input.samplingMode === 'per_category') {
+      validateCategorySampleCounts(input, categoryResult.options, categoryAvailability);
+    }
+    const taskId = await this.repo.createTask(projectId, input, actor.sub, availableCount, categoryResult.options);
     this.logger.info(
       {
         annotationTaskId: taskId,
         releaseLineId: input.releaseLineId,
-        releaseVariantId: input.releaseVariantId,
+        releaseVersionId: input.releaseVersionId,
+        releaseVersionScope: input.releaseVersionScope,
         scope: input.scope,
-        sampleSize: input.sampleSize,
-        categoryOptionCount: categoryOptions.length,
+        samplingMode: input.samplingMode,
+        sampleSize: requestedSampleSize,
+        categorySampleCounts: getPositiveCategorySampleCounts(input),
+        categoryOptionCount: categoryResult.options.length,
       },
       'annotation_task_created',
     );
@@ -178,5 +211,51 @@ export class AnnotationService {
     await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     const project = await this.repo.findProject(projectId);
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
+  }
+}
+
+function getRequestedSampleSize(input: CreateAnnotationTaskInputDto): number {
+  if (input.samplingMode === 'per_category') {
+    return getPositiveCategorySampleCounts(input).reduce((sum, item) => sum + item.sampleSize, 0);
+  }
+  return input.sampleSize ?? 0;
+}
+
+function getPositiveCategorySampleCounts(
+  input: CreateAnnotationTaskInputDto,
+): Array<{ category: string; sampleSize: number }> {
+  return (input.categorySampleCounts ?? []).filter((item) => item.sampleSize > 0);
+}
+
+function validateCategorySampleCounts(
+  input: CreateAnnotationTaskInputDto,
+  categoryOptions: string[],
+  categoryAvailability: Map<string, number>,
+): void {
+  const allowedCategories = new Set(categoryOptions);
+  const requestedCounts = getPositiveCategorySampleCounts(input);
+  const invalidCategories = requestedCounts
+    .map((item) => item.category)
+    .filter((category) => !allowedCategories.has(category));
+  if (invalidCategories.length > 0) {
+    throw new BadRequestException({
+      code: 'annotation_category_sample_options_invalid',
+      categoryOptions,
+      invalidCategories,
+    });
+  }
+
+  const exceeded = requestedCounts
+    .map((item) => ({
+      category: item.category,
+      availableCount: categoryAvailability.get(item.category) ?? 0,
+      sampleSize: item.sampleSize,
+    }))
+    .find((item) => item.sampleSize > item.availableCount);
+  if (exceeded) {
+    throw new BadRequestException({
+      code: 'annotation_category_sample_size_exceeds_available',
+      ...exceeded,
+    });
   }
 }
