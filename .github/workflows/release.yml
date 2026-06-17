@@ -252,9 +252,9 @@ jobs:
           name: npm-packages
           path: .npm-packages
 
+      # npm trusted publishing uses the job's OIDC token; do not pass a
+      # long-lived NODE_AUTH_TOKEN here.
       - name: Publish packed packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: pnpm run packages:publish:packed -- .npm-packages "${{ needs.plan.outputs.dist_tag }}"
       - run: pnpm run packages:consumer:registry -- "${{ needs.checks.outputs.version }}" "https://registry.npmjs.org/"
       - run: pnpm run packages:release-notes -- "${{ needs.checks.outputs.version }}" "${{ needs.plan.outputs.dist_tag }}" .npm-packages/release-notes.md
