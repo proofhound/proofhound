@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.9](https://github.com/proofhound/proofhound/compare/v0.1.8...v0.1.9) (2026-06-17)
+
+
+### Features
+
+* **releases:** publish deletion history policy ([9838e48](https://github.com/proofhound/proofhound/commit/9838e4866d5433bc27eae96299d5c7559e56ddbd))
+
 ## [0.1.8](https://github.com/proofhound/proofhound/compare/v0.1.7...v0.1.8) (2026-06-11)
 
 
