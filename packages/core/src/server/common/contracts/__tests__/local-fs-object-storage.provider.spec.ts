@@ -103,5 +103,14 @@ describe('LocalFsObjectStorageProvider', () => {
       const escaping: ResourceLocator = { ...loc, resourceId: '..', name: '../escape' };
       await expect(provider.putObject(escaping, Buffer.from('x'))).rejects.toThrow(/escapes storage root/);
     });
+
+    it('rejects a key that resolves to the storage root itself', async () => {
+      // `export/.`+`..` resolves back to root; must be rejected so deleteObjects can't target root.
+      const rootKey: ResourceLocator = { ...loc, resourceId: '.', name: '..' };
+      await expect(provider.putObject(rootKey, Buffer.from('x'))).rejects.toThrow(/escapes storage root/);
+      await expect(provider.deleteObjects([{ provider: 'localfs', key: '.', bytes: 0, resourceType: 'export', resourceId: '.' }])).rejects.toThrow(
+        /escapes storage root/,
+      );
+    });
   });
 });

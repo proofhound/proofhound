@@ -1,6 +1,5 @@
 // ObjectStorageProvider — adapter extension point: the large-payload / artifact storage layer.
-// See docs/specs/08-saas-adapter-boundary.md (§2 assembly-time DI) and the SaaS design
-// docs/plans/2026-06-18-object-storage-r2-design.md.
+// See docs/specs/08-saas-adapter-boundary.md (§2 assembly-time DI).
 //
 // The OSS default (LocalFsObjectStorageProvider) is disk-backed and reports isEnabled() === false
 // when unconfigured, so an OSS deployment without object storage keeps its existing DB-only behaviour

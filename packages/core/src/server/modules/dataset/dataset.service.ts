@@ -157,7 +157,13 @@ export class DatasetService {
       if (signed) {
         return { kind: 'redirect', url: signed.url, expiresAt: signed.expiresAt };
       }
-      // Provider stored the object but cannot expose a public URL (e.g. LocalFs) → stream it.
+      // Provider stored the object but cannot expose a public URL (e.g. LocalFs). Drop the
+      // now-orphaned artifact before streaming — otherwise every such export leaks an object.
+      try {
+        await this.objectStorage.deleteObjects([ref]);
+      } catch (err) {
+        this.logger.warn({ key: ref.key, err }, 'export_artifact_cleanup_failed');
+      }
     }
 
     return { kind: 'stream', file };

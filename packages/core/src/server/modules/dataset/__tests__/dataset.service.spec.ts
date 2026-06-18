@@ -473,10 +473,12 @@ describe('DatasetService', () => {
         resourceId: 'x',
       }));
       const createSignedDownloadUrl = vi.fn(async () => null);
+      const deleteObjects = vi.fn(async () => undefined);
       const withStorage = await buildServiceWith({
         isEnabled: () => true,
         putObject,
         createSignedDownloadUrl,
+        deleteObjects,
       } as unknown as ObjectStorageProvider);
 
       const delivery = await withStorage.exportDatasetForDownload(project, datasetId, 'csv', actor);
@@ -484,6 +486,9 @@ describe('DatasetService', () => {
       expect(delivery.kind).toBe('stream');
       expect(putObject).toHaveBeenCalledTimes(1);
       expect(createSignedDownloadUrl).toHaveBeenCalledTimes(1);
+      // The orphaned artifact must be cleaned up, not left behind.
+      expect(deleteObjects).toHaveBeenCalledTimes(1);
+      expect(deleteObjects).toHaveBeenCalledWith([expect.objectContaining({ key: 'export/x/risk-eval-v4.csv' })]);
     });
   });
 

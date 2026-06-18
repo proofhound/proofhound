@@ -9,10 +9,11 @@
 
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
-import type { Readable } from 'node:stream';
+import { type Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import {
   type GetObjectRange,
   ObjectStorageProvider,
@@ -41,16 +42,38 @@ export class LocalFsObjectStorageProvider extends ObjectStorageProvider {
     const key = buildKey(loc);
     const abs = absForKey(root, key);
     await mkdir(dirname(abs), { recursive: true });
-    const buf = Buffer.isBuffer(body) ? body : await streamToBuffer(body);
-    await writeFile(abs, buf);
+
+    let bytes: number;
+    let sha256: string;
+    if (Buffer.isBuffer(body)) {
+      bytes = body.byteLength;
+      sha256 = opts?.sha256 ?? createHash('sha256').update(body).digest('hex');
+      await writeFile(abs, body);
+    } else {
+      // Stream straight to disk, hashing + counting as bytes pass — never buffer the whole object.
+      const hash = createHash('sha256');
+      let counted = 0;
+      const meter = new Transform({
+        transform(chunk, _enc, cb) {
+          const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          counted += b.byteLength;
+          hash.update(b);
+          cb(null, b);
+        },
+      });
+      await pipeline(body, meter, createWriteStream(abs));
+      bytes = counted;
+      sha256 = opts?.sha256 ?? hash.digest('hex');
+    }
+
     return {
       provider: PROVIDER,
       key,
-      bytes: buf.byteLength,
+      bytes,
       codec: opts?.codec,
       contentType: opts?.contentType,
       contentDisposition: opts?.contentDisposition,
-      sha256: opts?.sha256 ?? createHash('sha256').update(buf).digest('hex'),
+      sha256,
       checksumAlgorithm: 'sha256',
       resourceType: loc.resourceType,
       resourceId: loc.resourceId,
@@ -96,17 +119,10 @@ function buildKey(loc: ResourceLocator): string {
 
 function absForKey(root: string, key: string): string {
   const abs = resolve(root, key);
-  // Guard against keys escaping the storage root (path traversal).
-  if (abs !== root && !abs.startsWith(root + sep)) {
+  // A valid object key always resolves strictly under the root. Reject anything that resolves to
+  // the root itself (e.g. `export/.`+`..`) or outside it — otherwise deleteObjects could target the root.
+  if (!abs.startsWith(root + sep)) {
     throw new Error('object key escapes storage root');
   }
   return abs;
-}
-
-async function streamToBuffer(stream: Readable): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
 }
