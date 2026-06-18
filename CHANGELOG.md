@@ -5,7 +5,7 @@
 
 ### Features
 
-* **core:** add ObjectStorageProvider extension point and dataset export delivery ([#48](https://github.com/proofhound/proofhound/issues/48)) ([76359f5](https://github.com/proofhound/proofhound/commit/76359f5f688d70c85c62385967c81ad8975c9aef))
+* **core:** add object-storage extension point and dataset export delivery ([#48](https://github.com/proofhound/proofhound/issues/48)) ([76359f5](https://github.com/proofhound/proofhound/commit/76359f5f688d70c85c62385967c81ad8975c9aef))
 
 ## [0.1.10](https://github.com/proofhound/proofhound/compare/v0.1.9...v0.1.10) (2026-06-18)
 
