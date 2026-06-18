@@ -5,8 +5,10 @@ import { DatasetRepository, type DatasetProjectAccessRow, type DatasetRow } from
 import { DatasetService } from '../dataset.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 import { UsageMeteringHook } from '../../../common/contracts/usage-metering.hook';
+import type { ProjectContext } from '@proofhound/shared';
 import { vi, type Mock, type Mocked } from 'vitest';
 
 const actor = {
@@ -369,6 +371,120 @@ describe('DatasetService', () => {
     expect(file.fileName).toBe('risk-eval-v4.jsonl');
     expect(file.contentType).toBe('application/x-ndjson; charset=utf-8');
     expect(file.buffer.toString('utf8')).toBe('{"sample_id":"case-1","question":"是否拦截?","label":"block"}\n');
+  });
+
+  describe('exportDatasetForDownload', () => {
+    const datasetId = '22222222-2222-4222-8222-222222222222';
+    const project: ProjectContext = { projectId: '77777777-7777-4777-8777-777777777777', source: 'local' };
+
+    function primeExport() {
+      repo.findProjectAccess.mockResolvedValue(projectAccess());
+      repo.findDatasetById.mockResolvedValue(datasetRow());
+      repo.listDatasetSamples.mockResolvedValue([
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          datasetId,
+          data: { sample_id: 'case-1', question: '是否拦截?', label: 'block' },
+          externalId: 'case-1',
+          createdAt: new Date('2026-05-16T00:00:00Z'),
+          updatedAt: new Date('2026-05-16T00:00:00Z'),
+        },
+      ]);
+    }
+
+    async function buildServiceWith(objectStorage: Partial<ObjectStorageProvider>): Promise<DatasetService> {
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          { provide: DatasetRepository, useValue: repo },
+          { provide: AccessControlService, useClass: LocalAccessControlService },
+          { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
+          { provide: DatasetDeletionHook, useClass: LocalDatasetDeletionHook },
+          { provide: UsageMeteringHook, useValue: usageMetering },
+          { provide: ObjectStorageProvider, useValue: objectStorage },
+          DatasetService,
+        ],
+      }).compile();
+      return module.get(DatasetService);
+    }
+
+    it('streams when no object storage is configured', async () => {
+      primeExport();
+      const delivery = await service.exportDatasetForDownload(project, datasetId, 'csv', actor);
+      expect(delivery.kind).toBe('stream');
+      if (delivery.kind === 'stream') {
+        expect(delivery.file.fileName).toBe('risk-eval-v4.csv');
+      }
+    });
+
+    it('streams without touching storage when the provider is disabled', async () => {
+      primeExport();
+      const putObject = vi.fn();
+      const withStorage = await buildServiceWith({ isEnabled: () => false, putObject } as unknown as ObjectStorageProvider);
+
+      const delivery = await withStorage.exportDatasetForDownload(project, datasetId, 'csv', actor);
+
+      expect(delivery.kind).toBe('stream');
+      expect(putObject).not.toHaveBeenCalled();
+    });
+
+    it('writes the artifact and redirects to a signed URL when storage is enabled', async () => {
+      primeExport();
+      const putObject = vi.fn(async () => ({
+        provider: 'r2',
+        key: 'orgs/o1/projects/p1/export/x/risk-eval-v4.csv',
+        bytes: 64,
+        resourceType: 'export' as const,
+        resourceId: 'x',
+      }));
+      const createSignedDownloadUrl = vi.fn(async () => ({
+        url: 'https://r2.example/signed',
+        expiresAt: '2026-06-18T01:00:00.000Z',
+      }));
+      const withStorage = await buildServiceWith({
+        isEnabled: () => true,
+        putObject,
+        createSignedDownloadUrl,
+      } as unknown as ObjectStorageProvider);
+
+      const delivery = await withStorage.exportDatasetForDownload(project, datasetId, 'csv', actor);
+
+      expect(delivery).toEqual({
+        kind: 'redirect',
+        url: 'https://r2.example/signed',
+        expiresAt: '2026-06-18T01:00:00.000Z',
+      });
+      expect(putObject).toHaveBeenCalledWith(
+        expect.objectContaining({ project, resourceType: 'export', resourceId: expect.any(String), name: 'risk-eval-v4.csv' }),
+        expect.any(Buffer),
+        expect.objectContaining({
+          contentType: 'text/csv; charset=utf-8',
+          contentDisposition: expect.stringContaining('risk-eval-v4.csv'),
+        }),
+      );
+    });
+
+    it('falls back to streaming when the provider cannot mint a URL (e.g. LocalFs)', async () => {
+      primeExport();
+      const putObject = vi.fn(async () => ({
+        provider: 'localfs',
+        key: 'export/x/risk-eval-v4.csv',
+        bytes: 64,
+        resourceType: 'export' as const,
+        resourceId: 'x',
+      }));
+      const createSignedDownloadUrl = vi.fn(async () => null);
+      const withStorage = await buildServiceWith({
+        isEnabled: () => true,
+        putObject,
+        createSignedDownloadUrl,
+      } as unknown as ObjectStorageProvider);
+
+      const delivery = await withStorage.exportDatasetForDownload(project, datasetId, 'csv', actor);
+
+      expect(delivery.kind).toBe('stream');
+      expect(putObject).toHaveBeenCalledTimes(1);
+      expect(createSignedDownloadUrl).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('hard deletes a dataset', async () => {

@@ -16,11 +16,13 @@ import type {
   DatasetStatusDto,
   DeleteDatasetSamplesDto,
   DeleteDatasetSamplesResponseDto,
+  ProjectContext,
   UpdateDatasetMetadataDto,
 } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
 import { DatasetDeletionHook } from './dataset-deletion.hook';
@@ -40,6 +42,17 @@ export interface DatasetExportFile {
   format: DatasetExportFormatDto;
 }
 
+/**
+ * How the export should be delivered to the client:
+ *  - `stream`: respond with the buffer (object storage disabled, or the provider can't mint a
+ *    public URL — e.g. LocalFs); preserves the original streamed-download behaviour.
+ *  - `redirect`: the artifact was written to object storage; redirect the client to a signed URL
+ *    so the bytes are served directly by the store (no DB / API egress for the payload).
+ */
+export type DatasetExportDelivery =
+  | { kind: 'stream'; file: DatasetExportFile }
+  | { kind: 'redirect'; url: string; expiresAt: string };
+
 @Injectable()
 export class DatasetService {
   private readonly logger = createLogger('dataset.service', { service: 'server' });
@@ -51,6 +64,7 @@ export class DatasetService {
     @Inject(DatasetDeletionHook)
     private readonly deletionHook: DatasetDeletionHook,
     @Optional() private readonly usageMetering?: UsageMeteringHook,
+    @Optional() private readonly objectStorage?: ObjectStorageProvider,
   ) {}
 
   async listDatasets(
@@ -116,6 +130,37 @@ export class DatasetService {
       fileName: this.getExportFileName(dataset.name, format),
       format,
     };
+  }
+
+  /**
+   * Build the export artifact and decide how to deliver it. When an object-storage provider is
+   * configured and can mint a signed URL, the artifact is written to the store and the caller is
+   * redirected there (payload bytes leave the store, not the DB/API). Otherwise — provider disabled
+   * or unable to sign (e.g. LocalFs) — it falls back to streaming the buffer, exactly as before.
+   */
+  async exportDatasetForDownload(
+    project: ProjectContext,
+    datasetId: string,
+    format: DatasetExportFormatDto,
+    actor: CurrentUserPayload,
+  ): Promise<DatasetExportDelivery> {
+    const file = await this.exportDataset(project.projectId, datasetId, format, actor);
+
+    if (this.objectStorage?.isEnabled()) {
+      const contentDisposition = `attachment; filename="${file.fileName}"; filename*=UTF-8''${encodeURIComponent(file.fileName)}`;
+      const ref = await this.objectStorage.putObject(
+        { project, resourceType: 'export', resourceId: randomUUID(), name: file.fileName },
+        file.buffer,
+        { contentType: file.contentType, contentDisposition },
+      );
+      const signed = await this.objectStorage.createSignedDownloadUrl(ref);
+      if (signed) {
+        return { kind: 'redirect', url: signed.url, expiresAt: signed.expiresAt };
+      }
+      // Provider stored the object but cannot expose a public URL (e.g. LocalFs) → stream it.
+    }
+
+    return { kind: 'stream', file };
   }
 
   async createDataset(

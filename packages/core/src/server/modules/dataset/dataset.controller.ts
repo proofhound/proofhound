@@ -67,12 +67,21 @@ export class DatasetController {
       throw new BadRequestException(parse.error.issues);
     }
 
-    const file = await this.datasetService.exportDataset(
-      project.projectId,
+    const delivery = await this.datasetService.exportDatasetForDownload(
+      project,
       this.parseDatasetId(datasetId),
       parse.data,
       actor,
     );
+
+    // Object storage minted a signed URL → 302 to it so the bytes are served directly by the store
+    // (the existing blob-fetch client transparently follows the redirect). No DTO / client change.
+    if (delivery.kind === 'redirect') {
+      response.status(HttpStatus.FOUND).set({ Location: delivery.url });
+      return undefined;
+    }
+
+    const file = delivery.file;
     response.set({
       'Content-Disposition': `attachment; filename="${file.fileName}"; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
       'Content-Length': String(file.byteLength),

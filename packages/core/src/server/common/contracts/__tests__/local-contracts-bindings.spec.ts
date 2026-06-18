@@ -4,6 +4,8 @@ import { LocalConnectorContextResolver } from '../../../../webhook/channels/webh
 import { ConnectorContextResolver } from '../connector-context.resolver';
 import { LimiterKeyStrategy, LocalLimiterKeyStrategy } from '../limiter-key.strategy';
 import { LocalContractsModule } from '../local-contracts.module';
+import { LocalFsObjectStorageProvider } from '../local-fs-object-storage.provider';
+import { ObjectStorageProvider } from '../object-storage.provider';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../quota-policy.hook';
 import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from '../runtime-limits.provider';
 import { LocalTokenService } from '../../../modules/token/token.service';
@@ -52,6 +54,10 @@ describe('LocalContractsModule new bindings', () => {
     expect(providerFor(ConnectorContextResolver)?.useClass).toBe(LocalConnectorContextResolver);
   });
 
+  it('binds ObjectStorageProvider -> LocalFsObjectStorageProvider', () => {
+    expect(providerFor(ObjectStorageProvider)?.useClass).toBe(LocalFsObjectStorageProvider);
+  });
+
   it('exports extension-point tokens', () => {
     const exports = (Reflect.getMetadata(MODULE_METADATA.EXPORTS, LocalContractsModule) ?? []) as unknown[];
     expect(exports).toContain(ConnectorContextResolver);
@@ -61,5 +67,6 @@ describe('LocalContractsModule new bindings', () => {
     expect(exports).toContain(QuotaPolicyHook);
     expect(exports).toContain(UsageMeteringHook);
     expect(exports).toContain(WorkflowAuthorizationHook);
+    expect(exports).toContain(ObjectStorageProvider);
   });
 });
