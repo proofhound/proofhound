@@ -607,7 +607,7 @@ Dependency direction: `@proofhound/ui` (zero business) ← `@proofhound/web-ui` 
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `@proofhound/web-ui/screens`            | Product resource screens (`DatasetsListScreen`, `PromptDetailScreen`, …) + dashboard page                   |
 | `@proofhound/web-ui/hooks`              | Domain hooks (signatures unchanged, still accept `projectId`) + utility hooks                               |
-| `@proofhound/web-ui/providers`          | `ProofHoundWebProvider`, underlying Refine / ProjectContext / I18n providers                                |
+| `@proofhound/web-ui/providers`          | `ProofHoundWebProvider`, underlying Refine / ProjectContext / Navigation / I18n providers (`useResolveHref`) |
 | `@proofhound/web-ui/i18n`               | Full dictionary + `I18nProvider` / `useI18n` + language utilities                                           |
 | `@proofhound/web-ui/components`         | 12 product-domain components + charts + annotation sub-components                                           |
 | `@proofhound/web-ui/lib`                | `formatDateTime` / `getApiErrorMessage` / `releases` / `project-name` / `uuid` / `model-*` domain utilities |
@@ -709,6 +709,7 @@ export interface WebContracts {
   projectContext: ProjectContext; // OSS: constant LOCAL_PROJECT_CONTEXT. SaaS: a reactive multi-tenant source is a future extension.
   baseUrl?: string; // default: NEXT_PUBLIC_SERVER_URL → localhost:4000
   i18nExtend?: Partial<Record<Language, Record<string, string>>>; // SaaS console keys
+  resolveHref?: (href: string) => string; // OSS: omitted (identity). SaaS: scopes flat product paths to /app/org/:orgId/project/:projectId/... (§4.3)
 }
 
 export const localWebContracts: WebContracts = {
@@ -768,6 +769,36 @@ Not adopted:
 | OSS injecting the user token into the browser localStorage as a session                                    | XSS exposes a long-lived credential; conflicts with OWASP's "API keys are not appropriate for authenticating users" |
 | Forcing `httpClient` to always set the `Authorization` header under OSS too (e.g. sending an empty string) | Increases the risk of the backend resolver misjudging; the OSS browser silently not sending is a cleaner contract   |
 | Keeping product UI inside `apps/web/src` without extraction                                                | SaaS repository cannot import `apps/web/src`; physical package extraction is the prerequisite for reuse             |
+
+### 4.3 Navigation href resolution
+
+`@proofhound/web-ui` screens navigate to flat product paths — `<Link href="/models/new">`, `router.push('/releases/new')`, and a single post-delete hard reload `window.location.href = '/connectors'`. OSS serves screens at exactly those flat paths, so this is correct as-is. A hosting shell whose routes live under a different prefix — the SaaS console serves the same screens at `/app/org/:orgId/project/:projectId/<resource>` — needs every one of those hrefs rewritten to its scoped route, in a single navigation hop (no bounce through the flat path first).
+
+**Adopted approach: a host-injected `resolveHref` consumed by in-package navigation wrappers.**
+
+`WebContracts.resolveHref?: (href: string) => string` defaults to identity. `ProofHoundWebProvider` feeds it into a `NavigationProvider` (a React context exposing `useResolveHref()`). `@proofhound/web-ui` ships two thin wrappers that every screen uses instead of the Next primitives:
+
+- `components/navigation/link` — wraps `next/link`, rewriting a string `href` through `resolveHref` **at render time**, so the rendered `<a href>` is already the host's real route.
+- `hooks/use-router` — wraps `next/navigation`'s `useRouter`, routing `push` / `replace` / `prefetch` destinations through `resolveHref`; `back` / `forward` / `refresh` (no href) pass through.
+
+A `no-restricted-imports` ESLint rule scoped to `packages/web-ui/src/**` bans direct `next/link` and the `useRouter` named import from `next/navigation`, so new screens cannot bypass the seam; the two wrapper modules are the only sanctioned consumers (inline opt-out). A screen performing a hard navigation calls `useResolveHref()` directly.
+
+Why render-time rewrite (not a host-side click interceptor): because the wrapper sets the resolved href on the DOM node, right-click "copy link", open-in-new-tab, middle-click, and hover prefetch all target the correct URL — none of which a click-time `preventDefault` + reroute can fix, since it leaves the DOM `href` pointing at the flat path.
+
+Contract requirements for an injected resolver:
+
+- **Idempotent / no-op on hrefs it does not own** (already-scoped paths, cross-origin URLs, hash-only fragments, `mailto:`). The wrappers render scoped hrefs onto the DOM, and a screen-level click guard (e.g. the prompt-detail unsaved-changes guard) reads an anchor's already-rendered href and re-feeds it into `router.push` — so the resolver must see an already-scoped path and return it unchanged rather than scope it twice.
+- Orthogonal to §4.1: this scopes the **browser-visible route**, not the API call. The HTTP API stays flat `/<resource>` + `X-Project-Id` header regardless; `resolveHref` never touches request URLs.
+
+OSS omits `resolveHref` (identity), so `<Link>` / `useRouter` behave exactly as the bare Next primitives. SaaS injects a resolver that maps a flat product path to `/app/org/:orgId/project/:projectId/<resource>` from the active scope, and as a result the SaaS thin shell needs no click-time navigation interception.
+
+Not adopted:
+
+| Approach                                                  | Reason for not adopting                                                                                                                                          |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host-side capture-phase click interceptor rewriting `<a>` | Cannot rewrite the DOM `href`, so copy-link / new-tab / prefetch stay wrong; cannot catch imperative `router.push` / `window.location` at all                    |
+| Next.js `rewrites` / `basePath` / middleware              | `basePath` is static (no dynamic `:orgId/:projectId`); rewrites hide the canonical URL (the scope lives in the URL); neither fixes the client-side `push` target |
+| Passing the host's whole router/Link in through contracts | Coarser and leaks routing mechanics across the boundary; a pure `resolveHref` function lets OSS keep owning prefetch / scroll / App Router semantics             |
 
 ## 5. Schema boundary
 

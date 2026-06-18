@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter } from '../../hooks/use-router';
 import type { ReactNode } from 'react';
 import { CopyPlus, Loader2, Rocket, Sparkles, Trash2 } from 'lucide-react';
 

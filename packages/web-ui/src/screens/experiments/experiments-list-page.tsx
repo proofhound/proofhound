@@ -1,7 +1,8 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { Link } from '../../components/navigation/link';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useRouter } from '../../hooks/use-router';
 import { useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ExperimentControlActionDto, ExperimentListItemDto, ExperimentListStatsDto } from '@proofhound/shared';

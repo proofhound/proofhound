@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { Link } from '../../components/navigation/link';
+import { useSearchParams } from 'next/navigation';
+import { useRouter } from '../../hooks/use-router';
 import { formatClassificationAnnotationValue, normalizeClassificationAnnotationValue } from '@proofhound/shared';
 import type { AnnotationSampleDto, AnnotationSampleStatusDto } from '@proofhound/shared';
 import {

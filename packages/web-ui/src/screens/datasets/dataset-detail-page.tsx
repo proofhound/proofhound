@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { Link } from '../../components/navigation/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { DatasetExportFormatDto, DatasetSampleDto } from '@proofhound/shared';
 import {

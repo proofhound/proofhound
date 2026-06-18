@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { Link } from '../../components/navigation/link';
+import { useRouter } from '../../hooks/use-router';
 import { useEffect, useState } from 'react';
 import { ChevronLeft, Copy } from 'lucide-react';
 import {

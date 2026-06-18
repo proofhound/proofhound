@@ -1,6 +1,7 @@
 'use client';
 
-import Link from 'next/link';
+import { Link } from '../../components/navigation/link';
+import { useResolveHref } from '../../providers/navigation-provider';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, Copy, Eye, EyeOff, KeyRound, Plus, Save, Sparkles, Trash2, WandSparkles } from 'lucide-react';
@@ -169,6 +170,7 @@ const EMPTY_TOKEN_CREATE: TokenCreateState = {
 
 export function ConnectorDetailPage({ projectId, connectorId }: { projectId: string; connectorId: string }) {
   const { t, language } = useI18n();
+  const resolveHref = useResolveHref();
   const { formatDateTime, resolvedTimeZone } = useDateTimeFormatter();
   const defaultWebhookSchema = useMemo(() => getDefaultWebhookSchema(language), [language]);
   const canUseApi = isCanonicalUuid(projectId) && isCanonicalUuid(connectorId);
@@ -481,7 +483,9 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
         connectorId,
         options: deleteState.force ? { force: true, reason: deleteState.reason.trim() } : undefined,
       });
-      window.location.href = `/connectors`;
+      // Hard reload after delete to reset all screen state; scope the target so
+      // a hosting shell lands on its real route instead of the flat path.
+      window.location.href = resolveHref('/connectors');
     } catch (err) {
       setError(getApiErrorMessage(err) ?? t('connectors.delete.confirmTitle'));
     }

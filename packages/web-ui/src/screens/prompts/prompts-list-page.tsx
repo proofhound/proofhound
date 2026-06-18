@@ -1,7 +1,8 @@
 'use client';
 
 import type { PromptDeletionImpactDto, PromptDeletionImpactItemDto } from '@proofhound/shared';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { useRouter } from '../../hooks/use-router';
 import { useMemo, useState, type FormEvent } from 'react';
 import { Archive, FlaskConical, History, Plus, RotateCcw, Search, Sparkles, Trash2, X } from 'lucide-react';
 import {

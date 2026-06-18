@@ -5,9 +5,10 @@ import {
   type PromptDeletionImpactDto,
   type PromptDeletionImpactItemDto,
 } from '@proofhound/shared';
-import Link from 'next/link';
+import { Link } from '../../components/navigation/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { useRouter } from '../../hooks/use-router';
 import {
   ArrowLeft,
   BarChart3,

@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { Link } from '../../components/navigation/link';
+import { useRouter } from '../../hooks/use-router';
 import { ArrowRight, ListChecks, Plus, Search } from 'lucide-react';
 import { AnnotationClaimDialog } from '../../components';
 import { Main } from '@proofhound/ui/layout';

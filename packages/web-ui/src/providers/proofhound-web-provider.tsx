@@ -5,6 +5,7 @@ import { configureApiClient } from '@proofhound/api-client';
 import { UiStringsProvider } from '@proofhound/ui/strings';
 import { I18nProvider, useI18n, type Language } from '../i18n';
 import { DisplayPreferencesProvider } from './display-preferences-provider';
+import { NavigationProvider } from './navigation-provider';
 import { ProjectContextProvider } from './project-context-provider';
 import { RefineProvider } from './refine-provider';
 import type { WebContracts } from '../contracts';
@@ -41,7 +42,9 @@ export function ProofHoundWebProvider({
       <DisplayPreferencesProvider value={contracts.displayPreferences}>
         <UiStringsBridge>
           <ProjectContextProvider value={contracts.projectContext}>
-            <RefineProvider>{children}</RefineProvider>
+            <NavigationProvider resolveHref={contracts.resolveHref}>
+              <RefineProvider>{children}</RefineProvider>
+            </NavigationProvider>
           </ProjectContextProvider>
         </UiStringsBridge>
       </DisplayPreferencesProvider>

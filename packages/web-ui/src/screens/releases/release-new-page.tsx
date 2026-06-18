@@ -1,7 +1,8 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { Link } from '../../components/navigation/link';
+import { useSearchParams } from 'next/navigation';
+import { useRouter } from '../../hooks/use-router';
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   DEFAULT_PROMPT_LANGUAGE,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState, type MouseEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from '../../hooks/use-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Archive, ArrowRight, Play, Plus, RotateCcw, Search, Square } from 'lucide-react';
 import { Main } from '@proofhound/ui/layout';

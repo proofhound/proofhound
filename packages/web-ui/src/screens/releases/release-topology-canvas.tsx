@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, type ReactNode } from 'react';
-import Link from 'next/link';
+import { Link } from '../../components/navigation/link';
 import {
   Background,
   BaseEdge,

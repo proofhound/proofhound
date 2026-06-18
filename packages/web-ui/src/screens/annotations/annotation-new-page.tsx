@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo, useState, type ReactNode } from 'react';
-import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { Link } from '../../components/navigation/link';
+import { useSearchParams } from 'next/navigation';
+import { useRouter } from '../../hooks/use-router';
 import type { AnnotationReleaseLineOptionDto, AnnotationReleaseVersionOptionDto } from '@proofhound/shared';
 import { Check, ChevronDown, ClipboardCheck, Database, GitBranch, Search } from 'lucide-react';
 import { Main } from '@proofhound/ui/layout';

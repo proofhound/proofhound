@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { Link } from '../../components/navigation/link';
+import { useRouter } from '../../hooks/use-router';
 import { useMemo, useState } from 'react';
 import type { CreateExperimentDto, PromptListItemDto } from '@proofhound/shared';
 import { AlertTriangle, Calculator, Check, ChevronDown, Link2, Loader2, Play, Search, X } from 'lucide-react';
