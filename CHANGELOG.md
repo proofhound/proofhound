@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.10](https://github.com/proofhound/proofhound/compare/v0.1.9...v0.1.10) (2026-06-18)
+
+
+### Features
+
+* **web-ui:** route navigation through a host resolveHref seam ([#46](https://github.com/proofhound/proofhound/issues/46)) ([650d398](https://github.com/proofhound/proofhound/commit/650d3984eab5661d347ca6d245d59ba9f6597ff8))
+
 ## [0.1.9](https://github.com/proofhound/proofhound/compare/v0.1.8...v0.1.9) (2026-06-17)
 
 
