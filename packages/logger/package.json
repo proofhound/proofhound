@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/logger",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Pino factory + redact + pino-http NestJS wiring",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
