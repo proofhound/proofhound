@@ -4,8 +4,14 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import type { CreateDatasetImportDto, DatasetFieldSchemaDto } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { offloadStagingToShards } from './dataset-sample-offload';
 
-const { datasetImports, datasetImportSamples, datasets, projects } = schema;
+const { datasetImports, datasetImportSamples, datasetSamples, datasets, projects } = schema;
+
+// Per-shard batch for offload-at-promote. Bounded so a batch's data stays in memory only briefly
+// (large image/base64 samples make per-row size unpredictable); each batch becomes one R2 shard.
+const PROMOTE_SHARD_BATCH = 200;
 
 export interface DatasetImportRow {
   id: string;
@@ -55,7 +61,10 @@ export class DatasetNameTakenError extends Error {}
 
 @Injectable()
 export class DatasetImportRepository {
-  constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
+  constructor(
+    @Inject(DATABASE_CLIENT) private readonly db: DbClient,
+    private readonly storage: ObjectStorageProvider,
+  ) {}
 
   async findProjectAccess(projectId: string): Promise<{ id: string } | null> {
     const rows = await this.db
@@ -165,12 +174,42 @@ export class DatasetImportRepository {
         createdBy: args.actorUserId,
       });
 
-      await tx.execute(sql`
-        INSERT INTO ph_assets.dataset_samples (dataset_id, data, external_id)
-        SELECT ${args.datasetId}::uuid, data, external_id
-        FROM ph_assets.dataset_import_samples
-        WHERE import_id = ${args.importId}::uuid
-      `);
+      if (this.storage.isEnabled()) {
+        // Offload-at-promote (SPEC 22 §7.2): stream staging into shards + projected rows. The pure
+        // orchestration lives in dataset-sample-offload.ts; here we just bind the tx / storage I/O.
+        const project = { projectId: args.projectId, source: 'local' as const };
+        const { storagePrefix } = await offloadStagingToShards({
+          datasetId: args.datasetId,
+          sampleCount,
+          batchSize: PROMOTE_SHARD_BATCH,
+          fieldSchema: args.fieldSchema,
+          readBatch: (offset, limit) =>
+            tx
+              .select({ data: datasetImportSamples.data, externalId: datasetImportSamples.externalId })
+              .from(datasetImportSamples)
+              .where(eq(datasetImportSamples.importId, args.importId))
+              .orderBy(asc(datasetImportSamples.rowIndex))
+              .limit(limit)
+              .offset(offset),
+          putShard: (name, body) =>
+            this.storage.putObject({ project, resourceType: 'dataset_normalized', resourceId: args.datasetId, name }, body, {
+              codec: 'gzip',
+            }),
+          insertRows: async (rows) => {
+            await tx.insert(datasetSamples).values(rows);
+          },
+        });
+        if (storagePrefix) {
+          await tx.update(datasets).set({ storagePrefix }).where(eq(datasets.id, args.datasetId));
+        }
+      } else {
+        await tx.execute(sql`
+          INSERT INTO ph_assets.dataset_samples (dataset_id, data, external_id)
+          SELECT ${args.datasetId}::uuid, data, external_id
+          FROM ph_assets.dataset_import_samples
+          WHERE import_id = ${args.importId}::uuid
+        `);
+      }
 
       await tx
         .update(datasetImports)
