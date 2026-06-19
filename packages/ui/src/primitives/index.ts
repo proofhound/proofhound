@@ -3,6 +3,7 @@ export * from './badge';
 export * from './button';
 export * from './collapsible';
 export * from './date-range-segmented';
+export * from './detail-page-loading';
 export * from './detail-page-skeleton';
 export * from './dialog';
 export * from './dropdown-menu';
