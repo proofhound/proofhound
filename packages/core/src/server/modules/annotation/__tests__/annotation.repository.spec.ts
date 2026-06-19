@@ -1,6 +1,17 @@
+import type { DbClient } from '@proofhound/db';
 import type { Query, SQL } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
+import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
+import { RunResultPayloadReader } from '../../run-result/run-result-payload.reader';
 import { AnnotationRepository } from '../annotation.repository';
+
+// With object storage disabled the payload reader is a pure inline pass-through, so these
+// query-shape tests keep their existing behaviour.
+const passThroughReader = new RunResultPayloadReader({ isEnabled: () => false } as unknown as ObjectStorageProvider);
+
+function makeAnnotationRepo(db: DbClient): AnnotationRepository {
+  return new AnnotationRepository(db, passThroughReader);
+}
 
 const taskId = '11111111-1111-4111-8111-111111111111';
 const projectId = '22222222-2222-4222-8222-222222222222';
@@ -8,7 +19,7 @@ const projectId = '22222222-2222-4222-8222-222222222222';
 describe('AnnotationRepository', () => {
   it('places sample filters after run result joins when listing samples', async () => {
     let query: Query | null = null;
-    const repo = new AnnotationRepository({
+    const repo = makeAnnotationRepo({
       execute: vi.fn(async (sqlQuery: SQL) => {
         query = toQuery(sqlQuery);
         return { rows: [] };
@@ -26,7 +37,7 @@ describe('AnnotationRepository', () => {
   });
 
   it('derives release version category options from prompt version snapshots', async () => {
-    const repo = new AnnotationRepository({
+    const repo = makeAnnotationRepo({
       execute: vi.fn(async () => ({
         rows: [
           {
@@ -74,7 +85,7 @@ describe('AnnotationRepository', () => {
 
   it('left-joins release versions and includes null-version traffic for the journey scope', async () => {
     let query: Query | null = null;
-    const repo = new AnnotationRepository({
+    const repo = makeAnnotationRepo({
       execute: vi.fn(async (sqlQuery: SQL) => {
         query = toQuery(sqlQuery);
         return { rows: [{ total: 0 }] };
@@ -101,7 +112,7 @@ describe('AnnotationRepository', () => {
 
   it('restricts the exact scope to one version without including null-version traffic', async () => {
     let query: Query | null = null;
-    const repo = new AnnotationRepository({
+    const repo = makeAnnotationRepo({
       execute: vi.fn(async (sqlQuery: SQL) => {
         query = toQuery(sqlQuery);
         return { rows: [{ total: 0 }] };
@@ -126,7 +137,7 @@ describe('AnnotationRepository', () => {
 
   it('left-joins release versions when sampling candidates for the journey scope', async () => {
     const queries: Query[] = [];
-    const repo = new AnnotationRepository({
+    const repo = makeAnnotationRepo({
       transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
           execute: vi.fn(async (sqlQuery: SQL) => {
@@ -161,7 +172,7 @@ describe('AnnotationRepository', () => {
   });
 
   it('treats journey category sets in different declaration order as compatible', async () => {
-    const repo = new AnnotationRepository({
+    const repo = makeAnnotationRepo({
       execute: vi.fn(async () => ({
         rows: [
           { prompt_version_snapshot: snapshotWithCategories(['退款', '物流', '其他']) },
@@ -183,7 +194,7 @@ describe('AnnotationRepository', () => {
   });
 
   it('flags journey category sets with different members as incompatible', async () => {
-    const repo = new AnnotationRepository({
+    const repo = makeAnnotationRepo({
       execute: vi.fn(async () => ({
         rows: [
           { prompt_version_snapshot: snapshotWithCategories(['退款', '物流']) },
@@ -205,7 +216,7 @@ describe('AnnotationRepository', () => {
 
   it('allows submitting unlocked or stale samples without a separate claim step', async () => {
     let query: Query | null = null;
-    const repo = new AnnotationRepository({
+    const repo = makeAnnotationRepo({
       execute: vi.fn(async (sqlQuery: SQL) => {
         query = toQuery(sqlQuery);
         return { rows: [] };
