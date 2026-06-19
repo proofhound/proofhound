@@ -17,6 +17,8 @@ import type {
 } from '@proofhound/shared';
 import { sql, type SQL } from 'drizzle-orm';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
+import type { RunResultPayloadRef } from './run-result-payload';
+import { RunResultPayloadReader } from './run-result-payload.reader';
 
 export interface BatchTerminalCounts {
   terminalCount: number;
@@ -30,7 +32,10 @@ export interface ExperimentAccessRow {
 
 @Injectable()
 export class RunResultRepository {
-  constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
+  constructor(
+    @Inject(DATABASE_CLIENT) private readonly db: DbClient,
+    private readonly payloadReader: RunResultPayloadReader,
+  ) {}
 
   async aggregateExperimentLatency(experimentId: string): Promise<{
     averageMs: number | null;
@@ -458,6 +463,7 @@ export class RunResultRepository {
         rr.input_variables,
         rr.raw_response,
         rr.parsed_output,
+        rr.payload_ref,
         rr.dbos_workflow_id,
         rr.bullmq_job_id
       FROM ph_runs.run_results rr
@@ -474,7 +480,22 @@ export class RunResultRepository {
     const list = unwrapRows<RunResultDetailRowShape>(rows);
     const first = list[0];
     if (!first) return null;
-    return toDetail(first);
+    // Resolve the large fields through the seam: inline when present, else read the offload shard
+    // (SPEC 30 §9.2). A no-op pass-through when the row was never compacted / storage is disabled.
+    const fields = await this.payloadReader.hydrate({
+      renderedPrompt: first.rendered_prompt,
+      inputVariables: first.input_variables,
+      rawResponse: first.raw_response,
+      parsedOutput: first.parsed_output,
+      payloadRef: first.payload_ref,
+    });
+    return toDetail({
+      ...first,
+      rendered_prompt: fields.renderedPrompt,
+      input_variables: fields.inputVariables,
+      raw_response: fields.rawResponse,
+      parsed_output: fields.parsedOutput,
+    });
   }
 }
 
@@ -511,6 +532,7 @@ interface RunResultDetailRowShape extends RunResultRowShape {
   input_variables: unknown;
   raw_response: string | null;
   parsed_output: unknown;
+  payload_ref: RunResultPayloadRef | null;
   dbos_workflow_id: string | null;
   bullmq_job_id: string | null;
 }

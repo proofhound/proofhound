@@ -1,7 +1,17 @@
 import type { DbClient } from '@proofhound/db';
 import type { RunResultListQueryDto, RunResultReleaseListQueryDto } from '@proofhound/shared';
 import type { Query, SQL } from 'drizzle-orm';
+import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
+import { RunResultPayloadReader } from '../run-result-payload.reader';
 import { RunResultRepository } from '../run-result.repository';
+
+// The repository hydrates large fields through RunResultPayloadReader; with object storage disabled
+// the reader is a pure inline pass-through, so these query-shape tests keep their existing behaviour.
+const passThroughReader = new RunResultPayloadReader({ isEnabled: () => false } as unknown as ObjectStorageProvider);
+
+function makeRepo(db: DbClient): RunResultRepository {
+  return new RunResultRepository(db, passThroughReader);
+}
 
 function fakeDb(rows: Array<Record<string, unknown>> | { rows: Array<Record<string, unknown>> }): DbClient {
   return {
@@ -34,7 +44,7 @@ const defaultReleaseQuery = {
 describe('RunResultRepository', () => {
   describe('aggregateExperiment', () => {
     it('maps snake_case SQL output to ClassificationAggregateRow', async () => {
-      const repo = new RunResultRepository(
+      const repo = makeRepo(
         fakeDb([
           {
             decision_output: 'positive',
@@ -85,7 +95,7 @@ describe('RunResultRepository', () => {
     });
 
     it('supports node-postgres style result with .rows property', async () => {
-      const repo = new RunResultRepository(
+      const repo = makeRepo(
         fakeDb({
           rows: [
             {
@@ -109,13 +119,13 @@ describe('RunResultRepository', () => {
 
   describe('aggregateExperimentLatency', () => {
     it('parses numeric latency aggregates from SQL row', async () => {
-      const repo = new RunResultRepository(fakeDb([{ avg_ms: '1234.5', p50_ms: '1000', p95_ms: '4321' }]));
+      const repo = makeRepo(fakeDb([{ avg_ms: '1234.5', p50_ms: '1000', p95_ms: '4321' }]));
       const result = await repo.aggregateExperimentLatency('11111111-1111-1111-1111-111111111111');
       expect(result).toEqual({ averageMs: 1234.5, p50Ms: 1000, p95Ms: 4321 });
     });
 
     it('returns null fields when SQL returns nothing', async () => {
-      const repo = new RunResultRepository(fakeDb([]));
+      const repo = makeRepo(fakeDb([]));
       const result = await repo.aggregateExperimentLatency('11111111-1111-1111-1111-111111111111');
       expect(result).toEqual({ averageMs: null, p50Ms: null, p95Ms: null });
     });
@@ -124,7 +134,7 @@ describe('RunResultRepository', () => {
   describe('countBatchTerminal', () => {
     it('short-circuits when ids list is empty without DB call', async () => {
       let executeCalls = 0;
-      const repo = new RunResultRepository({
+      const repo = makeRepo({
         execute: async () => {
           executeCalls += 1;
           return [];
@@ -138,7 +148,7 @@ describe('RunResultRepository', () => {
 
     it('parses terminal counts from SQL row', async () => {
       let query: Query | null = null;
-      const repo = new RunResultRepository({
+      const repo = makeRepo({
         execute: async (sqlQuery: SQL) => {
           query = toQuery(sqlQuery);
           return [{ terminal_count: '10', failed_count: '4' }];
@@ -158,7 +168,7 @@ describe('RunResultRepository', () => {
 
   describe('listByExperiment', () => {
     it('maps DB rows to RunResultListItemDto and returns pagination metadata', async () => {
-      const repo = new RunResultRepository(
+      const repo = makeRepo(
         dbSequence(
           [
             {
@@ -224,7 +234,7 @@ describe('RunResultRepository', () => {
     });
 
     it('returns zero total and empty data when no rows', async () => {
-      const repo = new RunResultRepository(dbSequence([], [{ total: 0 }]));
+      const repo = makeRepo(dbSequence([], [{ total: 0 }]));
       const out = await repo.listByExperiment('11111111-1111-1111-1111-111111111111', defaultQuery);
       expect(out.data).toEqual([]);
       expect(out.total).toBe(0);
@@ -266,7 +276,7 @@ describe('RunResultRepository', () => {
         [{ total: '1' }],
       ];
       const queries: Query[] = [];
-      const repo = new RunResultRepository({
+      const repo = makeRepo({
         execute: async (sqlQuery: SQL) => {
           queries.push(toQuery(sqlQuery));
           return queue.shift() ?? [];
@@ -309,7 +319,7 @@ describe('RunResultRepository', () => {
     });
 
     it('uses release_line_events.lane_type to distinguish canary run results', async () => {
-      const repo = new RunResultRepository(
+      const repo = makeRepo(
         dbSequence(
           [
             {
@@ -360,7 +370,7 @@ describe('RunResultRepository', () => {
 
     it('expands release version filters by journey and maps version labels', async () => {
       const queries: Query[] = [];
-      const repo = new RunResultRepository({
+      const repo = makeRepo({
         execute: async (sqlQuery: SQL) => {
           queries.push(toQuery(sqlQuery));
           return queries.length === 1
@@ -427,7 +437,7 @@ describe('RunResultRepository', () => {
 
   describe('getDetailById', () => {
     it('returns null when no row is found', async () => {
-      const repo = new RunResultRepository(fakeDb([]));
+      const repo = makeRepo(fakeDb([]));
       const result = await repo.getDetailById(
         '11111111-1111-1111-1111-111111111111',
         '22222222-2222-2222-2222-222222222222',
@@ -436,7 +446,7 @@ describe('RunResultRepository', () => {
     });
 
     it('returns RunResultDetailDto with parsed_output / rendered_prompt fields', async () => {
-      const repo = new RunResultRepository(
+      const repo = makeRepo(
         fakeDb([
           {
             id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -493,7 +503,7 @@ describe('RunResultRepository', () => {
 
   describe('findAccessibleExperiment', () => {
     it('returns null when no row matches', async () => {
-      const repo = new RunResultRepository(fakeDb([]));
+      const repo = makeRepo(fakeDb([]));
       const out = await repo.findAccessibleExperiment(
         '11111111-1111-1111-1111-111111111111',
         '22222222-2222-2222-2222-222222222222',
@@ -504,7 +514,7 @@ describe('RunResultRepository', () => {
     });
 
     it('returns access row when found', async () => {
-      const repo = new RunResultRepository(
+      const repo = makeRepo(
         fakeDb([
           {
             experiment_id: '22222222-2222-2222-2222-222222222222',
