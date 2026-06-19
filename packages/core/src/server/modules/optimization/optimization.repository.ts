@@ -4,6 +4,8 @@ import { alias } from 'drizzle-orm/pg-core';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
+import type { RunResultPayloadRef } from '../run-result/run-result-payload';
+import { RunResultPayloadReader } from '../run-result/run-result-payload.reader';
 
 const {
   optimizationRoundSteps,
@@ -265,7 +267,10 @@ export interface RoundStepUpsertInput {
 
 @Injectable()
 export class OptimizationRepository {
-  constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
+  constructor(
+    @Inject(DATABASE_CLIENT) private readonly db: DbClient,
+    private readonly payloadReader: RunResultPayloadReader,
+  ) {}
 
   private readonly selectFields = {
     id: optimizations.id,
@@ -1087,10 +1092,31 @@ export class OptimizationRepository {
         isCorrect: runResults.isCorrect,
         errorMessage: runResults.errorMessage,
         rawResponse: runResults.rawResponse,
+        payloadRef: runResults.payloadRef,
       })
       .from(runResults)
       .where(and(eq(runResults.source, 'experiment'), eq(runResults.sourceId, experimentId)));
-    return rows;
+
+    // The experiment source offloads parsed_output + raw_response (SPEC 30 §9.4), so the strategy's
+    // failure analysis must resolve them through the seam (inline pre-compaction, else from the shard).
+    const hydrated = await this.payloadReader.hydrateMany(
+      rows.map((r) => ({
+        renderedPrompt: null,
+        inputVariables: null,
+        rawResponse: r.rawResponse,
+        parsedOutput: r.parsedOutput,
+        payloadRef: (r.payloadRef as RunResultPayloadRef | null) ?? null,
+      })),
+    );
+    return rows.map((r, i) => ({
+      id: r.id,
+      sampleId: r.sampleId,
+      decisionOutput: r.decisionOutput,
+      isCorrect: r.isCorrect,
+      errorMessage: r.errorMessage,
+      parsedOutput: hydrated[i]?.parsedOutput ?? r.parsedOutput,
+      rawResponse: hydrated[i]?.rawResponse ?? r.rawResponse,
+    }));
   }
 
   async listRoundExperimentsForOptimization(optimizationId: string): Promise<OptimizationRoundExperimentRow[]> {
