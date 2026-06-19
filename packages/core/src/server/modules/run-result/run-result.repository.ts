@@ -206,6 +206,8 @@ export class RunResultRepository {
           OR rr.raw_response ILIKE ${pattern}
           OR rr.input_variables::text ILIKE ${pattern}
           OR rr.decision_output ILIKE ${pattern}
+          OR rr.input_preview ILIKE ${pattern}
+          OR rr.output_preview ILIKE ${pattern}
           OR rr.expected_output ILIKE ${pattern}
           OR rr.error_message ILIKE ${pattern}
         )`,
@@ -237,6 +239,8 @@ export class RunResultRepository {
         rr.expected_output,
         ds.data AS sample_data,
         d.field_schema AS dataset_field_schema,
+        rr.input_preview,
+        rr.output_preview,
         rr.input_variables,
         rr.raw_response,
         rr.parsed_output,
@@ -337,6 +341,8 @@ export class RunResultRepository {
           OR rr.raw_response ILIKE ${pattern}
           OR rr.input_variables::text ILIKE ${pattern}
           OR rr.decision_output ILIKE ${pattern}
+          OR rr.input_preview ILIKE ${pattern}
+          OR rr.output_preview ILIKE ${pattern}
           OR rr.expected_output ILIKE ${pattern}
           OR rr.error_message ILIKE ${pattern}
         )`,
@@ -388,6 +394,8 @@ export class RunResultRepository {
         rr.judgment_status,
         rr.is_correct,
         rr.decision_output,
+        rr.input_preview,
+        rr.output_preview,
         rr.input_variables,
         rr.raw_response,
         rr.parsed_output,
@@ -512,6 +520,8 @@ interface RunResultRowShape {
   expected_output: string | null;
   sample_data: unknown;
   dataset_field_schema: unknown;
+  input_preview: string | null;
+  output_preview: string | null;
   input_variables: unknown;
   raw_response: string | null;
   parsed_output: unknown;
@@ -667,6 +677,14 @@ function formatReleaseVersionLabel(
   return `v${Math.max(0, targetProductionNumber - 1)}.${candidateNumber ?? 0}`;
 }
 
+const PREVIEW_MAX = 1000;
+function previewOfValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  if (text.length === 0) return null;
+  return text.length > PREVIEW_MAX ? text.slice(0, PREVIEW_MAX) : text;
+}
+
 function toListItem(row: RunResultRowShape): RunResultListItemDto {
   return {
     id: row.id,
@@ -681,6 +699,10 @@ function toListItem(row: RunResultRowShape): RunResultListItemDto {
     expectedOutput: row.expected_output,
     datasetTextFields: getDatasetFieldValues(row.dataset_field_schema, row.sample_data, TEXT_FIELD_ROLES),
     datasetImageFields: getDatasetFieldValues(row.dataset_field_schema, row.sample_data, IMAGE_FIELD_ROLES),
+    // List previews come from the persisted preview columns once compacted, else are computed from the
+    // still-inline fields (SPEC 30 §9). The full fields below are null after compaction (detail rehydrates).
+    inputPreview: row.input_preview ?? previewOfValue(row.input_variables),
+    outputPreview: row.output_preview ?? row.decision_output ?? previewOfValue(row.parsed_output) ?? row.raw_response,
     inputVariables: row.input_variables ?? null,
     rawResponse: row.raw_response,
     parsedOutput: row.parsed_output ?? null,

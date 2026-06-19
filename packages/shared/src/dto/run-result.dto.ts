@@ -141,6 +141,11 @@ export const runResultListItemSchema = z.object({
   expectedOutput: z.string().nullable(),
   datasetTextFields: z.array(runResultDatasetFieldValueSchema),
   datasetImageFields: z.array(runResultDatasetFieldValueSchema),
+  // List previews: short text kept in the DB even after the full fields tier out to object storage
+  // (SPEC 30 §9). The list serves these so it never reads a shard; the full fields below stay for
+  // backward compatibility and are null once the row is compacted (the detail view rehydrates them).
+  inputPreview: z.string().nullable(),
+  outputPreview: z.string().nullable(),
   inputVariables: z.unknown().nullable(),
   rawResponse: z.string().nullable(),
   parsedOutput: z.unknown().nullable(),
