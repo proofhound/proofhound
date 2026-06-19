@@ -113,4 +113,27 @@ describe('LocalFsObjectStorageProvider', () => {
       );
     });
   });
+
+  describe('client-direct upload (unsupported on LocalFs)', () => {
+    const provider = new LocalFsObjectStorageProvider('/tmp/ph-objstore-cfg');
+
+    it('createUploadSession returns null (no browser-reachable upload URL)', async () => {
+      await expect(provider.createUploadSession({ ...loc, resourceType: 'dataset_raw', resourceId: 'imp-1', name: 'input.csv' })).resolves.toBeNull();
+    });
+
+    it('completeUpload throws (no sessions are ever issued)', async () => {
+      await expect(
+        provider.completeUpload({
+          sessionId: 's1',
+          actor: { actorId: 'a', actorKind: 'local_user' },
+          project: { projectId: 'p1', source: 'local' },
+        }),
+      ).rejects.toThrow(/does not support/);
+    });
+
+    it('abortUpload is a no-op and sweepPendingUploads returns 0', async () => {
+      await expect(provider.abortUpload('s1')).resolves.toBeUndefined();
+      await expect(provider.sweepPendingUploads(new Date(0).toISOString())).resolves.toBe(0);
+    });
+  });
 });

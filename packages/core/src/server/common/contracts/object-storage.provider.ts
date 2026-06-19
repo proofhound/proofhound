@@ -6,11 +6,13 @@
 // (callers must treat a disabled provider as "object storage unavailable" and stream / inline instead).
 // Hosted deployments override this token with an S3 / R2 implementation.
 //
-// M1 scope: server-side direct writes + signed download only. Client-direct-upload
-// (createUploadSession / completeUpload / abortUpload / sweepPendingUploads) lands in a later milestone.
+// Capabilities: server-side direct writes + signed download (putObject / getObject / …), and
+// client-direct-upload via a pending→finalize protocol (createUploadSession / completeUpload /
+// abortUpload / sweepPendingUploads). A provider that cannot mint browser-reachable URLs (LocalFs)
+// returns null from the URL-minting methods so callers fall back to server-proxied transfer.
 
 import type { Readable } from 'node:stream';
-import type { ProjectContext } from '../actor-context';
+import type { ActorContext, ProjectContext } from '../actor-context';
 
 export type ObjectResourceType = 'dataset_raw' | 'dataset_normalized' | 'run_result_shard' | 'export';
 
@@ -78,6 +80,32 @@ export interface SignedDownloadUrl {
   expiresAt: string;
 }
 
+export interface CreateUploadSessionOptions {
+  contentType?: string;
+  /** Upper bound recorded with the pending session; finalize rejects an upload larger than this. */
+  maxBytes?: number;
+  /** Expected content hash; finalize verifies the uploaded object against it. */
+  expectedSha256?: string;
+  expiresInSeconds?: number;
+}
+
+export interface UploadSession {
+  /** Opaque id the caller passes back to completeUpload / abortUpload. */
+  sessionId: string;
+  /** Pre-authorized URL the client PUTs the bytes to. */
+  url: string;
+  /** Headers the client must send with the PUT (e.g. Content-Type pinned by the signature). */
+  headers?: Record<string, string>;
+  expiresAt: string;
+}
+
+export interface CompleteUploadInput {
+  sessionId: string;
+  /** Caller context; the provider re-checks the pending object belongs to this tenant/project. */
+  actor: ActorContext;
+  project: ProjectContext;
+}
+
 export abstract class ObjectStorageProvider {
   /**
    * False when no storage backend is configured. Callers MUST treat false as "object storage
@@ -99,4 +127,29 @@ export abstract class ObjectStorageProvider {
     ref: StoredObjectRef,
     opts?: { expiresInSeconds?: number },
   ): Promise<SignedDownloadUrl | null>;
+
+  // —— Client-direct-upload: pending → finalize protocol. ——
+  //
+  // The presigned URL is a bearer token (reusable until expiry), so completeUpload re-verifies the
+  // pending object's size/hash/ownership before finalizing. These ship as concrete methods with an
+  // "unsupported" default (not abstract) so adding them is non-breaking: an existing subclass that
+  // hasn't implemented them keeps compiling and inherits the default. A provider that can mint
+  // browser-reachable upload URLs (e.g. R2) overrides them; LocalFs keeps the default.
+
+  /** Open a pending upload and return a URL the client PUTs to. Default: unsupported (null). */
+  async createUploadSession(_loc: ResourceLocator, _opts?: CreateUploadSessionOptions): Promise<UploadSession | null> {
+    return null;
+  }
+  /** Verify (HeadObject: size/sha256/contentType) + ownership, then finalize. Default: unsupported. */
+  async completeUpload(_input: CompleteUploadInput): Promise<StoredObjectRef> {
+    throw new Error('object storage provider does not support client-direct upload sessions');
+  }
+  /** Discard a pending upload (and its object, if any). Default: no-op. */
+  async abortUpload(_sessionId: string): Promise<void> {
+    // no pending sessions by default
+  }
+  /** Sweep pending uploads not finalized before `olderThan` (ISO); returns the count. Default: 0. */
+  async sweepPendingUploads(_olderThan: string): Promise<number> {
+    return 0;
+  }
 }

@@ -105,6 +105,9 @@ export class LocalFsObjectStorageProvider extends ObjectStorageProvider {
     return null;
   }
 
+  // Client-direct upload (createUploadSession / completeUpload / abortUpload / sweepPendingUploads)
+  // keeps the base "unsupported" default — LocalFs cannot mint browser-reachable upload URLs.
+
   private requireRoot(): string {
     if (this.root === undefined) {
       throw new Error('LocalFsObjectStorageProvider is not configured (set PH_OBJECT_STORAGE_LOCAL_ROOT).');
