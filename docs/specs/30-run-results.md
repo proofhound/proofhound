@@ -176,7 +176,7 @@ A small row whose offloaded fields serialize under a configured byte threshold m
 
 Run results are still written **inline** by the per-row idempotent writer (`run_result_ids` reservation unchanged) — this inline window is the natural hot cache for running / recent rows. Offload happens later, at the run's batch boundary:
 
-- **Experiment / optimization** runs compact at their workflow finalize step. **Online / canary / webhook** rows (no finalize) are compacted by a periodic compactor keyed by `(project_id, source, day)`.
+- **Experiment / optimization** runs compact at their workflow finalize step. Sources with no finalize step are compacted by a timer-driven sweep that finds `(project_id, source, source_id)` groups still inline and compacts each. The sweep currently covers **`online`** (production traffic, the bulk of no-finalize volume); **`canary` / `release`** are excluded until their lane-scoped reads (canary annotations, release lists) route through the reader, since their large fields are still read inline.
 - Compaction is generation-keyed and commit-safe (object stores have no atomic rename, so there is no post-commit promote step):
   1. Write each row's offloaded fields into a generation-exclusive shard key `…/run_result_shard/{sourceId}/gen{G}/shard-{seq}.<codec>` (immutable per generation; never reuses a prior key).
   2. `HeadObject` to confirm each shard exists.

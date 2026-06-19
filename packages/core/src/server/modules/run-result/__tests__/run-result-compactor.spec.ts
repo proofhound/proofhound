@@ -43,6 +43,7 @@ class FakeStorage extends ObjectStorageProvider {
 class FakeStore implements RunResultCompactionStore {
   committed: CommitCompactionInput | null = null;
   loadCalls = 0;
+  pendingGroups: Array<{ projectId: string; source: string; sourceId: string }> = [];
   constructor(
     private readonly rows: CompactionRow[],
     private readonly generation = 1,
@@ -56,6 +57,9 @@ class FakeStore implements RunResultCompactionStore {
   }
   async commit(input: CommitCompactionInput): Promise<void> {
     this.committed = input;
+  }
+  async findPendingGroups(): Promise<Array<{ projectId: string; source: string; sourceId: string }>> {
+    return this.pendingGroups;
   }
 }
 
@@ -115,5 +119,30 @@ describe('RunResultCompactor', () => {
     expect(store.committed?.clearedFields.sort()).toEqual(
       ['inputVariables', 'parsedOutput', 'rawResponse', 'renderedPrompt'].sort(),
     );
+  });
+
+  it('compactPending compacts each pending group for the given sources', async () => {
+    const storage = new FakeStorage();
+    const store = new FakeStore([row(0)], 1);
+    store.pendingGroups = [
+      { projectId: 'p', source: 'online', sourceId: 's1' },
+      { projectId: 'p', source: 'online', sourceId: 's2' },
+    ];
+    const out = await new RunResultCompactor(store, storage).compactPending(['online']);
+
+    expect(out.groups).toBe(2);
+    expect(out.compactedRows).toBe(2); // one row per group
+    expect(storage.puts).toHaveLength(2); // one shard per group
+  });
+
+  it('compactPending is a no-op when storage is disabled', async () => {
+    const storage = new FakeStorage();
+    storage.enabled = false;
+    const store = new FakeStore([row(0)]);
+    store.pendingGroups = [{ projectId: 'p', source: 'online', sourceId: 's1' }];
+    expect(await new RunResultCompactor(store, storage).compactPending(['online'])).toEqual({
+      groups: 0,
+      compactedRows: 0,
+    });
   });
 });

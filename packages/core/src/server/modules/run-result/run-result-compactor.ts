@@ -44,11 +44,19 @@ export interface CommitCompactionInput {
   clearedFields: PayloadField[];
 }
 
+/** A (project, source, sourceId) group with rows still awaiting compaction. */
+export interface PendingCompactionGroup {
+  projectId: string;
+  source: string;
+  sourceId: string;
+}
+
 /** DB side of compaction, behind an interface so the orchestrator unit-tests with a fake. */
 export interface RunResultCompactionStore {
   nextGeneration(sourceId: string): Promise<number>;
   loadUncompacted(target: CompactionTarget): Promise<CompactionRow[]>;
   commit(input: CommitCompactionInput): Promise<void>;
+  findPendingGroups(sources: string[], limit: number): Promise<PendingCompactionGroup[]>;
 }
 
 export const RUN_RESULT_COMPACTION_STORE = Symbol('RUN_RESULT_COMPACTION_STORE');
@@ -96,6 +104,22 @@ export class RunResultCompactor {
 
     return { compactedRows: plan.assignments.length, shards: plan.shards.length, generation };
   }
+
+  /**
+   * Periodic compaction for sources with no finalize step (e.g. `online`): finds (project, source,
+   * sourceId) groups with rows still inline and compacts each. SPEC 30 §9.3. A no-op when storage is
+   * disabled. Callers schedule this; it compacts at most `maxGroups` groups per run so a sweep is bounded.
+   */
+  async compactPending(sources: string[], maxGroups = 50): Promise<{ groups: number; compactedRows: number }> {
+    if (!this.storage.isEnabled() || sources.length === 0) return { groups: 0, compactedRows: 0 };
+    const groups = await this.store.findPendingGroups(sources, maxGroups);
+    let compactedRows = 0;
+    for (const group of groups) {
+      const result = await this.compact(group);
+      compactedRows += result.compactedRows;
+    }
+    return { groups: groups.length, compactedRows };
+  }
 }
 
 function shardName(generation: number, seq: number): string {
@@ -131,6 +155,26 @@ export class DrizzleRunResultCompactionStore implements RunResultCompactionStore
     `);
     const next = unwrapRows<{ next: number | string }>(result)[0]?.next;
     return next == null ? 1 : Number(next);
+  }
+
+  async findPendingGroups(sources: string[], limit: number): Promise<PendingCompactionGroup[]> {
+    if (sources.length === 0) return [];
+    const result = await this.db.execute<{ project_id: string; source: string; source_id: string }>(sql`
+      SELECT DISTINCT project_id, source, source_id
+      FROM ph_runs.run_results
+      WHERE source IN (${sql.join(
+        sources.map((s) => sql`${s}`),
+        sql`, `,
+      )})
+        AND payload_ref IS NULL
+        AND status IN ('success', 'failed')
+      LIMIT ${limit}
+    `);
+    return unwrapRows<{ project_id: string; source: string; source_id: string }>(result).map((r) => ({
+      projectId: r.project_id,
+      source: r.source,
+      sourceId: r.source_id,
+    }));
   }
 
   async loadUncompacted(target: CompactionTarget): Promise<CompactionRow[]> {

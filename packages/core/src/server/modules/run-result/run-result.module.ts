@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../../shared/database/database.module';
+import { RunResultCompactionSweeper } from './run-result-compaction-sweeper';
 import { DrizzleRunResultCompactionStore, RUN_RESULT_COMPACTION_STORE, RunResultCompactor } from './run-result-compactor';
 import { RunResultPayloadReader } from './run-result-payload.reader';
 import { ReleaseRunResultController, RunResultController } from './run-result.controller';
@@ -14,6 +15,7 @@ import { RunResultService } from './run-result.service';
     RunResultService,
     RunResultPayloadReader,
     RunResultCompactor,
+    RunResultCompactionSweeper,
     { provide: RUN_RESULT_COMPACTION_STORE, useClass: DrizzleRunResultCompactionStore },
   ],
   // RunResultPayloadReader / RunResultCompactor are exported so other modules (experiment / optimization
