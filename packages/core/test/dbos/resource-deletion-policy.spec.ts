@@ -120,10 +120,8 @@ describeDbosIntegration('Resource deletion policy integration', (getCtx) => {
   it('dataset permanent delete reports impact and removes dependent experiments and optimizations', async () => {
     const ctx = getCtx();
     const graph = await seedDeletionGraph(ctx.db, ctx.testUserId, 'dataset-delete');
-    const repository = new DatasetRepository(
-      ctx.db,
-      new DatasetSamplePayloadReader({ isEnabled: () => false } as unknown as ObjectStorageProvider),
-    );
+    const disabledStorage = { isEnabled: () => false } as unknown as ObjectStorageProvider;
+    const repository = new DatasetRepository(ctx.db, new DatasetSamplePayloadReader(disabledStorage), disabledStorage);
 
     try {
       const impact = await repository.listDeletionImpact(graph.projectId, graph.datasetId);

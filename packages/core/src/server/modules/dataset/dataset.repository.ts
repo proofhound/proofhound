@@ -4,9 +4,14 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import type { CreateDatasetDto, DatasetFieldSchemaDto } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { offloadStagingToShards } from './dataset-sample-offload';
 import { type DatasetSamplePayloadRef, DatasetSamplePayloadReader } from './dataset-sample-payload';
 
 const { optimizations, datasetSamples, datasets, experiments, projects, promptVersions } = schema;
+
+// Per-shard batch for small-file create offload (samples are already in memory; one shard per batch).
+const CREATE_SHARD_BATCH = 200;
 
 export interface DatasetProjectAccessRow {
   id: string;
@@ -76,6 +81,7 @@ export class DatasetRepository {
   constructor(
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
     private readonly sampleReader: DatasetSamplePayloadReader,
+    private readonly storage: ObjectStorageProvider,
   ) {}
 
   // Resolve each row's `data` through the seam (inline when present, else from its shard) so callers
@@ -593,13 +599,42 @@ export class DatasetRepository {
         throw new Error('Dataset insert returned no row');
       }
 
-      await tx.insert(datasetSamples).values(
-        args.dto.samples.map((sample) => ({
+      if (this.storage.isEnabled()) {
+        // Small-file create mirrors offload-at-promote (SPEC 22 §7.2): the samples are already in
+        // memory, so the batch reader just slices them. Object storage off → the inline insert below.
+        const samples = args.dto.samples;
+        const { storagePrefix } = await offloadStagingToShards({
           datasetId: dataset.id,
-          data: sample,
-          externalId: this.getExternalId(sample, args.externalIdFieldName),
-        })),
-      );
+          sampleCount: samples.length,
+          batchSize: CREATE_SHARD_BATCH,
+          fieldSchema: args.fieldSchema,
+          readBatch: async (offset, limit) =>
+            samples.slice(offset, offset + limit).map((sample) => ({
+              data: sample,
+              externalId: this.getExternalId(sample, args.externalIdFieldName),
+            })),
+          putShard: (name, body) =>
+            this.storage.putObject(
+              { project: { projectId: args.projectId, source: 'local' }, resourceType: 'dataset_normalized', resourceId: dataset.id, name },
+              body,
+              { codec: 'gzip' },
+            ),
+          insertRows: async (rows) => {
+            await tx.insert(datasetSamples).values(rows);
+          },
+        });
+        if (storagePrefix) {
+          await tx.update(datasets).set({ storagePrefix }).where(eq(datasets.id, dataset.id));
+        }
+      } else {
+        await tx.insert(datasetSamples).values(
+          args.dto.samples.map((sample) => ({
+            datasetId: dataset.id,
+            data: sample,
+            externalId: this.getExternalId(sample, args.externalIdFieldName),
+          })),
+        );
+      }
 
       return {
         ...dataset,
