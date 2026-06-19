@@ -81,12 +81,21 @@ export const runResults = phRuns.table(
     sampleId: uuid('sample_id'),
     externalId: text('external_id'),
     roundIndex: integer('round_index'),
-    renderedPrompt: jsonb('rendered_prompt').notNull(),
+    // Large fields — tiered to object-storage shards by compaction when an ObjectStorageProvider is
+    // enabled (SPEC 30 §9). `rendered_prompt` is nullable so it can be cleared once offloaded; a NULL
+    // big field with a non-null `payload_ref` means the authoritative bytes live in the shard.
+    renderedPrompt: jsonb('rendered_prompt'),
     inputVariables: jsonb('input_variables'),
     rawResponse: text('raw_response'),
     parsedOutput: jsonb('parsed_output'),
     decisionOutput: text('decision_output'),
     expectedOutput: text('expected_output'),
+    // Storage tiering (SPEC 30 §9): pointer + generation guard + list previews. All nullable; a NULL
+    // `payload_ref` means the row is still fully inline (fresh / old row / no object storage configured).
+    payloadRef: jsonb('payload_ref'),
+    compactionGeneration: integer('compaction_generation'),
+    inputPreview: text('input_preview'),
+    outputPreview: text('output_preview'),
     isCorrect: boolean('is_correct'),
     judgmentStatus: text('judgment_status'),
     status: text('status').notNull(),

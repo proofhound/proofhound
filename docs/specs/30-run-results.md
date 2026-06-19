@@ -152,3 +152,44 @@ Annotations are used for manual correction or to supplement the judgment:
 ## 8. Real-time behavior
 
 The run results list refreshes by polling alongside its parent page. While an experiment is running it is typically every 5 seconds; polling stops once the terminal state is reached. The optimization and release pages may decide whether to enable polling based on their own state.
+
+## 9. Large-payload storage tiering
+
+The four large fields of a run result — `rendered_prompt`, `input_variables`, `raw_response`, `parsed_output` — are the bulk of `run_results` byte size. When an `ObjectStorageProvider` is configured (`isEnabled()`), they may be tiered out of the partitioned table into compressed object-storage shards, leaving the row with an index + preview + pointer. When no provider is configured the behavior is exactly as before: every field stays inline in the DB. This tiering is a storage-location change only and does not alter the logical content of a run result — it is consistent with the immutability rule in §1 (the authoritative bytes never change; only where they live does).
+
+### 9.1 Row shape after tiering
+
+- `payload_ref jsonb` — a self-describing reference to the shard holding this row's offloaded fields (`StoredObjectRef` + `rowIndex`). `NULL` means the row is still fully inline (a fresh row, an older row, or a deployment with no object storage). When non-`NULL`, object storage is the system of record for the offloaded fields.
+- `compaction_generation int` — generation guard for the shard the row points at (see §9.3). Read paths trust only the ref matching the row's current generation.
+- `input_preview text` / `output_preview text` — short previews for the list (the model-output preview reuses the existing `decision_output` where present, with `output_preview` as the fallback). The list never needs the full fields.
+- The big fields themselves stay nullable: after offload the large inline values are cleared. `rendered_prompt` drops its `NOT NULL` constraint so it can be cleared once its bytes live in a shard.
+
+A small row whose offloaded fields serialize under a configured byte threshold may keep its inline copy as a read cache even after `payload_ref` is set; the cache is optional, droppable, and capped — `payload_ref` is always authoritative. (The cache threshold / cap policy is a deployment concern; the OSS default keeps the small-row inline cache, hosted deployments may tighten it.)
+
+### 9.2 Read paths
+
+- **List** serves preview-only: it stops selecting the four big fields and returns the index columns + `input_preview` / `output_preview` / `decision_output`. The list-item DTOs keep the big fields optional for backward compatibility; they are simply absent in list responses.
+- **Detail** and every **background business read** (optimization analysis/generate reuse, canary/release output mapping, webhook receipts, annotation detail, strategy analysis) go through one seam — `RunResultPayloadReader` (`readRenderedPrompt` / `readInputVariables` / `readRawResponse` / `readParsedOutput` + batch variants). The seam returns the inline value when present, otherwise reads the row's shard (by `payload_ref` + `rowIndex`) and returns the field. No read path touches a tiered field directly.
+- Reading a shard is a cheap object-storage GET with no egress cost; a cache miss costs only a few tens of milliseconds, not a DB egress charge.
+
+### 9.3 Write path: compaction-at-finalize
+
+Run results are still written **inline** by the per-row idempotent writer (`run_result_ids` reservation unchanged) — this inline window is the natural hot cache for running / recent rows. Offload happens later, at the run's batch boundary:
+
+- **Experiment / optimization** runs compact at their workflow finalize step. **Online / canary / webhook** rows (no finalize) are compacted by a periodic compactor keyed by `(project_id, source, day)`.
+- Compaction is generation-keyed and commit-safe (object stores have no atomic rename, so there is no post-commit promote step):
+  1. Write each row's offloaded fields into a generation-exclusive shard key `…/run_result_shard/{sourceId}/gen{G}/shard-{seq}.<codec>` (immutable per generation; never reuses a prior key).
+  2. `HeadObject` to confirm each shard exists.
+  3. In a single DB transaction, set `payload_ref` (pointing at the gen `G` key) + `compaction_generation = G` and clear the now-offloaded inline fields. At commit the referenced object is already known to exist, so there is no window where a ref points at a missing object.
+  4. Old generations are swept asynchronously after commit.
+  5. A re-run that finds generation `G` already committed skips; otherwise it rewrites the not-yet-referenced gen `G` key region (or advances to `G+1`). It never overwrites a generation key already referenced by a committed row.
+
+### 9.4 Offload scope
+
+- `rendered_prompt` + `input_variables` are UI-read only → offloaded for **every** source.
+- `raw_response` + `parsed_output` are offloaded only for **`experiment` + `online`** (the row-count bulk, with no background read of these fields).
+- For `optimization_analysis` / `optimization_generate` / `release` / `canary`, `raw_response` + `parsed_output` stay inline in the DB: these sources are low-volume and their parsed/raw are read by background business logic (analysis reconstruction, output mapping, receipts). They are still read through the seam so the read entry point is uniform, but the seam finds them inline.
+
+### 9.5 Search trade-off
+
+After offload the DB can no longer `ILIKE` the full `raw_response` / `input_variables`. Searchable in the DB remain `decision_output` and the previews (label / prediction / error type / preview text). Full-payload free-text search is a separate, out-of-scope capability (a high-tier / cold query), not part of this tiering.
