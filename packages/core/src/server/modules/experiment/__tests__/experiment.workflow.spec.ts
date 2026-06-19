@@ -27,7 +27,12 @@ import {
   readExpectedField,
   type ExperimentPlan,
 } from '../experiment.workflow';
+import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
+import { DatasetSamplePayloadReader } from '../../dataset/dataset-sample-payload';
 import { describe, expect, it, vi } from 'vitest';
+
+// Object storage disabled → the dataset-sample reader is a pure inline pass-through.
+const datasetSampleReader = new DatasetSamplePayloadReader({ isEnabled: () => false } as unknown as ObjectStorageProvider);
 
 const PLAN: ExperimentPlan = {
   experimentId: 'exp-1',
@@ -47,7 +52,7 @@ function buildRegistrar() {
   const bullmq = {} as never;
   const runResults = {} as never;
   const compactor = {} as never;
-  const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, compactor);
+  const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, compactor, datasetSampleReader);
 
   const finalize = vi.fn().mockResolvedValue(undefined);
   const markStarted = vi.fn().mockResolvedValue(undefined);
@@ -222,7 +227,7 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
     const bullmq = { enqueueLlmJob } as never;
     const runResults = {} as never;
     const compactor = {} as never;
-    const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, compactor);
+    const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, compactor, datasetSampleReader);
 
     const r = registrar as unknown as Record<string, unknown>;
     r['finalizeStep'] = vi.fn().mockResolvedValue(undefined);

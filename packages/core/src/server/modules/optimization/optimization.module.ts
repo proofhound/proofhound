@@ -3,6 +3,7 @@ import { DatabaseModule } from '../../../shared/database/database.module';
 import { DrizzleRunResultWriter } from '../../infrastructure/llm/run-result-writer';
 import { OrchestrationModule } from '../../infrastructure/orchestration/orchestration.module';
 import { RedisModule } from '../../../shared/redis/redis.module';
+import { DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
 import { ExperimentModule } from '../experiment/experiment.module';
 import { PromptModule } from '../prompt/prompt.module';
 import { RunResultModule } from '../run-result/run-result.module';
@@ -23,6 +24,7 @@ import { OptimizationWorkflowRegistrar } from './optimization.workflow';
     OptimizationLauncher,
     OptimizationRecoveryService,
     DrizzleRunResultWriter,
+    DatasetSamplePayloadReader,
   ],
   exports: [OptimizationService],
 })

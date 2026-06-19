@@ -15,6 +15,7 @@ import { and, asc, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 import { BullmqService } from '../../infrastructure/orchestration/bullmq.service';
+import { type DatasetSamplePayloadRef, DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
 import { RunResultCompactor } from '../run-result/run-result-compactor';
 import { RunResultService } from '../run-result/run-result.service';
 import { aggregateExperimentMetrics } from './experiment.aggregator';
@@ -94,6 +95,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     private readonly bullmq: BullmqService,
     private readonly runResults: RunResultService,
     private readonly compactor: RunResultCompactor,
+    private readonly datasetSampleReader: DatasetSamplePayloadReader,
   ) {
     super('experiment-workflow');
     this.loadPlanStep = DBOS.registerStep(this.loadPlanImpl.bind(this), { name: 'experiment.loadPlan' });
@@ -502,10 +504,15 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
   ): Promise<Array<{ id: string; data: Record<string, unknown> | null }>> {
     if (sampleIds.length === 0) return [];
     const rows = await this.db
-      .select({ id: datasetSamples.id, data: datasetSamples.data })
+      .select({ id: datasetSamples.id, data: datasetSamples.data, payloadRef: datasetSamples.payloadRef })
       .from(datasetSamples)
       .where(inArrayUuids(datasetSamples.id, sampleIds));
-    return rows.map((r) => ({ id: r.id, data: (r.data as Record<string, unknown> | null) ?? null }));
+    // Sample data may be offloaded to a shard once promote tiers it out (SPEC 22 §7.3); resolve it
+    // through the seam (inline when present, else batched shard read). Pass-through when disabled.
+    const hydrated = await this.datasetSampleReader.hydrateMany(
+      rows.map((r) => ({ data: r.data, payloadRef: (r.payloadRef as DatasetSamplePayloadRef | null) ?? null })),
+    );
+    return rows.map((r, i) => ({ id: r.id, data: (hydrated[i] as Record<string, unknown> | null) ?? null }));
   }
 }
 
