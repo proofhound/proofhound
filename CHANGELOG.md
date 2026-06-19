@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.13](https://github.com/proofhound/proofhound/compare/v0.1.12...v0.1.13) (2026-06-19)
+
+
+### Features
+
+* **core:** tier large run-result and dataset payloads to object storage ([313afdc](https://github.com/proofhound/proofhound/commit/313afdc1c9fe44fa003f171716d60009e6e17e51))
+
 ## [0.1.12](https://github.com/proofhound/proofhound/compare/v0.1.11...v0.1.12) (2026-06-19)
 
 
