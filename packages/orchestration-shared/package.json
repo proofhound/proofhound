@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/orchestration-shared",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "DBOS workflow / BullMQ queue / prompt rendering contracts shared by runnable services",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

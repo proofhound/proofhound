@@ -1,5 +1,17 @@
 # proofhound
 
+## [0.1.12](https://github.com/proofhound/proofhound/compare/v0.1.11...v0.1.12) (2026-06-19)
+
+
+### Features
+
+* **core:** add client-direct upload session methods to object storage contract ([#52](https://github.com/proofhound/proofhound/issues/52)) ([8998b50](https://github.com/proofhound/proofhound/commit/8998b50c57970582db0801799a827549fde3a351))
+
+
+### Bug Fixes
+
+* **web-ui:** guard detail routes against SSR/client hydration mismatch ([#51](https://github.com/proofhound/proofhound/issues/51)) ([0561ab9](https://github.com/proofhound/proofhound/commit/0561ab97cc4aaac45e2dbbe2fe5f06898eab1a96))
+
 ## [0.1.11](https://github.com/proofhound/proofhound/compare/v0.1.10...v0.1.11) (2026-06-18)
 
 
