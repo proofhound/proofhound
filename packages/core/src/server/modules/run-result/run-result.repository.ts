@@ -244,6 +244,7 @@ export class RunResultRepository {
         rr.input_variables,
         rr.raw_response,
         rr.parsed_output,
+        rr.payload_ref,
         rr.error_class,
         rr.error_message,
         rr.latency_ms,
@@ -399,6 +400,7 @@ export class RunResultRepository {
         rr.input_variables,
         rr.raw_response,
         rr.parsed_output,
+        rr.payload_ref,
         rr.error_class,
         rr.error_message,
         rr.latency_ms,
@@ -434,8 +436,28 @@ export class RunResultRepository {
     const totalList = unwrapRows<{ total: number | string }>(totalResult);
     const total = Number(totalList[0]?.total ?? 0);
 
+    // Release run_results offload input_variables / rendered_prompt (SPEC 30 §9.4); hydrate the page
+    // (bounded by pageSize) so the release list keeps showing input. Pass-through when not offloaded.
+    const releaseRows = unwrapRows<ReleaseRunResultRowShape>(dataRowsResult);
+    const releaseFields = await this.payloadReader.hydrateMany(
+      releaseRows.map((r) => ({
+        renderedPrompt: null,
+        inputVariables: r.input_variables,
+        rawResponse: r.raw_response,
+        parsedOutput: r.parsed_output,
+        payloadRef: r.payload_ref,
+      })),
+    );
+    releaseRows.forEach((r, i) => {
+      const f = releaseFields[i];
+      if (!f) return;
+      r.input_variables = f.inputVariables;
+      r.raw_response = f.rawResponse;
+      r.parsed_output = f.parsedOutput;
+    });
+
     return {
-      data: unwrapRows<ReleaseRunResultRowShape>(dataRowsResult).map(toReleaseListItem),
+      data: releaseRows.map(toReleaseListItem),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -525,6 +547,7 @@ interface RunResultRowShape {
   input_variables: unknown;
   raw_response: string | null;
   parsed_output: unknown;
+  payload_ref: RunResultPayloadRef | null;
   error_class: string | null;
   error_message: string | null;
   latency_ms: number | string | null;
@@ -573,6 +596,7 @@ interface ReleaseRunResultRowShape {
   input_variables: unknown;
   raw_response: string | null;
   parsed_output: unknown;
+  payload_ref: RunResultPayloadRef | null;
   error_class: string | null;
   error_message: string | null;
   latency_ms: number | string | null;

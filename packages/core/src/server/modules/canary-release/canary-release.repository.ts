@@ -5,6 +5,8 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
+import type { RunResultPayloadRef } from '../run-result/run-result-payload';
+import { RunResultPayloadReader } from '../run-result/run-result-payload.reader';
 
 const {
   annotations,
@@ -126,7 +128,33 @@ export interface CanaryParentProductionRow {
 
 @Injectable()
 export class CanaryReleaseRepository {
-  constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
+  constructor(
+    @Inject(DATABASE_CLIENT) private readonly db: DbClient,
+    private readonly payloadReader: RunResultPayloadReader,
+  ) {}
+
+  // Canary run_results offload rendered_prompt + input_variables (SPEC 30 §9.4); resolve the joined
+  // annotation rows' large fields through the seam before mapping. Pass-through when not offloaded.
+  private async hydrateAnnotationRows(rows: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+    const hydrated = await this.payloadReader.hydrateMany(
+      rows.map((r) => ({
+        renderedPrompt: r['rendered_prompt'] ?? null,
+        inputVariables: r['input_variables'] ?? null,
+        rawResponse: (r['raw_response'] as string | null) ?? null,
+        parsedOutput: r['parsed_output'] ?? null,
+        payloadRef: (r['payload_ref'] as RunResultPayloadRef | null) ?? null,
+      })),
+    );
+    rows.forEach((r, i) => {
+      const h = hydrated[i];
+      if (!h) return;
+      r['rendered_prompt'] = h.renderedPrompt;
+      r['input_variables'] = h.inputVariables;
+      r['raw_response'] = h.rawResponse;
+      r['parsed_output'] = h.parsedOutput;
+    });
+    return rows;
+  }
 
   async findProjectAccess(
     _actorUserId: string,
@@ -478,6 +506,7 @@ export class CanaryReleaseRepository {
         rr.decision_output,
         rr.raw_response,
         rr.parsed_output,
+        rr.payload_ref,
         rr.latency_ms,
         rr.input_tokens,
         rr.output_tokens
@@ -488,7 +517,9 @@ export class CanaryReleaseRepository {
       LIMIT ${filter.limit}
       OFFSET ${filter.offset}
     `);
-    return unwrapRows<Record<string, unknown>>(rows).map((row) => this.mapAnnotationRow(row));
+    return (await this.hydrateAnnotationRows(unwrapRows<Record<string, unknown>>(rows))).map((row) =>
+      this.mapAnnotationRow(row),
+    );
   }
 
   async countAnnotations(canaryId: string, filter: { status?: 'pending' | 'claimed' | 'submitted' }): Promise<number> {
@@ -554,6 +585,7 @@ export class CanaryReleaseRepository {
         rr.decision_output,
         rr.raw_response,
         rr.parsed_output,
+        rr.payload_ref,
         rr.latency_ms,
         rr.input_tokens,
         rr.output_tokens
@@ -561,7 +593,9 @@ export class CanaryReleaseRepository {
       LEFT JOIN ph_runs.run_results rr ON rr.id = a.run_result_id
       ORDER BY a.created_at ASC;
     `);
-    return unwrapRows<Record<string, unknown>>(result).map((row) => this.mapAnnotationRow(row));
+    return (await this.hydrateAnnotationRows(unwrapRows<Record<string, unknown>>(result))).map((row) =>
+      this.mapAnnotationRow(row),
+    );
   }
 
   async submitAnnotation(

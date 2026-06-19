@@ -1,17 +1,15 @@
 // RunResultCompactionSweeper — periodic compaction for run-result sources with no finalize step.
 //
-// experiment / optimization compact at their workflow finalize. `online` (production traffic) has no
-// batch boundary, so a timer-driven sweep offloads its still-inline rows (SPEC 30 §9.3). A no-op when
-// object storage is disabled, so an OSS deployment without storage keeps everything inline.
-//
-// canary / release also have no finalize but their large fields are still read by lane-scoped UI
-// (canary annotations, release lists) that are not yet seam-hydrated, so they are intentionally left
-// out of the sweep set until those reads route through the reader.
+// experiment / optimization compact at their workflow finalize. The remaining sources have no batch
+// boundary, so a timer-driven sweep offloads their still-inline rows (SPEC 30 §9.3): `online`
+// (production traffic) plus `canary` / `release` (their lane-scoped reads — canary annotations,
+// release lists, details — all route through the reader seam, so offloading them is safe). A no-op
+// when object storage is disabled, so an OSS deployment without storage keeps everything inline.
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { createLogger } from '@proofhound/logger';
 import { RunResultCompactor } from './run-result-compactor';
 
-const SWEEP_SOURCES = ['online'];
+const SWEEP_SOURCES = ['online', 'canary', 'release'];
 const DEFAULT_SWEEP_MS = 300_000; // 5 minutes
 const MIN_SWEEP_MS = 60_000;
 

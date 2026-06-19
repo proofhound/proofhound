@@ -8,10 +8,10 @@ function sweeperWith(compactPending: () => Promise<{ groups: number; compactedRo
 }
 
 describe('RunResultCompactionSweeper', () => {
-  it('sweeps the no-finalize sources (online) via compactPending', async () => {
+  it('sweeps the no-finalize sources via compactPending', async () => {
     const { sweeper, compactor } = sweeperWith(async () => ({ groups: 1, compactedRows: 3 }));
     await sweeper.sweep();
-    expect(compactor.compactPending).toHaveBeenCalledWith(['online']);
+    expect(compactor.compactPending).toHaveBeenCalledWith(['online', 'canary', 'release']);
   });
 
   it('does not overlap a slow pass with the next tick', async () => {
