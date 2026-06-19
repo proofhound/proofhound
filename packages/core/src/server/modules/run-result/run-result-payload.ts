@@ -93,15 +93,16 @@ async function decompress(buf: Buffer, codec: ObjectCodec | undefined): Promise<
   }
 }
 
-/** Encode shard lines into compressed JSONL bytes (the object body the compactor writes). */
-export async function encodeShard(lines: RunResultShardLine[], codec: ObjectCodec): Promise<Buffer> {
+/** Encode shard lines into compressed JSONL bytes (the object body a compactor writes). Generic so
+ *  dataset-sample shards (one data object per line) reuse the same codec as run-result shards. */
+export async function encodeShard<T>(lines: T[], codec: ObjectCodec): Promise<Buffer> {
   const jsonl = lines.map((line) => JSON.stringify(line)).join('\n');
   return compress(Buffer.from(jsonl, 'utf8'), codec);
 }
 
-/** Decode a shard body back into its lines (used by the reader). */
-export async function decodeShard(body: Buffer, codec: ObjectCodec | undefined): Promise<RunResultShardLine[]> {
+/** Decode a shard body back into its lines (used by the readers). */
+export async function decodeShard<T = RunResultShardLine>(body: Buffer, codec: ObjectCodec | undefined): Promise<T[]> {
   const text = (await decompress(body, codec)).toString('utf8');
   if (text.length === 0) return [];
-  return text.split('\n').map((line) => (line.length === 0 ? {} : (JSON.parse(line) as RunResultShardLine)));
+  return text.split('\n').map((line) => (line.length === 0 ? ({} as T) : (JSON.parse(line) as T)));
 }
