@@ -1,15 +1,18 @@
 import type { DbClient } from '@proofhound/db';
+import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
+import { DatasetSamplePayloadReader } from '../dataset-sample-payload';
 import { DatasetRepository } from '../dataset.repository';
 
 const mockDb = {} as DbClient;
+const sampleReader = new DatasetSamplePayloadReader({ isEnabled: () => false } as unknown as ObjectStorageProvider);
 
 describe('DatasetRepository (DB stub smoke tests)', () => {
   it('can be instantiated without throwing', () => {
-    expect(() => new DatasetRepository(mockDb)).not.toThrow();
+    expect(() => new DatasetRepository(mockDb, sampleReader)).not.toThrow();
   });
 
   it('exposes the expected public methods', () => {
-    const repo = new DatasetRepository(mockDb);
+    const repo = new DatasetRepository(mockDb, sampleReader);
     const methods = [
       'findProjectAccess',
       'findDatasetByProjectAndName',

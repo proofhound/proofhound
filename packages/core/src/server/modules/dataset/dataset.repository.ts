@@ -4,6 +4,7 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import type { CreateDatasetDto, DatasetFieldSchemaDto } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
+import { type DatasetSamplePayloadRef, DatasetSamplePayloadReader } from './dataset-sample-payload';
 
 const { optimizations, datasetSamples, datasets, experiments, projects, promptVersions } = schema;
 
@@ -72,7 +73,22 @@ export interface DatasetDeletionImpactRows {
 
 @Injectable()
 export class DatasetRepository {
-  constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
+  constructor(
+    @Inject(DATABASE_CLIENT) private readonly db: DbClient,
+    private readonly sampleReader: DatasetSamplePayloadReader,
+  ) {}
+
+  // Resolve each row's `data` through the seam (inline when present, else from its shard) so callers
+  // that render full sample content keep working after a dataset is offloaded (SPEC 22 §7.3).
+  private async hydrateSampleRows<T extends { data: unknown; payloadRef?: unknown }>(rows: T[]): Promise<T[]> {
+    const hydrated = await this.sampleReader.hydrateMany(
+      rows.map((r) => ({ data: r.data, payloadRef: (r.payloadRef as DatasetSamplePayloadRef | null) ?? null })),
+    );
+    rows.forEach((r, i) => {
+      r.data = hydrated[i] ?? null;
+    });
+    return rows;
+  }
 
   private datasetSelectFields = {
     id: datasets.id,
@@ -150,11 +166,12 @@ export class DatasetRepository {
 
   // Full scan — only for export (complete dump). Detail browsing must use listDatasetSamplesPage.
   async listDatasetSamples(datasetId: string): Promise<DatasetSampleRow[]> {
-    return this.db
+    const rows = await this.db
       .select()
       .from(datasetSamples)
       .where(eq(datasetSamples.datasetId, datasetId))
       .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id));
+    return this.hydrateSampleRows(rows);
   }
 
   // Server-side paginated browse with optional cross-field search (data::text ILIKE), so the detail page
@@ -164,8 +181,12 @@ export class DatasetRepository {
     options: { limit: number; offset: number; search?: string },
   ): Promise<{ rows: DatasetSampleRow[]; total: number }> {
     const searchTerm = options.search?.trim();
+    // Search matches inline data or, once a sample is offloaded, its search_preview (SPEC 22 §7.3).
     const where = searchTerm
-      ? and(eq(datasetSamples.datasetId, datasetId), sql`${datasetSamples.data}::text ILIKE ${`%${searchTerm}%`}`)
+      ? and(
+          eq(datasetSamples.datasetId, datasetId),
+          sql`(${datasetSamples.data}::text ILIKE ${`%${searchTerm}%`} OR ${datasetSamples.searchPreview} ILIKE ${`%${searchTerm}%`})`,
+        )
       : eq(datasetSamples.datasetId, datasetId);
 
     const [rows, countResult] = await Promise.all([
@@ -182,7 +203,7 @@ export class DatasetRepository {
         .where(where),
     ]);
 
-    return { rows, total: Number(countResult[0]?.count ?? 0) };
+    return { rows: await this.hydrateSampleRows(rows), total: Number(countResult[0]?.count ?? 0) };
   }
 
   // SQL GROUP BY on the expected-output field so list/detail never load all sample rows into memory.
@@ -191,15 +212,19 @@ export class DatasetRepository {
     datasetId: string,
     fieldName: string,
   ): Promise<Array<{ label: string; count: number }>> {
-    const label = sql<string>`btrim(${datasetSamples.data} ->> ${fieldName})`;
+    // Read the field from inline data (scalar only), or from index_values once the sample is offloaded
+    // (index_values holds only short scalars by construction) (SPEC 22 §7.3).
+    const value = sql<string | null>`COALESCE(${datasetSamples.data} ->> ${fieldName}, ${datasetSamples.indexValues} ->> ${fieldName})`;
+    const label = sql<string>`btrim(${value})`;
     const rows = await this.db
       .select({ label, count: sql<number>`count(*)::int` })
       .from(datasetSamples)
       .where(
         and(
           eq(datasetSamples.datasetId, datasetId),
-          sql`jsonb_typeof(${datasetSamples.data} -> ${fieldName}) IN ('string', 'number', 'boolean')`,
-          sql`btrim(${datasetSamples.data} ->> ${fieldName}) <> ''`,
+          sql`(jsonb_typeof(${datasetSamples.data} -> ${fieldName}) IN ('string', 'number', 'boolean')
+            OR (${datasetSamples.data} IS NULL AND ${datasetSamples.indexValues} ->> ${fieldName} IS NOT NULL))`,
+          sql`btrim(${value}) <> ''`,
         ),
       )
       // GROUP BY ordinal: the same ${fieldName} binds to different param positions in select vs group-by,
