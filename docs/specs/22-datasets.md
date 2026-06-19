@@ -125,3 +125,25 @@ Field roles determine the platform's runtime behavior:
 - Remote image URLs are not actively downloaded and rewritten at the LLM layer; if a model consumes images in URL form, the size and accessibility of the resource the URL points to are guaranteed by the dataset/connector source
 - Large-file uploads go through client-side streaming batched writes (see [§3.1.2](#312-large-file-streaming-batched-import)); samples are written by the server into a PostgreSQL staging table and then atomically promoted, without going through object storage
 - A ZIP with inlined base64 images can be very large, but its image inlining is still done on the frontend; **large ZIPs currently go only through the small-file synchronous path**, while the asynchronous streaming import in V1 first supports JSONL, with CSV / TSV to follow, and ZIP is not in the asynchronous path
+
+## 7. Large-payload storage tiering
+
+When an object-storage backend is configured, the bulk of a dataset's byte size — the full per-sample `data` — tiers out of `ph_assets.dataset_samples` into compressed shards, leaving the row with a queryable projection + a pointer. When no backend is configured every sample stays fully inline, exactly as before. This mirrors the run-result tiering in SPEC [30](30-run-results.md) §9; here object storage is the system of record for the offloaded sample content.
+
+### 7.1 Row shape after tiering
+
+- `payload_ref jsonb` — self-describing reference (shard + row index) to the offloaded `data`. `NULL` = the row is still fully inline (a fresh row, an older row, or no object storage configured).
+- `data jsonb` (now nullable) — the full sample content; after offload it is cleared, kept only as an optional inline cache for small samples.
+- `search_preview text` — the front ~1KB of the sample text, the search fallback once `data` is offloaded.
+- `expected_output_scalar` / `label_scalar` / `category_scalar text` — role scalars materialized at promote from `datasets.field_schema` (the expected / label / category roles), each with a partial `(dataset_id, <col>)` index, so classification / label distribution and filtering stay in SQL.
+- `index_values jsonb` — a small sidecar holding any other configurable distribution / filter field's scalar value (never the whole row), for fields beyond the three fixed roles.
+
+### 7.2 Write path: shard-at-promote
+
+The import staging → promote transaction is the natural batch boundary. On promote, normalized samples are written into compressed object-storage shards (the authoritative copy), the per-row queryable projection (preview + role scalars + `index_values` + `payload_ref`) is materialized into `dataset_samples`, and the inline `data` is cleared (or kept as a small-sample cache). `datasets.storage_prefix` records the shard key prefix. Object stores have no atomic rename, so `payload_ref` is committed only after the shard is confirmed written.
+
+### 7.3 Read paths
+
+- **List / search / distribution** stay entirely in the DB: list reads the projection; search degrades to `search_preview ILIKE`; classification / label distribution groups by the role scalar columns (or `index_values`). Full-payload free-text search is out of scope (a high-tier / cold capability), consistent with SPEC 30 §9.5.
+- **Worker sampling** (experiment rendering, optimization rounds) goes through a `DatasetSamplePayloadReader` seam: inline `data` when present, else a batched shard read (one GET per shard for a batch). 
+- **Export** streams the shards directly rather than re-reading rows.

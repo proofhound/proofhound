@@ -137,7 +137,20 @@ export const datasetSamples = phAssets.table(
     datasetId: uuid('dataset_id')
       .notNull()
       .references(() => datasets.id, { onDelete: 'cascade' }),
-    data: jsonb('data').notNull(),
+    // The full sample content tiers out to object-storage shards when configured (SPEC 22 §X /
+    // SPEC 30 §9 mirror). `data` becomes a droppable inline cache; the queryable projection below
+    // (preview + role scalars + index_values + pointer) stays in the DB so list / search /
+    // distribution never read a shard. NULL `payload_ref` means the row is still fully inline.
+    data: jsonb('data'),
+    payloadRef: jsonb('payload_ref'),
+    // Front ~1KB of the sample text, for the search fallback once `data` is offloaded.
+    searchPreview: text('search_preview'),
+    // Materialized role scalars (from datasets.field_schema) so distribution / filtering stay in SQL.
+    expectedOutputScalar: text('expected_output_scalar'),
+    labelScalar: text('label_scalar'),
+    categoryScalar: text('category_scalar'),
+    // General sidecar for any other configurable distribution / filter field (a small subset, not the row).
+    indexValues: jsonb('index_values'),
     externalId: text('external_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -147,6 +160,15 @@ export const datasetSamples = phAssets.table(
     index('idx_dataset_samples_ext')
       .on(t.datasetId, t.externalId)
       .where(sql`${t.externalId} IS NOT NULL`),
+    index('idx_dataset_samples_expected')
+      .on(t.datasetId, t.expectedOutputScalar)
+      .where(sql`${t.expectedOutputScalar} IS NOT NULL`),
+    index('idx_dataset_samples_label')
+      .on(t.datasetId, t.labelScalar)
+      .where(sql`${t.labelScalar} IS NOT NULL`),
+    index('idx_dataset_samples_category')
+      .on(t.datasetId, t.categoryScalar)
+      .where(sql`${t.categoryScalar} IS NOT NULL`),
   ],
 );
 
