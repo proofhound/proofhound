@@ -9,7 +9,10 @@ import { Injectable, type OnModuleDestroy, type OnModuleInit } from '@nestjs/com
 import { createLogger } from '@proofhound/logger';
 import { RunResultCompactor } from './run-result-compactor';
 
-const SWEEP_SOURCES = ['online', 'canary', 'release'];
+// optimization_analysis / optimization_generate offload only rendered_prompt + input_variables
+// (their parsed_output / raw_response stay inline for reconstruct/reuse, SPEC 30 §9.4). Those two
+// fields are read only by the detail view (seam-hydrated), so they are safe to sweep.
+const SWEEP_SOURCES = ['online', 'canary', 'release', 'optimization_analysis', 'optimization_generate'];
 const DEFAULT_SWEEP_MS = 300_000; // 5 minutes
 const MIN_SWEEP_MS = 60_000;
 

@@ -11,7 +11,13 @@ describe('RunResultCompactionSweeper', () => {
   it('sweeps the no-finalize sources via compactPending', async () => {
     const { sweeper, compactor } = sweeperWith(async () => ({ groups: 1, compactedRows: 3 }));
     await sweeper.sweep();
-    expect(compactor.compactPending).toHaveBeenCalledWith(['online', 'canary', 'release']);
+    expect(compactor.compactPending).toHaveBeenCalledWith([
+      'online',
+      'canary',
+      'release',
+      'optimization_analysis',
+      'optimization_generate',
+    ]);
   });
 
   it('does not overlap a slow pass with the next tick', async () => {
