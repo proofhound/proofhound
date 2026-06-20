@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.14](https://github.com/proofhound/proofhound/compare/v0.1.13...v0.1.14) (2026-06-20)
+
+
+### Features
+
+* **datasets:** add streaming raw imports ([24b5efd](https://github.com/proofhound/proofhound/commit/24b5efdaeaec3b42cd81b5bc14a7f04bb1a053d3))
+
 ## [0.1.13](https://github.com/proofhound/proofhound/compare/v0.1.12...v0.1.13) (2026-06-19)
 
 
