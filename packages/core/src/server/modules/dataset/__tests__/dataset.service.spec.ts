@@ -5,7 +5,7 @@ import { DatasetRepository, type DatasetProjectAccessRow, type DatasetRow } from
 import { DatasetService } from '../dataset.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
-import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
+import { ObjectStorageProvider, type StoredObjectRef } from '../../../common/contracts/object-storage.provider';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 import { UsageMeteringHook } from '../../../common/contracts/usage-metering.hook';
 import type { ProjectContext } from '@proofhound/shared';
@@ -45,6 +45,15 @@ const datasetRow = (overrides: Partial<DatasetRow> = {}): DatasetRow => ({
   ...overrides,
 });
 
+const storedObjectRef = (key: string): StoredObjectRef => ({
+  provider: 'r2',
+  bucket: 'proofhound-dev',
+  key,
+  bytes: 128,
+  resourceType: 'dataset_normalized',
+  resourceId: '22222222-2222-4222-8222-222222222222',
+});
+
 function makeRepo(): Mocked<DatasetRepository> {
   return {
     findProjectAccess: vi.fn(),
@@ -58,7 +67,7 @@ function makeRepo(): Mocked<DatasetRepository> {
     listDeletionImpact: vi.fn().mockResolvedValue({ experiments: [], optimizations: [] }),
     archiveDataset: vi.fn().mockResolvedValue(undefined),
     restoreDataset: vi.fn().mockResolvedValue(undefined),
-    hardDeleteSamples: vi.fn().mockResolvedValue(0),
+    hardDeleteSamples: vi.fn().mockResolvedValue({ deleted: 0, payloadRefs: [] }),
     decrementDatasetSampleCount: vi.fn().mockResolvedValue(undefined),
     hardDeleteDataset: vi.fn(),
     updateDatasetMetadata: vi.fn(),
@@ -88,6 +97,21 @@ describe('DatasetService', () => {
 
     service = module.get(DatasetService);
   });
+
+  async function buildServiceWithObjectStorage(objectStorage: Partial<ObjectStorageProvider>): Promise<DatasetService> {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        { provide: DatasetRepository, useValue: repo },
+        { provide: AccessControlService, useClass: LocalAccessControlService },
+        { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
+        { provide: DatasetDeletionHook, useClass: LocalDatasetDeletionHook },
+        { provide: UsageMeteringHook, useValue: usageMetering },
+        { provide: ObjectStorageProvider, useValue: objectStorage },
+        DatasetService,
+      ],
+    }).compile();
+    return module.get(DatasetService);
+  }
 
   it('creates a dataset with inferred schema metadata', async () => {
     repo.findProjectAccess.mockResolvedValue(projectAccess());
@@ -419,7 +443,10 @@ describe('DatasetService', () => {
     it('streams without touching storage when the provider is disabled', async () => {
       primeExport();
       const putObject = vi.fn();
-      const withStorage = await buildServiceWith({ isEnabled: () => false, putObject } as unknown as ObjectStorageProvider);
+      const withStorage = await buildServiceWith({
+        isEnabled: () => false,
+        putObject,
+      } as unknown as ObjectStorageProvider);
 
       const delivery = await withStorage.exportDatasetForDownload(project, datasetId, 'csv', actor);
 
@@ -454,7 +481,12 @@ describe('DatasetService', () => {
         expiresAt: '2026-06-18T01:00:00.000Z',
       });
       expect(putObject).toHaveBeenCalledWith(
-        expect.objectContaining({ project, resourceType: 'export', resourceId: expect.any(String), name: 'risk-eval-v4.csv' }),
+        expect.objectContaining({
+          project,
+          resourceType: 'export',
+          resourceId: expect.any(String),
+          name: 'risk-eval-v4.csv',
+        }),
         expect.any(Buffer),
         expect.objectContaining({
           contentType: 'text/csv; charset=utf-8',
@@ -501,7 +533,7 @@ describe('DatasetService', () => {
     repo.countDatasetReferences.mockResolvedValue(
       new Map([['22222222-2222-4222-8222-222222222222', { experiments: 0, optimizations: 0 }]]),
     );
-    repo.hardDeleteDataset.mockResolvedValue(1);
+    repo.hardDeleteDataset.mockResolvedValue({ deleted: 1, payloadRefs: [] });
 
     try {
       await service.deleteDataset(
@@ -545,7 +577,7 @@ describe('DatasetService', () => {
       ],
       optimizations: [],
     });
-    repo.hardDeleteDataset.mockResolvedValue(1);
+    repo.hardDeleteDataset.mockResolvedValue({ deleted: 1, payloadRefs: [] });
 
     await service.deleteDataset('77777777-7777-4777-8777-777777777777', '22222222-2222-4222-8222-222222222222', actor);
 
@@ -557,6 +589,31 @@ describe('DatasetService', () => {
       '77777777-7777-4777-8777-777777777777',
       '22222222-2222-4222-8222-222222222222',
     );
+  });
+
+  it('cleans up offloaded payload objects after deleting a dataset', async () => {
+    const sampleRef = storedObjectRef('orgs/o/projects/p/dataset_normalized/d/shard-00000.jsonl.gz');
+    const runResultRef: StoredObjectRef = {
+      ...storedObjectRef('orgs/o/projects/p/run_result_shard/e/gen1/shard-00000.jsonl.gz'),
+      resourceType: 'run_result_shard',
+      resourceId: '33333333-3333-4333-8333-333333333333',
+    };
+    const deleteObjects = vi.fn(async () => undefined);
+    const withStorage = await buildServiceWithObjectStorage({
+      isEnabled: () => true,
+      deleteObjects,
+    } as unknown as ObjectStorageProvider);
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findDatasetById.mockResolvedValue(datasetRow());
+    repo.hardDeleteDataset.mockResolvedValue({ deleted: 1, payloadRefs: [sampleRef, runResultRef] });
+
+    await withStorage.deleteDataset(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      actor,
+    );
+
+    expect(deleteObjects).toHaveBeenCalledWith([sampleRef, runResultRef]);
   });
 
   it('archives and restores a dataset', async () => {
@@ -652,7 +709,7 @@ describe('DatasetService', () => {
       repo.findProjectAccess.mockResolvedValue(projectAccess());
       repo.findDatasetById.mockResolvedValue(datasetRow({ sampleCount: 5 }));
       repo.countDatasetReferences.mockResolvedValue(new Map([[DATASET_ID, { experiments: 0, optimizations: 0 }]]));
-      repo.hardDeleteSamples.mockResolvedValue(2);
+      repo.hardDeleteSamples.mockResolvedValue({ deleted: 2, payloadRefs: [] });
 
       const result = await service.deleteDatasetSamples(PROJECT_ID, DATASET_ID, { sampleIds: SAMPLE_IDS }, actor);
 
@@ -666,6 +723,25 @@ describe('DatasetService', () => {
           idempotencyKey: expect.stringContaining(`storage:dataset.updated:${DATASET_ID}`),
         }),
       );
+    });
+
+    it('cleans up unreferenced offloaded sample objects after deleting samples', async () => {
+      const sampleRef = storedObjectRef('orgs/o/projects/p/dataset_normalized/d/shard-00000.jsonl.gz');
+      const deleteObjects = vi.fn(async () => undefined);
+      const withStorage = await buildServiceWithObjectStorage({
+        isEnabled: () => true,
+        deleteObjects,
+      } as unknown as ObjectStorageProvider);
+      repo.findProjectAccess.mockResolvedValue(projectAccess());
+      repo.findDatasetById.mockResolvedValue(datasetRow({ sampleCount: 5 }));
+      repo.countDatasetReferences.mockResolvedValue(new Map([[DATASET_ID, { experiments: 0, optimizations: 0 }]]));
+      repo.hardDeleteSamples.mockResolvedValue({ deleted: 2, payloadRefs: [sampleRef] });
+
+      const result = await withStorage.deleteDatasetSamples(PROJECT_ID, DATASET_ID, { sampleIds: SAMPLE_IDS }, actor);
+
+      expect(result).toEqual({ deleted: 2 });
+      expect(deleteObjects).toHaveBeenCalledWith([sampleRef]);
+      expect(repo.decrementDatasetSampleCount).toHaveBeenCalledWith(DATASET_ID, 2);
     });
 
     it('rejects deletion when dataset is referenced by experiments', async () => {
@@ -697,7 +773,7 @@ describe('DatasetService', () => {
       repo.findProjectAccess.mockResolvedValue(projectAccess());
       repo.findDatasetById.mockResolvedValue(datasetRow({ sampleCount: 3 }));
       repo.countDatasetReferences.mockResolvedValue(new Map([[DATASET_ID, { experiments: 0, optimizations: 0 }]]));
-      repo.hardDeleteSamples.mockResolvedValue(1);
+      repo.hardDeleteSamples.mockResolvedValue({ deleted: 1, payloadRefs: [] });
 
       const result = await service.deleteDatasetSamples(PROJECT_ID, DATASET_ID, { sampleIds: SAMPLE_IDS }, actor);
 

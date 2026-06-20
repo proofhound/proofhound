@@ -22,7 +22,7 @@ import type {
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
-import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { ObjectStorageProvider, type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
 import { DatasetDeletionHook } from './dataset-deletion.hook';
@@ -246,16 +246,17 @@ export class DatasetService {
       throw new ConflictException('dataset_samples_referenced');
     }
 
-    const deleted = await this.repo.hardDeleteSamples(datasetId, dto.sampleIds);
-    if (deleted > 0) {
-      await this.repo.decrementDatasetSampleCount(datasetId, deleted);
+    const result = await this.repo.hardDeleteSamples(datasetId, dto.sampleIds);
+    if (result.deleted > 0) {
+      await this.cleanupPayloadRefs(result.payloadRefs, { projectId, datasetId, operation: 'dataset_samples.delete' });
+      await this.repo.decrementDatasetSampleCount(datasetId, result.deleted);
       await this.recordDatasetStorageEvents(row, actor.sub, 'dataset.updated', {
-        deletedSamples: deleted,
+        deletedSamples: result.deleted,
         reason: 'samples_deleted',
       });
     }
 
-    return { deleted };
+    return { deleted: result.deleted };
   }
 
   async updateDatasetMetadata(
@@ -345,10 +346,11 @@ export class DatasetService {
 
     await this.deletionHook.prepareDatasetDeletion({ projectId, datasetId });
 
-    const deleted = await this.repo.hardDeleteDataset(projectId, datasetId);
-    if (deleted === 0) {
+    const result = await this.repo.hardDeleteDataset(projectId, datasetId);
+    if (result.deleted === 0) {
       throw new NotFoundException(`Dataset ${datasetId} not found`);
     }
+    await this.cleanupPayloadRefs(result.payloadRefs, { projectId, datasetId, operation: 'dataset.delete' });
     const deletedAt = new Date();
     await this.recordDatasetStorageEvents({ ...row, updatedAt: deletedAt, deletedAt }, actor.sub, 'dataset.deleted', {
       sampleCount: row.sampleCount,
@@ -446,6 +448,15 @@ export class DatasetService {
       },
       this.logger,
     );
+  }
+
+  private async cleanupPayloadRefs(refs: StoredObjectRef[], context: Record<string, unknown>): Promise<void> {
+    if (refs.length === 0 || !this.objectStorage?.isEnabled()) return;
+    try {
+      await this.objectStorage.deleteObjects(refs);
+    } catch (err) {
+      this.logger.warn({ ...context, refs: refs.length, err }, 'object_storage_payload_cleanup_failed');
+    }
   }
 
   private assertConsistentMappings(dto: CreateDatasetDto) {
