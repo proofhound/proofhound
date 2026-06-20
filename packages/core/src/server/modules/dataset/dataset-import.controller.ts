@@ -10,7 +10,12 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { createDatasetImportSchema, datasetIdParamSchema, datasetImportBatchSchema } from '@proofhound/shared';
+import {
+  createDatasetImportSchema,
+  createRawDatasetImportSchema,
+  datasetIdParamSchema,
+  datasetImportBatchSchema,
+} from '@proofhound/shared';
 import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { CurrentProject } from '../../common/decorators/current-project.decorator';
@@ -33,6 +38,24 @@ export class DatasetImportController {
       throw new BadRequestException(parse.error.issues);
     }
     return this.service.createImport(project.projectId, parse.data, actor);
+  }
+
+  @Get('raw/capabilities')
+  async getRawImportCapabilities(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
+    return this.service.getRawImportCapabilities(project.projectId, actor);
+  }
+
+  @Post('raw')
+  async createRawImport(
+    @Body() rawBody: unknown,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    const parse = createRawDatasetImportSchema.safeParse(rawBody);
+    if (!parse.success) {
+      throw new BadRequestException(parse.error.issues);
+    }
+    return this.service.createRawImport(project.projectId, parse.data, actor);
   }
 
   @Get(':importId')

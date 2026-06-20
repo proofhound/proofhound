@@ -108,9 +108,9 @@ describe('LocalFsObjectStorageProvider', () => {
       // `export/.`+`..` resolves back to root; must be rejected so deleteObjects can't target root.
       const rootKey: ResourceLocator = { ...loc, resourceId: '.', name: '..' };
       await expect(provider.putObject(rootKey, Buffer.from('x'))).rejects.toThrow(/escapes storage root/);
-      await expect(provider.deleteObjects([{ provider: 'localfs', key: '.', bytes: 0, resourceType: 'export', resourceId: '.' }])).rejects.toThrow(
-        /escapes storage root/,
-      );
+      await expect(
+        provider.deleteObjects([{ provider: 'localfs', key: '.', bytes: 0, resourceType: 'export', resourceId: '.' }]),
+      ).rejects.toThrow(/escapes storage root/);
     });
   });
 
@@ -118,7 +118,10 @@ describe('LocalFsObjectStorageProvider', () => {
     const provider = new LocalFsObjectStorageProvider('/tmp/ph-objstore-cfg');
 
     it('createUploadSession returns null (no browser-reachable upload URL)', async () => {
-      await expect(provider.createUploadSession({ ...loc, resourceType: 'dataset_raw', resourceId: 'imp-1', name: 'input.csv' })).resolves.toBeNull();
+      expect(provider.supportsClientUploadSessions()).toBe(false);
+      await expect(
+        provider.createUploadSession({ ...loc, resourceType: 'dataset_raw', resourceId: 'imp-1', name: 'input.csv' }),
+      ).resolves.toBeNull();
     });
 
     it('completeUpload throws (no sessions are ever issued)', async () => {

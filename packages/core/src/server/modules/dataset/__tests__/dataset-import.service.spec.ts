@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import { describe, expect, it, vi, type Mocked } from 'vitest';
 import type { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
 import {
@@ -10,6 +11,7 @@ import {
 import { DatasetImportService } from '../dataset-import.service';
 import type { DatasetService } from '../dataset.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import { ObjectStorageProvider, type StoredObjectRef } from '../../../common/contracts/object-storage.provider';
 import { LocalQuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 
 const ACTOR: CurrentUserPayload = {
@@ -33,6 +35,10 @@ function fakeImport(overrides: Partial<DatasetImportRow> = {}): DatasetImportRow
     fileSizeBytes: 1_073_741_824,
     contentType: 'application/x-ndjson',
     sourceFormat: 'jsonl',
+    importMode: 'batch',
+    rawUploadSessionId: null,
+    rawUploadExpiresAt: null,
+    rawObjectRef: null,
     declaredTotalRows: null,
     receivedRows: 0,
     status: 'importing',
@@ -43,7 +49,24 @@ function fakeImport(overrides: Partial<DatasetImportRow> = {}): DatasetImportRow
   };
 }
 
-function buildService() {
+function fakeStorage(overrides: Partial<ObjectStorageProvider> = {}): ObjectStorageProvider {
+  return {
+    isEnabled: vi.fn().mockReturnValue(false),
+    supportsClientUploadSessions: vi.fn().mockReturnValue(false),
+    putObject: vi.fn(),
+    getObject: vi.fn(),
+    getObjectStream: vi.fn(),
+    deleteObjects: vi.fn().mockResolvedValue(undefined),
+    createSignedDownloadUrl: vi.fn(),
+    createUploadSession: vi.fn().mockResolvedValue(null),
+    completeUpload: vi.fn(),
+    abortUpload: vi.fn().mockResolvedValue(undefined),
+    sweepPendingUploads: vi.fn().mockResolvedValue(0),
+    ...overrides,
+  } as unknown as ObjectStorageProvider;
+}
+
+function buildService(storage = fakeStorage()) {
   const repo = {
     findProjectAccess: vi.fn().mockResolvedValue({ id: PROJECT_ID }),
     isDatasetNameTaken: vi.fn().mockResolvedValue(false),
@@ -54,7 +77,9 @@ function buildService() {
     promote: vi.fn(),
     deleteImport: vi.fn().mockResolvedValue(1),
     findStaleImportIds: vi.fn(),
+    findStaleImports: vi.fn(),
     deleteImportsByIds: vi.fn(),
+    markRawObjectRef: vi.fn(),
   } as unknown as Mocked<DatasetImportRepository>;
 
   const datasetService = {
@@ -67,8 +92,9 @@ function buildService() {
     datasetService,
     new LocalAccessControlService(),
     new LocalQuotaPolicyHook(),
+    storage,
   );
-  return { service, repo, datasetService };
+  return { service, repo, datasetService, storage: storage as Mocked<ObjectStorageProvider> };
 }
 
 const CREATE_DTO = {
@@ -96,6 +122,179 @@ describe('DatasetImportService.createImport', () => {
     expect(result.id).toBe(IMPORT_ID);
     expect(result.status).toBe('importing');
     expect(repo.createImport).toHaveBeenCalledWith({ projectId: PROJECT_ID, actorUserId: ACTOR.sub, dto: CREATE_DTO });
+  });
+});
+
+describe('DatasetImportService raw import', () => {
+  const RAW_REF: StoredObjectRef = {
+    provider: 'fake',
+    key: 'dataset_raw/imp/input.csv',
+    bytes: 128,
+    resourceType: 'dataset_raw',
+    resourceId: IMPORT_ID,
+  };
+
+  it('reports raw import unavailable when the provider cannot create browser upload sessions', async () => {
+    const { service, storage } = buildService(fakeStorage({ isEnabled: vi.fn().mockReturnValue(true) }));
+
+    await expect(service.getRawImportCapabilities(PROJECT_ID, ACTOR)).resolves.toEqual({
+      supported: false,
+      maxBytes: 2_147_483_648,
+    });
+    await expect(service.createRawImport(PROJECT_ID, CREATE_DTO, ACTOR)).rejects.toThrow(
+      'dataset_raw_upload_unavailable',
+    );
+    expect(storage.createUploadSession).not.toHaveBeenCalled();
+  });
+
+  it('creates a raw import session with provider upload metadata', async () => {
+    const storage = fakeStorage({
+      isEnabled: vi.fn().mockReturnValue(true),
+      supportsClientUploadSessions: vi.fn().mockReturnValue(true),
+      createUploadSession: vi.fn().mockResolvedValue({
+        sessionId: 'upload-1',
+        url: 'https://storage.example/upload',
+        expiresAt: '2026-06-20T00:00:00.000Z',
+      }),
+    });
+    const { service, repo } = buildService(storage);
+    repo.createImport.mockResolvedValue(
+      fakeImport({
+        importMode: 'raw_object',
+        rawUploadSessionId: 'upload-1',
+        rawUploadExpiresAt: new Date('2026-06-20T00:00:00.000Z'),
+        sourceFormat: 'csv',
+      }),
+    );
+
+    const result = await service.createRawImport(
+      PROJECT_ID,
+      { ...CREATE_DTO, sourceFile: { fileName: 'train.csv', fileSizeBytes: 128 }, sourceFormat: 'csv' },
+      ACTOR,
+    );
+
+    expect(result.import.importMode).toBe('raw_object');
+    expect(result.uploadSession.sessionId).toBe('upload-1');
+    expect(storage.createUploadSession).toHaveBeenCalledWith(
+      expect.objectContaining({ resourceType: 'dataset_raw', name: 'input.csv' }),
+      expect.objectContaining({ maxBytes: 128 }),
+    );
+    expect(repo.createImport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        importMode: 'raw_object',
+        rawUploadSession: { sessionId: 'upload-1', expiresAt: '2026-06-20T00:00:00.000Z' },
+      }),
+    );
+  });
+
+  it('streams a raw CSV object from storage into staging, then promotes', async () => {
+    const storage = fakeStorage({
+      isEnabled: vi.fn().mockReturnValue(true),
+      supportsClientUploadSessions: vi.fn().mockReturnValue(true),
+      completeUpload: vi.fn().mockResolvedValue(RAW_REF),
+      getObjectStream: vi
+        .fn()
+        .mockResolvedValue(
+          Readable.from(['sample_id,text,expected_output,ignored\n', 'case-1,"hello, world",positive,nope\n']),
+        ),
+      deleteObjects: vi.fn().mockResolvedValue(undefined),
+    });
+    const { service, repo, datasetService } = buildService(storage);
+    repo.findImportById.mockResolvedValue(
+      fakeImport({
+        importMode: 'raw_object',
+        sourceFormat: 'csv',
+        rawUploadSessionId: 'upload-1',
+        fieldMappings: [
+          { name: 'sample_id', role: 'id' },
+          { name: 'text', role: 'text' },
+          { name: 'expected_output', role: 'expected' },
+        ],
+      }),
+    );
+    repo.markRawObjectRef.mockResolvedValue(fakeImport({ importMode: 'raw_object', rawObjectRef: RAW_REF }));
+    repo.appendBatch.mockResolvedValue(1);
+    repo.getSampleDataForInference.mockResolvedValue([
+      { sample_id: 'case-1', text: 'hello, world', expected_output: 'positive' },
+    ]);
+    repo.promote.mockResolvedValue({ sampleCount: 1 });
+    datasetService.getDataset.mockResolvedValue({ id: 'ds-1' } as never);
+
+    await expect(service.complete(PROJECT_ID, IMPORT_ID, ACTOR)).resolves.toEqual({
+      dataset: { id: 'ds-1' },
+      sampleCount: 1,
+    });
+
+    expect(storage.completeUpload).toHaveBeenCalledWith({
+      sessionId: 'upload-1',
+      actor: expect.objectContaining({ actorId: ACTOR.sub, actorKind: 'local_user' }),
+      project: { projectId: PROJECT_ID, source: 'local' },
+    });
+    expect(repo.appendBatch).toHaveBeenCalledWith(
+      IMPORT_ID,
+      [
+        {
+          rowIndex: 0,
+          data: { sample_id: 'case-1', text: 'hello, world', expected_output: 'positive' },
+          externalId: 'case-1',
+        },
+      ],
+      1,
+    );
+    expect(storage.deleteObjects).toHaveBeenCalledWith([RAW_REF]);
+  });
+
+  it('cleans the finalized raw object when complete fails after raw ingestion', async () => {
+    const storage = fakeStorage({
+      isEnabled: vi.fn().mockReturnValue(true),
+      supportsClientUploadSessions: vi.fn().mockReturnValue(true),
+      completeUpload: vi.fn().mockResolvedValue(RAW_REF),
+      getObjectStream: vi.fn().mockResolvedValue(Readable.from(['sample_id,text\ncase-1,hello\n'])),
+      abortUpload: vi.fn().mockResolvedValue(undefined),
+      deleteObjects: vi.fn().mockResolvedValue(undefined),
+    });
+    const { service, repo } = buildService(storage);
+    repo.findImportById.mockResolvedValue(
+      fakeImport({
+        importMode: 'raw_object',
+        sourceFormat: 'csv',
+        rawUploadSessionId: 'upload-1',
+        fieldMappings: [
+          { name: 'sample_id', role: 'id' },
+          { name: 'text', role: 'text' },
+        ],
+      }),
+    );
+    repo.appendBatch.mockResolvedValue(1);
+    repo.getSampleDataForInference.mockResolvedValue([{ sample_id: 'case-1', text: 'hello' }]);
+    repo.promote.mockRejectedValue(new DatasetNameTakenError());
+
+    await expect(service.complete(PROJECT_ID, IMPORT_ID, ACTOR)).rejects.toBeInstanceOf(ConflictException);
+
+    expect(storage.abortUpload).toHaveBeenCalledWith('upload-1');
+    expect(storage.deleteObjects).toHaveBeenCalledWith([RAW_REF]);
+  });
+
+  it('aborts the pending raw upload session when completeUpload fails', async () => {
+    const storage = fakeStorage({
+      isEnabled: vi.fn().mockReturnValue(true),
+      supportsClientUploadSessions: vi.fn().mockReturnValue(true),
+      completeUpload: vi.fn().mockRejectedValue(new Error('upload_missing')),
+      abortUpload: vi.fn().mockResolvedValue(undefined),
+    });
+    const { service, repo } = buildService(storage);
+    repo.findImportById.mockResolvedValue(
+      fakeImport({
+        importMode: 'raw_object',
+        sourceFormat: 'csv',
+        rawUploadSessionId: 'upload-1',
+      }),
+    );
+
+    await expect(service.complete(PROJECT_ID, IMPORT_ID, ACTOR)).rejects.toThrow('upload_missing');
+
+    expect(storage.abortUpload).toHaveBeenCalledWith('upload-1');
+    expect(storage.deleteObjects).not.toHaveBeenCalled();
   });
 });
 
@@ -208,7 +407,7 @@ describe('DatasetImportService.abort', () => {
 describe('DatasetImportService.sweepStaleImports', () => {
   it('reaps stale importing sessions', async () => {
     const { service, repo } = buildService();
-    repo.findStaleImportIds.mockResolvedValue(['a', 'b']);
+    repo.findStaleImports.mockResolvedValue([fakeImport({ id: 'a' }), fakeImport({ id: 'b' })]);
     repo.deleteImportsByIds.mockResolvedValue(2);
 
     await service.sweepStaleImports();
@@ -218,10 +417,41 @@ describe('DatasetImportService.sweepStaleImports', () => {
 
   it('does nothing when there are no stale sessions', async () => {
     const { service, repo } = buildService();
-    repo.findStaleImportIds.mockResolvedValue([]);
+    repo.findStaleImports.mockResolvedValue([]);
 
     await service.sweepStaleImports();
 
     expect(repo.deleteImportsByIds).not.toHaveBeenCalled();
+  });
+
+  it('cleans pending and finalized raw objects for stale sessions', async () => {
+    const storage = fakeStorage({
+      abortUpload: vi.fn().mockResolvedValue(undefined),
+      deleteObjects: vi.fn().mockResolvedValue(undefined),
+      sweepPendingUploads: vi.fn().mockResolvedValue(3),
+    });
+    const { service, repo } = buildService(storage);
+    const rawObjectRef: StoredObjectRef = {
+      provider: 'fake',
+      key: 'dataset_raw/import/input.csv',
+      bytes: 100,
+      resourceType: 'dataset_raw',
+      resourceId: IMPORT_ID,
+    };
+    repo.findStaleImports.mockResolvedValue([
+      fakeImport({
+        importMode: 'raw_object',
+        rawUploadSessionId: 'upload-1',
+        rawObjectRef,
+      }),
+    ]);
+    repo.deleteImportsByIds.mockResolvedValue(1);
+
+    await service.sweepStaleImports();
+
+    expect(repo.deleteImportsByIds).toHaveBeenCalledWith([IMPORT_ID]);
+    expect(storage.abortUpload).toHaveBeenCalledWith('upload-1');
+    expect(storage.deleteObjects).toHaveBeenCalledWith([rawObjectRef]);
+    expect(storage.sweepPendingUploads).toHaveBeenCalled();
   });
 });

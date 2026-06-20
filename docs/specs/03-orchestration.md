@@ -29,7 +29,7 @@ DBOS workflow state is written to the same Postgres instance. After a server res
 | `probe`  | server                   | server or worker | Model / connector connectivity probe |
 | `export` | server                   | server           | CSV / JSONL export                   |
 
-Dataset import is not in this table: it is a client-driven synchronous batched write that is not enqueued (cleanup of abandoned sessions uses an in-server sweep tick, see [§3.5](#35-probe--export--dataset-import-cleanup)).
+Dataset import is not in this table: the client-streamed path is a synchronous batched write, and the raw object path streams the finalized object into the same staging/promote flow at `complete` time. Neither path enters the LLM/probe/export BullMQ queues. Cleanup of abandoned sessions uses an in-server sweep tick; see [§3.5](#35-probe--export--dataset-import-cleanup).
 
 ## 3. Orchestration Inventory
 
@@ -83,7 +83,7 @@ Release operation history is the `release_line_events` event stream:
 
 - `probe`: model or connector connectivity probe. Direct probes call `WorkflowAuthorizationHook(workflow='probe')` with the resolved ProjectContext, including `orgId` when present, before invoking the model LLM probe or connector driver. Model probes can be executed by the worker when queued because they trigger real LLM calls; queued model probes apply `RuntimeLimitsProvider` before invoking the LLM client, the same as normal LLM jobs.
 - `export`: paginate over business data, write to Storage, and return a signed URL.
-- Dataset import cleanup: large-file import is a **client-driven synchronous batched write** that does not enter DBOS or the BullMQ queue (see [22 §3.1.2](22-datasets.md#312-large-file-streaming-batched-import)). Abandoned import sessions (the user leaves midway / loses connectivity / crashes without reaching `complete`) are cleaned up by an in-server **periodic sweep tick**: it scans `ph_assets.dataset_imports` for sessions where `status='importing'` and `updated_at` has exceeded the threshold with no heartbeat, and deletes the session rows (staged samples are cascade-removed via the `ON DELETE CASCADE` foreign key). This tick is an in-server periodic task like the [§3.3](#33-release-runner) release runner, not a queue job.
+- Dataset import cleanup: large-file import does not enter DBOS or the BullMQ queue (see [22 §3.1.2](22-datasets.md#312-mediumlarge-client-streamed-batched-import) and [22 §3.1.3](22-datasets.md#313-ultra-large-raw-object-import)). Abandoned import sessions (the user leaves midway / loses connectivity / crashes without reaching `complete`) are cleaned up by an in-server **periodic sweep tick**: it scans `ph_assets.dataset_imports` for sessions where `status='importing'` and `updated_at` has exceeded the threshold with no heartbeat, deletes the session rows (staged samples are cascade-removed via the `ON DELETE CASCADE` foreign key), aborts any pending raw upload session, deletes any finalized temporary raw object, and calls `ObjectStorageProvider.sweepPendingUploads(...)` for provider-level pending objects whose database session was never created. This tick is an in-server periodic task like the [§3.3](#33-release-runner) release runner, not a queue job.
 
 ### 3.6 Webhook Entry Point
 

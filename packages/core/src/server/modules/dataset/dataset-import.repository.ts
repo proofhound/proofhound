@@ -4,7 +4,7 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import type { CreateDatasetImportDto, DatasetFieldSchemaDto } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { ObjectStorageProvider, type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import { offloadStagingToShards } from './dataset-sample-offload';
 
 const { datasetImports, datasetImportSamples, datasetSamples, datasets, projects } = schema;
@@ -24,6 +24,10 @@ export interface DatasetImportRow {
   fileSizeBytes: number;
   contentType: string | null;
   sourceFormat: string;
+  importMode: string;
+  rawUploadSessionId: string | null;
+  rawUploadExpiresAt: Date | null;
+  rawObjectRef: StoredObjectRef | null;
   declaredTotalRows: number | null;
   receivedRows: number;
   status: string;
@@ -33,9 +37,15 @@ export interface DatasetImportRow {
 }
 
 export interface CreateDatasetImportArgs {
+  importId?: string;
   projectId: string;
   actorUserId: string;
   dto: CreateDatasetImportDto;
+  importMode?: 'batch' | 'raw_object';
+  rawUploadSession?: {
+    sessionId: string;
+    expiresAt: string;
+  };
 }
 
 export interface BatchSampleRow {
@@ -88,6 +98,7 @@ export class DatasetImportRepository {
     const [row] = await this.db
       .insert(datasetImports)
       .values({
+        id: args.importId,
         projectId: args.projectId,
         name: args.dto.name,
         description: args.dto.description?.trim() || null,
@@ -96,6 +107,9 @@ export class DatasetImportRepository {
         fileSizeBytes: args.dto.sourceFile.fileSizeBytes,
         contentType: args.dto.sourceFile.contentType ?? null,
         sourceFormat: args.dto.sourceFormat,
+        importMode: args.importMode ?? 'batch',
+        rawUploadSessionId: args.rawUploadSession?.sessionId ?? null,
+        rawUploadExpiresAt: args.rawUploadSession?.expiresAt ? new Date(args.rawUploadSession.expiresAt) : null,
         declaredTotalRows: args.dto.declaredTotalRows ?? null,
         createdBy: args.actorUserId,
       })
@@ -192,9 +206,13 @@ export class DatasetImportRepository {
               .limit(limit)
               .offset(offset),
           putShard: (name, body) =>
-            this.storage.putObject({ project, resourceType: 'dataset_normalized', resourceId: args.datasetId, name }, body, {
-              codec: 'gzip',
-            }),
+            this.storage.putObject(
+              { project, resourceType: 'dataset_normalized', resourceId: args.datasetId, name },
+              body,
+              {
+                codec: 'gzip',
+              },
+            ),
           insertRows: async (rows) => {
             await tx.insert(datasetSamples).values(rows);
           },
@@ -230,12 +248,12 @@ export class DatasetImportRepository {
     return deleted.length;
   }
 
-  async findStaleImportIds(olderThan: Date): Promise<string[]> {
+  async findStaleImports(olderThan: Date): Promise<DatasetImportRow[]> {
     const rows = await this.db
-      .select({ id: datasetImports.id })
+      .select()
       .from(datasetImports)
       .where(and(eq(datasetImports.status, 'importing'), lt(datasetImports.updatedAt, olderThan)));
-    return rows.map((row) => row.id);
+    return rows as DatasetImportRow[];
   }
 
   async deleteImportsByIds(ids: string[]): Promise<number> {
@@ -245,5 +263,18 @@ export class DatasetImportRepository {
       .where(inArray(datasetImports.id, ids))
       .returning({ id: datasetImports.id });
     return deleted.length;
+  }
+
+  async markRawObjectRef(
+    projectId: string,
+    importId: string,
+    rawObjectRef: StoredObjectRef,
+  ): Promise<DatasetImportRow | null> {
+    const [row] = await this.db
+      .update(datasetImports)
+      .set({ rawObjectRef, updatedAt: new Date() })
+      .where(and(eq(datasetImports.projectId, projectId), eq(datasetImports.id, importId)))
+      .returning();
+    return (row as DatasetImportRow | undefined) ?? null;
   }
 }

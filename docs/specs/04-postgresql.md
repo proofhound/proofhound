@@ -4,10 +4,10 @@ This document describes the database, object storage, and frontend refresh respo
 
 ## 1. Infrastructure in Use
 
-| Service                    | Purpose                                                                                                                                |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| PostgreSQL                 | All business data, dataset import staging, DBOS workflow state                                                                         |
-| StorageProvider (reserved) | Future use such as image offline storage / export files; **dataset import does not go through it**, it uses a PostgreSQL staging table |
+| Service                    | Purpose                                                                                                                                                                      |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL                 | All business data, dataset import staging, DBOS workflow state                                                                                                               |
+| StorageProvider (optional) | Export artifacts, payload tiering, and ultra-large raw dataset import when a provider supports browser-direct upload sessions; ordinary imports still use PostgreSQL staging |
 
 Explicitly not used:
 
@@ -52,9 +52,11 @@ For public-facing deployments, UI channel authentication is handled by deploymen
 
 ## 4. Storage
 
-Dataset import (including large files) **does not go through object storage**: the raw uploaded file is not retained. Samples are written by the server into PostgreSQL staging tables (`ph_assets.dataset_imports` / `dataset_import_samples`), then atomically promoted to a formal dataset on `complete`. See [22 §3.1.2](22-datasets.md#312-large-file-streaming-batched-import) and [06 §4.3.1](06-database-schema.md#431-ph_assetsdataset_imports--dataset_import_samples). As a result, the OSS edition's current main path does not depend on `StorageProvider`.
+Dataset import has a PostgreSQL-first main path: small upload and client-streamed JSONL / CSV / TSV import write samples into PostgreSQL staging tables (`ph_assets.dataset_imports` / `dataset_import_samples`), then atomically promote to a formal dataset on `complete`. See [22 §3.1.2](22-datasets.md#312-mediumlarge-client-streamed-batched-import) and [06 §4.3.1](06-database-schema.md#431-ph_assetsdataset_imports--dataset_import_samples).
 
-`StorageProvider`, as an object storage abstraction, is **reserved as a future extension point** (for example, offline image storage or signed URLs for export files). It targets standard implementations such as S3 / MinIO / OSS / local file storage by default and is not bound to any specific managed platform. No concrete implementation is provided until there is a real consumer, and it is not placed in the current import / upload path. If it is enabled in the future, follow the convention "the path does not contain project_id; business ownership is maintained by the database `project_id`":
+Ultra-large raw dataset import may use `StorageProvider` only as a temporary byte-transfer layer: the browser uploads the raw JSONL / CSV / TSV object through `ObjectStorageProvider.createUploadSession(...)`, the backend finalizes it, streams it back with `getObjectStream(...)`, writes parsed samples into PostgreSQL staging, and then promotes. The raw object is not the source of business truth after import and must be deleted or swept on success, abort, stale-session cleanup, or pending-upload expiry. This is an OSS-generic object storage path; it must not depend on a specific managed provider such as R2.
+
+`StorageProvider` targets standard implementations such as S3 / MinIO / OSS / local file storage by default and is not bound to any specific managed platform. When object storage is enabled, follow the convention "the path does not contain project_id; business ownership is maintained by the database `project_id`":
 
 ```text
 {bucket}/{resource_type}/{resource_id}/{filename}
@@ -82,17 +84,17 @@ Metadata registration and business validation always go through NestJS; entrypoi
 
 ## 7. Replacement Paths
 
-| Layer              | Replacement Method                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------- |
-| PostgreSQL         | Any standard PostgreSQL 14+, replace `DATABASE_URL`                                             |
-| Storage (reserved) | If object storage is needed in the future, implement `StorageProvider` against S3 / MinIO / OSS |
+| Layer              | Replacement Method                                                                                                                                         |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL         | Any standard PostgreSQL 14+, replace `DATABASE_URL`                                                                                                        |
+| Storage (optional) | Implement `StorageProvider` against S3 / MinIO / OSS / local file storage; browser raw upload is available only when the provider supports upload sessions |
 
 ## 8. Mapping to Business SPECs
 
 | SPEC                                        | Infrastructure Focus                                         |
 | ------------------------------------------- | ------------------------------------------------------------ |
 | [06 Database Schema](06-database-schema.md) | PostgreSQL schema / migration                                |
-| [22 Datasets](22-datasets.md)               | PostgreSQL (import uses a staging table, not object storage) |
+| [22 Datasets](22-datasets.md)               | PostgreSQL staging plus optional temporary raw object upload |
 | [24 Experiments](24-experiments.md)         | PostgreSQL + polling                                         |
 | [25 Optimizations](25-optimizations.md)     | PostgreSQL + SSE                                             |
 | [27 Releases](27-releases.md)               | PostgreSQL + SSE                                             |

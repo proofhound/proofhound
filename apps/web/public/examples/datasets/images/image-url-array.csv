@@ -1,0 +1,3 @@
+sample_id,text,image_urls,expected_output
+array-1,"A single CSV field can contain multiple image URLs","[""https://placehold.co/128x128/png?text=a"",""https://placehold.co/128x128/png?text=b&query=1,2""]","two-images"
+array-2,"Keep the value as a valid JSON array string","[""https://placehold.co/128x128/png?text=front"",""https://placehold.co/128x128/png?text=back""]","paired"

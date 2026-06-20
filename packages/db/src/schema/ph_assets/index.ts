@@ -193,6 +193,10 @@ export const datasetImports = phAssets.table(
     fileSizeBytes: bigint('file_size_bytes', { mode: 'number' }).notNull(),
     contentType: text('content_type'),
     sourceFormat: text('source_format').notNull(),
+    importMode: text('import_mode').notNull().default('batch'),
+    rawUploadSessionId: text('raw_upload_session_id'),
+    rawUploadExpiresAt: timestamp('raw_upload_expires_at', { withTimezone: true }),
+    rawObjectRef: jsonb('raw_object_ref'),
     declaredTotalRows: integer('declared_total_rows'),
     receivedRows: integer('received_rows').notNull().default(0),
     status: text('status').notNull().default('importing'),
@@ -203,6 +207,7 @@ export const datasetImports = phAssets.table(
   },
   (t) => [
     check('dataset_imports_source_format_check', sql`${t.sourceFormat} IN ('jsonl', 'csv', 'tsv')`),
+    check('dataset_imports_import_mode_check', sql`${t.importMode} IN ('batch', 'raw_object')`),
     check('dataset_imports_status_check', sql`${t.status} IN ('importing', 'ready')`),
     index('idx_dataset_imports_project_status').on(t.projectId, t.status),
     index('idx_dataset_imports_stale')

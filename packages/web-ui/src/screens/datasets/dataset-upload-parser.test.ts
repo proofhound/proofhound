@@ -1,7 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { inferRole, parseDatasetFile, projectSamplesToColumns, selectDatasetFile } from './dataset-upload-parser';
+import {
+  inferRole,
+  parseDatasetFile,
+  projectSamplesToColumns,
+  isStreamingImportFile,
+  selectDatasetFile,
+  streamDatasetRows,
+} from './dataset-upload-parser';
 
 function makeFile(name: string, content: string, relativePath?: string) {
   const file = new File([content], name, { type: 'application/json' });
@@ -33,6 +40,17 @@ function makeStreamingFile(name: string, content: string, chunkSize = 31) {
         },
       }),
   } as unknown as File;
+}
+
+function makeFileThatRejectsText(name: string, content: string, type = 'text/csv') {
+  const file = new File([content], name, { type });
+  Object.defineProperty(file, 'text', {
+    configurable: true,
+    value: async () => {
+      throw new Error('text_should_not_be_read');
+    },
+  });
+  return file;
 }
 
 function bytes(value: string) {
@@ -128,6 +146,14 @@ function makeStoredZipFile(entries: Record<string, Uint8Array | string>) {
 }
 
 describe('dataset upload parser', () => {
+  it('allows JSONL/CSV/TSV to enter the large-file streaming path', () => {
+    expect(isStreamingImportFile(makeFile('large.jsonl', '{}\n'))).toBe(true);
+    expect(isStreamingImportFile(makeFile('large.csv', 'id\n1\n'))).toBe(true);
+    expect(isStreamingImportFile(makeFile('large.tsv', 'id\n1\n'))).toBe(true);
+    expect(isStreamingImportFile(makeFile('large.json', '[]'))).toBe(false);
+    expect(isStreamingImportFile(new File([], 'large.zip'))).toBe(false);
+  });
+
   it('parses the ChnSentiCorp random-50 JSONL as exactly 50 samples', async () => {
     const fixturePath = resolve(
       process.cwd(),
@@ -178,6 +204,63 @@ describe('dataset upload parser', () => {
       'https://example.test/c.png?next=https%3A%2F%2Ffoo.test%2F1,2',
     ]);
     expect(inferRole('attachments', parsed.samples[0]?.['image_urls'])).toBe('image');
+  });
+
+  it('parses CSV quoted commas, quoted newlines, and escaped quotes', async () => {
+    const file = makeFile(
+      'quoted.csv',
+      ['sample_id,text,expected_output', 'case-1,"hello, ""world""', 'with newline",positive'].join('\n'),
+    );
+
+    const parsed = await parseDatasetFile(file);
+
+    expect(parsed.samples).toEqual([
+      {
+        sample_id: 'case-1',
+        text: 'hello, "world"\nwith newline',
+        expected_output: 'positive',
+      },
+    ]);
+  });
+
+  it('parses the downloadable image sample datasets', async () => {
+    const sampleRoot = resolve(process.cwd(), '../../apps/web/public/examples/datasets/images');
+    const urlFields = makeFile(
+      'image-url-fields.csv',
+      await readFile(resolve(sampleRoot, 'image-url-fields.csv'), 'utf8'),
+    );
+    const urlArray = makeFile(
+      'image-url-array.csv',
+      await readFile(resolve(sampleRoot, 'image-url-array.csv'), 'utf8'),
+    );
+    const base64Jsonl = makeFile(
+      'image-base64.jsonl',
+      await readFile(resolve(sampleRoot, 'image-base64.jsonl'), 'utf8'),
+    );
+    const zipSample = new File([await readFile(resolve(sampleRoot, 'image-zip-relative-paths.zip'))], 'images.zip', {
+      type: 'application/zip',
+    });
+
+    await expect(parseDatasetFile(urlFields)).resolves.toMatchObject({
+      columns: ['sample_id', 'text', 'front_image_url', 'back_image_url', 'expected_output'],
+    });
+    const parsedUrlArray = await parseDatasetFile(urlArray);
+    expect(parsedUrlArray.samples[0]).toEqual(
+      expect.objectContaining({
+        image_urls: ['https://placehold.co/128x128/png?text=a', 'https://placehold.co/128x128/png?text=b&query=1,2'],
+      }),
+    );
+    const parsedBase64 = await parseDatasetFile(base64Jsonl);
+    expect(parsedBase64.samples[0]).toEqual(
+      expect.objectContaining({ image_base64: expect.stringMatching(/^data:image\/png;base64,/u) }),
+    );
+
+    const parsedZip = await parseDatasetFile(zipSample);
+    expect(parsedZip.samples[0]?.['image_path']).toEqual(expect.stringMatching(/^data:image\/svg\+xml;base64,/u));
+    expect(parsedZip.samples[0]?.['image_paths']).toEqual([
+      expect.stringMatching(/^data:image\/svg\+xml;base64,/u),
+      expect.stringMatching(/^data:image\/svg\+xml;base64,/u),
+    ]);
   });
 
   it('parses ZIP datasets and inlines same-package images as data URLs', async () => {
@@ -241,5 +324,22 @@ describe('dataset upload parser', () => {
     const parsed = await parseDatasetFile(makeStreamingFile('streamed.jsonl', content));
     expect(parsed.samples.length).toBe(rowCount);
     expect(parsed.samples[0]).toEqual({ sample_id: 'case-0', text: 'sample 0' });
+  });
+
+  it('streams CSV files instead of reading the full text payload up front', async () => {
+    const file = makeFileThatRejectsText(
+      'streamed.csv',
+      ['sample_id,text,expected_output', 'case-1,"hello, world",positive', 'case-2,"line 1\nline 2",negative'].join(
+        '\n',
+      ),
+    );
+
+    const rows: Array<Record<string, unknown>> = [];
+    for await (const row of streamDatasetRows(file)) rows.push(row);
+
+    expect(rows).toEqual([
+      { sample_id: 'case-1', text: 'hello, world', expected_output: 'positive' },
+      { sample_id: 'case-2', text: 'line 1\nline 2', expected_output: 'negative' },
+    ]);
   });
 });

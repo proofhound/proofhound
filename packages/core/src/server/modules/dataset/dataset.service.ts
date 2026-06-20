@@ -53,6 +53,8 @@ export type DatasetExportDelivery =
   | { kind: 'stream'; file: DatasetExportFile }
   | { kind: 'redirect'; url: string; expiresAt: string };
 
+const DEFAULT_DATASET_RAW_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+
 @Injectable()
 export class DatasetService {
   private readonly logger = createLogger('dataset.service', { service: 'server' });
@@ -176,6 +178,7 @@ export class DatasetService {
   ): Promise<DatasetCreateResponseDto> {
     await this.getWritableProject(projectId, actor);
     this.assertConsistentMappings(dto);
+    this.assertUploadSourceSizeWithinLimit(dto.uploadSource.fileSizeBytes);
 
     const existing = await this.repo.findDatasetByProjectAndName(projectId, dto.name);
     if (existing) {
@@ -462,6 +465,18 @@ export class DatasetService {
     if (missingFields.length > 0) {
       throw new ConflictException(`dataset_field_mapping_missing:${missingFields.join(',')}`);
     }
+  }
+
+  private assertUploadSourceSizeWithinLimit(bytes: number | undefined): void {
+    const value = Number.isFinite(bytes) ? Math.max(0, Math.trunc(bytes ?? 0)) : 0;
+    if (value > this.getUploadMaxBytes()) {
+      throw new ConflictException('dataset_raw_upload_too_large');
+    }
+  }
+
+  private getUploadMaxBytes(): number {
+    const raw = Number(process.env['DATASET_RAW_UPLOAD_MAX_BYTES']);
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_DATASET_RAW_UPLOAD_MAX_BYTES;
   }
 
   private toDatasetListItem(

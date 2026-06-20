@@ -7,7 +7,13 @@
 
 import type { ActorContext, ProjectContext } from '../actor-context';
 
-export type StorageQuotaSource = 'dataset_upload' | 'dataset_import' | 'dataset_import_batch' | 'run_result';
+export type StorageQuotaSource =
+  | 'dataset_upload'
+  | 'dataset_import'
+  | 'dataset_import_batch'
+  | 'dataset_raw_import'
+  | 'dataset_raw_import_batch'
+  | 'run_result';
 
 export interface StorageQuotaInput {
   project: ProjectContext;

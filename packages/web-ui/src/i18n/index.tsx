@@ -811,8 +811,7 @@ const dictionaries = {
     'releases.detail.metric.deliveryFailed': '投递失败',
     'releases.detail.metric.deliveryFailureRate': '投递失败率',
     'releases.detail.quality.title': '质量指标',
-    'releases.detail.quality.description':
-      '按发布事件观察召回、精确、F1、准确率，可多选发布版本、数据范围和指标。',
+    'releases.detail.quality.description': '按发布事件观察召回、精确、F1、准确率，可多选发布版本、数据范围和指标。',
     'releases.detail.quality.empty': '暂无发布质量指标数据',
     'releases.detail.quality.emptyDescription': '需要先新建标注任务并提交样本，质量指标才会出现在这里。',
     'releases.detail.quality.emptyAction': '新建标注任务',
@@ -2024,9 +2023,25 @@ const dictionaries = {
     'datasets.upload.uploadReady': '已解析，等待提交',
     'datasets.upload.unknownType': '未知类型',
     'datasets.upload.unsupportedFile': '暂不支持该文件类型，请上传 CSV、TSV、JSONL、JSON 数组或 ZIP。',
+    'datasets.upload.limitInfoLabel': '查看上传大小限制',
+    'datasets.upload.limitInfoTitle': '上传大小限制',
+    'datasets.upload.limitInfoSmall':
+      '小文件路径：小于 {syncLimit} 的 CSV / TSV / JSONL / JSON / ZIP 会在浏览器内解析后提交。',
+    'datasets.upload.limitInfoStreaming':
+      '超过小文件阈值的 JSONL / CSV / TSV 会流式解析并分批上传，单批请求保持低于服务端 body limit。',
+    'datasets.upload.limitInfoRaw': '原始文件直传上限：当前部署配置为 {rawLimit}；仅在对象存储支持浏览器直传时启用。',
+    'datasets.upload.limitInfoJsonZip': '超过小文件阈值的 JSON 数组和 ZIP 暂不支持流式导入，请拆分后上传。',
     'datasets.upload.streamingFile': '大文件 · 导入时统计样本数',
     'datasets.upload.previewPrefixOnly': '仅预览文件开头若干行',
-    'datasets.upload.largeRequiresJsonl': '大文件目前仅支持 JSONL；请转换为 JSONL，或拆分到 10MB 以下再上传。',
+    'datasets.upload.largeRequiresStreamingFormat':
+      '超过 10MB 的文件目前仅支持 JSONL、CSV 或 TSV 流式导入；JSON 数组和 ZIP 请拆分到 10MB 以下再上传。',
+    'datasets.upload.imageSamples.title': '图片样例数据',
+    'datasets.upload.imageSamples.hint': '下载不同图片字段写法的最小样例。',
+    'datasets.upload.imageSamples.urlFields': 'URL 多字段',
+    'datasets.upload.imageSamples.urlArray': 'URL 数组 CSV',
+    'datasets.upload.imageSamples.base64': 'Base64 JSONL',
+    'datasets.upload.imageSamples.zip': 'ZIP 相对路径',
+    'datasets.upload.imageSamples.downloadAria': '下载图片样例：{name}',
     'datasets.upload.importingNoticeTitle': '导入进行中，请勿离开本页',
     'datasets.upload.importingNoticeBody':
       '离开、返回、刷新或关闭页面会中断导入并清除已上传到服务器的数据，需要重新上传。',
@@ -3996,7 +4011,8 @@ const dictionaries = {
     'releases.detail.quality.submitted': 'Submitted',
     'releases.detail.quality.submittedHint': 'Historical annotation samples',
     'releases.detail.quality.chartTitle': 'Historical quality metrics',
-    'releases.detail.quality.footer': '{tasks} annotation tasks · {versions} release versions · {points} quality points',
+    'releases.detail.quality.footer':
+      '{tasks} annotation tasks · {versions} release versions · {points} quality points',
     'releases.detail.quality.pendingQuality': '{count} tasks have not produced quality results yet',
     'releases.detail.quality.filter.version': 'Version filter',
     'releases.detail.quality.filter.scope': 'Data scope',
@@ -5233,10 +5249,27 @@ const dictionaries = {
     'datasets.upload.uploadReady': 'Parsed, ready to submit',
     'datasets.upload.unknownType': 'Unknown type',
     'datasets.upload.unsupportedFile': 'Unsupported file type. Upload CSV, TSV, JSONL, a JSON array, or ZIP.',
+    'datasets.upload.limitInfoLabel': 'View upload size limits',
+    'datasets.upload.limitInfoTitle': 'Upload size limits',
+    'datasets.upload.limitInfoSmall':
+      'Small-file path: CSV / TSV / JSONL / JSON / ZIP under {syncLimit} is parsed in the browser, then submitted.',
+    'datasets.upload.limitInfoStreaming':
+      'JSONL / CSV / TSV above the small-file threshold is streamed locally and uploaded in batches kept below the server body limit.',
+    'datasets.upload.limitInfoRaw':
+      'Raw direct-upload maximum: this deployment is configured for {rawLimit}; enabled only when object storage supports browser upload sessions.',
+    'datasets.upload.limitInfoJsonZip':
+      'JSON arrays and ZIP files above the small-file threshold are not stream-imported yet; split them before uploading.',
     'datasets.upload.streamingFile': 'Large file · sample count tallied while importing',
     'datasets.upload.previewPrefixOnly': 'Preview of the first rows only',
-    'datasets.upload.largeRequiresJsonl':
-      'Large files currently support JSONL only. Convert to JSONL, or split below 10MB before uploading.',
+    'datasets.upload.largeRequiresStreamingFormat':
+      'Files over 10MB currently support streaming import for JSONL, CSV, or TSV only. Split JSON arrays and ZIP files below 10MB before uploading.',
+    'datasets.upload.imageSamples.title': 'Image sample datasets',
+    'datasets.upload.imageSamples.hint': 'Download minimal examples for each image-field shape.',
+    'datasets.upload.imageSamples.urlFields': 'URL fields',
+    'datasets.upload.imageSamples.urlArray': 'URL array CSV',
+    'datasets.upload.imageSamples.base64': 'Base64 JSONL',
+    'datasets.upload.imageSamples.zip': 'ZIP relative paths',
+    'datasets.upload.imageSamples.downloadAria': 'Download image sample: {name}',
     'datasets.upload.importingNoticeTitle': 'Import in progress — do not leave this page',
     'datasets.upload.importingNoticeBody':
       'Leaving, going back, refreshing, or closing the page interrupts the import and clears the data already uploaded to the server — you would need to re-upload.',

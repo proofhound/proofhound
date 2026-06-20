@@ -1,4 +1,5 @@
 import type { DatasetFieldRole } from '@proofhound/shared';
+import Papa from 'papaparse';
 
 export const FORMAT_CHIPS = ['.csv', '.tsv', '.jsonl', '.json', '.zip'] as const;
 export const PREVIEW_LIMIT = 5;
@@ -75,9 +76,14 @@ export function projectSamplesToColumns(samples: Array<Record<string, unknown>>,
   );
 }
 
-function getExtension(fileName: string) {
+export function getExtension(fileName: string) {
   const dotIndex = fileName.lastIndexOf('.');
   return dotIndex >= 0 ? fileName.slice(dotIndex).toLowerCase() : '';
+}
+
+export function isStreamingImportFile(file: File): boolean {
+  const extension = getExtension(file.name);
+  return extension === '.jsonl' || extension === '.csv' || extension === '.tsv';
 }
 
 function isDatasetFile(file: File) {
@@ -170,53 +176,17 @@ export async function selectDatasetFile(files: File[]): Promise<File> {
 }
 
 function parseDelimited(text: string, delimiter: ',' | '\t'): Array<Record<string, unknown>> {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let inQuotes = false;
+  const parsed = Papa.parse<Record<string, unknown>>(text, {
+    delimiter,
+    header: true,
+    skipEmptyLines: 'greedy',
+    transform: parseDelimitedCell,
+    transformHeader: (header, index) => header.trim() || `field_${index + 1}`,
+  });
+  const fatalError = parsed.errors.find((error) => error.type !== 'FieldMismatch');
+  if (fatalError) throw new Error(fatalError.message || 'delimited_parse_failed');
 
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    const nextChar = text[index + 1];
-
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        cell += '"';
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (!inQuotes && char === delimiter) {
-      row.push(cell);
-      cell = '';
-      continue;
-    }
-
-    if (!inQuotes && (char === '\n' || char === '\r')) {
-      if (char === '\r' && nextChar === '\n') index += 1;
-      row.push(cell);
-      if (row.some((value) => value.trim().length > 0)) rows.push(row);
-      row = [];
-      cell = '';
-      continue;
-    }
-
-    cell += char;
-  }
-
-  row.push(cell);
-  if (row.some((value) => value.trim().length > 0)) rows.push(row);
-
-  const [headers, ...bodyRows] = rows;
-  if (!headers || headers.length === 0) return [];
-
-  const normalizedHeaders = headers.map((header, index) => header.trim() || `field_${index + 1}`);
-  return bodyRows.map((bodyRow) =>
-    Object.fromEntries(normalizedHeaders.map((header, index) => [header, parseDelimitedCell(bodyRow[index] ?? '')])),
-  );
+  return parsed.data.filter((sample) => sample && typeof sample === 'object' && !Array.isArray(sample));
 }
 
 function parseDelimitedCell(value: string): unknown {
@@ -495,37 +465,31 @@ async function parseZipDatasetFile(file: File): Promise<Array<Record<string, unk
   return inlineZipImages(samples, dataEntry, buffer, entries);
 }
 
-// Streams a JSONL file row-by-row, yielding fixed-size batches, so large files never fully enter memory.
-// Used by the large-file import runner (see dataset-import-runner.ts).
-export async function* streamJsonlBatches(
+// Streams a JSONL file row-by-row, so large files never fully enter memory.
+export async function* streamJsonlRows(
   file: File,
-  batchSize: number,
   onBytes?: (readBytes: number, totalBytes: number) => void,
   signal?: AbortSignal,
-): AsyncGenerator<Array<Record<string, unknown>>> {
+): AsyncGenerator<Record<string, unknown>> {
   const total = file.size;
   let readBytes = 0;
-  let batch: Array<Record<string, unknown>> = [];
 
-  const pushLine = (line: string) => {
+  const parseLine = (line: string): Record<string, unknown> | null => {
     const trimmed = line.trim();
-    if (!trimmed) return;
+    if (!trimmed) return null;
     const parsed = JSON.parse(trimmed) as unknown;
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      batch.push(parsed as Record<string, unknown>);
+      return parsed as Record<string, unknown>;
     }
+    return null;
   };
 
   if (typeof file.stream !== 'function') {
     for (const line of (await file.text()).split(/\r?\n/u)) {
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
-      pushLine(line);
-      if (batch.length >= batchSize) {
-        yield batch;
-        batch = [];
-      }
+      const row = parseLine(line);
+      if (row) yield row;
     }
-    if (batch.length > 0) yield batch;
     return;
   }
 
@@ -543,23 +507,128 @@ export async function* streamJsonlBatches(
       const lines = pending.split(/\r?\n/u);
       pending = lines.pop() ?? '';
       for (const line of lines) {
-        pushLine(line);
-        if (batch.length >= batchSize) {
-          yield batch;
-          batch = [];
-        }
+        const row = parseLine(line);
+        if (row) yield row;
       }
     }
     pending += decoder.decode();
-    pushLine(pending);
-    if (batch.length > 0) yield batch;
+    const row = parseLine(pending);
+    if (row) yield row;
   } finally {
     reader.releaseLock();
   }
 }
 
-export function isJsonlFile(file: File): boolean {
-  return getExtension(file.name) === '.jsonl';
+const STREAM_QUEUE_PAUSE_AT = 1000;
+const STREAM_QUEUE_RESUME_AT = 250;
+
+export async function* streamDelimitedRows(
+  file: File,
+  delimiter: ',' | '\t',
+  onBytes?: (readBytes: number, totalBytes: number) => void,
+  signal?: AbortSignal,
+): AsyncGenerator<Record<string, unknown>> {
+  const queue: Array<Record<string, unknown>> = [];
+  const parserRef: { current: Papa.Parser | null } = { current: null };
+  let parserPaused = false;
+  let done = false;
+  let error: Error | null = null;
+  let notify: (() => void) | null = null;
+
+  const wake = () => {
+    notify?.();
+    notify = null;
+  };
+  const waitForRows = () =>
+    new Promise<void>((resolve) => {
+      notify = resolve;
+    });
+  const abortIfNeeded = () => {
+    if (!signal?.aborted) return false;
+    parserRef.current?.abort();
+    error = new DOMException('aborted', 'AbortError');
+    done = true;
+    wake();
+    return true;
+  };
+
+  const abortListener = () => {
+    abortIfNeeded();
+  };
+  signal?.addEventListener('abort', abortListener, { once: true });
+
+  Papa.parse<Record<string, unknown>>(file, {
+    delimiter,
+    header: true,
+    skipEmptyLines: 'greedy',
+    transform: parseDelimitedCell,
+    transformHeader: (header, index) => header.trim() || `field_${index + 1}`,
+    step: (result, parser) => {
+      parserRef.current = parser;
+      if (abortIfNeeded()) return;
+      const fatalError = result.errors.find((item) => item.type !== 'FieldMismatch');
+      if (fatalError) {
+        error = new Error(fatalError.message || 'delimited_parse_failed');
+        parser.abort();
+        done = true;
+        wake();
+        return;
+      }
+      const row = result.data;
+      if (row && typeof row === 'object' && !Array.isArray(row)) {
+        queue.push(row);
+      }
+      const cursor = typeof result.meta.cursor === 'number' ? result.meta.cursor : 0;
+      onBytes?.(Math.min(file.size, cursor), file.size);
+      if (!parserPaused && queue.length >= STREAM_QUEUE_PAUSE_AT) {
+        parser.pause();
+        parserPaused = true;
+      }
+      wake();
+    },
+    complete: () => {
+      done = true;
+      wake();
+    },
+    error: (err) => {
+      error = err instanceof Error ? err : new Error(String(err));
+      done = true;
+      wake();
+    },
+  });
+
+  try {
+    while (!done || queue.length > 0) {
+      if (signal?.aborted) abortIfNeeded();
+      if (error) throw error;
+      if (queue.length === 0) {
+        await waitForRows();
+        continue;
+      }
+      const row = queue.shift();
+      if (parserRef.current && parserPaused && queue.length <= STREAM_QUEUE_RESUME_AT) {
+        parserRef.current.resume();
+        parserPaused = false;
+      }
+      if (row) yield row;
+    }
+    if (error) throw error;
+  } finally {
+    signal?.removeEventListener('abort', abortListener);
+    if (signal?.aborted) parserRef.current?.abort();
+  }
+}
+
+export function streamDatasetRows(
+  file: File,
+  onBytes?: (readBytes: number, totalBytes: number) => void,
+  signal?: AbortSignal,
+): AsyncGenerator<Record<string, unknown>> {
+  const extension = getExtension(file.name);
+  if (extension === '.jsonl') return streamJsonlRows(file, onBytes, signal);
+  if (extension === '.csv') return streamDelimitedRows(file, ',', onBytes, signal);
+  if (extension === '.tsv') return streamDelimitedRows(file, '\t', onBytes, signal);
+  throw new Error('unsupported_file_type');
 }
 
 // Reads only the head of a (large) JSONL file to produce columns + a few preview rows, without loading the whole file.
@@ -587,6 +656,35 @@ export async function parseJsonlPrefix(file: File, maxBytes = PREVIEW_BYTES): Pr
     throw new Error('empty_file');
   }
   return { columns: Object.keys(samples[0] ?? {}), samples };
+}
+
+export async function parseDelimitedPrefix(
+  file: File,
+  delimiter: ',' | '\t',
+  maxBytes = PREVIEW_BYTES,
+): Promise<ParsedDatasetFile> {
+  const text = await file.slice(0, maxBytes).text();
+  const parsed = Papa.parse<Record<string, unknown>>(text, {
+    delimiter,
+    header: true,
+    preview: PREVIEW_LIMIT,
+    skipEmptyLines: 'greedy',
+    transform: parseDelimitedCell,
+    transformHeader: (header, index) => header.trim() || `field_${index + 1}`,
+  });
+  const samples = parsed.data.filter((sample) => sample && typeof sample === 'object' && !Array.isArray(sample));
+  if (samples.length === 0) {
+    throw new Error('empty_file');
+  }
+  return { columns: Object.keys(samples[0] ?? {}), samples };
+}
+
+export async function parseStreamingPrefix(file: File, maxBytes = PREVIEW_BYTES): Promise<ParsedDatasetFile> {
+  const extension = getExtension(file.name);
+  if (extension === '.jsonl') return parseJsonlPrefix(file, maxBytes);
+  if (extension === '.csv') return parseDelimitedPrefix(file, ',', maxBytes);
+  if (extension === '.tsv') return parseDelimitedPrefix(file, '\t', maxBytes);
+  throw new Error('unsupported_file_type');
 }
 
 export async function parseDatasetFile(file: File): Promise<ParsedDatasetFile> {

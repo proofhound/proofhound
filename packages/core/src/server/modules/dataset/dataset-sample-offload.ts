@@ -3,7 +3,7 @@
 // Streams the import's staging rows in bounded batches; each batch becomes one shard, and each row is
 // inserted with its queryable projection + a pointer at its line in the shard, with inline data cleared.
 // The shard is written before the rows that reference it (object stores have no atomic rename); a
-// caller-side rollback orphans the shard, which the sweeper reclaims.
+// caller-side rollback may orphan the just-written shard until an operator storage-lifecycle cleanup reclaims it.
 import { Buffer } from 'node:buffer';
 import type { DatasetFieldSchemaDto } from '@proofhound/shared';
 import type { ObjectCodec, StoredObjectRef } from '../../common/contracts/object-storage.provider';

@@ -3,7 +3,12 @@
  * Delegates to DatasetImportService, matching the REST surface 1:1.
  * See docs/specs/22-datasets.md §3.1.2 and docs/specs/00-overview.md §5 (three-channel parity).
  */
-import { createDatasetImportSchema, datasetIdParamSchema, datasetImportBatchSchema } from '@proofhound/shared';
+import {
+  createDatasetImportSchema,
+  createRawDatasetImportSchema,
+  datasetIdParamSchema,
+  datasetImportBatchSchema,
+} from '@proofhound/shared';
 import { getMcpActor, resolveMcpProjectContext } from './mcp-context';
 import type { DatasetImportService } from '../../modules/dataset/dataset-import.service';
 import type { McpToolDefinition } from './mcp.types';
@@ -29,6 +34,39 @@ export function createDatasetImportTools(datasetImportService: DatasetImportServ
         const { projectId } = resolveMcpProjectContext(ctx);
         const dto = createDatasetImportSchema.parse(input);
         return datasetImportService.createImport(projectId, dto, getMcpActor(ctx));
+      },
+    },
+    {
+      name: 'dataset_import_raw_capabilities',
+      description: '读取当前部署是否支持浏览器直传 raw dataset import',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+      handler: async (_input, ctx) => {
+        const { projectId } = resolveMcpProjectContext(ctx);
+        return datasetImportService.getRawImportCapabilities(projectId, getMcpActor(ctx));
+      },
+    },
+    {
+      name: 'dataset_import_create_raw',
+      description: '创建 raw object-backed 数据集导入会话并返回浏览器直传 upload session',
+      inputSchema: {
+        type: 'object',
+        required: ['name', 'fieldMappings', 'sourceFile', 'sourceFormat'],
+        properties: {
+          name: { type: 'string' },
+          description: { type: 'string' },
+          fieldMappings: { type: 'array' },
+          sourceFile: { type: 'object' },
+          sourceFormat: { type: 'string', enum: ['jsonl', 'csv', 'tsv'] },
+          declaredTotalRows: { type: 'integer' },
+        },
+      },
+      handler: async (input, ctx) => {
+        const { projectId } = resolveMcpProjectContext(ctx);
+        const dto = createRawDatasetImportSchema.parse(input);
+        return datasetImportService.createRawImport(projectId, dto, getMcpActor(ctx));
       },
     },
     {

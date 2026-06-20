@@ -136,6 +136,11 @@ export abstract class ObjectStorageProvider {
   // hasn't implemented them keeps compiling and inherits the default. A provider that can mint
   // browser-reachable upload URLs (e.g. R2) overrides them; LocalFs keeps the default.
 
+  /** Whether this provider can mint browser-reachable upload sessions. Default: unsupported. */
+  supportsClientUploadSessions(): boolean {
+    return false;
+  }
+
   /** Open a pending upload and return a URL the client PUTs to. Default: unsupported (null). */
   async createUploadSession(_loc: ResourceLocator, _opts?: CreateUploadSessionOptions): Promise<UploadSession | null> {
     return null;

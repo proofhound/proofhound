@@ -7,6 +7,9 @@ export type DatasetImportSourceFormat = z.infer<typeof datasetImportSourceFormat
 export const datasetImportStatusSchema = z.enum(['importing', 'ready']);
 export type DatasetImportStatus = z.infer<typeof datasetImportStatusSchema>;
 
+export const datasetImportModeSchema = z.enum(['batch', 'raw_object']);
+export type DatasetImportMode = z.infer<typeof datasetImportModeSchema>;
+
 export const datasetImportSourceFileSchema = z.object({
   fileName: z.string().trim().min(1).max(260),
   fileSizeBytes: z.number().int().nonnegative(),
@@ -31,6 +34,9 @@ export const createDatasetImportSchema = z
   });
 export type CreateDatasetImportDto = z.infer<typeof createDatasetImportSchema>;
 
+export const createRawDatasetImportSchema = createDatasetImportSchema;
+export type CreateRawDatasetImportDto = z.infer<typeof createRawDatasetImportSchema>;
+
 // One streamed batch. samples 上限沿用同步路径的每请求兜底；导入总量不设上限。
 export const datasetImportBatchSchema = z.object({
   batchStartIndex: z.number().int().nonnegative(),
@@ -42,6 +48,7 @@ export const datasetImportItemSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
   datasetId: z.string().uuid().nullable(),
+  importMode: datasetImportModeSchema.default('batch'),
   name: z.string(),
   description: z.string().nullable(),
   fileName: z.string(),
@@ -63,3 +70,24 @@ export type DatasetImportBatchResponseDto = z.infer<typeof datasetImportBatchRes
 
 export const completeDatasetImportResponseSchema = datasetCreateResponseSchema;
 export type CompleteDatasetImportResponseDto = z.infer<typeof completeDatasetImportResponseSchema>;
+
+export const datasetRawImportCapabilitiesSchema = z.object({
+  supported: z.boolean(),
+  maxBytes: z.number().int().positive(),
+});
+export type DatasetRawImportCapabilitiesDto = z.infer<typeof datasetRawImportCapabilitiesSchema>;
+
+export const datasetRawUploadSessionSchema = z.object({
+  sessionId: z.string().min(1),
+  url: z.string().url(),
+  headers: z.record(z.string(), z.string()).optional(),
+  expiresAt: z.string().datetime(),
+});
+export type DatasetRawUploadSessionDto = z.infer<typeof datasetRawUploadSessionSchema>;
+
+export const createRawDatasetImportResponseSchema = z.object({
+  import: datasetImportItemSchema,
+  uploadSession: datasetRawUploadSessionSchema,
+  maxBytes: z.number().int().positive(),
+});
+export type CreateRawDatasetImportResponseDto = z.infer<typeof createRawDatasetImportResponseSchema>;

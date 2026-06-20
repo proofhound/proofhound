@@ -27,3 +27,32 @@ describe('datasetImportClient.abortDatasetImportBeacon', () => {
     expect(sendBeacon).toHaveBeenCalledWith(`https://api.example.test/dataset-imports/${IMPORT_ID}/abort`);
   });
 });
+
+describe('datasetImportClient.uploadRawDatasetFile', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('puts the raw file bytes to the provider upload URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const file = new Blob(['a,b\n1,2\n'], { type: 'text/csv' });
+
+    await datasetImportClient.uploadRawDatasetFile(
+      {
+        sessionId: 'upload-1',
+        url: 'https://storage.example/upload',
+        headers: { 'content-type': 'text/csv' },
+        expiresAt: '2026-06-20T00:00:00.000Z',
+      },
+      file,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith('https://storage.example/upload', {
+      method: 'PUT',
+      headers: { 'content-type': 'text/csv' },
+      body: file,
+      signal: undefined,
+    });
+  });
+});

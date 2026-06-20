@@ -26,6 +26,16 @@ const context: McpToolContext = {
 function serviceStub(): DatasetImportService {
   return {
     createImport: vi.fn().mockResolvedValue({ id: IMPORT_ID }),
+    getRawImportCapabilities: vi.fn().mockResolvedValue({ supported: false, maxBytes: 2_147_483_648 }),
+    createRawImport: vi.fn().mockResolvedValue({
+      import: { id: IMPORT_ID },
+      uploadSession: {
+        sessionId: 'up-1',
+        url: 'https://storage.example/upload',
+        expiresAt: '2026-06-20T00:00:00.000Z',
+      },
+      maxBytes: 2_147_483_648,
+    }),
     getImport: vi.fn().mockResolvedValue({ id: IMPORT_ID }),
     appendBatch: vi.fn().mockResolvedValue({ importId: IMPORT_ID, receivedRows: 1 }),
     complete: vi.fn().mockResolvedValue({ dataset: { id: IMPORT_ID }, sampleCount: 1 }),
@@ -50,11 +60,43 @@ describe('MCP dataset-import tools', () => {
     const names = createDatasetImportTools(serviceStub()).map((tool) => tool.name);
     expect(names).toEqual([
       'dataset_import_create',
+      'dataset_import_raw_capabilities',
+      'dataset_import_create_raw',
       'dataset_import_get',
       'dataset_import_append_batch',
       'dataset_import_complete',
       'dataset_import_abort',
     ]);
+  });
+
+  it('dataset_import_raw_capabilities: delegates scoped by project + actor', async () => {
+    const service = serviceStub();
+    const result = await dispatchTool(
+      createDatasetImportTools(service),
+      'dataset_import_raw_capabilities',
+      {},
+      context,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(service.getRawImportCapabilities).toHaveBeenCalledWith(PROJECT_ID, actor);
+  });
+
+  it('dataset_import_create_raw: delegates the parsed DTO scoped by project + actor', async () => {
+    const service = serviceStub();
+    const result = await dispatchTool(
+      createDatasetImportTools(service),
+      'dataset_import_create_raw',
+      { ...validCreatePayload(), sourceFormat: 'csv', sourceFile: { fileName: 'large.csv', fileSizeBytes: 4096 } },
+      context,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(service.createRawImport).toHaveBeenCalledWith(
+      PROJECT_ID,
+      expect.objectContaining({ sourceFormat: 'csv' }),
+      actor,
+    );
   });
 
   it('dataset_import_create: delegates the parsed DTO scoped by project + actor', async () => {
