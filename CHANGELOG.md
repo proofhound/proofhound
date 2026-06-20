@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.15](https://github.com/proofhound/proofhound/compare/v0.1.14...v0.1.15) (2026-06-20)
+
+
+### Features
+
+* **datasets:** add async raw imports ([0968db5](https://github.com/proofhound/proofhound/commit/0968db5db6033ec97415a58ea0c58931b825e551))
+
 ## [0.1.14](https://github.com/proofhound/proofhound/compare/v0.1.13...v0.1.14) (2026-06-20)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/optimization-strategy",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Optimization strategies (extension point) — V1: error_pattern_analysis; new strategies can be registered without DB CHECK changes",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
