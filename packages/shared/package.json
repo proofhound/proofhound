@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/shared",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Zod schemas / DTOs / enums / types shared between frontend and backend",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.16](https://github.com/proofhound/proofhound/compare/v0.1.15...v0.1.16) (2026-06-21)
+
+
+### Bug Fixes
+
+* **datasets:** restore batch-only oss imports ([332c3d9](https://github.com/proofhound/proofhound/commit/332c3d987f6b90bc86f111a1f0043f6769e45c05))
+
 ## [0.1.15](https://github.com/proofhound/proofhound/compare/v0.1.14...v0.1.15) (2026-06-20)
 
 
