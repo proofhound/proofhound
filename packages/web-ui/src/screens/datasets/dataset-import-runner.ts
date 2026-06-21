@@ -1,16 +1,27 @@
-import { datasetImportClient, type DatasetImportClient, type DatasetTransferProgress } from '@proofhound/api-client';
-import type {
-  CompleteDatasetImportResponseDto,
-  CreateDatasetImportDto,
-  CreateRawDatasetImportDto,
-  DatasetImportStatusDto,
-} from '@proofhound/shared';
+import { datasetImportClient, type DatasetImportClient } from '@proofhound/api-client';
+import type { CompleteDatasetImportResponseDto, CreateDatasetImportDto } from '@proofhound/shared';
 import { projectSamplesToColumns } from './dataset-upload-parser';
 
+const DATASET_IMPORT_DEBUG_PREFIX = '[dataset-import-debug]';
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+}
+
+function debugDatasetImport(event: string, data: Record<string, unknown> = {}): void {
+  try {
+    console.warn(DATASET_IMPORT_DEBUG_PREFIX, event, {
+      at: new Date().toISOString(),
+      ...data,
+    });
+  } catch {
+    // Temporary diagnostics must never affect import behavior.
+  }
+}
+
 export interface DatasetImportProgress {
-  phase: 'uploading' | 'completing' | 'queued' | 'parsing' | 'importing' | 'completed';
+  phase: 'uploading' | 'completing' | 'completed';
   receivedRows: number;
-  status?: DatasetImportStatusDto;
 }
 
 export const DEFAULT_IMPORT_BATCH_MAX_ROWS = 1000;
@@ -54,10 +65,29 @@ export async function* projectSampleRowsToBatches(
   const maxBytes = options.maxBytes ?? DEFAULT_IMPORT_BATCH_MAX_BYTES;
   let batch: Array<Record<string, unknown>> = [];
   let batchArrayBytes = emptyJsonArrayBytes();
+  let batchIndex = 0;
+  let batchStartIndex = 0;
+  let processedRows = 0;
+  const startedAt = nowMs();
+
+  const logBatch = (reason: string, currentBatch: Array<Record<string, unknown>>, currentArrayBytes: number) => {
+    debugDatasetImport('webUi.datasetImport.batch.generated', {
+      batchIndex,
+      batchStartIndex,
+      elapsedMs: Math.round(nowMs() - startedAt),
+      payloadBytes: estimateDatasetImportPayloadBytes(currentArrayBytes),
+      processedRows,
+      reason,
+      sampleCount: currentBatch.length,
+    });
+    batchIndex += 1;
+    batchStartIndex += currentBatch.length;
+  };
 
   for await (const row of rows) {
     if (options.signal?.aborted) throw new DOMException('aborted', 'AbortError');
     if (batch.length >= maxRows) {
+      logBatch('max_rows', batch, batchArrayBytes);
       yield batch;
       batch = [];
       batchArrayBytes = emptyJsonArrayBytes();
@@ -74,6 +104,7 @@ export async function* projectSampleRowsToBatches(
 
     const candidateArrayBytes = jsonArrayBytesAfterAppend(batchArrayBytes, batch.length, singleBytes);
     if (batch.length > 0 && estimateDatasetImportPayloadBytes(candidateArrayBytes) > maxBytes) {
+      logBatch('max_bytes', batch, batchArrayBytes);
       yield batch;
       batch = [];
       batchArrayBytes = emptyJsonArrayBytes();
@@ -81,10 +112,12 @@ export async function* projectSampleRowsToBatches(
 
     batch.push(projected);
     batchArrayBytes = jsonArrayBytesAfterAppend(batchArrayBytes, batch.length - 1, singleBytes);
+    processedRows += 1;
   }
 
   if (batch.length > 0) {
     if (options.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    logBatch('source_done', batch, batchArrayBytes);
     yield batch;
   }
 }
@@ -101,109 +134,86 @@ export interface RunDatasetImportOptions {
   client?: DatasetImportClient;
 }
 
-export interface RunRawDatasetImportOptions {
-  projectId: string;
-  createBody: CreateRawDatasetImportDto;
-  file: Blob;
-  signal?: AbortSignal;
-  onCreated?: (importId: string) => void;
-  onUploaded?: () => void;
-  onUploadProgress?: (progress: DatasetTransferProgress) => void;
-  onProgress?: (progress: DatasetImportProgress) => void;
-  pollIntervalMs?: number;
-  client?: DatasetImportClient;
-}
-
 // Orchestrates a large-file import: create session -> append batches in order -> complete (atomic promote).
 // Any failure or abort before complete deletes the session + staging (best-effort), per "中断即删干净".
 export async function runDatasetImport(options: RunDatasetImportOptions): Promise<CompleteDatasetImportResponseDto> {
   const client = options.client ?? datasetImportClient;
   const { projectId, createBody, batches, signal } = options;
+  const startedAt = nowMs();
+  debugDatasetImport('webUi.datasetImport.run.start', {
+    fileName: createBody.sourceFile.fileName,
+    fileSizeBytes: createBody.sourceFile.fileSizeBytes,
+    projectId,
+    sourceFormat: createBody.sourceFormat,
+  });
 
   const session = await client.createDatasetImport(projectId, createBody);
   options.onCreated?.(session.id);
+  debugDatasetImport('webUi.datasetImport.create.done', {
+    importId: session.id,
+    projectId,
+    totalMs: Math.round(nowMs() - startedAt),
+  });
 
   try {
     let batchStartIndex = 0;
+    let batchIndex = 0;
     for await (const batch of batches) {
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
       if (batch.length === 0) continue;
+      const appendStartedAt = nowMs();
+      debugDatasetImport('webUi.datasetImport.append.start', {
+        batchIndex,
+        batchStartIndex,
+        importId: session.id,
+        projectId,
+        sampleCount: batch.length,
+        totalMs: Math.round(appendStartedAt - startedAt),
+      });
       const { receivedRows } = await client.appendDatasetImportBatch(projectId, session.id, {
         batchStartIndex,
         samples: batch,
       });
+      debugDatasetImport('webUi.datasetImport.append.done', {
+        appendMs: Math.round(nowMs() - appendStartedAt),
+        batchIndex,
+        batchStartIndex,
+        importId: session.id,
+        projectId,
+        receivedRows,
+        sampleCount: batch.length,
+        totalMs: Math.round(nowMs() - startedAt),
+      });
       batchStartIndex += batch.length;
+      batchIndex += 1;
       options.onProgress?.({ phase: 'uploading', receivedRows });
     }
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
     options.onProgress?.({ phase: 'completing', receivedRows: batchStartIndex });
-    return await client.completeDatasetImport(projectId, session.id);
+    debugDatasetImport('webUi.datasetImport.complete.start', {
+      importId: session.id,
+      projectId,
+      receivedRows: batchStartIndex,
+      totalMs: Math.round(nowMs() - startedAt),
+    });
+    const result = await client.completeDatasetImport(projectId, session.id);
+    debugDatasetImport('webUi.datasetImport.complete.done', {
+      datasetId: result.datasetId,
+      importId: session.id,
+      projectId,
+      receivedRows: result.receivedRows,
+      totalMs: Math.round(nowMs() - startedAt),
+    });
+    options.onProgress?.({ phase: 'completed', receivedRows: result.receivedRows });
+    return result;
   } catch (error) {
+    debugDatasetImport('webUi.datasetImport.run.failed', {
+      error: error instanceof Error ? error.message : String(error),
+      importId: session.id,
+      projectId,
+      totalMs: Math.round(nowMs() - startedAt),
+    });
     await client.abortDatasetImport(projectId, session.id).catch(() => undefined);
     throw error;
   }
-}
-
-export async function runRawDatasetImport(options: RunRawDatasetImportOptions): Promise<DatasetImportStatusDto> {
-  const client = options.client ?? datasetImportClient;
-  const { projectId, createBody, file, signal } = options;
-
-  const { import: session, uploadSession } = await client.createRawDatasetImport(projectId, createBody);
-  options.onCreated?.(session.id);
-  let serverImportStarted = false;
-
-  try {
-    if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
-    await client.uploadRawDatasetFile(uploadSession, file, { signal, onProgress: options.onUploadProgress });
-    options.onUploaded?.();
-    if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
-    await client.completeRawDatasetUpload(projectId, session.id);
-    const queued = await client.completeDatasetImport(projectId, session.id);
-    serverImportStarted = true;
-    options.onProgress?.({ phase: 'queued', receivedRows: queued.receivedRows, status: queued });
-    return pollDatasetImportStatus({
-      client,
-      projectId,
-      importId: session.id,
-      pollIntervalMs: options.pollIntervalMs,
-      onProgress: options.onProgress,
-    });
-  } catch (error) {
-    if (!serverImportStarted) {
-      await client.abortDatasetImport(projectId, session.id).catch(() => undefined);
-    }
-    throw error;
-  }
-}
-
-async function pollDatasetImportStatus({
-  client,
-  projectId,
-  importId,
-  pollIntervalMs = 1500,
-  onProgress,
-}: {
-  client: DatasetImportClient;
-  projectId: string;
-  importId: string;
-  pollIntervalMs?: number;
-  onProgress?: (progress: DatasetImportProgress) => void;
-}): Promise<DatasetImportStatusDto> {
-  for (;;) {
-    await delay(pollIntervalMs);
-    const status = await client.getDatasetImport(projectId, importId);
-    if (status.state === 'completed') {
-      onProgress?.({ phase: 'completed', receivedRows: status.receivedRows, status });
-      return status;
-    }
-    if (status.state === 'failed' || status.state === 'aborted') {
-      throw new Error(status.errorCode ?? status.state);
-    }
-    const phase = status.state === 'parsing' ? 'parsing' : status.state === 'importing' ? 'importing' : 'queued';
-    onProgress?.({ phase, receivedRows: status.receivedRows, status });
-  }
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

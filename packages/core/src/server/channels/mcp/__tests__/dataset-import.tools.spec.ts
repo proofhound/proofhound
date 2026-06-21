@@ -26,20 +26,9 @@ const context: McpToolContext = {
 function serviceStub(): DatasetImportService {
   return {
     createImport: vi.fn().mockResolvedValue({ id: IMPORT_ID }),
-    getRawImportCapabilities: vi.fn().mockResolvedValue({ supported: false, maxBytes: 2_147_483_648 }),
-    createRawImport: vi.fn().mockResolvedValue({
-      import: { id: IMPORT_ID },
-      uploadSession: {
-        sessionId: 'up-1',
-        url: 'https://storage.example/upload',
-        expiresAt: '2026-06-20T00:00:00.000Z',
-      },
-      maxBytes: 2_147_483_648,
-    }),
     getImport: vi.fn().mockResolvedValue({ id: IMPORT_ID }),
     appendBatch: vi.fn().mockResolvedValue({ importId: IMPORT_ID, receivedRows: 1 }),
-    complete: vi.fn().mockResolvedValue({ id: IMPORT_ID, status: 'queued' }),
-    completeRawUpload: vi.fn().mockResolvedValue({ id: IMPORT_ID, status: 'uploaded' }),
+    complete: vi.fn().mockResolvedValue({ id: IMPORT_ID, status: 'completed' }),
     abort: vi.fn().mockResolvedValue(undefined),
   } as unknown as DatasetImportService;
 }
@@ -61,44 +50,11 @@ describe('MCP dataset-import tools', () => {
     const names = createDatasetImportTools(serviceStub()).map((tool) => tool.name);
     expect(names).toEqual([
       'dataset_import_create',
-      'dataset_import_raw_capabilities',
-      'dataset_import_create_raw',
       'dataset_import_get',
       'dataset_import_append_batch',
       'dataset_import_complete',
-      'dataset_import_upload_complete',
       'dataset_import_abort',
     ]);
-  });
-
-  it('dataset_import_raw_capabilities: delegates scoped by project + actor', async () => {
-    const service = serviceStub();
-    const result = await dispatchTool(
-      createDatasetImportTools(service),
-      'dataset_import_raw_capabilities',
-      {},
-      context,
-    );
-
-    expect(result.isError).toBeUndefined();
-    expect(service.getRawImportCapabilities).toHaveBeenCalledWith(PROJECT_ID, actor);
-  });
-
-  it('dataset_import_create_raw: delegates the parsed DTO scoped by project + actor', async () => {
-    const service = serviceStub();
-    const result = await dispatchTool(
-      createDatasetImportTools(service),
-      'dataset_import_create_raw',
-      { ...validCreatePayload(), sourceFormat: 'csv', sourceFile: { fileName: 'large.csv', fileSizeBytes: 4096 } },
-      context,
-    );
-
-    expect(result.isError).toBeUndefined();
-    expect(service.createRawImport).toHaveBeenCalledWith(
-      PROJECT_ID,
-      expect.objectContaining({ sourceFormat: 'csv' }),
-      actor,
-    );
   });
 
   it('dataset_import_create: delegates the parsed DTO scoped by project + actor', async () => {
@@ -263,33 +219,6 @@ describe('MCP dataset-import tools', () => {
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain('invalid tool input');
     expect(service.complete).not.toHaveBeenCalled();
-  });
-
-  it('dataset_import_upload_complete: delegates the import id scoped by project + actor', async () => {
-    const service = serviceStub();
-    const result = await dispatchTool(
-      createDatasetImportTools(service),
-      'dataset_import_upload_complete',
-      { importId: IMPORT_ID },
-      context,
-    );
-
-    expect(result.isError).toBeUndefined();
-    expect(service.completeRawUpload).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID, actor);
-  });
-
-  it('dataset_import_upload_complete: non-uuid importId is a clean tool error', async () => {
-    const service = serviceStub();
-    const result = await dispatchTool(
-      createDatasetImportTools(service),
-      'dataset_import_upload_complete',
-      { importId: 'bad' },
-      context,
-    );
-
-    expect(result.isError).toBe(true);
-    expect((result.content[0] as { text: string }).text).toContain('invalid tool input');
-    expect(service.completeRawUpload).not.toHaveBeenCalled();
   });
 
   it('dataset_import_abort: delegates the import id and returns ok', async () => {

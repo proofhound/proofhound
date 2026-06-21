@@ -16,22 +16,20 @@ apps/server (mounts @proofhound/core/server)
           │
           ▼
 apps/worker (mounts @proofhound/core/worker)
-  ├─ llm consumer -> LLM -> run_results
-  └─ dataset-import consumer -> raw file -> staging -> dataset_samples
+  └─ llm consumer -> LLM -> run_results
 ```
 
 DBOS workflow state is written to the same Postgres instance. After a server restart, DBOS workflows resume from their step boundary; the runner service resumes from business-table state.
 
 ## 2. BullMQ Queues
 
-| Queue            | Who enqueues             | Who consumes  | Content                                          |
-| ---------------- | ------------------------ | ------------- | ------------------------------------------------ |
-| `llm`            | server workflow / runner | apps/worker   | A single LLM call                                |
-| `dataset-import` | server                   | apps/worker   | Stream-parse uploaded raw dataset and promote it |
-| `probe`          | server                   | server/worker | Model / connector connectivity probe             |
-| `export`         | server                   | server        | CSV / JSONL export                               |
+| Queue    | Who enqueues             | Who consumes  | Content                              |
+| -------- | ------------------------ | ------------- | ------------------------------------ |
+| `llm`    | server workflow / runner | apps/worker   | A single LLM call                    |
+| `probe`  | server                   | server/worker | Model / connector connectivity probe |
+| `export` | server                   | server        | CSV / JSONL export                   |
 
-The `dataset-import` queue is only for raw-upload imports. The legacy client-streamed batch path remains a synchronous staging/promote request path; cleanup of abandoned pre-queued sessions uses an in-server sweep tick; see [§3.5](#35-probe--export--dataset-import-cleanup).
+Dataset upload in OSS is not a BullMQ job: the Web page streams batches to `POST /dataset-imports/:id/batch`, and `POST /dataset-imports/:id/complete` promotes staged rows in the server request path. Cleanup of abandoned pre-complete sessions uses an in-server sweep tick; see [§3.5](#35-probe--export--dataset-import-cleanup).
 
 ## 3. Orchestration Inventory
 
@@ -85,7 +83,7 @@ Release operation history is the `release_line_events` event stream:
 
 - `probe`: model or connector connectivity probe. Direct probes call `WorkflowAuthorizationHook(workflow='probe')` with the resolved ProjectContext, including `orgId` when present, before invoking the model LLM probe or connector driver. Model probes can be executed by the worker when queued because they trigger real LLM calls; queued model probes apply `RuntimeLimitsProvider` before invoking the LLM client, the same as normal LLM jobs.
 - `export`: paginate over business data, write to Storage, and return a signed URL.
-- Dataset import: raw-upload import enters the `dataset-import` BullMQ queue after `POST /dataset-imports/:id/complete` (see [22 §3.1.2](22-datasets.md#312-raw-upload--asynchronous-backend-import)). The handler must be idempotent for the import id: if the session is already `completed`, `failed`, or `aborted`, it returns the existing state; otherwise it streams the raw object, writes staging batches, promotes, records usage events, and clears temporary resources. Abandoned sessions that never reached the queue (`created` / `uploading` / `uploaded`) are cleaned up by an in-server **periodic sweep tick**: it marks them `aborted`, clears staging rows, aborts pending upload sessions, deletes finalized temporary raw objects, and calls `ObjectStorageProvider.sweepPendingUploads(...)` for provider-level pending objects whose database session was never created.
+- Dataset import: abandoned client-driven batch sessions (`uploading` / `importing`) are cleaned up by an in-server **periodic sweep tick**. It marks stale sessions `aborted` and clears staging rows. The OSS cleanup path does not manage raw upload sessions or raw object transfer resources.
 
 ### 3.6 Webhook Entry Point
 
@@ -148,7 +146,6 @@ The current open-source schema does not keep a separate `ph_streaming` table; sh
 | Enqueue a BullMQ job               | ✓           | -           |
 | Release runner                     | ✓           | -           |
 | Consume the `llm` queue            | -           | ✓           |
-| Consume the `dataset-import` queue | -           | ✓           |
 | Call the LLM                       | -           | ✓           |
 | Write run results                  | ✓ or worker | ✓           |
 | Redis rate limit                   | ✓ or worker | ✓           |

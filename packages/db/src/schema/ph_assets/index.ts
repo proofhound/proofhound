@@ -172,7 +172,7 @@ export const datasetSamples = phAssets.table(
   ],
 );
 
-// Large-file streaming import session + staging samples. See docs/specs/06-database-schema.md §4.3.1 / 22-datasets.md §3.1.2
+// Dataset import session + staging samples. See docs/specs/06-database-schema.md §4.3.1 / 22-datasets.md §3.1.1
 export const datasetImports = phAssets.table(
   'dataset_imports',
   {
@@ -193,19 +193,11 @@ export const datasetImports = phAssets.table(
     fileSizeBytes: bigint('file_size_bytes', { mode: 'number' }).notNull(),
     contentType: text('content_type'),
     sourceFormat: text('source_format').notNull(),
-    importMode: text('import_mode').notNull().default('batch'),
-    rawUploadSessionId: text('raw_upload_session_id'),
-    rawUploadExpiresAt: timestamp('raw_upload_expires_at', { withTimezone: true }),
-    rawUploadCompletedAt: timestamp('raw_upload_completed_at', { withTimezone: true }),
-    rawObjectRef: jsonb('raw_object_ref'),
     declaredTotalRows: integer('declared_total_rows'),
     receivedRows: integer('received_rows').notNull().default(0),
-    jobId: text('job_id'),
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
-    status: text('status').notNull().default('created'),
-    queuedAt: timestamp('queued_at', { withTimezone: true }),
-    startedAt: timestamp('started_at', { withTimezone: true }),
+    status: text('status').notNull().default('uploading'),
     completedAt: timestamp('completed_at', { withTimezone: true }),
     failedAt: timestamp('failed_at', { withTimezone: true }),
     abortedAt: timestamp('aborted_at', { withTimezone: true }),
@@ -216,15 +208,14 @@ export const datasetImports = phAssets.table(
   },
   (t) => [
     check('dataset_imports_source_format_check', sql`${t.sourceFormat} IN ('jsonl', 'csv', 'tsv', 'json', 'zip')`),
-    check('dataset_imports_import_mode_check', sql`${t.importMode} IN ('batch', 'raw_object')`),
     check(
       'dataset_imports_status_check',
-      sql`${t.status} IN ('created', 'uploading', 'uploaded', 'queued', 'parsing', 'importing', 'completed', 'failed', 'aborted')`,
+      sql`${t.status} IN ('uploading', 'importing', 'completed', 'failed', 'aborted')`,
     ),
     index('idx_dataset_imports_project_status').on(t.projectId, t.status),
     index('idx_dataset_imports_stale')
       .on(t.status, t.updatedAt)
-      .where(sql`${t.status} = 'importing'`),
+      .where(sql`${t.status} IN ('uploading', 'importing')`),
   ],
 );
 

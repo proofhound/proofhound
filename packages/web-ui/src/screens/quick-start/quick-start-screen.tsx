@@ -2,8 +2,10 @@
 
 import { Link } from '../../components/navigation/link';
 import { useRouter } from '../../hooks/use-router';
-import { useMemo, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react';
 import {
+  DATASET_IMPORT_MAX_FILE_BYTES,
+  DATASET_IMPORT_ZIP_MAX_FILE_BYTES,
   MODEL_PRESET_GROUPS,
   MODEL_PRESETS,
   QUICK_START_DEFAULT_CONCURRENCY,
@@ -14,6 +16,8 @@ import {
   QUICK_START_DEFAULT_SAMPLE_TIMEOUT_SECONDS,
   QUICK_START_DEFAULT_TEMPERATURE,
   QUICK_START_DEFAULT_TPM_LIMIT,
+  type CreateDatasetDto,
+  type CreateDatasetImportDto,
   type CreateProjectModelDto,
   type CreateQuickStartDto,
   type DatasetFieldRole,
@@ -23,11 +27,13 @@ import {
   type QuickStartModelOptionDto,
   type QuickStartModelRefDto,
 } from '@proofhound/shared';
+import { datasetImportClient } from '@proofhound/api-client';
 import {
   AlertTriangle,
   ArrowLeft,
   Cable,
   Check,
+  ChevronLeft,
   ChevronRight,
   FileText,
   Loader2,
@@ -36,15 +42,7 @@ import {
 } from 'lucide-react';
 import { Main } from '@proofhound/ui/layout';
 import { ModelProbeStatus, type ModelProbeFeedback, PromptLanguageSelect, type PromptLanguage } from '../../components';
-import {
-  Button,
-  Input,
-  Label,
-  PlatformLoader,
-  Progress,
-  formatProgressLabel,
-  cn,
-} from '@proofhound/ui';
+import { Button, Input, Label, PlatformLoader, Progress, formatProgressLabel, cn } from '@proofhound/ui';
 import {
   useCreateQuickStart,
   useProbeQuickStartDraftModel,
@@ -54,14 +52,19 @@ import {
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage, buildProviderTypeOptions } from '../../lib';
+import { useProjectContext } from '../../providers';
+import { projectSampleRowsToBatches, runDatasetImport } from '../datasets/dataset-import-runner';
 import {
   FORMAT_CHIPS,
-  PREVIEW_LIMIT,
+  getDatasetImportSourceFormat,
   getDatasetNameFromFile,
+  getDatasetPreviewPage,
   getDisplayValue,
   inferRole,
+  isStreamingImportFile,
+  parseDatasetPreview,
   parseDatasetFile,
-  projectSamplesToColumns,
+  streamDatasetRows,
   type ParsedDatasetFile,
 } from '../datasets/dataset-upload-parser';
 
@@ -103,6 +106,7 @@ const ROLE_OPTIONS: Array<{ role: DatasetFieldRole; labelKey: TranslationKey }> 
 const DEFAULT_GOAL_TARGET = '0.8';
 const DEFAULT_PRESET = MODEL_PRESETS.find((preset) => preset.featured) ?? MODEL_PRESETS[0]!;
 const EMPTY_MODEL_OPTIONS: QuickStartModelOptionDto[] = [];
+const IMPORT_BATCH_SIZE = 1000;
 
 function presetToDraft(preset: ModelPreset): DraftModel {
   return {
@@ -698,12 +702,55 @@ function getDefaultOptimizationName(language: PromptLanguage, stem: string): str
 
 function getParseErrorKey(parseError: string | null): TranslationKey {
   if (parseError === 'unsupported_file_type') return 'datasets.upload.unsupportedFile';
+  if (parseError === 'zip_file_too_large') return 'datasets.upload.zipFileTooLarge';
+  if (parseError === 'file_too_large') return 'datasets.upload.fileTooLarge';
   return 'datasets.upload.parseFailed';
+}
+
+function formatByteLimit(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+function getDatasetUploadFileSizeError(file: Pick<File, 'name' | 'size'>) {
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith('.zip') && file.size > DATASET_IMPORT_ZIP_MAX_FILE_BYTES) return 'zip_file_too_large';
+  if (file.size > DATASET_IMPORT_MAX_FILE_BYTES) return 'file_too_large';
+  return null;
+}
+
+async function* rowsOfSamples(samples: Array<Record<string, unknown>>, signal?: AbortSignal) {
+  for (const sample of samples) {
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    yield sample;
+  }
+}
+
+function projectStreamingFileBatches(
+  file: File,
+  columns: string[],
+  onBytes: (readBytes: number, totalBytes: number) => void,
+  signal: AbortSignal,
+) {
+  return projectSampleRowsToBatches(streamDatasetRows(file, onBytes, signal), columns, {
+    maxRows: IMPORT_BATCH_SIZE,
+    signal,
+  });
+}
+
+function projectBufferedFileBatches(samples: Array<Record<string, unknown>>, columns: string[], signal: AbortSignal) {
+  return projectSampleRowsToBatches(rowsOfSamples(samples, signal), columns, {
+    maxRows: IMPORT_BATCH_SIZE,
+    signal,
+  });
 }
 
 export function QuickStartScreen() {
   const { t } = useI18n();
   const router = useRouter();
+  const { projectId } = useProjectContext();
   const modelOptionsQuery = useQuickStartModelOptions();
   const createQuickStart = useCreateQuickStart();
   const [optimizationName, setOptimizationName] = useState('');
@@ -713,6 +760,13 @@ export function QuickStartScreen() {
   const [parsedFile, setParsedFile] = useState<ParsedDatasetFile | null>(null);
   const [fieldRoles, setFieldRoles] = useState<Record<string, DatasetFieldRole>>({});
   const [parseError, setParseError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [datasetImportProgress, setDatasetImportProgress] = useState<{
+    loadedBytes: number;
+    totalBytes: number;
+  } | null>(null);
+  const importAbortRef = useRef<AbortController | null>(null);
+  const importIdRef = useRef<string | null>(null);
   const [experimentChoice, setExperimentChoice] = useState<ModelChoice>(() => createInitialModelChoice());
   const [analysisSameAsExperiment, setAnalysisSameAsExperiment] = useState(true);
   const [analysisChoice, setAnalysisChoice] = useState<ModelChoice>(() => createInitialModelChoice());
@@ -733,8 +787,13 @@ export function QuickStartScreen() {
   const [sampleTimeoutSeconds, setSampleTimeoutSeconds] = useState(String(QUICK_START_DEFAULT_SAMPLE_TIMEOUT_SECONDS));
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isDraggingDataset, setIsDraggingDataset] = useState(false);
+  const [previewPageIndex, setPreviewPageIndex] = useState(0);
 
-  const previewRows = useMemo(() => parsedFile?.samples.slice(0, PREVIEW_LIMIT) ?? [], [parsedFile]);
+  const previewPage = useMemo(
+    () => getDatasetPreviewPage(parsedFile?.samples ?? [], previewPageIndex),
+    [parsedFile, previewPageIndex],
+  );
+  const previewRows = previewPage.rows;
   const selectedFileStem = selectedFile
     ? getFileStem(getDatasetNameFromFile(selectedFile.name) || getFileStem(selectedFile.name))
     : null;
@@ -766,8 +825,53 @@ export function QuickStartScreen() {
     readPositiveInteger(sampleTimeoutSeconds) !== null &&
     readNonnegativeNumber(goalTarget) !== null &&
     runConfigWithinModelLimits;
-  const canSubmit = datasetReady && configReady && !createQuickStart.isPending;
+  const isStarting = isSubmitting || createQuickStart.isPending;
+  const canSubmit = datasetReady && configReady && !isStarting;
   const parseErrorKey = getParseErrorKey(parseError);
+  const parseErrorMessage =
+    parseError === 'zip_file_too_large'
+      ? formatTemplate(t(parseErrorKey), { zipLimit: formatByteLimit(DATASET_IMPORT_ZIP_MAX_FILE_BYTES) })
+      : parseError === 'file_too_large'
+        ? formatTemplate(t(parseErrorKey), { maxLimit: formatByteLimit(DATASET_IMPORT_MAX_FILE_BYTES) })
+        : t(parseErrorKey);
+  const datasetProgressValue = datasetImportProgress
+    ? Math.round(
+        (Math.min(datasetImportProgress.loadedBytes, datasetImportProgress.totalBytes) /
+          Math.max(1, datasetImportProgress.totalBytes)) *
+          100,
+      )
+    : parsedFile
+      ? 100
+      : 0;
+
+  useEffect(() => {
+    if (!isSubmitting) return undefined;
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!importIdRef.current) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    const onPageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) return;
+      const importId = importIdRef.current;
+      if (importId) datasetImportClient.abortDatasetImportBeacon(projectId, importId);
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [isSubmitting, projectId]);
+
+  useEffect(
+    () => () => {
+      importAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const optionsLoading = useDelayedLoading(modelOptionsQuery.isLoading && !modelOptionsQuery.data);
   if (optionsLoading) {
@@ -817,9 +921,13 @@ export function QuickStartScreen() {
     setSelectedFile(null);
     setParsedFile(null);
     setParseError(null);
+    setDatasetImportProgress(null);
+    setPreviewPageIndex(0);
 
     try {
-      const parsed = await parseDatasetFile(file);
+      const fileSizeError = getDatasetUploadFileSizeError(file);
+      if (fileSizeError) throw new Error(fileSizeError);
+      const parsed = await parseDatasetPreview(file);
       setSelectedFile(file);
       setParsedFile(parsed);
       setFieldRoles(
@@ -860,6 +968,65 @@ export function QuickStartScreen() {
     const file = event.dataTransfer.files?.[0] ?? null;
     if (!file) return;
     await handleDatasetFile(file);
+  };
+
+  const importQuickStartDataset = async (
+    fieldMappings: CreateDatasetDto['fieldMappings'],
+    sourceFile: CreateDatasetDto['uploadSource'],
+    file: File,
+    columns: string[],
+  ) => {
+    const totalBytes = Math.max(1, file.size);
+    const controller = new AbortController();
+    const streaming = isStreamingImportFile(file);
+    const fullParsedFile = streaming ? null : await parseDatasetFile(file);
+    const declaredTotalRows = fullParsedFile?.samples.length;
+    const createBody: CreateDatasetImportDto = {
+      name: getDatasetNameFromFile(file.name) || getFileStem(file.name),
+      description: taskDescription.trim() || null,
+      fieldMappings,
+      sourceFile,
+      sourceFormat: getDatasetImportSourceFormat(sourceFile.fileName),
+      ...(declaredTotalRows === undefined ? {} : { declaredTotalRows }),
+    };
+
+    setDatasetImportProgress({ loadedBytes: 0, totalBytes });
+    importAbortRef.current = controller;
+    try {
+      const result = await runDatasetImport({
+        projectId,
+        createBody,
+        batches: streaming
+          ? projectStreamingFileBatches(
+              file,
+              columns,
+              (readBytes) => setDatasetImportProgress({ loadedBytes: readBytes, totalBytes }),
+              controller.signal,
+            )
+          : projectBufferedFileBatches(fullParsedFile?.samples ?? [], columns, controller.signal),
+        signal: controller.signal,
+        onCreated: (id) => {
+          importIdRef.current = id;
+        },
+        onProgress: ({ phase, receivedRows }) => {
+          if (!streaming && declaredTotalRows && declaredTotalRows > 0) {
+            setDatasetImportProgress({
+              loadedBytes: Math.round((totalBytes * receivedRows) / declaredTotalRows),
+              totalBytes,
+            });
+          }
+          if (phase === 'completing' || phase === 'completed') {
+            setDatasetImportProgress({ loadedBytes: totalBytes, totalBytes });
+          }
+        },
+      });
+
+      if (!result.datasetId) throw new Error('quick_start_dataset_import_failed');
+      return result.datasetId;
+    } finally {
+      importAbortRef.current = null;
+      importIdRef.current = null;
+    }
   };
 
   const submit = async () => {
@@ -906,44 +1073,50 @@ export function QuickStartScreen() {
     }
 
     const columns = parsedFile.columns;
-    const body: CreateQuickStartDto = {
-      optimizationName: optimizationName.trim() || undefined,
-      projectDescription: taskDescription.trim(),
-      taskDescription: taskDescription.trim(),
-      promptLanguage,
-      dataset: {
-        name: getDatasetNameFromFile(selectedFile.name) || getFileStem(selectedFile.name),
-        description: taskDescription.trim(),
-        uploadSource: {
-          fileName: selectedFile.name,
-          fileSizeBytes: selectedFile.size,
-          contentType: selectedFile.type || undefined,
-        },
-        fieldMappings: columns.map((column) => ({ name: column, role: fieldRoles[column] ?? 'metadata' })),
-        samples: projectSamplesToColumns(parsedFile.samples, columns),
-      },
-      experimentModel: experimentRef.ref,
-      analysisModel: analysisRef.ref,
-      goals: [{ metric: 'accuracy', comparator: 'gte', target: Math.min(1, goalTargetValue), scope: 'overall' }],
-      loopLimits: { maxRounds: maxRoundsValue, stopAfterNoImprovementRounds: 0 },
-      runConfig: {
-        temperature: Math.min(2, temperatureValue),
-        rpmLimit: rpmValue,
-        tpmLimit: tpmValue,
-        concurrency: concurrencyValue,
-        sampleTimeoutSeconds: timeoutValue,
-      },
-      strategyConfig: {
-        initialSamplingRounds: samplingRoundsValue,
-        initialSamplesPerRound: samplesPerRoundValue,
-      },
+    const fieldMappings = columns.map((column) => ({ name: column, role: fieldRoles[column] ?? 'metadata' }));
+    const uploadSource = {
+      fileName: selectedFile.name,
+      fileSizeBytes: selectedFile.size,
+      contentType: selectedFile.type || undefined,
     };
 
+    setIsSubmitting(true);
     try {
+      const datasetId = await importQuickStartDataset(fieldMappings, uploadSource, selectedFile, columns);
+      const body: CreateQuickStartDto = {
+        optimizationName: optimizationName.trim() || undefined,
+        projectDescription: taskDescription.trim(),
+        taskDescription: taskDescription.trim(),
+        promptLanguage,
+        dataset: {
+          kind: 'imported',
+          datasetId,
+          name: getDatasetNameFromFile(selectedFile.name) || getFileStem(selectedFile.name),
+          uploadSource,
+          fieldMappings,
+        },
+        experimentModel: experimentRef.ref,
+        analysisModel: analysisRef.ref,
+        goals: [{ metric: 'accuracy', comparator: 'gte', target: Math.min(1, goalTargetValue), scope: 'overall' }],
+        loopLimits: { maxRounds: maxRoundsValue, stopAfterNoImprovementRounds: 0 },
+        runConfig: {
+          temperature: Math.min(2, temperatureValue),
+          rpmLimit: rpmValue,
+          tpmLimit: tpmValue,
+          concurrency: concurrencyValue,
+          sampleTimeoutSeconds: timeoutValue,
+        },
+        strategyConfig: {
+          initialSamplingRounds: samplingRoundsValue,
+          initialSamplesPerRound: samplesPerRoundValue,
+        },
+      };
       const result = await createQuickStart.mutateAsync(body);
       router.push(`/optimizations/${result.optimizationId}`);
     } catch (error) {
       setSubmitError(getApiErrorMessage(error) ?? t('common.loadFailedRefresh'));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -970,12 +1143,8 @@ export function QuickStartScreen() {
               </Link>
             </Button>
             <Button type="button" size="sm" className="h-9" disabled={!canSubmit} onClick={submit}>
-              {createQuickStart.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Sparkles className="size-4" />
-              )}
-              {createQuickStart.isPending ? t('quickStart.starting') : t('quickStart.start')}
+              {isStarting ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              {isStarting ? t('quickStart.starting') : t('quickStart.start')}
             </Button>
           </div>
         </div>
@@ -1073,17 +1242,21 @@ export function QuickStartScreen() {
                       {isDraggingDataset
                         ? t('quickStart.dataset.dropHere')
                         : parsedFile
-                          ? `${parsedFile.samples.length} ${t('datasets.samples')} · ${parsedFile.columns.length} ${t('datasets.detail.fields')}`
+                          ? `${t('datasets.upload.previewRange')} · ${parsedFile.columns.length} ${t('datasets.detail.fields')}`
                           : t('quickStart.dataset.chooseHelp')}
                     </div>
                     <Progress
-                      value={parsedFile ? 100 : 0}
-                      label={formatProgressLabel({ value: parsedFile ? 1 : 0, max: 1 })}
+                      value={datasetProgressValue}
+                      label={formatProgressLabel({ value: datasetProgressValue, max: 100 })}
                       className="mt-2"
                     />
                     <div className="mt-2 flex items-center justify-between gap-3">
                       <span className="font-mono text-[10.5px] text-[var(--status-running-fg)]">
-                        {parsedFile ? t('datasets.upload.uploadReady') : t('datasets.upload.waitingForFile')}
+                        {isStarting
+                          ? t('quickStart.dataset.importing')
+                          : parsedFile
+                            ? t('datasets.upload.uploadReady')
+                            : t('datasets.upload.waitingForFile')}
                       </span>
                       <label
                         className="cursor-pointer text-[11.5px] text-muted-foreground hover:text-foreground"
@@ -1099,7 +1272,7 @@ export function QuickStartScreen() {
               {parseError && (
                 <div className="flex gap-2 rounded-md border border-destructive/35 bg-destructive/10 p-3 text-[12px] text-destructive">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                  <div>{t(parseErrorKey)}</div>
+                  <div>{parseErrorMessage}</div>
                 </div>
               )}
 
@@ -1165,6 +1338,37 @@ export function QuickStartScreen() {
                           {JSON.stringify(row)}
                         </div>
                       ))}
+                    </div>
+                    <div className="flex items-center justify-between border-t px-3 py-2 text-xs text-muted-foreground">
+                      <span className="font-mono">
+                        {previewPage.rangeStart}-{previewPage.rangeEnd} / {previewPage.totalRows}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          aria-label={t('common.previousPage')}
+                          disabled={!previewPage.canGoPrevious}
+                          onClick={() => setPreviewPageIndex((current) => Math.max(0, current - 1))}
+                        >
+                          <ChevronLeft className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          aria-label={t('common.nextPage')}
+                          disabled={!previewPage.canGoNext}
+                          onClick={() =>
+                            setPreviewPageIndex((current) => Math.min(previewPage.pageCount - 1, current + 1))
+                          }
+                        >
+                          <ChevronRight className="size-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </details>
                 </div>
@@ -1298,12 +1502,8 @@ export function QuickStartScreen() {
                 <Link href="/dashboard">{t('common.cancel')}</Link>
               </Button>
               <Button type="button" size="sm" disabled={!canSubmit} onClick={submit}>
-                {createQuickStart.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Sparkles className="size-4" />
-                )}
-                {createQuickStart.isPending ? t('quickStart.starting') : t('quickStart.start')}
+                {isStarting ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                {isStarting ? t('quickStart.starting') : t('quickStart.start')}
               </Button>
             </div>
           </div>

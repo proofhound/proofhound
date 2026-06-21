@@ -35,7 +35,8 @@ const datasetRow = (overrides: Partial<DatasetRow> = {}): DatasetRow => ({
     { name: 'label', role: 'expected_output', type: 'string' },
   ],
   hasImages: false,
-  storagePrefix: 'datasets/77777777-7777-4777-8777-777777777777/raw/22222222-2222-4222-8222-222222222222/risk.csv',
+  storagePrefix:
+    'datasets/77777777-7777-4777-8777-777777777777/source/22222222-2222-4222-8222-222222222222/risk.csv',
   createdBy: actor.sub,
   createdByDisplayName: 'Alice',
   createdAt: new Date('2026-05-16T00:00:00Z'),

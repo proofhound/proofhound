@@ -40,7 +40,7 @@ Unified resource lifecycle and deletion semantics:
 | Project                  | `ph_core.projects.status`                                            | `active` / `archived`                                                                                                                                                                            | OSS ships one default local project; archive is retained for lifecycle symmetry and future external control-plane integration.                                                                                                                                                                                    |
 | Model                    | `models.is_active` plus probe DTO                                    | `enabled` / `testing` / `disabled`; probe `success` / `failed` / `pending`                                                                                                                       | Only enabled models are selectable for new experiments, optimizations, and releases.                                                                                                                                                                                                                              |
 | Dataset                  | `ph_assets.datasets.status`                                          | `active` / `archived`                                                                                                                                                                            | Active datasets can be selected for new experiments and optimizations, and can support prompt-bound release alignment. Archived datasets remain readable for existing history but cannot be selected for new work.                                                                                                |
-| Dataset import           | `ph_assets.dataset_imports.status`                                   | `created` / `uploading` / `uploaded` / `queued` / `parsing` / `importing` / `completed` / `failed` / `aborted`                                                                                   | Import sessions are staging-only and never selectable as datasets. Failed / aborted sessions retain readable status while staging rows and temporary raw upload objects are cleaned up.                                                                                                                           |
+| Dataset import           | `ph_assets.dataset_imports.status`                                   | `uploading` / `importing` / `completed` / `failed` / `aborted`                                                                                                                                    | Import sessions are staging-only and never selectable as datasets. Failed / aborted sessions retain readable status while staging rows are cleaned up.                                                                                                                                                              |
 | Prompt shell             | `ph_assets.prompts.status`                                           | `active` / `archived`                                                                                                                                                                            | Active prompts can create experiments, optimizations, and releases. Archived prompts stay readable for existing history but cannot create new downstream work.                                                                                                                                                    |
 | Prompt version           | `prompt_versions.is_frozen`                                          | DTO `editable` / `frozen`                                                                                                                                                                        | Freeze only controls whether the execution contract can still be edited; it is not the prompt shell existence state.                                                                                                                                                                                              |
 | Connector                | `connectors.health_status`                                           | `healthy` / `degraded` / `unhealthy` / `unknown`                                                                                                                                                 | Health describes connectivity; deletion / archival policy is connector-specific and not part of the prompt / dataset lifecycle rule.                                                                                                                                                                              |
@@ -261,7 +261,7 @@ CREATE TABLE ph_assets.dataset_samples (
 
 #### 4.3.1 `ph_assets.dataset_imports` / `dataset_import_samples`
 
-These support raw-upload asynchronous import and the legacy client-streamed fallback (see [22 §3.1.2](22-datasets.md#312-raw-upload--asynchronous-backend-import) and [22 §3.1.3](22-datasets.md#313-legacy-client-streamed-batched-import)): `dataset_imports` is the import session, and `dataset_import_samples` is the temporary staging before all rows are collected. On successful promotion, the staged samples are atomically promoted to `dataset_samples` and a `datasets` row is created within a single transaction.
+These support the OSS client-driven batch import path (see [22 §3.1.1](22-datasets.md#311-client-driven-batched-import)): `dataset_imports` is the import session, and `dataset_import_samples` is the temporary staging before all rows are collected. On successful promotion, the staged samples are atomically promoted to `dataset_samples` and a `datasets` row is created within a single transaction.
 
 ```sql
 CREATE TABLE ph_assets.dataset_imports (
@@ -275,26 +275,16 @@ CREATE TABLE ph_assets.dataset_imports (
   file_size_bytes     BIGINT NOT NULL,
   content_type        TEXT,
   source_format       TEXT NOT NULL CHECK (source_format IN ('jsonl', 'csv', 'tsv', 'json', 'zip')),
-  import_mode         TEXT NOT NULL DEFAULT 'batch'
-                      CHECK (import_mode IN ('batch', 'raw_object')),
-  raw_upload_session_id TEXT,
-  raw_upload_expires_at TIMESTAMPTZ,
-  raw_object_ref      JSONB,
-  raw_upload_completed_at TIMESTAMPTZ,
-  job_id              TEXT,
   error_code          TEXT,
   error_message       TEXT,
-  queued_at           TIMESTAMPTZ,
-  started_at          TIMESTAMPTZ,
   completed_at        TIMESTAMPTZ,
   failed_at           TIMESTAMPTZ,
   aborted_at          TIMESTAMPTZ,
   declared_total_rows INTEGER,
   received_rows       INTEGER NOT NULL DEFAULT 0,
-  status              TEXT NOT NULL DEFAULT 'created'
+  status              TEXT NOT NULL DEFAULT 'uploading'
                       CHECK (status IN (
-                        'created', 'uploading', 'uploaded', 'queued',
-                        'parsing', 'importing', 'completed', 'failed', 'aborted'
+                        'uploading', 'importing', 'completed', 'failed', 'aborted'
                       )),
   created_by          UUID NOT NULL,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -304,14 +294,10 @@ CREATE TABLE ph_assets.dataset_imports (
 CREATE INDEX idx_dataset_imports_project_status
   ON ph_assets.dataset_imports (project_id, status);
 
-CREATE INDEX idx_dataset_imports_job_id
-  ON ph_assets.dataset_imports (job_id)
-  WHERE job_id IS NOT NULL;
-
--- sweep scans pre-worker sessions that have had no heartbeat for a long time
+-- sweep scans pre-complete sessions that have had no heartbeat for a long time
 CREATE INDEX idx_dataset_imports_stale
   ON ph_assets.dataset_imports (status, updated_at)
-  WHERE status IN ('created', 'uploading', 'uploaded');
+  WHERE status IN ('uploading', 'importing');
 
 CREATE TABLE ph_assets.dataset_import_samples (
   import_id   UUID NOT NULL REFERENCES ph_assets.dataset_imports(id) ON DELETE CASCADE,
@@ -324,14 +310,12 @@ CREATE TABLE ph_assets.dataset_import_samples (
 
 Fields and lifecycle:
 
-- `import_mode='batch'` is the legacy client-streamed JSONL / CSV / TSV path where the frontend pushes parsed samples to `POST /dataset-imports/:id/batch`.
-- `import_mode='raw_object'` is the browser-direct raw object path. `raw_upload_session_id` stores the provider-issued pending upload session id until upload-complete/abort/sweep; `raw_upload_expires_at` mirrors the provider expiry for cleanup; `raw_object_ref` stores the finalized object reference after `completeUpload` and before the worker finishes parsing/promoting it. The raw object is temporary and may be deleted after successful promotion.
-- `status` follows the state machine in [22 §3.1](22-datasets.md#31-uploading-data). `failed` / `aborted` rows are retained for readable status and error reporting, but staging rows and temporary raw upload resources are removed best-effort.
+- `status` follows the state machine in [22 §3.1](22-datasets.md#31-uploading-data). `failed` / `aborted` rows are retained for readable status and error reporting, but staging rows are removed best-effort.
 - `dataset_id` is NULL during import and is backfilled to point to the newly created dataset after a successful `complete` promotion.
-- `received_rows` is the count of staged parsed rows and also serves as progress; `updated_at` is the heartbeat advanced on batch writes and state transitions. `job_id` links a raw import to its BullMQ job for idempotent queueing/debugging. Lifecycle timestamps support status display without scanning worker logs.
+- `received_rows` is the count of staged parsed rows and also serves as progress; `updated_at` is the heartbeat advanced on batch writes and state transitions. Lifecycle timestamps support status display without scanning logs.
 - `field_mappings` is submitted by the frontend field wizard when the session is created, and `complete` finalizes `datasets.field_schema` based on it.
 - `dataset_import_samples` is temporary staging: the primary key `(import_id, row_index)` provides idempotency for single-batch resends; it hangs under the session via `ON DELETE CASCADE`, so deleting the session clears the staged samples. After successful promotion, failure, or abort, staged samples are explicitly cleared.
-- Stale import cleanup must also abort the pending upload session and/or delete the finalized raw object for `raw_object` sessions, best-effort. Provider-level `sweepPendingUploads(olderThan)` catches pending objects whose database session was never created or was lost before abort could run.
+- Stale import cleanup marks old pre-complete sessions `aborted` and clears staged samples.
 
 ### 4.4 `ph_assets.prompts` / `prompt_versions`
 

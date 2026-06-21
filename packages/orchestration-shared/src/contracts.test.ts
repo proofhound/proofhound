@@ -3,7 +3,7 @@ import { LOCAL_PROJECT_ID } from '@proofhound/shared';
 import { BULLMQ_QUEUES } from './bullmq-queues';
 import { DBOS_WORKFLOW_NAMES } from './dbos-workflow-ids';
 import { NON_RETRYABLE_ERROR_TYPES, isNonRetryableError } from './errors';
-import { datasetRawImportJobPayloadSchema, llmJobPayloadSchema, probeJobPayloadSchema } from './job-payloads';
+import { llmJobPayloadSchema, probeJobPayloadSchema } from './job-payloads';
 import {
   WEBHOOK_ASYNC_CALL_TTL_SECONDS,
   remainingWebhookAsyncCallTtlSeconds,
@@ -15,7 +15,6 @@ describe('orchestration-shared contracts', () => {
   it('exposes the llm and probe queues', () => {
     expect(BULLMQ_QUEUES).toContain('llm');
     expect(BULLMQ_QUEUES).toContain('probe');
-    expect(BULLMQ_QUEUES).toContain('dataset-import');
   });
 
   it('exposes the experiment and optimization DBOS workflow names', () => {
@@ -74,15 +73,6 @@ describe('orchestration-shared contracts', () => {
 
   it('rejects a probe payload with an invalid model id', () => {
     expect(probeJobPayloadSchema.safeParse({ modelId: 'not-a-uuid' }).success).toBe(false);
-  });
-
-  it('parses a dataset raw import job payload', () => {
-    const result = datasetRawImportJobPayloadSchema.safeParse({
-      projectId: 'a1b2c3d4-e5f6-4789-a012-345678901111',
-      importId: 'a1b2c3d4-e5f6-4789-a012-345678902222',
-      actorId: 'local-admin',
-    });
-    expect(result.success).toBe(true);
   });
 
   it('parses an optional webhookTokenId on LLM jobs and rejects a non-uuid', () => {

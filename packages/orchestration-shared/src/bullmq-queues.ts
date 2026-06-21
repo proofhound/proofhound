@@ -7,7 +7,6 @@ export const BULLMQ_QUEUES = [
   'optimization',
   'release',
   'export',
-  'dataset-import',
 ] as const;
 
 export type BullmqQueue = (typeof BULLMQ_QUEUES)[number];

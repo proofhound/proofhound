@@ -12,7 +12,7 @@ import { DatasetImportService } from '../dataset-import.service';
 const ACTOR_ID = '11111111-1111-4111-8111-111111111111';
 const IMPORT_ID = '22222222-2222-4222-8222-222222222222';
 
-const rawImportBody = {
+const importBody = {
   name: 'Large CSV',
   description: null,
   fieldMappings: [
@@ -33,31 +33,25 @@ function importItem(overrides: Record<string, unknown> = {}) {
     id: IMPORT_ID,
     projectId: LOCAL_PROJECT_CONTEXT.projectId,
     datasetId: null,
-    importMode: 'raw_object',
-    name: rawImportBody.name,
+    name: importBody.name,
     description: null,
-    fileName: rawImportBody.sourceFile.fileName,
-    fileSizeBytes: rawImportBody.sourceFile.fileSizeBytes,
-    sourceFormat: rawImportBody.sourceFormat,
+    fileName: importBody.sourceFile.fileName,
+    fileSizeBytes: importBody.sourceFile.fileSizeBytes,
+    sourceFormat: importBody.sourceFormat,
     declaredTotalRows: null,
     receivedRows: 0,
-    status: 'uploaded',
-    state: 'uploaded',
+    status: 'uploading',
+    state: 'uploading',
     progress: {
-      state: 'uploaded',
-      uploadedBytes: rawImportBody.sourceFile.fileSizeBytes,
+      state: 'uploading',
       parsedRows: 0,
       importedRows: 0,
       totalRows: null,
-      totalBytes: rawImportBody.sourceFile.fileSizeBytes,
-      percentage: 75,
+      totalBytes: importBody.sourceFile.fileSizeBytes,
+      percentage: null,
     },
     errorCode: null,
     errorMessage: null,
-    jobId: null,
-    rawUploadCompletedAt: null,
-    queuedAt: null,
-    startedAt: null,
     completedAt: null,
     failedAt: null,
     abortedAt: null,
@@ -69,22 +63,10 @@ function importItem(overrides: Record<string, unknown> = {}) {
 
 function createServiceMock() {
   return {
-    createImport: vi.fn().mockResolvedValue(importItem({ importMode: 'batch' })),
-    getRawImportCapabilities: vi.fn().mockResolvedValue({ supported: true, maxBytes: 2_147_483_648 }),
-    createRawImport: vi.fn().mockResolvedValue({
-      import: importItem(),
-      uploadSession: {
-        sessionId: 'upload-1',
-        url: 'https://storage.example.test/upload-1',
-        headers: { 'content-type': 'text/csv' },
-        expiresAt: '2026-06-20T01:00:00.000Z',
-      },
-      maxBytes: 2_147_483_648,
-    }),
+    createImport: vi.fn().mockResolvedValue(importItem()),
     getImport: vi.fn().mockResolvedValue(importItem()),
     appendBatch: vi.fn().mockResolvedValue({ importId: IMPORT_ID, receivedRows: 1 }),
-    completeRawUpload: vi.fn().mockResolvedValue(importItem()),
-    complete: vi.fn().mockResolvedValue(importItem({ status: 'queued', state: 'queued' })),
+    complete: vi.fn().mockResolvedValue(importItem({ status: 'completed', state: 'completed', receivedRows: 1 })),
     abort: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -119,47 +101,33 @@ describe('DatasetImportController', () => {
     await app.close();
   });
 
-  it('routes raw capabilities before the :importId path and scopes through the guard', async () => {
+  it('validates and delegates import session creation', async () => {
     await request(app.getHttpServer())
-      .get('/dataset-imports/raw/capabilities')
-      .expect(200, { supported: true, maxBytes: 2_147_483_648 });
-
-    expect(resolveFromHttp).toHaveBeenCalledTimes(1);
-    expect(resolveProject).toHaveBeenCalledTimes(1);
-    expect(service.getRawImportCapabilities).toHaveBeenCalledWith(
-      LOCAL_PROJECT_CONTEXT.projectId,
-      expect.objectContaining({ sub: ACTOR_ID, actorKind: 'local_user' }),
-    );
-    expect(service.getImport).not.toHaveBeenCalled();
-  });
-
-  it('validates and delegates raw upload session creation', async () => {
-    await request(app.getHttpServer())
-      .post('/dataset-imports/raw')
-      .send(rawImportBody)
+      .post('/dataset-imports')
+      .send(importBody)
       .expect(201)
       .expect(({ body }) => {
-        expect(body.import.importMode).toBe('raw_object');
-        expect(body.uploadSession.url).toBe('https://storage.example.test/upload-1');
+        expect(body.id).toBe(IMPORT_ID);
+        expect(body.status).toBe('uploading');
       });
 
-    expect(service.createRawImport).toHaveBeenCalledWith(
+    expect(service.createImport).toHaveBeenCalledWith(
       LOCAL_PROJECT_CONTEXT.projectId,
-      rawImportBody,
+      importBody,
       expect.objectContaining({ sub: ACTOR_ID, actorKind: 'local_user' }),
     );
   });
 
-  it('rejects invalid raw import DTOs before calling the service', async () => {
+  it('rejects invalid import DTOs before calling the service', async () => {
     await request(app.getHttpServer())
-      .post('/dataset-imports/raw')
-      .send({ ...rawImportBody, fieldMappings: [] })
+      .post('/dataset-imports')
+      .send({ ...importBody, fieldMappings: [] })
       .expect(400);
 
-    expect(service.createRawImport).not.toHaveBeenCalled();
+    expect(service.createImport).not.toHaveBeenCalled();
   });
 
-  it('keeps raw object sessions out of the batch append path at the service boundary', async () => {
+  it('delegates batch append through the service boundary', async () => {
     await request(app.getHttpServer())
       .post(`/dataset-imports/${IMPORT_ID}/batch`)
       .send({ batchStartIndex: 0, samples: [{ sample_id: 'case-1' }] })
@@ -173,14 +141,13 @@ describe('DatasetImportController', () => {
     );
   });
 
-  it('delegates raw upload completion before queueing the import job', async () => {
-    await request(app.getHttpServer()).post(`/dataset-imports/${IMPORT_ID}/upload-complete`).expect(201);
+  it('delegates complete through the service boundary', async () => {
+    await request(app.getHttpServer()).post(`/dataset-imports/${IMPORT_ID}/complete`).expect(201);
 
-    expect(service.completeRawUpload).toHaveBeenCalledWith(
+    expect(service.complete).toHaveBeenCalledWith(
       LOCAL_PROJECT_CONTEXT.projectId,
       IMPORT_ID,
       expect.objectContaining({ sub: ACTOR_ID, actorKind: 'local_user' }),
     );
-    expect(service.complete).not.toHaveBeenCalled();
   });
 });

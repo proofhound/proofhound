@@ -6,8 +6,8 @@ This document describes the database, object storage, and frontend refresh respo
 
 | Service                    | Purpose                                                                                                                                                                                      |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PostgreSQL                 | All business data, dataset import staging, DBOS workflow state                                                                                                                               |
-| StorageProvider (optional) | Export artifacts, payload tiering, and raw dataset import byte transfer when a provider supports browser-direct upload sessions; normalized samples still promote through PostgreSQL staging |
+| PostgreSQL                 | All business data, dataset import staging, DBOS workflow state                                  |
+| StorageProvider (optional) | Export artifacts and payload tiering for normalized samples / run results                       |
 
 Explicitly not used:
 
@@ -52,9 +52,7 @@ For public-facing deployments, UI channel authentication is handled by deploymen
 
 ## 4. Storage
 
-Dataset import has a PostgreSQL-first normalization path: small upload writes formal rows directly, while raw upload and legacy client-streamed import write samples into PostgreSQL staging tables (`ph_assets.dataset_imports` / `dataset_import_samples`) and atomically promote to a formal dataset only after parsing/validation succeeds. See [22 §3.1.2](22-datasets.md#312-raw-upload--asynchronous-backend-import), [22 §3.1.3](22-datasets.md#313-legacy-client-streamed-batched-import), and [06 §4.3.1](06-database-schema.md#431-ph_assetsdataset_imports--dataset_import_samples).
-
-Raw dataset import uses `StorageProvider` only as a temporary byte-transfer layer: the browser uploads the raw CSV / TSV / JSONL / JSON / ZIP object through `ObjectStorageProvider.createUploadSession(...)`, the backend finalizes it with `completeUpload(...)`, and a worker streams it back with `getObjectStream(...)`, writes parsed samples into PostgreSQL staging, and then promotes. The raw object is not the source of business truth after import and must be deleted or swept on success, abort, stale-session cleanup, or pending-upload expiry. This is an OSS-generic object storage path; it must not depend on a specific managed provider such as R2.
+Dataset import has a PostgreSQL-first normalization path: the Web upload page writes samples into PostgreSQL staging tables (`ph_assets.dataset_imports` / `dataset_import_samples`) and atomically promotes to a formal dataset only after parsing/validation succeeds. See [22 §3.1.1](22-datasets.md#311-client-driven-batched-import) and [06 §4.3.1](06-database-schema.md#431-ph_assetsdataset_imports--dataset_import_samples).
 
 `StorageProvider` targets standard implementations such as S3 / MinIO / OSS / local file storage by default and is not bound to any specific managed platform. When object storage is enabled, follow the convention "the path does not contain project_id; business ownership is maintained by the database `project_id`":
 
@@ -87,14 +85,14 @@ Metadata registration and business validation always go through NestJS; entrypoi
 | Layer              | Replacement Method                                                                                                                                               |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PostgreSQL         | Any standard PostgreSQL 14+, replace `DATABASE_URL`                                                                                                              |
-| Storage (optional) | Implement `ObjectStorageProvider` against S3 / MinIO / OSS / local file storage; browser raw upload is available only when the provider supports upload sessions |
+| Storage (optional) | Implement `ObjectStorageProvider` against S3 / MinIO / OSS / local file storage for export artifacts and payload tiering |
 
 ## 8. Mapping to Business SPECs
 
 | SPEC                                        | Infrastructure Focus                                         |
 | ------------------------------------------- | ------------------------------------------------------------ |
 | [06 Database Schema](06-database-schema.md) | PostgreSQL schema / migration                                |
-| [22 Datasets](22-datasets.md)               | PostgreSQL staging plus optional temporary raw object upload |
+| [22 Datasets](22-datasets.md)               | PostgreSQL staging plus optional normalized sample payload tiering |
 | [24 Experiments](24-experiments.md)         | PostgreSQL + polling                                         |
 | [25 Optimizations](25-optimizations.md)     | PostgreSQL + SSE                                             |
 | [27 Releases](27-releases.md)               | PostgreSQL + SSE                                             |

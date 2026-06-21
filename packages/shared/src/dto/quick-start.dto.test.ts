@@ -85,4 +85,32 @@ describe('createQuickStartSchema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('accepts an imported dataset reference for the web import-session flow', () => {
+    const parsed = createQuickStartSchema.parse({
+      ...baseInput,
+      dataset: {
+        kind: 'imported',
+        datasetId: '11111111-1111-4111-8111-111111111111',
+        name: 'support samples',
+        uploadSource: {
+          fileName: 'support.csv',
+          fileSizeBytes: 128,
+          contentType: 'text/csv',
+        },
+        fieldMappings: [
+          { name: 'conversation', role: 'text' },
+          { name: 'label', role: 'expected' },
+          { name: 'source', role: 'metadata' },
+        ],
+      },
+    });
+
+    expect(parsed.dataset).toEqual(
+      expect.objectContaining({
+        kind: 'imported',
+        datasetId: '11111111-1111-4111-8111-111111111111',
+      }),
+    );
+  });
 });

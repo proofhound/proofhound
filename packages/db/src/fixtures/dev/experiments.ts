@@ -96,7 +96,7 @@ export const DEV_EXPERIMENT_DATASETS: DevDatasetFixture[] = [
     ],
     hasImages: false,
     storagePrefix:
-      'datasets/00000000-0000-0000-0000-000000000001/raw/db945aa9-fe6e-4591-9b99-42f0b4dd567e/yelp-polarity-random-50.csv',
+      'datasets/00000000-0000-0000-0000-000000000001/source/db945aa9-fe6e-4591-9b99-42f0b4dd567e/yelp-polarity-random-50.csv',
     createdAt: '2026-05-23T02:29:47.235Z',
     updatedAt: '2026-05-23T02:30:25.452Z',
     samples: [

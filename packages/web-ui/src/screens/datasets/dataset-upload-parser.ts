@@ -1,10 +1,9 @@
-import type { DatasetFieldRole } from '@proofhound/shared';
+import type { DatasetFieldRole, DatasetImportSourceFormat } from '@proofhound/shared';
 import Papa from 'papaparse';
 
-export const FORMAT_CHIPS = ['.csv', '.tsv', '.jsonl', '.json', '.zip'] as const;
-export const PREVIEW_LIMIT = 5;
-// Bytes read from the head of a large file to build a preview + field mapping without loading the whole file.
-export const PREVIEW_BYTES = 256 * 1024;
+export const FORMAT_CHIPS = ['.csv', '.tsv', '.jsonl', '.zip'] as const;
+export const PREVIEW_LIMIT = 100;
+export const DATASET_PREVIEW_PAGE_SIZE = 10;
 
 type DatasetFileExtension = (typeof FORMAT_CHIPS)[number];
 type UploadFile = File & { proofhoundRelativePath?: string };
@@ -12,6 +11,17 @@ type UploadFile = File & { proofhoundRelativePath?: string };
 export interface ParsedDatasetFile {
   columns: string[];
   samples: Array<Record<string, unknown>>;
+}
+
+export interface DatasetPreviewPage<T> {
+  rows: T[];
+  totalRows: number;
+  pageIndex: number;
+  pageCount: number;
+  rangeStart: number;
+  rangeEnd: number;
+  canGoPrevious: boolean;
+  canGoNext: boolean;
 }
 
 interface DatasetManifest {
@@ -25,6 +35,25 @@ interface ZipEntry {
   compressedSize: number;
   uncompressedSize: number;
   dataStart: number;
+}
+
+const DATASET_IMPORT_DEBUG_PREFIX = '[dataset-import-debug]';
+const DATASET_IMPORT_DEBUG_BYTE_INTERVAL = 64 * 1024 * 1024;
+const DATASET_IMPORT_DEBUG_ROW_INTERVAL = 100_000;
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+}
+
+function debugDatasetImport(event: string, data: Record<string, unknown> = {}): void {
+  try {
+    console.warn(DATASET_IMPORT_DEBUG_PREFIX, event, {
+      at: new Date().toISOString(),
+      ...data,
+    });
+  } catch {
+    // Temporary diagnostics must never affect parsing behavior.
+  }
 }
 
 export function getUploadFilePath(file: File) {
@@ -86,13 +115,47 @@ export function isStreamingImportFile(file: File): boolean {
   return extension === '.jsonl' || extension === '.csv' || extension === '.tsv';
 }
 
+export function getDatasetImportSourceFormat(fileName: string): DatasetImportSourceFormat {
+  const extension = getExtension(fileName);
+  if (extension === '.csv') return 'csv';
+  if (extension === '.tsv') return 'tsv';
+  if (extension === '.jsonl') return 'jsonl';
+  if (extension === '.zip') return 'zip';
+  throw new Error('unsupported_file_type');
+}
+
+export function getDatasetPreviewPage<T>(
+  rows: T[],
+  requestedPageIndex: number,
+  pageSize = DATASET_PREVIEW_PAGE_SIZE,
+): DatasetPreviewPage<T> {
+  const normalizedPageSize = Math.max(1, Math.trunc(Number.isFinite(pageSize) ? pageSize : DATASET_PREVIEW_PAGE_SIZE));
+  const totalRows = rows.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / normalizedPageSize));
+  const requested = Number.isFinite(requestedPageIndex) ? Math.trunc(requestedPageIndex) : 0;
+  const pageIndex = Math.min(Math.max(0, requested), pageCount - 1);
+  const rangeStart = totalRows === 0 ? 0 : pageIndex * normalizedPageSize + 1;
+  const rangeEnd = totalRows === 0 ? 0 : Math.min(totalRows, rangeStart + normalizedPageSize - 1);
+
+  return {
+    rows: rows.slice(rangeStart === 0 ? 0 : rangeStart - 1, rangeEnd),
+    totalRows,
+    pageIndex,
+    pageCount,
+    rangeStart,
+    rangeEnd,
+    canGoPrevious: pageIndex > 0,
+    canGoNext: pageIndex < pageCount - 1,
+  };
+}
+
 function isDatasetFile(file: File) {
   const extension = getExtension(file.name);
   return FORMAT_CHIPS.includes(extension as DatasetFileExtension) && file.name.toLowerCase() !== 'manifest.json';
 }
 
 function isStructuredDatasetExtension(extension: string) {
-  return extension === '.csv' || extension === '.tsv' || extension === '.jsonl' || extension === '.json';
+  return extension === '.csv' || extension === '.tsv' || extension === '.jsonl';
 }
 
 function normalizePath(path: string) {
@@ -175,10 +238,11 @@ export async function selectDatasetFile(files: File[]): Promise<File> {
   return datasetFiles[0]!;
 }
 
-function parseDelimited(text: string, delimiter: ',' | '\t'): Array<Record<string, unknown>> {
+function parseDelimited(text: string, delimiter: ',' | '\t', maxRows?: number): Array<Record<string, unknown>> {
   const parsed = Papa.parse<Record<string, unknown>>(text, {
     delimiter,
     header: true,
+    ...(maxRows === undefined ? {} : { preview: maxRows }),
     skipEmptyLines: 'greedy',
     transform: parseDelimitedCell,
     transformHeader: (header, index) => header.trim() || `field_${index + 1}`,
@@ -217,17 +281,18 @@ function parseJsonlLine(line: string, samples: Array<Record<string, unknown>>) {
   samples.push(JSON.parse(trimmed) as Record<string, unknown>);
 }
 
-function parseJsonl(text: string): Array<Record<string, unknown>> {
+function parseJsonl(text: string, maxRows?: number): Array<Record<string, unknown>> {
   const samples: Array<Record<string, unknown>> = [];
   for (const line of text.split(/\r?\n/u)) {
     parseJsonlLine(line, samples);
+    if (maxRows !== undefined && samples.length >= maxRows) break;
   }
   return samples;
 }
 
-async function parseJsonlFile(file: File): Promise<Array<Record<string, unknown>>> {
+async function parseJsonlFile(file: File, maxRows?: number): Promise<Array<Record<string, unknown>>> {
   if (typeof file.stream !== 'function') {
-    return parseJsonl(await file.text());
+    return parseJsonl(await file.text(), maxRows);
   }
 
   const reader = file.stream().getReader();
@@ -240,20 +305,25 @@ async function parseJsonlFile(file: File): Promise<Array<Record<string, unknown>
     pendingText = lines.pop() ?? '';
     for (const line of lines) {
       parseJsonlLine(line, samples);
+      if (maxRows !== undefined && samples.length >= maxRows) return true;
     }
+    return false;
   };
 
   try {
     for (;;) {
+      if (maxRows !== undefined && samples.length >= maxRows) break;
       const { done, value } = await reader.read();
       if (done) break;
 
       pendingText += decoder.decode(value, { stream: true });
-      consumeCompleteLines();
+      if (consumeCompleteLines()) break;
     }
 
-    pendingText += decoder.decode();
-    parseJsonlLine(pendingText, samples);
+    if (maxRows === undefined || samples.length < maxRows) {
+      pendingText += decoder.decode();
+      parseJsonlLine(pendingText, samples);
+    }
     return samples;
   } catch (error) {
     await reader.cancel().catch(() => undefined);
@@ -263,19 +333,10 @@ async function parseJsonlFile(file: File): Promise<Array<Record<string, unknown>
   }
 }
 
-function parseJsonArray(text: string): Array<Record<string, unknown>> {
-  const parsed = JSON.parse(text) as unknown;
-  if (!Array.isArray(parsed)) {
-    throw new Error('json_array_required');
-  }
-  return parsed as Array<Record<string, unknown>>;
-}
-
-function parseSamplesByExtension(extension: string, text: string): Array<Record<string, unknown>> {
-  if (extension === '.csv') return parseDelimited(text, ',');
-  if (extension === '.tsv') return parseDelimited(text, '\t');
-  if (extension === '.jsonl') return parseJsonl(text);
-  if (extension === '.json') return parseJsonArray(text);
+function parseSamplesByExtension(extension: string, text: string, maxRows?: number): Array<Record<string, unknown>> {
+  if (extension === '.csv') return parseDelimited(text, ',', maxRows);
+  if (extension === '.tsv') return parseDelimited(text, '\t', maxRows);
+  if (extension === '.jsonl') return parseJsonl(text, maxRows);
   throw new Error('unsupported_file_type');
 }
 
@@ -456,12 +517,12 @@ async function inlineZipImages(
   );
 }
 
-async function parseZipDatasetFile(file: File): Promise<Array<Record<string, unknown>>> {
+async function parseZipDatasetFile(file: File, maxRows?: number): Promise<Array<Record<string, unknown>>> {
   const buffer = await file.arrayBuffer();
   const entries = readZipEntries(buffer);
   const dataEntry = await chooseZipDataEntry(buffer, entries);
   const dataText = new TextDecoder('utf-8').decode(await readZipEntryBytes(buffer, dataEntry));
-  const samples = parseSamplesByExtension(getExtension(dataEntry.name), dataText);
+  const samples = parseSamplesByExtension(getExtension(dataEntry.name), dataText, maxRows);
   return inlineZipImages(samples, dataEntry, buffer, entries);
 }
 
@@ -473,6 +534,10 @@ export async function* streamJsonlRows(
 ): AsyncGenerator<Record<string, unknown>> {
   const total = file.size;
   let readBytes = 0;
+  let lastLoggedBytes = 0;
+  let rowCount = 0;
+  const startedAt = nowMs();
+  debugDatasetImport('webUi.datasetParser.jsonl.start', { fileName: file.name, fileSizeBytes: file.size });
 
   const parseLine = (line: string): Record<string, unknown> | null => {
     const trimmed = line.trim();
@@ -488,8 +553,16 @@ export async function* streamJsonlRows(
     for (const line of (await file.text()).split(/\r?\n/u)) {
       if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
       const row = parseLine(line);
-      if (row) yield row;
+      if (row) {
+        rowCount += 1;
+        yield row;
+      }
     }
+    debugDatasetImport('webUi.datasetParser.jsonl.done', {
+      elapsedMs: Math.round(nowMs() - startedAt),
+      fileName: file.name,
+      rowCount,
+    });
     return;
   }
 
@@ -503,17 +576,40 @@ export async function* streamJsonlRows(
       if (done) break;
       readBytes += value.byteLength;
       onBytes?.(readBytes, total);
+      if (readBytes - lastLoggedBytes >= DATASET_IMPORT_DEBUG_BYTE_INTERVAL) {
+        lastLoggedBytes = readBytes;
+        debugDatasetImport('webUi.datasetParser.jsonl.progress', {
+          elapsedMs: Math.round(nowMs() - startedAt),
+          fileName: file.name,
+          readBytes,
+          rowCount,
+          totalBytes: total,
+        });
+      }
       pending += decoder.decode(value, { stream: true });
       const lines = pending.split(/\r?\n/u);
       pending = lines.pop() ?? '';
       for (const line of lines) {
         const row = parseLine(line);
-        if (row) yield row;
+        if (row) {
+          rowCount += 1;
+          yield row;
+        }
       }
     }
     pending += decoder.decode();
     const row = parseLine(pending);
-    if (row) yield row;
+    if (row) {
+      rowCount += 1;
+      yield row;
+    }
+    debugDatasetImport('webUi.datasetParser.jsonl.done', {
+      elapsedMs: Math.round(nowMs() - startedAt),
+      fileName: file.name,
+      readBytes,
+      rowCount,
+      totalBytes: total,
+    });
   } finally {
     reader.releaseLock();
   }
@@ -534,6 +630,15 @@ export async function* streamDelimitedRows(
   let done = false;
   let error: Error | null = null;
   let notify: (() => void) | null = null;
+  let lastLoggedCursor = 0;
+  let rowCount = 0;
+  let yieldedRows = 0;
+  const startedAt = nowMs();
+  debugDatasetImport('webUi.datasetParser.delimited.start', {
+    delimiter,
+    fileName: file.name,
+    fileSizeBytes: file.size,
+  });
 
   const wake = () => {
     notify?.();
@@ -577,17 +682,45 @@ export async function* streamDelimitedRows(
       const row = result.data;
       if (row && typeof row === 'object' && !Array.isArray(row)) {
         queue.push(row);
+        rowCount += 1;
       }
       const cursor = typeof result.meta.cursor === 'number' ? result.meta.cursor : 0;
       onBytes?.(Math.min(file.size, cursor), file.size);
+      if (
+        rowCount === 1 ||
+        cursor - lastLoggedCursor >= DATASET_IMPORT_DEBUG_BYTE_INTERVAL ||
+        rowCount % DATASET_IMPORT_DEBUG_ROW_INTERVAL === 0
+      ) {
+        lastLoggedCursor = cursor;
+        debugDatasetImport('webUi.datasetParser.delimited.progress', {
+          cursor: Math.min(file.size, cursor),
+          elapsedMs: Math.round(nowMs() - startedAt),
+          fileName: file.name,
+          queueLength: queue.length,
+          rowCount,
+          totalBytes: file.size,
+        });
+      }
       if (!parserPaused && queue.length >= STREAM_QUEUE_PAUSE_AT) {
         parser.pause();
         parserPaused = true;
+        debugDatasetImport('webUi.datasetParser.delimited.pause', {
+          cursor: Math.min(file.size, cursor),
+          elapsedMs: Math.round(nowMs() - startedAt),
+          fileName: file.name,
+          queueLength: queue.length,
+          rowCount,
+        });
       }
       wake();
     },
     complete: () => {
       done = true;
+      debugDatasetImport('webUi.datasetParser.delimited.parse_complete', {
+        elapsedMs: Math.round(nowMs() - startedAt),
+        fileName: file.name,
+        rowCount,
+      });
       wake();
     },
     error: (err) => {
@@ -609,13 +742,50 @@ export async function* streamDelimitedRows(
       if (parserRef.current && parserPaused && queue.length <= STREAM_QUEUE_RESUME_AT) {
         parserRef.current.resume();
         parserPaused = false;
+        debugDatasetImport('webUi.datasetParser.delimited.resume', {
+          elapsedMs: Math.round(nowMs() - startedAt),
+          fileName: file.name,
+          queueLength: queue.length,
+          rowCount,
+          yieldedRows,
+        });
       }
-      if (row) yield row;
+      if (row) {
+        yieldedRows += 1;
+        yield row;
+      }
     }
     if (error) throw error;
+    debugDatasetImport('webUi.datasetParser.delimited.done', {
+      elapsedMs: Math.round(nowMs() - startedAt),
+      fileName: file.name,
+      rowCount,
+      yieldedRows,
+    });
   } finally {
     signal?.removeEventListener('abort', abortListener);
-    if (signal?.aborted) parserRef.current?.abort();
+    const shouldAbort = !done || queue.length > 0 || signal?.aborted;
+    debugDatasetImport('webUi.datasetParser.delimited.cleanup', {
+      done,
+      elapsedMs: Math.round(nowMs() - startedAt),
+      fileName: file.name,
+      parserPaused,
+      queueLength: queue.length,
+      rowCount,
+      shouldAbort,
+      signalAborted: Boolean(signal?.aborted),
+      yieldedRows,
+    });
+    if (shouldAbort) {
+      parserRef.current?.abort();
+      debugDatasetImport('webUi.datasetParser.delimited.cleanup_abort_called', {
+        elapsedMs: Math.round(nowMs() - startedAt),
+        fileName: file.name,
+        queueLength: queue.length,
+        rowCount,
+        yieldedRows,
+      });
+    }
   }
 }
 
@@ -631,61 +801,58 @@ export function streamDatasetRows(
   throw new Error('unsupported_file_type');
 }
 
-// Reads only the head of a (large) JSONL file to produce columns + a few preview rows, without loading the whole file.
-// The trailing partial line is dropped when the file exceeds the slice.
-export async function parseJsonlPrefix(file: File, maxBytes = PREVIEW_BYTES): Promise<ParsedDatasetFile> {
-  const text = await file.slice(0, maxBytes).text();
-  const lines = text.split(/\r?\n/u);
-  if (file.size > maxBytes && lines.length > 1) lines.pop();
-
+async function parseRowsPreview(
+  rows: AsyncIterable<Record<string, unknown>>,
+  maxRows = PREVIEW_LIMIT,
+): Promise<ParsedDatasetFile> {
   const samples: Array<Record<string, unknown>> = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const parsed = JSON.parse(trimmed) as unknown;
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        samples.push(parsed as Record<string, unknown>);
-      }
-    } catch {
-      // Skip unparseable (possibly truncated) lines in the preview prefix.
-    }
+  for await (const row of rows) {
+    samples.push(row);
+    if (samples.length >= maxRows) break;
   }
-
   if (samples.length === 0) {
     throw new Error('empty_file');
   }
   return { columns: Object.keys(samples[0] ?? {}), samples };
 }
 
-export async function parseDelimitedPrefix(
+export async function parseJsonlPreview(file: File, maxRows = PREVIEW_LIMIT): Promise<ParsedDatasetFile> {
+  return parseRowsPreview(streamJsonlRows(file), maxRows);
+}
+
+export async function parseDelimitedPreview(
   file: File,
   delimiter: ',' | '\t',
-  maxBytes = PREVIEW_BYTES,
+  maxRows = PREVIEW_LIMIT,
 ): Promise<ParsedDatasetFile> {
-  const text = await file.slice(0, maxBytes).text();
-  const parsed = Papa.parse<Record<string, unknown>>(text, {
-    delimiter,
-    header: true,
-    preview: PREVIEW_LIMIT,
-    skipEmptyLines: 'greedy',
-    transform: parseDelimitedCell,
-    transformHeader: (header, index) => header.trim() || `field_${index + 1}`,
-  });
-  const samples = parsed.data.filter((sample) => sample && typeof sample === 'object' && !Array.isArray(sample));
-  if (samples.length === 0) {
-    throw new Error('empty_file');
-  }
-  return { columns: Object.keys(samples[0] ?? {}), samples };
+  return parseRowsPreview(streamDelimitedRows(file, delimiter), maxRows);
 }
 
-export async function parseStreamingPrefix(file: File, maxBytes = PREVIEW_BYTES): Promise<ParsedDatasetFile> {
+export const parseJsonlPrefix = parseJsonlPreview;
+export const parseDelimitedPrefix = parseDelimitedPreview;
+
+export async function parseDatasetPreview(file: File, maxRows = PREVIEW_LIMIT): Promise<ParsedDatasetFile> {
   const extension = getExtension(file.name);
-  if (extension === '.jsonl') return parseJsonlPrefix(file, maxBytes);
-  if (extension === '.csv') return parseDelimitedPrefix(file, ',', maxBytes);
-  if (extension === '.tsv') return parseDelimitedPrefix(file, '\t', maxBytes);
+  if (!FORMAT_CHIPS.includes(extension as DatasetFileExtension)) {
+    throw new Error('unsupported_file_type');
+  }
+  if (extension === '.zip') {
+    const samples = await parseZipDatasetFile(file, maxRows);
+    const normalizedSamples = samples.filter(
+      (sample) => sample && typeof sample === 'object' && !Array.isArray(sample),
+    );
+    if (normalizedSamples.length === 0) {
+      throw new Error('empty_file');
+    }
+    return { columns: Object.keys(normalizedSamples[0] ?? {}), samples: normalizedSamples };
+  }
+  if (extension === '.jsonl') return parseJsonlPreview(file, maxRows);
+  if (extension === '.csv') return parseDelimitedPreview(file, ',', maxRows);
+  if (extension === '.tsv') return parseDelimitedPreview(file, '\t', maxRows);
   throw new Error('unsupported_file_type');
 }
+
+export const parseStreamingPrefix = parseDatasetPreview;
 
 export async function parseDatasetFile(file: File): Promise<ParsedDatasetFile> {
   const extension = getExtension(file.name);

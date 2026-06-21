@@ -5,7 +5,6 @@ import {
   estimateDatasetImportBatchBytes,
   projectSampleRowsToBatches,
   runDatasetImport,
-  runRawDatasetImport,
   type DatasetImportProgress,
 } from '../dataset-import-runner';
 
@@ -23,12 +22,8 @@ function fakeClient(overrides: Partial<DatasetImportClient> = {}): DatasetImport
     getDatasetImport: vi.fn(),
     createDatasetImport: vi.fn().mockResolvedValue({ id: 'imp-1' }),
     appendDatasetImportBatch: vi.fn(),
-    completeRawDatasetUpload: vi.fn(),
     completeDatasetImport: vi.fn().mockResolvedValue(importStatus('completed', { receivedRows: 3 })),
     abortDatasetImport: vi.fn().mockResolvedValue(undefined),
-    getRawImportCapabilities: vi.fn(),
-    createRawDatasetImport: vi.fn(),
-    uploadRawDatasetFile: vi.fn(),
     ...overrides,
   } as unknown as DatasetImportClient;
 }
@@ -38,10 +33,9 @@ function importStatus(
   overrides: Partial<DatasetImportStatusDto> = {},
 ): DatasetImportStatusDto {
   return {
-    id: 'imp-raw-1',
+    id: 'imp-1',
     projectId: PROJECT_ID,
     datasetId: state === 'completed' ? 'ds-1' : null,
-    importMode: 'raw_object',
     name: CREATE_BODY.name,
     description: null,
     fileName: CREATE_BODY.sourceFile.fileName,
@@ -53,7 +47,6 @@ function importStatus(
     state,
     progress: {
       state,
-      uploadedBytes: state === 'uploading' ? null : CREATE_BODY.sourceFile.fileSizeBytes,
       parsedRows: overrides.receivedRows ?? 0,
       importedRows: state === 'completed' ? (overrides.receivedRows ?? 0) : 0,
       totalRows: null,
@@ -62,10 +55,6 @@ function importStatus(
     },
     errorCode: null,
     errorMessage: null,
-    jobId: null,
-    rawUploadCompletedAt: null,
-    queuedAt: null,
-    startedAt: null,
     completedAt: state === 'completed' ? '2026-06-20T00:01:00.000Z' : null,
     failedAt: null,
     abortedAt: null,
@@ -115,6 +104,7 @@ describe('runDatasetImport', () => {
       { phase: 'uploading', receivedRows: 2 },
       { phase: 'uploading', receivedRows: 3 },
       { phase: 'completing', receivedRows: 3 },
+      { phase: 'completed', receivedRows: 3 },
     ]);
   });
 
@@ -192,124 +182,5 @@ describe('runDatasetImport', () => {
 
     expect(totalRows).toBe(100);
     expect(stringifyCalls).toBeLessThanOrEqual(105);
-  });
-});
-
-describe('runRawDatasetImport', () => {
-  it('creates a raw upload session, uploads the file, then completes', async () => {
-    const file = new Blob(['sample_id,text\ncase-1,hello\n'], { type: 'text/csv' });
-    const client = fakeClient({
-      createRawDatasetImport: vi.fn().mockResolvedValue({
-        import: { id: 'imp-raw-1' },
-        uploadSession: {
-          sessionId: 'up-1',
-          url: 'https://storage.example/upload',
-          expiresAt: new Date().toISOString(),
-        },
-        maxBytes: 2_147_483_648,
-      }),
-      uploadRawDatasetFile: vi.fn().mockResolvedValue(undefined),
-      completeRawDatasetUpload: vi.fn().mockResolvedValue(importStatus('uploaded')),
-      completeDatasetImport: vi.fn().mockResolvedValue(importStatus('queued')),
-      getDatasetImport: vi.fn().mockResolvedValue(importStatus('completed', { receivedRows: 1 })),
-    });
-    const onUploaded = vi.fn();
-    const onUploadProgress = vi.fn();
-    const progress: DatasetImportProgress[] = [];
-
-    const result = await runRawDatasetImport({
-      projectId: PROJECT_ID,
-      createBody: {
-        ...CREATE_BODY,
-        sourceFile: { fileName: 'train.csv', fileSizeBytes: file.size },
-        sourceFormat: 'csv',
-      },
-      file,
-      client,
-      onUploaded,
-      onUploadProgress,
-      onProgress: (event) => progress.push(event),
-      pollIntervalMs: 0,
-    });
-
-    expect(client.createRawDatasetImport).toHaveBeenCalled();
-    expect(client.uploadRawDatasetFile).toHaveBeenCalledWith(
-      { sessionId: 'up-1', url: 'https://storage.example/upload', expiresAt: expect.any(String) },
-      file,
-      { signal: undefined, onProgress: onUploadProgress },
-    );
-    expect(client.completeRawDatasetUpload).toHaveBeenCalledWith(PROJECT_ID, 'imp-raw-1');
-    expect(client.completeDatasetImport).toHaveBeenCalledWith(PROJECT_ID, 'imp-raw-1');
-    expect(client.getDatasetImport).toHaveBeenCalledWith(PROJECT_ID, 'imp-raw-1');
-    expect(client.abortDatasetImport).not.toHaveBeenCalled();
-    expect(onUploaded).toHaveBeenCalledTimes(1);
-    expect(result).toMatchObject({ status: 'completed', datasetId: 'ds-1' });
-    expect(progress.map((event) => event.phase)).toEqual(['queued', 'completed']);
-  });
-
-  it('forwards raw upload byte progress from the client', async () => {
-    const file = new Blob(['sample_id,text\ncase-1,hello\n'], { type: 'text/csv' });
-    const uploadProgress = { loadedBytes: file.size, totalBytes: file.size };
-    const client = fakeClient({
-      createRawDatasetImport: vi.fn().mockResolvedValue({
-        import: { id: 'imp-raw-1' },
-        uploadSession: {
-          sessionId: 'up-1',
-          url: 'https://storage.example/upload',
-          expiresAt: new Date().toISOString(),
-        },
-        maxBytes: 2_147_483_648,
-      }),
-      uploadRawDatasetFile: vi.fn().mockImplementation(async (_session, _file, options) => {
-        options?.onProgress?.(uploadProgress);
-      }),
-      completeRawDatasetUpload: vi.fn().mockResolvedValue(importStatus('uploaded')),
-      completeDatasetImport: vi.fn().mockResolvedValue(importStatus('queued')),
-      getDatasetImport: vi.fn().mockResolvedValue(importStatus('completed', { receivedRows: 1 })),
-    });
-    const onUploadProgress = vi.fn();
-
-    await runRawDatasetImport({
-      projectId: PROJECT_ID,
-      createBody: {
-        ...CREATE_BODY,
-        sourceFile: { fileName: 'train.csv', fileSizeBytes: file.size },
-        sourceFormat: 'csv',
-      },
-      file,
-      client,
-      onUploadProgress,
-      pollIntervalMs: 0,
-    });
-
-    expect(onUploadProgress).toHaveBeenCalledWith(uploadProgress);
-  });
-
-  it('aborts the raw session when direct upload fails', async () => {
-    const client = fakeClient({
-      createRawDatasetImport: vi.fn().mockResolvedValue({
-        import: { id: 'imp-raw-1' },
-        uploadSession: {
-          sessionId: 'up-1',
-          url: 'https://storage.example/upload',
-          expiresAt: new Date().toISOString(),
-        },
-        maxBytes: 2_147_483_648,
-      }),
-      uploadRawDatasetFile: vi.fn().mockRejectedValue(new Error('upload failed')),
-    });
-
-    await expect(
-      runRawDatasetImport({
-        projectId: PROJECT_ID,
-        createBody: CREATE_BODY,
-        file: new Blob(['x']),
-        client,
-      }),
-    ).rejects.toThrow('upload failed');
-
-    expect(client.completeDatasetImport).not.toHaveBeenCalled();
-    expect(client.completeRawDatasetUpload).not.toHaveBeenCalled();
-    expect(client.abortDatasetImport).toHaveBeenCalledWith(PROJECT_ID, 'imp-raw-1');
   });
 });

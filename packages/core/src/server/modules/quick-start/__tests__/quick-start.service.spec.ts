@@ -45,6 +45,15 @@ function makeDatasetService(): Mocked<DatasetService> {
       dataset: { id: '22222222-2222-4222-8222-000000000002' },
       sampleCount: 1,
     }),
+    getDataset: vi.fn().mockResolvedValue({
+      id: '22222222-2222-4222-8222-000000000002',
+      status: 'active',
+      fieldSchema: [
+        { name: 'conversation', role: 'text', type: 'string' },
+        { name: 'label', role: 'expected_output', type: 'string' },
+        { name: 'source', role: 'metadata', type: 'string' },
+      ],
+    }),
   } as unknown as Mocked<DatasetService>;
 }
 
@@ -120,6 +129,54 @@ describe('QuickStartService', () => {
         strategyConfig: { initialSamplingRounds: 3, initialSamplesPerRound: 10 },
         loopLimits: { maxRounds: 3, stopAfterNoImprovementRounds: 0 },
         runConfig: expect.objectContaining({ temperature: 0.3, rpmLimit: 60, tpmLimit: 100000, concurrency: 20 }),
+        fieldWhitelist: { inputFields: ['conversation'], metaFields: ['source'] },
+      }),
+      actor,
+      'api',
+      project.orgId,
+    );
+  });
+
+  it('uses an imported dataset without creating a second dataset', async () => {
+    const datasets = makeDatasetService();
+    const models = makeModelService();
+    const optimizations = makeOptimizationService();
+    const service = new QuickStartService(datasets, models, optimizations);
+
+    const input = createQuickStartSchema.parse({
+      taskDescription: 'Classify support conversations by intent.',
+      dataset: {
+        kind: 'imported',
+        datasetId: '22222222-2222-4222-8222-000000000002',
+        name: 'support samples',
+        uploadSource: {
+          fileName: 'support.csv',
+          fileSizeBytes: 128,
+          contentType: 'text/csv',
+        },
+        fieldMappings: [
+          { name: 'conversation', role: 'text' },
+          { name: 'label', role: 'expected' },
+          { name: 'source', role: 'metadata' },
+        ],
+      },
+      experimentModel: { kind: 'draft', model: draftModel },
+      analysisModel: { kind: 'draft', model: draftModel },
+    });
+
+    const result = await service.createQuickStart(input, project, actor);
+
+    expect(result.datasetId).toBe('22222222-2222-4222-8222-000000000002');
+    expect(datasets.getDataset).toHaveBeenCalledWith(
+      LOCAL_PROJECT_ID,
+      '22222222-2222-4222-8222-000000000002',
+      actor,
+    );
+    expect(datasets.createDataset).not.toHaveBeenCalled();
+    expect(optimizations.createOptimization).toHaveBeenCalledWith(
+      LOCAL_PROJECT_ID,
+      expect.objectContaining({
+        datasetId: '22222222-2222-4222-8222-000000000002',
         fieldWhitelist: { inputFields: ['conversation'], metaFields: ['source'] },
       }),
       actor,

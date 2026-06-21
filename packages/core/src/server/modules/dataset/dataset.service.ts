@@ -53,7 +53,7 @@ export type DatasetExportDelivery =
   | { kind: 'stream'; file: DatasetExportFile }
   | { kind: 'redirect'; url: string; expiresAt: string };
 
-const DEFAULT_DATASET_RAW_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_DATASET_SYNC_CREATE_MAX_BYTES = 64 * 1024 * 1024;
 
 @Injectable()
 export class DatasetService {
@@ -189,7 +189,7 @@ export class DatasetService {
     const fieldSchema = buildDatasetFieldSchema(dto.fieldMappings, dto.samples);
     const externalIdFieldName = dto.fieldMappings.find((field) => field.role === 'id')?.name ?? null;
     const hasImages = fieldSchema.some((field) => ['image', 'image_url', 'image_base64'].includes(field.role));
-    const storagePrefix = `datasets/${projectId}/raw/${datasetId}/${dto.uploadSource.fileName}`;
+    const storagePrefix = `datasets/${projectId}/source/${datasetId}/${dto.uploadSource.fileName}`;
     await this.quotaPolicy.assertCanStore({
       actor: toActorContext(actor),
       bytes: estimateDatasetCreateBytes(dto),
@@ -481,13 +481,13 @@ export class DatasetService {
   private assertUploadSourceSizeWithinLimit(bytes: number | undefined): void {
     const value = Number.isFinite(bytes) ? Math.max(0, Math.trunc(bytes ?? 0)) : 0;
     if (value > this.getUploadMaxBytes()) {
-      throw new ConflictException('dataset_raw_upload_too_large');
+      throw new ConflictException('dataset_sync_create_too_large');
     }
   }
 
   private getUploadMaxBytes(): number {
-    const raw = Number(process.env['DATASET_RAW_UPLOAD_MAX_BYTES']);
-    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_DATASET_RAW_UPLOAD_MAX_BYTES;
+    const raw = Number(process.env['DATASET_SYNC_CREATE_MAX_BYTES']);
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_DATASET_SYNC_CREATE_MAX_BYTES;
   }
 
   private toDatasetListItem(

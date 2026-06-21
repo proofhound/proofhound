@@ -21,7 +21,7 @@ export const envSchema = z.object({
   RELEASE_RUNNER_LOCK_TTL_MS: z.coerce.number().int().positive().optional(),
   DATASET_IMPORT_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().optional(),
   DATASET_IMPORT_STALE_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
-  DATASET_RAW_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().optional(),
+  DATASET_SYNC_CREATE_MAX_BYTES: z.coerce.number().int().positive().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

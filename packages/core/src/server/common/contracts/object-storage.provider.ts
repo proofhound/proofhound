@@ -14,7 +14,7 @@
 import type { Readable } from 'node:stream';
 import type { ActorContext, ProjectContext } from '../actor-context';
 
-export type ObjectResourceType = 'dataset_raw' | 'dataset_normalized' | 'run_result_shard' | 'export';
+export type ObjectResourceType = 'dataset_normalized' | 'run_result_shard' | 'export';
 
 /** Internal shard compression. Applied/removed at the application layer; NEVER mapped to HTTP
  * Content-Encoding (that would let SDKs/browsers auto-decompress, so stored bytes !== read bytes). */

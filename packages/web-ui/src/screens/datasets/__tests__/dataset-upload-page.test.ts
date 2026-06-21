@@ -29,88 +29,19 @@ describe('DatasetUploadPage import helpers', () => {
     expect(estimateUploadProgressBytes({ fileName: 'empty.csv', fileSizeBytes: 0 })).toBe(1);
   });
 
-  it('uses streaming batches for medium CSV/TSV/JSONL files and raw import past the raw threshold', () => {
-    expect(
-      selectDatasetUploadImportPath({
-        file: { name: 'train.csv', size: 2 * 1024 * 1024 },
-        isLargeFile: true,
-        parsedSampleCount: 5,
-        rawImportCapabilities: { supported: true, maxBytes: 2 * 1024 * 1024 * 1024 },
-      }),
-    ).toBe('streaming');
-
-    expect(
-      selectDatasetUploadImportPath({
-        file: { name: 'train.csv', size: 300 * 1024 * 1024 },
-        isLargeFile: true,
-        parsedSampleCount: 5,
-        rawImportCapabilities: { supported: true, maxBytes: 2 * 1024 * 1024 * 1024 },
-      }),
-    ).toBe('streaming');
-
-    expect(
-      selectDatasetUploadImportPath({
-        file: { name: 'train.csv', size: 600 * 1024 * 1024 },
-        isLargeFile: true,
-        parsedSampleCount: 5,
-        rawImportCapabilities: { supported: true, maxBytes: 2 * 1024 * 1024 * 1024 },
-      }),
-    ).toBe('raw');
-
-    expect(
-      selectDatasetUploadImportPath({
-        file: { name: 'train.csv', size: 600 * 1024 * 1024 },
-        isLargeFile: true,
-        parsedSampleCount: 5,
-        rawImportCapabilities: { supported: false, maxBytes: 2 * 1024 * 1024 * 1024 },
-      }),
-    ).toBe('streaming');
+  it('streams CSV/TSV/JSONL files regardless of file size', () => {
+    expect(selectDatasetUploadImportPath({ file: { name: 'train.csv', size: 1024 } })).toBe('streaming');
+    expect(selectDatasetUploadImportPath({ file: { name: 'train.tsv', size: 1024 } })).toBe('streaming');
+    expect(selectDatasetUploadImportPath({ file: { name: 'train.jsonl', size: 1024 } })).toBe('streaming');
+    expect(selectDatasetUploadImportPath({ file: { name: 'train.csv', size: 2 * 1024 * 1024 } })).toBe('streaming');
+    expect(selectDatasetUploadImportPath({ file: { name: 'train.tsv', size: 2 * 1024 * 1024 } })).toBe('streaming');
+    expect(selectDatasetUploadImportPath({ file: { name: 'train.jsonl', size: 2 * 1024 * 1024 } })).toBe(
+      'streaming',
+    );
   });
 
-  it('routes bounded JSON files through raw import but does not raw-route oversized buffered formats', () => {
-    expect(
-      selectDatasetUploadImportPath({
-        file: { name: 'train.json', size: 32 * 1024 * 1024 },
-        isLargeFile: true,
-        parsedSampleCount: 5,
-        rawImportCapabilities: { supported: true, maxBytes: 2 * 1024 * 1024 * 1024 },
-      }),
-    ).toBe('raw');
-    expect(
-      selectDatasetUploadImportPath({
-        file: { name: 'train.zip', size: 128 * 1024 * 1024 },
-        isLargeFile: true,
-        parsedSampleCount: 5,
-        rawImportCapabilities: { supported: true, maxBytes: 2 * 1024 * 1024 * 1024 },
-      }),
-    ).toBe('streaming');
-  });
-
-  it('uses buffered import when a small parsed file exceeds the synchronous sample-count guard', () => {
-    expect(
-      selectDatasetUploadImportPath({
-        file: { name: 'train.jsonl', size: 1024 },
-        isLargeFile: false,
-        parsedSampleCount: 5001,
-        rawImportCapabilities: { supported: true, maxBytes: 2 * 1024 * 1024 * 1024 },
-      }),
-    ).toBe('buffered');
-    expect(
-      selectDatasetUploadImportPath({
-        file: { name: 'train.jsonl', size: 1024 },
-        isLargeFile: false,
-        parsedSampleCount: 5001,
-        rawImportCapabilities: { supported: false, maxBytes: 2 * 1024 * 1024 * 1024 },
-      }),
-    ).toBe('buffered');
-    expect(
-      selectDatasetUploadImportPath({
-        file: { name: 'train.jsonl', size: 1024 },
-        isLargeFile: false,
-        parsedSampleCount: 5000,
-        rawImportCapabilities: { supported: true, maxBytes: 2 * 1024 * 1024 * 1024 },
-      }),
-    ).toBe('sync');
+  it('uses the buffered import session for bounded formats', () => {
+    expect(selectDatasetUploadImportPath({ file: { name: 'train.zip', size: 32 * 1024 * 1024 } })).toBe('buffered');
   });
 
   it('projects buffered import samples lazily by batch', async () => {

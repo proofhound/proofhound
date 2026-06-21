@@ -27,7 +27,7 @@ function run(samples: StagingSample[], batchSize: number) {
     putShard: async (name, body) => {
       shards.push({ name, body });
       const ref: StoredObjectRef = {
-        provider: 'r2',
+        provider: 'object',
         bucket: 'b',
         key: `orgs/o/projects/p/dataset_normalized/ds-1/${name}`,
         bytes: body.byteLength,
@@ -48,6 +48,11 @@ describe('offloadStagingToShards', () => {
     const { result, shards, inserted } = await run(staging(5), 2);
 
     expect(result.shards).toBe(3); // 5 samples / 2 per shard
+    expect(result.manifests.map((manifest) => [manifest.shardSeq, manifest.rowStart, manifest.rowCount])).toEqual([
+      [0, 0, 2],
+      [1, 2, 2],
+      [2, 4, 1],
+    ]);
     expect(shards.map((s) => s.name)).toEqual([
       'shard-00000.jsonl.gz',
       'shard-00001.jsonl.gz',
@@ -79,8 +84,82 @@ describe('offloadStagingToShards', () => {
 
   it('does nothing for an empty import', async () => {
     const { result, shards, inserted } = await run([], 2);
-    expect(result).toEqual({ shards: 0, storagePrefix: null });
+    expect(result.shards).toBe(0);
+    expect(result.storagePrefix).toBeNull();
+    expect(result.manifests).toEqual([]);
     expect(shards).toHaveLength(0);
     expect(inserted).toHaveLength(0);
+  });
+
+  it('bounds concurrent shard workers while preserving shard sequence', async () => {
+    let activePuts = 0;
+    let maxActivePuts = 0;
+    const shards: string[] = [];
+    const result = await offloadStagingToShards({
+      datasetId: 'ds-1',
+      sampleCount: 8,
+      batchSize: 2,
+      concurrency: 2,
+      progressIntervalShards: 1,
+      fieldSchema,
+      readBatch: async (offset, limit) => staging(8).slice(offset, offset + limit),
+      putShard: async (name, body) => {
+        activePuts += 1;
+        maxActivePuts = Math.max(maxActivePuts, activePuts);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        activePuts -= 1;
+        shards.push(name);
+        return {
+          provider: 'object',
+          bucket: 'b',
+          key: `orgs/o/projects/p/dataset_normalized/ds-1/${name}`,
+          bytes: body.byteLength,
+          codec: 'gzip',
+          resourceType: 'dataset_normalized',
+          resourceId: 'ds-1',
+        };
+      },
+    });
+
+    expect(maxActivePuts).toBeLessThanOrEqual(2);
+    expect(result.manifests.map((manifest) => manifest.shardSeq)).toEqual([0, 1, 2, 3]);
+    expect(shards.sort()).toEqual([
+      'shard-00000.jsonl.gz',
+      'shard-00001.jsonl.gz',
+      'shard-00002.jsonl.gz',
+      'shard-00003.jsonl.gz',
+    ]);
+  });
+
+  it('stops new work and skips row insertion when a shard PUT fails', async () => {
+    const inserted: DatasetSampleOffloadRow[] = [];
+
+    await expect(
+      offloadStagingToShards({
+        datasetId: 'ds-1',
+        sampleCount: 4,
+        batchSize: 2,
+        concurrency: 1,
+        fieldSchema,
+        readBatch: async (offset, limit) => staging(4).slice(offset, offset + limit),
+        putShard: async (name, body) => {
+          if (name === 'shard-00001.jsonl.gz') throw new Error('storage down');
+          return {
+            provider: 'object',
+            bucket: 'b',
+            key: `orgs/o/projects/p/dataset_normalized/ds-1/${name}`,
+            bytes: body.byteLength,
+            codec: 'gzip',
+            resourceType: 'dataset_normalized',
+            resourceId: 'ds-1',
+          };
+        },
+        insertRows: async (rows) => {
+          inserted.push(...rows);
+        },
+      }),
+    ).rejects.toThrow('storage down');
+
+    expect(inserted).toHaveLength(2);
   });
 });
