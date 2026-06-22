@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { BullmqService } from './bullmq.service';
 
 function buildService(llmQueue: unknown) {
-  return new BullmqService(llmQueue as never, {} as never, {} as never);
+  return new BullmqService(llmQueue as never, {} as never);
 }
 
 describe('BullmqService.removeQueuedLlmJobs', () => {

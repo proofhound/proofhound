@@ -5,7 +5,6 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { createLogger } from '@proofhound/logger';
 import type { LlmJobPayload } from '@proofhound/orchestration-shared';
-import { readPromptJudgmentExpectedField } from '@proofhound/shared';
 import type {
   DatasetFieldSchemaDto,
   ExperimentMetricsDto,
@@ -638,7 +637,23 @@ function readExpectedFieldFromDatasetSchema(
 }
 
 export function readExpectedField(rules: unknown, fallback = 'expected_output'): string {
-  return readPromptJudgmentExpectedField(rules, fallback);
+  if (rules && typeof rules === 'object') {
+    const record = rules as Record<string, unknown>;
+    const topLevel = record['expected_field'] ?? record['expectedField'];
+    if (typeof topLevel === 'string' && topLevel.length > 0) return topLevel;
+    const rawRules = record['rules'];
+    if (Array.isArray(rawRules)) {
+      for (const rule of rawRules) {
+        if (!rule || typeof rule !== 'object' || Array.isArray(rule)) continue;
+        const nested =
+          (rule as Record<string, unknown>)['expected_field'] ??
+          (rule as Record<string, unknown>)['expectedField'] ??
+          (rule as Record<string, unknown>)['value'];
+        if (typeof nested === 'string' && nested.length > 0) return nested;
+      }
+    }
+  }
+  return fallback;
 }
 
 function pickInference(runConfig: Record<string, unknown>): LlmJobPayload['inference'] {
