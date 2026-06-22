@@ -109,7 +109,7 @@ export class RunResultService {
     filter: ReleaseRunResultCleanupFilterDto,
   ): Promise<ReleaseRunResultCleanupImpactDto> {
     await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_read');
-    this.assertCleanupDateRange(filter);
+    this.assertCleanupVersionFilter(filter);
     return this.repo.previewReleaseCleanup(projectId, filter);
   }
 
@@ -119,7 +119,7 @@ export class RunResultService {
     input: ReleaseRunResultCleanupInputDto,
   ): Promise<ReleaseRunResultCleanupImpactDto> {
     await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'release_manage');
-    this.assertCleanupDateRange(input);
+    this.assertCleanupVersionFilter(input);
     const { payloadRefs, ...impact } = await this.repo.deleteReleaseCleanup(projectId, input);
     await this.cleanupPayloadRefs(payloadRefs, { projectId, operation: 'run_result.release.cleanup' });
     this.logger.info(
@@ -188,7 +188,13 @@ export class RunResultService {
     return detail;
   }
 
-  private assertCleanupDateRange(filter: ReleaseRunResultCleanupFilterDto): void {
+  private assertCleanupVersionFilter(filter: ReleaseRunResultCleanupFilterDto): void {
+    if (!filter.releaseVersionIds || filter.releaseVersionIds.length === 0) {
+      throw new BadRequestException('run_result_cleanup_release_version_required');
+    }
+
+    if (!filter.to) return;
+
     const to = Date.parse(filter.to);
     const from = filter.from ? Date.parse(filter.from) : Number.NEGATIVE_INFINITY;
     if (!Number.isFinite(to) || (Number.isFinite(from) && from >= to)) {

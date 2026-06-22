@@ -8,6 +8,7 @@ import type { McpToolContext } from '../mcp.types';
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
 const EXPERIMENT_ID = '22222222-2222-4222-8222-222222222222';
 const RUN_RESULT_ID = '33333333-3333-4333-8333-333333333333';
+const RELEASE_VERSION_ID = '55555555-5555-4555-8555-555555555555';
 
 const actor = {
   sub: 'mcp-user-token-1',
@@ -193,12 +194,12 @@ describe('MCP run-result tools', () => {
     expect(service.listReleaseRunResults).not.toHaveBeenCalled();
   });
 
-  it('run_result_cleanup_release_preview: delegates a date-bounded cleanup preview', async () => {
+  it('run_result_cleanup_release_preview: delegates a release-version cleanup preview', async () => {
     const service = serviceStub();
     const result = await dispatchTool(
       createRunResultTools(service),
       'run_result_cleanup_release_preview',
-      { sourceIds: ['55555555-5555-4555-8555-555555555555'], to: '2026-06-01T00:00:00.000Z' },
+      { releaseVersionIds: [RELEASE_VERSION_ID] },
       context,
     );
 
@@ -207,8 +208,7 @@ describe('MCP run-result tools', () => {
       PROJECT_ID,
       actor,
       expect.objectContaining({
-        sourceIds: ['55555555-5555-4555-8555-555555555555'],
-        to: '2026-06-01T00:00:00.000Z',
+        releaseVersionIds: [RELEASE_VERSION_ID],
       }),
     );
   });
@@ -218,7 +218,7 @@ describe('MCP run-result tools', () => {
     const invalid = await dispatchTool(
       createRunResultTools(service),
       'run_result_cleanup_release',
-      { to: '2026-06-01T00:00:00.000Z' },
+      { releaseVersionIds: [RELEASE_VERSION_ID] },
       context,
     );
     expect(invalid.isError).toBe(true);
@@ -227,7 +227,7 @@ describe('MCP run-result tools', () => {
     const valid = await dispatchTool(
       createRunResultTools(service),
       'run_result_cleanup_release',
-      { to: '2026-06-01T00:00:00.000Z', confirmation: 'delete_release_run_results' },
+      { releaseVersionIds: [RELEASE_VERSION_ID], confirmation: 'delete_release_run_results' },
       context,
     );
     expect(valid.isError).toBeUndefined();
@@ -235,7 +235,7 @@ describe('MCP run-result tools', () => {
       PROJECT_ID,
       actor,
       expect.objectContaining({
-        to: '2026-06-01T00:00:00.000Z',
+        releaseVersionIds: [RELEASE_VERSION_ID],
         confirmation: 'delete_release_run_results',
       }),
     );

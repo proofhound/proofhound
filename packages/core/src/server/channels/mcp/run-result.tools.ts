@@ -236,7 +236,7 @@ export function createRunResultTools(runResultService: RunResultService): McpToo
     {
       name: 'run_result_cleanup_release_preview',
       description:
-        '预估按发布维度清理运行结果的影响（必须传 to 时间上界；返回匹配行数、annotation 数、可立即回收与共享延迟回收的对象存储字节）',
+        '预估按发布版本清理运行结果的影响（必须传 releaseVersionIds；返回匹配行数、annotation 数、可立即回收与共享延迟回收的对象存储字节）',
       inputSchema: releaseCleanupToolInputSchema(false),
       handler: async (input, ctx) => {
         const { projectId } = resolveMcpProjectContext(ctx);
@@ -247,7 +247,7 @@ export function createRunResultTools(runResultService: RunResultService): McpToo
     {
       name: 'run_result_cleanup_release',
       description:
-        '删除按发布维度匹配的运行结果（必须传 to 时间上界与 confirmation=delete_release_run_results；会先删 annotations，再删 run_results，并清理不再引用的 shard 对象）',
+        '删除按发布版本匹配的运行结果（必须传 releaseVersionIds 与 confirmation=delete_release_run_results；会先删 annotations，再删 run_results，并清理不再引用的 shard 对象）',
       inputSchema: releaseCleanupToolInputSchema(true),
       handler: async (input, ctx) => {
         const { projectId } = resolveMcpProjectContext(ctx);
@@ -261,7 +261,7 @@ export function createRunResultTools(runResultService: RunResultService): McpToo
 function releaseCleanupToolInputSchema(requireConfirmation: boolean) {
   return {
     type: 'object',
-    required: requireConfirmation ? ['to', 'confirmation'] : ['to'],
+    required: requireConfirmation ? ['releaseVersionIds', 'confirmation'] : ['releaseVersionIds'],
     properties: {
       sourceIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
       releaseVersionIds: { type: 'array', items: { type: 'string', format: 'uuid' } },

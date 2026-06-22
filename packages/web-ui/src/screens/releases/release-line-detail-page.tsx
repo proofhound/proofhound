@@ -121,11 +121,9 @@ import {
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh, useDateTimeFormatter } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import {
-  formatDateTimeLocalInput,
   getApiErrorMessage,
   getReleaseLineId,
   getReleaseStopConfirmationName,
-  parseDateTimeLocalInput,
 } from '../../lib';
 import type { ReleaseLineLatestEvent, ReleaseLineView } from '../../lib';
 import { BigChartCard, type DeltaTone } from '../monitoring/big-chart-card';
@@ -159,7 +157,6 @@ const RESULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const HISTORY_INITIAL_GROUP_LIMIT = 8;
 const HISTORY_GROUP_PAGE_SIZE = 8;
 const RELEASE_RETENTION_OPTIONS = ['3', '7', '30', '90', '180', '365', 'forever'] as const;
-const CLEANUP_CUTOFF_PRESET_DAYS = [7, 30, 90, 180, 365] as const;
 type ReleaseRetentionOption = (typeof RELEASE_RETENTION_OPTIONS)[number];
 const RELEASE_RETENTION_LABEL_KEYS: Record<
   ReleaseRetentionOption,
@@ -2244,11 +2241,10 @@ function ReleaseRunResultCleanupSettings({
   releaseEvents: ReleaseLineEventDto[];
 }) {
   const { t } = useI18n();
-  const { resolvedTimeZone, formatDateTime } = useDateTimeFormatter();
-  const [cutoffLocal, setCutoffLocal] = useState('');
   const [releaseVersionFilter, setReleaseVersionFilter] = useState('all');
   const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const [cleanupPreview, setCleanupPreview] = useState<ReleaseRunResultCleanupImpactDto | null>(null);
+  const [previewedFilterKey, setPreviewedFilterKey] = useState<string | null>(null);
   const [cleanupError, setCleanupError] = useState<string | null>(null);
   const sourceIds = useMemo(() => getReleaseResultSourceIds(line, releaseEvents), [line, releaseEvents]);
   const releaseVersionOptions = useMemo(
@@ -2256,180 +2252,195 @@ function ReleaseRunResultCleanupSettings({
     [line, releaseEvents],
   );
   const activeReleaseVersionFilter =
-    releaseVersionFilter === 'all' || releaseVersionOptions.some((option) => option.id === releaseVersionFilter)
+    releaseVersionFilter !== 'all' && releaseVersionOptions.some((option) => option.id === releaseVersionFilter)
       ? releaseVersionFilter
       : 'all';
+  const selectedReleaseVersion = useMemo(
+    () => releaseVersionOptions.find((option) => option.id === activeReleaseVersionFilter) ?? null,
+    [activeReleaseVersionFilter, releaseVersionOptions],
+  );
   const releaseVersionIds = useMemo(
-    () => (activeReleaseVersionFilter === 'all' ? undefined : [activeReleaseVersionFilter]),
-    [activeReleaseVersionFilter],
+    () => (selectedReleaseVersion ? [selectedReleaseVersion.id] : undefined),
+    [selectedReleaseVersion],
   );
-  const cutoffIso = useMemo(
-    () => parseDateTimeLocalInput(cutoffLocal, resolvedTimeZone),
-    [cutoffLocal, resolvedTimeZone],
-  );
-  const cutoffInvalid = cutoffLocal.trim().length > 0 && !cutoffIso;
   const cleanupFilter = useMemo<ReleaseRunResultCleanupFilterDto | null>(() => {
-    if (!cutoffIso || sourceIds.length === 0) return null;
+    if (!releaseVersionIds) return null;
     return {
-      sourceIds,
+      sourceIds: sourceIds.length > 0 ? sourceIds : undefined,
       releaseVersionIds,
       releaseVersionScope: 'exact',
-      to: cutoffIso,
     };
-  }, [cutoffIso, releaseVersionIds, sourceIds]);
+  }, [releaseVersionIds, sourceIds]);
+  const cleanupFilterKey = useMemo(
+    () =>
+      cleanupFilter
+        ? JSON.stringify({
+            releaseVersionIds: cleanupFilter.releaseVersionIds ?? [],
+            sourceIds: cleanupFilter.sourceIds ?? [],
+          })
+        : null,
+    [cleanupFilter],
+  );
   const cleanupPreviewMutation = useReleaseRunResultCleanupPreview(projectId);
   const cleanupMutation = useReleaseRunResultCleanup(projectId);
+  const previewReleaseCleanup = cleanupPreviewMutation.mutateAsync;
+  const cleanupPreviewReady =
+    cleanupPreview !== null && cleanupFilterKey !== null && previewedFilterKey === cleanupFilterKey;
   const cleanupActionDisabled =
     cleanupFilter === null ||
-    cutoffInvalid ||
     cleanupPreviewMutation.isPending ||
     cleanupMutation.isPending ||
-    sourceIds.length === 0;
+    cleanupPreview === null ||
+    !cleanupPreviewReady ||
+    cleanupPreview.runResults === 0;
 
-  const setCleanupCutoff = useCallback((next: string) => {
-    setCutoffLocal(next);
-    setCleanupPreview(null);
-    setCleanupError(null);
-  }, []);
+  useEffect(() => {
+    if (!cleanupFilter || !cleanupFilterKey) {
+      return;
+    }
 
-  const applyCutoffPreset = useCallback(
-    (days: number) => {
-      const cutoff = new Date(Date.now() - days * 24 * 60 * 60_000);
-      setCleanupCutoff(formatDateTimeLocalInput(cutoff, resolvedTimeZone));
-    },
-    [resolvedTimeZone, setCleanupCutoff],
-  );
+    let canceled = false;
+    void previewReleaseCleanup(cleanupFilter)
+      .then((preview) => {
+        if (canceled) return;
+        setCleanupPreview(preview);
+        setPreviewedFilterKey(cleanupFilterKey);
+      })
+      .catch((error) => {
+        if (canceled) return;
+        setCleanupError(getApiErrorMessage(error) ?? t('releases.detail.cleanup.loadFailed'));
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [cleanupFilter, cleanupFilterKey, previewReleaseCleanup, t]);
 
   const handleVersionFilterChange = useCallback((next: string) => {
     setReleaseVersionFilter(next);
     setCleanupPreview(null);
+    setPreviewedFilterKey(null);
     setCleanupError(null);
   }, []);
 
-  const handlePreviewCleanup = useCallback(async () => {
-    if (!cleanupFilter) return;
-    setCleanupError(null);
-    try {
-      const preview = await cleanupPreviewMutation.mutateAsync(cleanupFilter);
-      setCleanupPreview(preview);
-      setCleanupDialogOpen(true);
-    } catch (error) {
-      setCleanupError(getApiErrorMessage(error) ?? t('releases.detail.cleanup.loadFailed'));
-    }
-  }, [cleanupFilter, cleanupPreviewMutation, t]);
+  const handleOpenCleanupDialog = useCallback(() => {
+    if (cleanupActionDisabled) return;
+    setCleanupDialogOpen(true);
+  }, [cleanupActionDisabled]);
 
   const handleCleanup = useCallback(async () => {
-    if (!cleanupFilter) return;
+    if (!cleanupFilter || !cleanupPreviewReady) return;
     setCleanupError(null);
     try {
-      const result = await cleanupMutation.mutateAsync({
+      await cleanupMutation.mutateAsync({
         ...cleanupFilter,
         confirmation: 'delete_release_run_results',
       });
-      setCleanupPreview(result);
       setCleanupDialogOpen(false);
+      setReleaseVersionFilter('all');
+      setCleanupPreview(null);
+      setPreviewedFilterKey(null);
     } catch (error) {
       setCleanupError(getApiErrorMessage(error) ?? t('releases.detail.cleanup.deleteFailed'));
     }
-  }, [cleanupFilter, cleanupMutation, t]);
+  }, [cleanupFilter, cleanupMutation, cleanupPreviewReady, t]);
 
-  const cutoffSummary = cutoffIso
-    ? formatTemplate(t('releases.detail.cleanup.summary'), { time: formatDateTime(cutoffIso) })
-    : t('releases.detail.cleanup.cutoffHelp');
+  const cleanupHint =
+    releaseVersionOptions.length === 0
+      ? t('releases.detail.cleanup.noVersions')
+      : selectedReleaseVersion
+        ? formatTemplate(t('releases.detail.cleanup.versionSummary'), { version: selectedReleaseVersion.label })
+        : t('releases.detail.cleanup.versionHelp');
 
   return (
     <div className="rounded-md border bg-background p-4" data-testid="release-run-result-cleanup-settings">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[13px] font-semibold">
-            <Trash2 className="size-4 text-muted-foreground" />
-            {t('releases.detail.cleanup.title')}
-          </div>
-          <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
-            {t('releases.detail.cleanup.description')}
-          </p>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-[13px] font-semibold">
+          <Trash2 className="size-4 text-muted-foreground" />
+          {t('releases.detail.cleanup.title')}
         </div>
+        <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
+          {t('releases.detail.cleanup.description')}
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(280px,520px)_auto] lg:items-end">
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <label htmlFor="release-cleanup-version-filter" className="text-[12.5px] font-medium">
+              {t('releases.detail.cleanup.versionLabel')}
+            </label>
+            <ResultReleaseVersionSelect
+              id="release-cleanup-version-filter"
+              options={releaseVersionOptions}
+              value={activeReleaseVersionFilter}
+              onChange={handleVersionFilterChange}
+              disabled={releaseVersionOptions.length === 0 || cleanupPreviewMutation.isPending || cleanupMutation.isPending}
+              allowAll={false}
+              placeholderLabel={t('releases.detail.cleanup.versionPlaceholder')}
+              triggerWidth="full"
+              dataTestId="release-cleanup-version-filter"
+            />
+          </div>
+
+          <div className="rounded-md border bg-muted/35 px-3 py-2.5">
+            <div className="text-[11px] font-medium text-muted-foreground">
+              {t('releases.detail.cleanup.estimateTitle')}
+            </div>
+            {cleanupPreviewMutation.isPending ? (
+              <div className="mt-1 text-[12px] text-muted-foreground">{t('releases.detail.cleanup.previewing')}</div>
+            ) : cleanupPreviewReady && cleanupPreview ? (
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <CleanupMetric
+                  label={t('releases.detail.cleanup.runResults')}
+                  value={formatCount(cleanupPreview.runResults)}
+                />
+                <CleanupMetric
+                  label={t('releases.detail.cleanup.matched')}
+                  value={formatResultBytes(cleanupPreview.estimatedMatchedBytes)}
+                />
+              </div>
+            ) : (
+              <div className="mt-1 text-[12px] text-muted-foreground">{cleanupHint}</div>
+            )}
+          </div>
+        </div>
+
         <Button
           type="button"
           size="sm"
-          variant="outline"
-          onClick={handlePreviewCleanup}
+          variant="destructive"
+          onClick={handleOpenCleanupDialog}
           disabled={cleanupActionDisabled}
           title={
-            sourceIds.length === 0
-              ? t('releases.detail.cleanup.noSources')
-              : cutoffIso
-                ? t('releases.detail.cleanup.preview')
-                : t('releases.detail.cleanup.dateRequired')
+            selectedReleaseVersion
+              ? t('releases.detail.cleanup.delete')
+              : t('releases.detail.cleanup.versionRequired')
           }
-          data-testid="release-run-result-cleanup-preview"
+          data-testid="release-run-result-delete-records"
+          className="h-10 w-full lg:w-auto"
         >
-          {cleanupPreviewMutation.isPending
-            ? t('releases.detail.cleanup.previewing')
-            : t('releases.detail.cleanup.preview')}
+          <Trash2 className="size-3.5" aria-hidden="true" />
+          {t('releases.detail.cleanup.delete')}
         </Button>
       </div>
 
-      <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(260px,0.8fr)_minmax(340px,1fr)]">
-        <div className="space-y-2">
-          <label htmlFor="release-run-result-cleanup-cutoff" className="text-[12.5px] font-medium">
-            {t('releases.detail.cleanup.cutoffLabel')}
-          </label>
-          <Input
-            id="release-run-result-cleanup-cutoff"
-            type="datetime-local"
-            value={cutoffLocal}
-            onChange={(event) => setCleanupCutoff(event.target.value)}
-            disabled={cleanupPreviewMutation.isPending || cleanupMutation.isPending}
-          />
-          <div className="flex flex-wrap gap-2">
-            {CLEANUP_CUTOFF_PRESET_DAYS.map((days) => (
-              <Button
-                key={days}
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 px-2.5 text-[12px]"
-                onClick={() => applyCutoffPreset(days)}
-                disabled={cleanupPreviewMutation.isPending || cleanupMutation.isPending}
-              >
-                {formatTemplate(t('releases.detail.cleanup.cutoffPreset'), { days })}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <label htmlFor="release-cleanup-version-filter" className="text-[12.5px] font-medium">
-            {t('releases.detail.cleanup.versionLabel')}
-          </label>
-          <ResultReleaseVersionSelect
-            id="release-cleanup-version-filter"
-            options={releaseVersionOptions}
-            value={activeReleaseVersionFilter}
-            onChange={handleVersionFilterChange}
-            disabled={releaseVersionOptions.length === 0 || cleanupPreviewMutation.isPending || cleanupMutation.isPending}
-          />
-        </div>
-      </div>
-
-      <p className={cn('mt-3 text-[12px]', cutoffInvalid ? 'text-destructive' : 'text-muted-foreground')}>
-        {sourceIds.length === 0
-          ? t('releases.detail.cleanup.noSources')
-          : cutoffInvalid
-            ? t('releases.detail.cleanup.invalidCutoff')
-            : cutoffSummary}
-      </p>
-
+      {cleanupPreviewReady && cleanupPreview?.runResults === 0 ? (
+        <p className="mt-3 text-[12px] text-muted-foreground">{t('releases.detail.cleanup.empty')}</p>
+      ) : null}
       {cleanupError ? <p className="mt-2 text-[12px] text-destructive">{cleanupError}</p> : null}
 
       <Dialog open={cleanupDialogOpen} onOpenChange={setCleanupDialogOpen}>
         <DialogContent data-testid="release-run-result-cleanup-dialog">
           <DialogHeader>
             <DialogTitle>{t('releases.detail.cleanup.dialogTitle')}</DialogTitle>
-            <DialogDescription>{t('releases.detail.cleanup.dialogDescription')}</DialogDescription>
+            <DialogDescription>
+              {formatTemplate(t('releases.detail.cleanup.dialogDescription'), {
+                version: selectedReleaseVersion?.label ?? '',
+              })}
+            </DialogDescription>
           </DialogHeader>
-          {cleanupPreview ? (
+          {cleanupPreviewReady && cleanupPreview ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <CleanupMetric
                 label={t('releases.detail.cleanup.runResults')}
@@ -2440,8 +2451,8 @@ function ReleaseRunResultCleanupSettings({
                 value={formatCount(cleanupPreview.annotations)}
               />
               <CleanupMetric
-                label={t('releases.detail.cleanup.reclaimable')}
-                value={formatResultBytes(cleanupPreview.estimatedReclaimableBytes)}
+                label={t('releases.detail.cleanup.matched')}
+                value={formatResultBytes(cleanupPreview.estimatedMatchedBytes)}
               />
               <CleanupMetric
                 label={t('releases.detail.cleanup.deferred')}
@@ -2462,7 +2473,7 @@ function ReleaseRunResultCleanupSettings({
               type="button"
               variant="destructive"
               onClick={handleCleanup}
-              disabled={!cleanupPreview || cleanupPreview.runResults === 0 || cleanupMutation.isPending}
+              disabled={cleanupActionDisabled}
             >
               {cleanupMutation.isPending ? t('releases.detail.cleanup.deleting') : t('releases.detail.cleanup.confirm')}
             </Button>
@@ -2475,7 +2486,7 @@ function ReleaseRunResultCleanupSettings({
 
 function CleanupMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border bg-muted/35 px-3 py-2">
+    <div className="rounded-md border bg-background px-3 py-2">
       <div className="text-[11px] text-muted-foreground">{label}</div>
       <div className="mt-1 font-mono text-[13px] font-semibold">{value}</div>
     </div>
@@ -2488,22 +2499,31 @@ function ResultReleaseVersionSelect({
   value,
   onChange,
   disabled,
+  allowAll = true,
+  placeholderLabel,
+  triggerWidth = 'fixed',
+  dataTestId = 'release-result-version-filter',
 }: {
   id: string;
   options: ResultReleaseVersionFilterOption[];
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
+  allowAll?: boolean;
+  placeholderLabel?: string;
+  triggerWidth?: 'fixed' | 'full';
+  dataTestId?: string;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const selectedOption = value === 'all' ? null : (options.find((option) => option.id === value) ?? null);
   const allLabel = t('releases.detail.results.versionFilter.all');
-  const triggerLabel = selectedOption?.label ?? allLabel;
+  const triggerLabel = selectedOption?.label ?? placeholderLabel ?? allLabel;
   const triggerDetail = selectedOption?.detail ?? null;
   const normalizedQuery = normalizeResultVersionSearch(query);
-  const allOptionVisible = !normalizedQuery || resultVersionSearchIncludes(normalizedQuery, [allLabel, 'all']);
+  const allOptionVisible =
+    allowAll && (!normalizedQuery || resultVersionSearchIncludes(normalizedQuery, [allLabel, 'all']));
   const filteredOptions = useMemo(() => {
     if (!normalizedQuery) return options;
     return options.filter((option) =>
@@ -2537,8 +2557,11 @@ function ResultReleaseVersionSelect({
           type="button"
           variant="outline"
           disabled={disabled}
-          data-testid="release-result-version-filter"
-          className="h-auto min-h-10 w-full justify-between px-3 py-2 text-left sm:w-[340px]"
+          data-testid={dataTestId}
+          className={cn(
+            'h-auto min-h-10 w-full justify-between px-3 py-2 text-left',
+            triggerWidth === 'fixed' ? 'sm:w-[340px]' : 'sm:w-full',
+          )}
         >
           <span className="min-w-0">
             <span className="block truncate font-mono text-[13px] font-semibold">{triggerLabel}</span>

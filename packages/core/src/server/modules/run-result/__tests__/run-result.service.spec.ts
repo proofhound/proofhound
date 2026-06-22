@@ -17,6 +17,7 @@ const PROJECT_ID = '11111111-1111-1111-1111-111111111111';
 const EXPERIMENT_ID = '22222222-2222-2222-2222-222222222222';
 const RUN_RESULT_ID = '33333333-3333-3333-3333-333333333333';
 const USER_ID = '44444444-4444-4444-4444-444444444444';
+const RELEASE_VERSION_ID = '55555555-5555-4555-8555-555555555555';
 
 const localActor: CurrentUserPayload = {
   sub: USER_ID,
@@ -56,8 +57,8 @@ const defaultQuery: RunResultListQueryDto = {
 } as RunResultListQueryDto;
 const defaultReleaseQuery = defaultQuery as RunResultReleaseListQueryDto;
 const cleanupFilter: ReleaseRunResultCleanupFilterDto = {
+  releaseVersionIds: [RELEASE_VERSION_ID],
   releaseVersionScope: 'exact',
-  to: '2026-06-01T00:00:00.000Z',
 };
 const cleanupInput: ReleaseRunResultCleanupInputDto = {
   ...cleanupFilter,
@@ -362,11 +363,24 @@ describe('RunResultService', () => {
 
       await expect(
         service.previewReleaseRunResultCleanup(PROJECT_ID, localActor, {
+          releaseVersionIds: [RELEASE_VERSION_ID],
           releaseVersionScope: 'exact',
           from: '2026-06-02T00:00:00.000Z',
           to: '2026-06-01T00:00:00.000Z',
         }),
       ).rejects.toThrow('run_result_cleanup_invalid_time_range');
+      expect(repo.previewReleaseCleanup).not.toHaveBeenCalled();
+    });
+
+    it('rejects manual cleanup without a release version filter', async () => {
+      const repo = buildRepo();
+      const service = new RunResultService(repo, new LocalAccessControlService());
+
+      await expect(
+        service.previewReleaseRunResultCleanup(PROJECT_ID, localActor, {
+          releaseVersionScope: 'exact',
+        }),
+      ).rejects.toThrow('run_result_cleanup_release_version_required');
       expect(repo.previewReleaseCleanup).not.toHaveBeenCalled();
     });
   });

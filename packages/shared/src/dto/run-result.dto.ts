@@ -149,7 +149,7 @@ export const releaseRunResultCleanupFilterSchema = z.object({
   search: z.string().trim().max(200).optional(),
   externalId: z.string().trim().max(200).optional(),
   from: z.string().datetime().optional(),
-  to: z.string().datetime(),
+  to: z.string().datetime().optional(),
 });
 export interface ReleaseRunResultCleanupFilterDto {
   sourceIds?: string[];
@@ -163,7 +163,7 @@ export interface ReleaseRunResultCleanupFilterDto {
   search?: string;
   externalId?: string;
   from?: string;
-  to: string;
+  to?: string;
 }
 
 export const releaseRunResultCleanupInputSchema = releaseRunResultCleanupFilterSchema.extend({
