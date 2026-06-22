@@ -1186,7 +1186,9 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
                     </thead>
                     <tbody>
                       <tr className="border-b bg-primary/5">
-                        <td className="px-3 py-2 font-semibold">{t('experiments.detail.classOverall')}</td>
+                        <td className="px-3 py-2 font-mono text-[11.5px]">
+                          {t('experiments.detail.classOverall')}
+                        </td>
                         <td className="px-3 py-2 font-mono text-[12.5px]">{detail.processedSamples}</td>
                         <td className="px-3 py-2 font-mono text-[12.5px] tabular-nums">
                           {Number.isFinite(accuracy) ? accuracy.toFixed(3) : '—'}
