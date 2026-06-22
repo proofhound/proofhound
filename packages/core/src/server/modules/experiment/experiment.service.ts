@@ -272,11 +272,19 @@ export class ExperimentService {
     const status = row.status as ExperimentStatusDto;
     const now = new Date();
 
-    if (action === 'stop') {
-      if (status !== 'running') {
-        throw new ConflictException('experiment_stop_invalid_status');
+    if (action === 'stop' || action === 'cancel') {
+      if (action === 'cancel' && status === 'stopped') {
+        return {
+          controlState: null,
+          updatedAt: now,
+        };
       }
-      // Only writes control_state; the actual status is flipped to stopped by the workflow once it observes the change at a step boundary
+      if (status !== 'running') {
+        throw new ConflictException(
+          action === 'cancel' ? 'experiment_cancel_invalid_status' : 'experiment_stop_invalid_status',
+        );
+      }
+      // Legacy cancel is folded into stop; the workflow lands both paths in stopped.
       return {
         controlState: 'stop',
         updatedAt: now,
@@ -295,18 +303,7 @@ export class ExperimentService {
       };
     }
 
-    if (action === 'cancel') {
-      if (status === 'success' || status === 'cancelled') {
-        throw new ConflictException('experiment_cancel_invalid_status');
-      }
-      // Only writes control_state; once observed, the workflow writes status=cancelled + finished_at
-      return {
-        controlState: 'cancel',
-        updatedAt: now,
-      };
-    }
-
-    if (status !== 'failed' && status !== 'cancelled' && status !== 'stopped') {
+    if (status !== 'failed' && status !== 'stopped') {
       throw new ConflictException('experiment_retry_invalid_status');
     }
 

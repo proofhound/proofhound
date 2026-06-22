@@ -351,6 +351,49 @@ describe('ExperimentService', () => {
     expect(result.controlState).toBe('stop');
   });
 
+  it('treats legacy cancel as stop for running experiments', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findExperimentById
+      .mockResolvedValueOnce(experimentRow({ status: 'running' }))
+      .mockResolvedValueOnce(experimentRow({ status: 'running', controlState: 'stop' }));
+
+    await service.controlExperiment(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      'cancel',
+      actor,
+    );
+
+    expect(repo.updateExperiment).toHaveBeenCalledWith(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      expect.objectContaining({ controlState: 'stop' }),
+    );
+    expect(launcher.resume).not.toHaveBeenCalled();
+    expect(launcher.retry).not.toHaveBeenCalled();
+  });
+
+  it('accepts legacy cancel as a no-op for already stopped experiments', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findExperimentById
+      .mockResolvedValueOnce(experimentRow({ status: 'stopped', controlState: null }))
+      .mockResolvedValueOnce(experimentRow({ status: 'stopped', controlState: null }));
+
+    const result = await service.controlExperiment(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      'cancel',
+      actor,
+    );
+
+    expect(repo.updateExperiment).toHaveBeenCalledWith(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      expect.objectContaining({ controlState: null }),
+    );
+    expect(result.status).toBe('stopped');
+  });
+
   it('resume writes control_state and triggers launcher.resume', async () => {
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.findExperimentById

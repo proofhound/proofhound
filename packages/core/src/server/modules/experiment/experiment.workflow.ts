@@ -86,7 +86,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
   private readonly compactRunResultsStep: (experimentId: string, projectId: string) => Promise<void>;
   private readonly finalizeStep: (
     experimentId: string,
-    kind: 'success' | 'failed' | 'stopped' | 'cancelled',
+    kind: 'success' | 'failed' | 'stopped',
     failureReason?: string,
   ) => Promise<void>;
 
@@ -156,11 +156,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
           'workflow_batch_start',
         );
         const control = await this.readControlStateStep(experimentId);
-        if (control === 'cancel') {
-          await this.finalizeStep(experimentId, 'cancelled');
-          return;
-        }
-        if (control === 'stop') {
+        if (control === 'stop' || control === 'cancel') {
           await this.finalizeStep(experimentId, 'stopped');
           return;
         }
@@ -188,13 +184,9 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
           },
           'workflow_batch_done',
         );
-        // Control signals observed inside poll: already-enqueued LLM jobs are not cancelled (the worker has no abort channel),
-        // but the workflow terminates immediately at the batch boundary and stops dispatching new batches
-        if (counts.control === 'cancel') {
-          await this.finalizeStep(experimentId, 'cancelled');
-          return;
-        }
-        if (counts.control === 'stop') {
+        // Control signals observed inside poll: already-enqueued LLM jobs are not aborted (the worker has no abort channel),
+        // but the workflow terminates immediately at the batch boundary and stops dispatching new batches.
+        if (counts.control === 'stop' || counts.control === 'cancel') {
           await this.finalizeStep(experimentId, 'stopped');
           return;
         }
@@ -444,7 +436,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
 
   private async finalizeImpl(
     experimentId: string,
-    kind: 'success' | 'failed' | 'stopped' | 'cancelled',
+    kind: 'success' | 'failed' | 'stopped',
     failureReason?: string,
   ): Promise<void> {
     const now = new Date();

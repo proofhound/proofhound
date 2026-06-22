@@ -124,36 +124,6 @@ describeDbosIntegration('ExperimentWorkflow integration', (getCtx) => {
     expect(ctx.bullmq.getCalls()).toHaveLength(2);
   });
 
-  it('cancelled: control_state=cancel → finalize=cancelled, 不 enqueue 任何 sample', async () => {
-    const ctx = getCtx();
-
-    const seeded = await seedExperiment(ctx.db, ctx.testUserId, { sampleCount: 3 });
-    ctx.trackExperiment(seeded);
-
-    // Set control_state before the workflow starts (simulating "cancel right after submit")
-    await ctx.db
-      .update(experiments)
-      .set({ controlState: 'cancel' })
-      .where(eq(experiments.id, seeded.experimentId));
-
-    await ctx.registrar.runWorkflow(seeded.experimentId);
-
-    const rows = await ctx.db
-      .select({
-        status: experiments.status,
-        controlState: experiments.controlState,
-        finishedAt: experiments.finishedAt,
-      })
-      .from(experiments)
-      .where(eq(experiments.id, seeded.experimentId))
-      .limit(1);
-
-    expect(rows[0]!.status).toBe('cancelled');
-    expect(rows[0]!.controlState).toBeNull();
-    expect(rows[0]!.finishedAt).not.toBeNull();
-    expect(ctx.bullmq.getCalls()).toHaveLength(0);
-  });
-
   it('stopped: control_state=stop → finalize=stopped, 不 enqueue 任何 sample', async () => {
     const ctx = getCtx();
 

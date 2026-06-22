@@ -57,10 +57,10 @@ export const experiments = phRuns.table(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [
-    check('experiments_status_check', sql`${t.status} IN ('running', 'success', 'failed', 'stopped', 'cancelled')`),
+    check('experiments_status_check', sql`${t.status} IN ('running', 'success', 'failed', 'stopped')`),
     check(
       'experiments_control_state_check',
-      sql`${t.controlState} IN ('stop', 'resume', 'cancel') OR ${t.controlState} IS NULL`,
+      sql`${t.controlState} IN ('stop', 'resume') OR ${t.controlState} IS NULL`,
     ),
     check(
       'experiments_failure_kind_check',

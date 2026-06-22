@@ -42,7 +42,7 @@ Experiments are carried by a DBOS workflow:
 - Enqueue LLM calls into the `llm` queue.
 - The worker writes `ph_runs.run_results`.
 - The workflow aggregates progress and metrics and writes them back to `ph_runs.experiments`.
-- `control_state` supports `stop` / `resume` / `cancel`.
+- `control_state` supports `stop` / `resume`; legacy `cancel` experiment actions are normalized to `stop`.
 
 ### 3.2 OptimizationWorkflow
 
@@ -122,7 +122,7 @@ ProofHound does not rely on workflow engine signals. User controls are written t
 
 | User action                              | Landing point                                                 | Who observes it      |
 | ---------------------------------------- | ------------------------------------------------------------- | -------------------- |
-| Stop / resume / cancel an experiment     | `ph_runs.experiments.control_state`                           | ExperimentWorkflow   |
+| Stop / resume an experiment              | `ph_runs.experiments.control_state`                           | ExperimentWorkflow   |
 | Stop / resume / cancel an optimization   | `ph_runs.optimizations.control_state`                         | OptimizationWorkflow |
 | Stop / resume / cancel / extend a canary | `ph_releases.release_line_events.control_state`               | Release runner       |
 | Force-stop production                    | A new `force_stop` event in `ph_releases.release_line_events` | Release runner       |

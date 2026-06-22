@@ -95,7 +95,7 @@ type FinalizeKind = 'success' | 'failed' | 'stopped' | 'cancelled';
 type ControlSignal = 'stop' | 'resume' | 'cancel' | null;
 type ChildExperimentAction = 'stop' | 'cancel' | 'resume';
 type WorkflowControlState = { status: string; controlState: ControlSignal } | null;
-type BaselineExperimentStatus = 'running' | 'success' | 'failed' | 'stopped' | 'cancelled';
+type BaselineExperimentStatus = 'running' | 'success' | 'failed' | 'stopped';
 
 // System actor: used by workflow / service to represent "the system" when calling ExperimentService.controlExperiment.
 // The OSS edition does not maintain user / audit tables; keep a stable actor id for log and business-field traceability.
@@ -158,14 +158,14 @@ type PrepareOutcome =
   | { kind: 'fatal'; errorMessage: string; analysisFailure?: boolean };
 
 interface PromptBaselinePrepareOutcome {
-  kind: 'skip' | 'ready' | 'launch' | 'wait' | 'failed' | 'stopped' | 'cancelled';
+  kind: 'skip' | 'ready' | 'launch' | 'wait' | 'failed' | 'stopped';
   experimentId?: string;
   status?: BaselineExperimentStatus;
   errorMessage?: string;
 }
 
 interface PromptBaselineFinalizeOutcome {
-  kind: 'ready' | 'failed' | 'stopped' | 'cancelled';
+  kind: 'ready' | 'failed' | 'stopped';
   errorMessage?: string;
 }
 
@@ -514,15 +514,14 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     if (prepare.kind === 'failed') {
       return { kind: 'fatal', errorMessage: prepare.errorMessage ?? 'baseline_experiment_failed' };
     }
-    if (prepare.kind === 'cancelled') {
-      await this.finalizeStep(optimizationId, 'cancelled', {
-        reason: prepare.errorMessage ?? 'baseline_experiment_cancelled',
-      });
-      return { kind: 'exit' };
-    }
     if (prepare.kind === 'stopped') {
       const state = await this.readStateStep(optimizationId);
-      if (state?.controlState === 'resume' && prepare.experimentId) {
+      if (state?.controlState === 'cancel') {
+        await this.finalizeStep(optimizationId, 'cancelled', {
+          reason: prepare.errorMessage ?? 'baseline_experiment_stopped_by_cancel',
+        });
+        return { kind: 'exit' };
+      } else if (state?.controlState === 'resume' && prepare.experimentId) {
         await this.controlChildExperimentStep(snapshot.projectId, prepare.experimentId, 'resume');
         await this.clearResumeStep(optimizationId);
       } else {
@@ -561,14 +560,12 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       return { kind: 'fatal', errorMessage: finalized.errorMessage ?? 'baseline_experiment_failed' };
     }
     if (finalized.kind === 'stopped') {
-      await this.finalizeStep(optimizationId, 'stopped', {
-        reason: finalized.errorMessage ?? 'baseline_experiment_stopped',
-      });
-      return { kind: 'exit' };
-    }
-    if (finalized.kind === 'cancelled') {
-      await this.finalizeStep(optimizationId, 'cancelled', {
-        reason: finalized.errorMessage ?? 'baseline_experiment_cancelled',
+      const state = await this.readStateStep(optimizationId);
+      await this.finalizeStep(optimizationId, state?.controlState === 'cancel' ? 'cancelled' : 'stopped', {
+        reason:
+          state?.controlState === 'cancel'
+            ? (finalized.errorMessage ?? 'baseline_experiment_stopped_by_cancel')
+            : (finalized.errorMessage ?? 'baseline_experiment_stopped'),
       });
       return { kind: 'exit' };
     }
@@ -668,7 +665,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         resumeChildExpId = round.experimentId;
         break; // Later rounds (if any) should not have been persisted by design — defensive break
       }
-      // Other statuses (cancelled / queued / future extensions) are treated as "does not affect nextRound"
+      // Unknown/future statuses are treated as "does not affect nextRound"
     }
     if (ctx.bestVersionId) {
       const [bestVer] = await this.db
@@ -989,7 +986,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       if (status === 'success') {
         return { kind: 'ready', experimentId: existing.id, status };
       }
-      if (status === 'failed' || status === 'stopped' || status === 'cancelled') {
+      if (status === 'failed' || status === 'stopped') {
         return {
           kind: status,
           experimentId: existing.id,
@@ -1026,7 +1023,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     if (status === 'success') {
       return { kind: 'ready', experimentId, status };
     }
-    if (status === 'failed' || status === 'stopped' || status === 'cancelled') {
+    if (status === 'failed' || status === 'stopped') {
       return {
         kind: status,
         experimentId,
@@ -1075,7 +1072,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     if (status === 'success') {
       return { kind: 'ready' };
     }
-    if (status === 'stopped' || status === 'cancelled') {
+    if (status === 'stopped') {
       return { kind: status, errorMessage: `baseline_experiment_${status}` };
     }
     return { kind: 'failed', errorMessage: 'baseline_experiment_failed' };
@@ -1727,7 +1724,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       snapshot.projectId,
     );
     const dbosWfId = DBOS.workflowID ?? null;
-    if (finalState.status === 'cancelled' || finalState.status === 'stopped') {
+    if (finalState.status === 'stopped') {
       // The parent workflow observes control_state at the next step boundary; treat this round as continue/skip
       await this.upsertStepSafe({
         optimizationId,
@@ -1838,7 +1835,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
   }
 
   // SPEC 25 §7 dual-path linkage: on parent stop/cancel, call the child experiment's controlExperiment; parent resume also goes through this step
-  // Child experiment is already terminal (success/failed/cancelled/stopped) or the row does not exist → swallow Conflict/NotFound
+  // Child experiment is already terminal (success/failed/stopped) or the row does not exist → swallow Conflict/NotFound
   // Other errors throw so DBOS step retries (poll is the backstop guaranteeing eventual consistency)
   private async controlChildExperimentImpl(
     projectId: string,
@@ -1955,8 +1952,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       if (
         exp.status === 'success' ||
         exp.status === 'failed' ||
-        exp.status === 'stopped' ||
-        exp.status === 'cancelled'
+        exp.status === 'stopped'
       ) {
         return { status: exp.status, metrics: exp.metrics };
       }
@@ -2466,7 +2462,7 @@ export function deriveJudgmentRulesFromOutputSchema(
 }
 
 function normalizeBaselineExperimentStatus(status: string): BaselineExperimentStatus {
-  if (status === 'success' || status === 'failed' || status === 'stopped' || status === 'cancelled') {
+  if (status === 'success' || status === 'failed' || status === 'stopped') {
     return status;
   }
   return 'running';

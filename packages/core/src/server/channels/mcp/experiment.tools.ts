@@ -48,7 +48,7 @@ export function createExperimentTools(experimentService: ExperimentService): Mcp
       inputSchema: {
         type: 'object',
         properties: {
-          status: { type: 'string', enum: ['running', 'success', 'failed', 'stopped', 'cancelled'] },
+          status: { type: 'string', enum: ['running', 'success', 'failed', 'stopped'] },
           search: { type: 'string' },
           sort: { type: 'string', enum: ['accuracy', 'updated', 'duration'] },
         },
@@ -77,7 +77,7 @@ export function createExperimentTools(experimentService: ExperimentService): Mcp
     },
     {
       name: 'experiment_control_experiment',
-      description: '控制实验状态：停止、恢复、取消或重跑',
+      description: '控制实验状态：停止、恢复或重跑；cancel 作为旧客户端兼容别名按 stop 处理',
       inputSchema: {
         type: 'object',
         required: ['experimentId', 'action'],

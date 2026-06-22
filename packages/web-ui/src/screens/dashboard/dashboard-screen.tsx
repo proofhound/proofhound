@@ -5,7 +5,6 @@ import { useRouter } from '../../hooks/use-router';
 import { useMemo, useState } from 'react';
 import type {
   ExperimentListItemDto,
-  ExperimentStatusDto,
   OptimizationListItemDto,
   OptimizationStatusDto,
 } from '@proofhound/shared';
@@ -35,6 +34,7 @@ import { useDateTimeFormatter } from '../../hooks';
 import { useReleaseLineList } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import type { ReleaseLineView } from '../../lib';
+import { normalizeExperimentStatus, type ExperimentStatus } from '../experiments/experiment-view-model';
 
 const DEFAULT_VISIBLE_FEED_ITEMS = 10;
 const EMPTY_LIST: never[] = [];
@@ -124,12 +124,11 @@ const SUMMARY_LABEL_KEYS: Record<SummaryKey, TranslationKey> = {
   releases: 'nav.releases',
 };
 
-const EXPERIMENT_STATUS_KEYS: Record<ExperimentStatusDto, TranslationKey> = {
+const EXPERIMENT_STATUS_KEYS: Record<ExperimentStatus, TranslationKey> = {
   running: 'experiments.status.running',
   success: 'experiments.status.success',
   failed: 'experiments.status.failed',
   stopped: 'experiments.status.stopped',
-  cancelled: 'experiments.status.cancelled',
 };
 
 const OPTIMIZATION_STATUS_KEYS: Record<OptimizationStatusDto, TranslationKey> = {
@@ -229,13 +228,13 @@ function matchesFeedTab(tabKey: FeedTabKey, item: FeedItem) {
   }
 }
 
-function workFeedStatus(status: ExperimentStatusDto | OptimizationStatusDto): FeedStatus {
+function workFeedStatus(status: ExperimentStatus | OptimizationStatusDto): FeedStatus {
   if (status === 'running') return 'running';
   if (status === 'success') return 'success';
   return 'failed';
 }
 
-function workFeedTone(status: ExperimentStatusDto | OptimizationStatusDto): FeedTone | undefined {
+function workFeedTone(status: ExperimentStatus | OptimizationStatusDto): FeedTone | undefined {
   return status === 'running' ? 'running' : undefined;
 }
 
@@ -309,6 +308,7 @@ function buildFeedItems({
 }) {
   const experimentItems: FeedItem[] = experiments.map((experiment) => {
     const percent = progressPercent(experiment.processedSamples, Math.max(experiment.totalSamples, 1));
+    const experimentStatus = normalizeExperimentStatus(experiment.status);
 
     return {
       id: `experiment-${experiment.id}`,
@@ -342,9 +342,9 @@ function buildFeedItems({
           detail: experiment.modelVariant,
         },
       ],
-      metrics: experiment.status === 'running' ? undefined : buildExperimentMetrics(experiment, t),
+      metrics: experimentStatus === 'running' ? undefined : buildExperimentMetrics(experiment, t),
       progress:
-        experiment.status === 'running'
+        experimentStatus === 'running'
           ? {
               value: percent,
               label: interpolate(t('projectOverview.feed.progress'), {
@@ -354,10 +354,10 @@ function buildFeedItems({
               }),
             }
           : undefined,
-      status: workFeedStatus(experiment.status),
-      eventType: t(EXPERIMENT_STATUS_KEYS[experiment.status]),
+      status: workFeedStatus(experimentStatus),
+      eventType: t(EXPERIMENT_STATUS_KEYS[experimentStatus]),
       occurredAt: experiment.finishedAt ?? experiment.updatedAt,
-      tone: workFeedTone(experiment.status),
+      tone: workFeedTone(experimentStatus),
     };
   });
 

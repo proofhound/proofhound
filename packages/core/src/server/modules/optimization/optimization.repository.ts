@@ -992,7 +992,7 @@ export class OptimizationRepository {
   // Use case: service.controlOptimization locates the target when immediately propagating stop/cancel to the child experiment.
   // The baseline experiment in from_prompt_version has no optimization_id + round_index back-pointer,
   // but source_experiment_id points to it; if a regular round is not present, fall back to locating this baseline experiment.
-  // Exclude terminal states (success/failed/cancelled); only return running/stopped that genuinely need linkage.
+  // Exclude terminal states (success/failed); only return running/stopped that genuinely need linkage.
   async findActiveChildExperiment(
     optimizationId: string,
   ): Promise<{ id: string; status: string; roundIndex: number | null; projectId: string } | null> {
@@ -1009,7 +1009,7 @@ export class OptimizationRepository {
           eq(experiments.optimizationId, optimizationId),
           isNotNull(experiments.roundIndex),
           isNull(experiments.deletedAt),
-          sql`${experiments.status} NOT IN ('success','failed','cancelled')`,
+          sql`${experiments.status} NOT IN ('success','failed')`,
         ),
       )
       .orderBy(desc(experiments.roundIndex))
@@ -1034,7 +1034,7 @@ export class OptimizationRepository {
           eq(optimizations.startingMode, 'from_prompt_version'),
           isNull(optimizations.deletedAt),
           isNull(experiments.deletedAt),
-          sql`${experiments.status} NOT IN ('success','failed','cancelled')`,
+          sql`${experiments.status} NOT IN ('success','failed')`,
         ),
       )
       .limit(1);

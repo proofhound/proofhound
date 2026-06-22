@@ -109,7 +109,7 @@ async function waitForExperimentSuccess(request: APIRequestContext, experimentId
   for (;;) {
     const experiment = await getJson<ExperimentListItemDto>(request, `/experiments/${experimentId}`);
     if (experiment.status === 'success') return experiment;
-    if (['failed', 'stopped', 'cancelled'].includes(experiment.status)) {
+    if (['failed', 'stopped'].includes(experiment.status)) {
       throw new Error(`experiment ${experimentId} ended as ${experiment.status}: ${experiment.failureReason ?? ''}`);
     }
     if (Date.now() >= deadline) {

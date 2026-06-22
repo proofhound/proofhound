@@ -6,9 +6,10 @@ import { promptOutputSchema, promptVariableTypeSchema } from './prompt.dto';
 export const experimentIdParamSchema = z.string().uuid();
 export type ExperimentIdParamDto = z.infer<typeof experimentIdParamSchema>;
 
-export const experimentStatusSchema = z.enum(['running', 'success', 'failed', 'stopped', 'cancelled']);
+export const experimentStatusSchema = z.enum(['running', 'success', 'failed', 'stopped']);
 export type ExperimentStatusDto = z.infer<typeof experimentStatusSchema>;
 
+// `cancel` is kept as a legacy control action alias for `stop`.
 export const experimentControlActionSchema = z.enum(['stop', 'resume', 'cancel', 'retry']);
 export type ExperimentControlActionDto = z.infer<typeof experimentControlActionSchema>;
 
@@ -95,7 +96,7 @@ export const experimentListItemSchema = z.object({
   datasetFieldSchema: z.array(datasetFieldSchema).nullable(),
   outputSchema: promptOutputSchema,
   status: experimentStatusSchema,
-  controlState: z.enum(['stop', 'resume', 'cancel']).nullable(),
+  controlState: z.enum(['stop', 'resume']).nullable(),
   totalSamples: z.number().int().nonnegative(),
   processedSamples: z.number().int().nonnegative(),
   failedSamples: z.number().int().nonnegative(),
