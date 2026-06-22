@@ -108,6 +108,7 @@ import {
   useUnarchiveReleaseLine,
   useUpdateReleaseLineInputRoute,
   useUpdateReleaseLineOutputRoute,
+  useUpdateReleaseLineRetention,
   useUpdateReleaseLineRunConfig,
   useUpdateReleaseLineTrafficRatio,
 } from '../../hooks';
@@ -151,6 +152,26 @@ const RESULT_COLUMNS: TableColumn[] = [
 const RESULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const HISTORY_INITIAL_GROUP_LIMIT = 8;
 const HISTORY_GROUP_PAGE_SIZE = 8;
+const RELEASE_RETENTION_OPTIONS = ['3', '7', '30', '90', '180', '365', 'forever'] as const;
+type ReleaseRetentionOption = (typeof RELEASE_RETENTION_OPTIONS)[number];
+const RELEASE_RETENTION_LABEL_KEYS: Record<
+  ReleaseRetentionOption,
+  | 'productionReleases.new.retention.3'
+  | 'productionReleases.new.retention.7'
+  | 'productionReleases.new.retention.30'
+  | 'productionReleases.new.retention.90'
+  | 'productionReleases.new.retention.180'
+  | 'productionReleases.new.retention.365'
+  | 'productionReleases.new.retention.forever'
+> = {
+  '3': 'productionReleases.new.retention.3',
+  '7': 'productionReleases.new.retention.7',
+  '30': 'productionReleases.new.retention.30',
+  '90': 'productionReleases.new.retention.90',
+  '180': 'productionReleases.new.retention.180',
+  '365': 'productionReleases.new.retention.365',
+  forever: 'productionReleases.new.retention.forever',
+};
 type ResultReleaseVersionFilterOption = {
   id: string;
   label: string;
@@ -969,6 +990,7 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
   const updateRunConfigMutation = useUpdateReleaseLineRunConfig(projectId);
   const updateOutputRouteMutation = useUpdateReleaseLineOutputRoute(projectId);
   const updateInputRouteMutation = useUpdateReleaseLineInputRoute(projectId);
+  const updateRetentionMutation = useUpdateReleaseLineRetention(projectId);
   const modelQuery = useProjectModels(projectId);
   const outputConnectorsQuery = useConnectors(projectId, { direction: 'output' });
   const tab = resolveTab(searchParams.get('tab'));
@@ -987,6 +1009,13 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
   const deleteError = deleteState.lineId === activeDeleteLineId ? deleteState.error : null;
   const deleteImpactQuery = useReleaseLineDeleteImpact(projectId, deleteDialogOpen ? activeDeleteLineId : '');
   const productionReleaseName = useMemo(() => getReleaseStopConfirmationName(line), [line]);
+  const currentRetentionOption = retentionOptionFromDays(line?.production?.currentEvent?.retentionDays ?? null);
+  const [retentionDraft, setRetentionDraft] = useState<ReleaseRetentionOption>(currentRetentionOption);
+  const retentionDirty = retentionDraft !== currentRetentionOption;
+  const canEditRetention = Boolean(
+    line?.production?.currentEvent &&
+      (line.production.currentEvent.status === 'running' || line.production.currentEvent.status === 'stopped'),
+  );
   const canConfirmStopProduction = stopConfirmationText === productionReleaseName && productionReleaseName.length > 0;
   const canConfirmDelete = Boolean(line && deleteConfirmationText === line.label);
   const canAddCanary = Boolean(line && line.production?.currentEvent?.status === 'running');
@@ -1021,6 +1050,10 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
     params.set('tab', normalizedTab);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }, [pathname, router, searchParams]);
+
+  useEffect(() => {
+    setRetentionDraft(currentRetentionOption);
+  }, [currentRetentionOption, line?.id]);
 
   const selectTab = useCallback(
     (next: DetailTab) => {
@@ -1163,6 +1196,14 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
   function openAddCanaryPage() {
     if (!line || !canAddCanary) return;
     router.push(`/releases/new?mode=canary&line=${encodeURIComponent(line.id)}`);
+  }
+
+  function saveRetention() {
+    if (!line || !canEditRetention || !retentionDirty) return;
+    updateRetentionMutation.mutate({
+      releaseLineId: line.id,
+      body: { retentionDays: retentionDaysFromOption(retentionDraft) },
+    });
   }
 
   return (
@@ -1323,7 +1364,67 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
               <div className="text-[13px] font-semibold">{t('releases.detail.settings.title')}</div>
               <p className="mt-1 text-[12px] text-muted-foreground">{t('releases.detail.settings.description')}</p>
             </div>
-            <div className="p-4">
+            <div className="space-y-4 p-4">
+              <div className="rounded-md border bg-background p-4" data-testid="release-line-retention-settings">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-[13px] font-semibold">
+                      <Timer className="size-4 text-muted-foreground" />
+                      {t('releases.detail.retention.title')}
+                    </div>
+                    <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
+                      {t('releases.detail.retention.description')}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={saveRetention}
+                    disabled={!canEditRetention || !retentionDirty || updateRetentionMutation.isPending}
+                    data-testid="release-line-retention-save"
+                  >
+                    {updateRetentionMutation.isPending
+                      ? t('releases.detail.retention.saving')
+                      : t('releases.detail.retention.save')}
+                  </Button>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={t('releases.detail.retention.title')}>
+                  {RELEASE_RETENTION_OPTIONS.map((option) => {
+                    const selected = option === retentionDraft;
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        className={cn(
+                          'inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-[12.5px] font-medium transition-colors',
+                          selected
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-card text-muted-foreground hover:text-foreground',
+                          !canEditRetention && 'cursor-not-allowed opacity-60',
+                        )}
+                        disabled={!canEditRetention || updateRetentionMutation.isPending}
+                        onClick={() => setRetentionDraft(option)}
+                        data-testid={`release-line-retention-${option}`}
+                      >
+                        {selected ? <Check className="size-3.5" /> : null}
+                        {t(RELEASE_RETENTION_LABEL_KEYS[option])}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-[12px] text-muted-foreground">
+                  {canEditRetention
+                    ? formatTemplate(t('releases.detail.retention.current'), {
+                        value: t(RELEASE_RETENTION_LABEL_KEYS[currentRetentionOption]),
+                      })
+                    : t('releases.detail.retention.noProduction')}
+                </p>
+                {updateRetentionMutation.isError ? (
+                  <p className="mt-2 text-[12px] text-destructive">
+                    {getApiErrorMessage(updateRetentionMutation.error) ?? t('releases.detail.retention.updateFailed')}
+                  </p>
+                ) : null}
+              </div>
               <div className="flex flex-col gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-[13px] font-semibold text-destructive">
@@ -3513,6 +3614,20 @@ type Translate = ReturnType<typeof useI18n>['t'];
 
 function formatTemplate(template: string, values: Record<string, string | number>) {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ''));
+}
+
+function retentionOptionFromDays(days: number | null | undefined): ReleaseRetentionOption {
+  if (days === 3) return '3';
+  if (days === 7) return '7';
+  if (days === 30) return '30';
+  if (days === 90) return '90';
+  if (days === 180) return '180';
+  if (days === 365) return '365';
+  return 'forever';
+}
+
+function retentionDaysFromOption(option: ReleaseRetentionOption): number | null {
+  return option === 'forever' ? null : Number(option);
 }
 
 type HistoryVersionKind = ReleaseLineEventDto['releaseVersionKind'];

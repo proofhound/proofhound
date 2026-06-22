@@ -67,6 +67,7 @@ function createWritableRepoMock() {
     updateActiveLaneRunConfig: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     updateActiveLaneOutputRoute: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     updateActiveLaneInputRoute: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
+    updateCurrentProductionRetention: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     listConnectorsForProject: vi.fn().mockResolvedValue([]),
   };
 }
@@ -731,5 +732,35 @@ describe('ReleaseLineService.updateInputRoute', () => {
       ),
     ).rejects.toThrow('release_variable_mapping_missing_prompt_variables:text');
     expect(repo.updateActiveLaneInputRoute).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReleaseLineService.updateRetention', () => {
+  it('updates the current production retention through the repository', async () => {
+    const repo = createWritableRepoMock();
+    const service = createService(repo);
+
+    await service.updateRetention(
+      projectId,
+      '77777777-7777-4777-8777-777777777777',
+      { retentionDays: 7 },
+      actor,
+    );
+
+    expect(repo.updateCurrentProductionRetention).toHaveBeenCalledWith(
+      projectId,
+      '77777777-7777-4777-8777-777777777777',
+      7,
+    );
+  });
+
+  it('rejects when there is no editable production lane', async () => {
+    const repo = createWritableRepoMock();
+    repo.updateCurrentProductionRetention.mockResolvedValue(null);
+    const service = createService(repo);
+
+    await expect(
+      service.updateRetention(projectId, '77777777-7777-4777-8777-777777777777', { retentionDays: null }, actor),
+    ).rejects.toThrow('has no editable production lane');
   });
 });

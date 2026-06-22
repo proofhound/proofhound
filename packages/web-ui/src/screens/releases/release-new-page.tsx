@@ -69,18 +69,26 @@ const DEFAULT_TPM = 120_000;
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_QUEUE_TRAFFIC_PERCENT = 10;
 const TRAFFIC_PERCENT_PRESETS = [1, 5, 20, 50, 100] as const;
-const RELEASE_RETENTION_OPTIONS = ['30', '7', 'forever'] as const;
+const RELEASE_RETENTION_OPTIONS = ['3', '7', '30', '90', '180', '365', 'forever'] as const;
 type ReleaseTrafficMode = CreateCanaryReleaseInputDto['trafficMode'];
 type CanaryStopConditions = NonNullable<CreateCanaryReleaseInputDto['stopConditions']>;
 type ReleaseRetentionOption = (typeof RELEASE_RETENTION_OPTIONS)[number];
 const RELEASE_RETENTION_LABEL_KEYS: Record<
   ReleaseRetentionOption,
-  | 'productionReleases.new.retention.30'
+  | 'productionReleases.new.retention.3'
   | 'productionReleases.new.retention.7'
+  | 'productionReleases.new.retention.30'
+  | 'productionReleases.new.retention.90'
+  | 'productionReleases.new.retention.180'
+  | 'productionReleases.new.retention.365'
   | 'productionReleases.new.retention.forever'
 > = {
-  '30': 'productionReleases.new.retention.30',
+  '3': 'productionReleases.new.retention.3',
   '7': 'productionReleases.new.retention.7',
+  '30': 'productionReleases.new.retention.30',
+  '90': 'productionReleases.new.retention.90',
+  '180': 'productionReleases.new.retention.180',
+  '365': 'productionReleases.new.retention.365',
   forever: 'productionReleases.new.retention.forever',
 };
 
@@ -2173,7 +2181,7 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                     value={
                       retentionDays === null
                         ? t('productionReleases.new.retention.forever')
-                        : t(RELEASE_RETENTION_LABEL_KEYS[String(retentionDays) as '7' | '30'])
+                        : t(RELEASE_RETENTION_LABEL_KEYS[String(retentionDays) as Exclude<ReleaseRetentionOption, 'forever'>])
                     }
                   />
                 ) : null}
