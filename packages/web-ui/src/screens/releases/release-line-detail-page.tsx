@@ -120,7 +120,13 @@ import {
 } from '../../hooks';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh, useDateTimeFormatter } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { getApiErrorMessage, getReleaseLineId, getReleaseStopConfirmationName } from '../../lib';
+import {
+  formatDateTimeLocalInput,
+  getApiErrorMessage,
+  getReleaseLineId,
+  getReleaseStopConfirmationName,
+  parseDateTimeLocalInput,
+} from '../../lib';
 import type { ReleaseLineLatestEvent, ReleaseLineView } from '../../lib';
 import { BigChartCard, type DeltaTone } from '../monitoring/big-chart-card';
 import { formatCount, formatPercent } from './release-line-ui';
@@ -153,6 +159,7 @@ const RESULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const HISTORY_INITIAL_GROUP_LIMIT = 8;
 const HISTORY_GROUP_PAGE_SIZE = 8;
 const RELEASE_RETENTION_OPTIONS = ['3', '7', '30', '90', '180', '365', 'forever'] as const;
+const CLEANUP_CUTOFF_PRESET_DAYS = [7, 30, 90, 180, 365] as const;
 type ReleaseRetentionOption = (typeof RELEASE_RETENTION_OPTIONS)[number];
 const RELEASE_RETENTION_LABEL_KEYS: Record<
   ReleaseRetentionOption,
@@ -1425,6 +1432,11 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
                   </p>
                 ) : null}
               </div>
+              <ReleaseRunResultCleanupSettings
+                projectId={projectId}
+                line={line}
+                releaseEvents={releaseLineEventsQuery.data?.data ?? []}
+              />
               <div className="flex flex-col gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-[13px] font-semibold text-destructive">
@@ -1987,9 +1999,6 @@ function ResultsPane({
   const [releaseVersionFilter, setReleaseVersionFilter] = useState(initialReleaseVersionId ?? 'all');
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(20);
-  const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
-  const [cleanupPreview, setCleanupPreview] = useState<ReleaseRunResultCleanupImpactDto | null>(null);
-  const [cleanupError, setCleanupError] = useState<string | null>(null);
   const sourceIds = useMemo(() => getReleaseResultSourceIds(line, releaseEvents), [line, releaseEvents]);
   const releaseVersionOptions = useMemo(
     () => getReleaseResultVersionOptions(line, releaseEvents),
@@ -2004,21 +2013,7 @@ function ResultsPane({
     [activeReleaseVersionFilter],
   );
   const applyDateRange = isResultDateRangeApplied(dateRange);
-  const cleanupFilter = useMemo<ReleaseRunResultCleanupFilterDto | null>(() => {
-    if (!applyDateRange || !dateRange.to || sourceIds.length === 0) return null;
-    return {
-      sourceIds,
-      releaseVersionIds,
-      releaseVersionScope: 'exact',
-      from: dateRange.from,
-      to: dateRange.to,
-    };
-  }, [applyDateRange, dateRange.from, dateRange.to, releaseVersionIds, sourceIds]);
-  const cleanupPreviewMutation = useReleaseRunResultCleanupPreview(projectId);
-  const cleanupMutation = useReleaseRunResultCleanup(projectId);
   const downloadReleaseRunResults = useDownloadReleaseRunResults(projectId);
-  const cleanupActionDisabled =
-    cleanupFilter === null || cleanupPreviewMutation.isPending || cleanupMutation.isPending || sourceIds.length === 0;
   const handleDateRangeChange = useCallback((next: DateRangeValue) => {
     setDateRange(next);
     setPageIndex(0);
@@ -2081,32 +2076,6 @@ function ResultsPane({
     [applyDateRange, dateRange.from, dateRange.to, pageIndex, pageSize, releaseVersionIds, sourceIds],
   );
   const resultsQuery = useReleaseRunResults(projectId, resultQuery, sourceIds.length > 0);
-  const handlePreviewCleanup = useCallback(async () => {
-    if (!cleanupFilter) return;
-    setCleanupError(null);
-    try {
-      const preview = await cleanupPreviewMutation.mutateAsync(cleanupFilter);
-      setCleanupPreview(preview);
-      setCleanupDialogOpen(true);
-    } catch (error) {
-      setCleanupError(getApiErrorMessage(error) ?? t('releases.detail.results.cleanup.loadFailed'));
-    }
-  }, [cleanupFilter, cleanupPreviewMutation, t]);
-  const handleCleanup = useCallback(async () => {
-    if (!cleanupFilter) return;
-    setCleanupError(null);
-    try {
-      const result = await cleanupMutation.mutateAsync({
-        ...cleanupFilter,
-        confirmation: 'delete_release_run_results',
-      });
-      setCleanupPreview(result);
-      setCleanupDialogOpen(false);
-      setPageIndex(0);
-    } catch (error) {
-      setCleanupError(getApiErrorMessage(error) ?? t('releases.detail.results.cleanup.deleteFailed'));
-    }
-  }, [cleanupFilter, cleanupMutation, t]);
   const handleExportResults = useCallback(
     (format: RunResultExportFormatDto) => {
       downloadReleaseRunResults.mutate(
@@ -2185,29 +2154,8 @@ function ResultsPane({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handlePreviewCleanup}
-            disabled={cleanupActionDisabled}
-            title={
-              cleanupFilter
-                ? t('releases.detail.results.cleanup.preview')
-                : t('releases.detail.results.cleanup.dateRequired')
-            }
-            className="h-10 gap-1.5"
-          >
-            <Trash2 className="size-3.5" aria-hidden="true" />
-            {cleanupPreviewMutation.isPending
-              ? t('releases.detail.results.cleanup.previewing')
-              : t('releases.detail.results.cleanup.preview')}
-          </Button>
         </div>
       </div>
-      {cleanupError ? (
-        <div className="border-b bg-destructive/5 px-4 py-2 text-[12px] text-destructive">{cleanupError}</div>
-      ) : null}
       <Table columns={RESULT_COLUMNS}>
         <TableHeader>
           <TableRow>
@@ -2282,28 +2230,221 @@ function ResultsPane({
           setPageIndex(0);
         }}
       />
+    </div>
+  );
+}
+
+function ReleaseRunResultCleanupSettings({
+  projectId,
+  line,
+  releaseEvents,
+}: {
+  projectId: string;
+  line: ReleaseLineView;
+  releaseEvents: ReleaseLineEventDto[];
+}) {
+  const { t } = useI18n();
+  const { resolvedTimeZone, formatDateTime } = useDateTimeFormatter();
+  const [cutoffLocal, setCutoffLocal] = useState('');
+  const [releaseVersionFilter, setReleaseVersionFilter] = useState('all');
+  const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
+  const [cleanupPreview, setCleanupPreview] = useState<ReleaseRunResultCleanupImpactDto | null>(null);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
+  const sourceIds = useMemo(() => getReleaseResultSourceIds(line, releaseEvents), [line, releaseEvents]);
+  const releaseVersionOptions = useMemo(
+    () => getReleaseResultVersionOptions(line, releaseEvents),
+    [line, releaseEvents],
+  );
+  const activeReleaseVersionFilter =
+    releaseVersionFilter === 'all' || releaseVersionOptions.some((option) => option.id === releaseVersionFilter)
+      ? releaseVersionFilter
+      : 'all';
+  const releaseVersionIds = useMemo(
+    () => (activeReleaseVersionFilter === 'all' ? undefined : [activeReleaseVersionFilter]),
+    [activeReleaseVersionFilter],
+  );
+  const cutoffIso = useMemo(
+    () => parseDateTimeLocalInput(cutoffLocal, resolvedTimeZone),
+    [cutoffLocal, resolvedTimeZone],
+  );
+  const cutoffInvalid = cutoffLocal.trim().length > 0 && !cutoffIso;
+  const cleanupFilter = useMemo<ReleaseRunResultCleanupFilterDto | null>(() => {
+    if (!cutoffIso || sourceIds.length === 0) return null;
+    return {
+      sourceIds,
+      releaseVersionIds,
+      releaseVersionScope: 'exact',
+      to: cutoffIso,
+    };
+  }, [cutoffIso, releaseVersionIds, sourceIds]);
+  const cleanupPreviewMutation = useReleaseRunResultCleanupPreview(projectId);
+  const cleanupMutation = useReleaseRunResultCleanup(projectId);
+  const cleanupActionDisabled =
+    cleanupFilter === null ||
+    cutoffInvalid ||
+    cleanupPreviewMutation.isPending ||
+    cleanupMutation.isPending ||
+    sourceIds.length === 0;
+
+  const setCleanupCutoff = useCallback((next: string) => {
+    setCutoffLocal(next);
+    setCleanupPreview(null);
+    setCleanupError(null);
+  }, []);
+
+  const applyCutoffPreset = useCallback(
+    (days: number) => {
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60_000);
+      setCleanupCutoff(formatDateTimeLocalInput(cutoff, resolvedTimeZone));
+    },
+    [resolvedTimeZone, setCleanupCutoff],
+  );
+
+  const handleVersionFilterChange = useCallback((next: string) => {
+    setReleaseVersionFilter(next);
+    setCleanupPreview(null);
+    setCleanupError(null);
+  }, []);
+
+  const handlePreviewCleanup = useCallback(async () => {
+    if (!cleanupFilter) return;
+    setCleanupError(null);
+    try {
+      const preview = await cleanupPreviewMutation.mutateAsync(cleanupFilter);
+      setCleanupPreview(preview);
+      setCleanupDialogOpen(true);
+    } catch (error) {
+      setCleanupError(getApiErrorMessage(error) ?? t('releases.detail.cleanup.loadFailed'));
+    }
+  }, [cleanupFilter, cleanupPreviewMutation, t]);
+
+  const handleCleanup = useCallback(async () => {
+    if (!cleanupFilter) return;
+    setCleanupError(null);
+    try {
+      const result = await cleanupMutation.mutateAsync({
+        ...cleanupFilter,
+        confirmation: 'delete_release_run_results',
+      });
+      setCleanupPreview(result);
+      setCleanupDialogOpen(false);
+    } catch (error) {
+      setCleanupError(getApiErrorMessage(error) ?? t('releases.detail.cleanup.deleteFailed'));
+    }
+  }, [cleanupFilter, cleanupMutation, t]);
+
+  const cutoffSummary = cutoffIso
+    ? formatTemplate(t('releases.detail.cleanup.summary'), { time: formatDateTime(cutoffIso) })
+    : t('releases.detail.cleanup.cutoffHelp');
+
+  return (
+    <div className="rounded-md border bg-background p-4" data-testid="release-run-result-cleanup-settings">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[13px] font-semibold">
+            <Trash2 className="size-4 text-muted-foreground" />
+            {t('releases.detail.cleanup.title')}
+          </div>
+          <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
+            {t('releases.detail.cleanup.description')}
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={handlePreviewCleanup}
+          disabled={cleanupActionDisabled}
+          title={
+            sourceIds.length === 0
+              ? t('releases.detail.cleanup.noSources')
+              : cutoffIso
+                ? t('releases.detail.cleanup.preview')
+                : t('releases.detail.cleanup.dateRequired')
+          }
+          data-testid="release-run-result-cleanup-preview"
+        >
+          {cleanupPreviewMutation.isPending
+            ? t('releases.detail.cleanup.previewing')
+            : t('releases.detail.cleanup.preview')}
+        </Button>
+      </div>
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(260px,0.8fr)_minmax(340px,1fr)]">
+        <div className="space-y-2">
+          <label htmlFor="release-run-result-cleanup-cutoff" className="text-[12.5px] font-medium">
+            {t('releases.detail.cleanup.cutoffLabel')}
+          </label>
+          <Input
+            id="release-run-result-cleanup-cutoff"
+            type="datetime-local"
+            value={cutoffLocal}
+            onChange={(event) => setCleanupCutoff(event.target.value)}
+            disabled={cleanupPreviewMutation.isPending || cleanupMutation.isPending}
+          />
+          <div className="flex flex-wrap gap-2">
+            {CLEANUP_CUTOFF_PRESET_DAYS.map((days) => (
+              <Button
+                key={days}
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 px-2.5 text-[12px]"
+                onClick={() => applyCutoffPreset(days)}
+                disabled={cleanupPreviewMutation.isPending || cleanupMutation.isPending}
+              >
+                {formatTemplate(t('releases.detail.cleanup.cutoffPreset'), { days })}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor="release-cleanup-version-filter" className="text-[12.5px] font-medium">
+            {t('releases.detail.cleanup.versionLabel')}
+          </label>
+          <ResultReleaseVersionSelect
+            id="release-cleanup-version-filter"
+            options={releaseVersionOptions}
+            value={activeReleaseVersionFilter}
+            onChange={handleVersionFilterChange}
+            disabled={releaseVersionOptions.length === 0 || cleanupPreviewMutation.isPending || cleanupMutation.isPending}
+          />
+        </div>
+      </div>
+
+      <p className={cn('mt-3 text-[12px]', cutoffInvalid ? 'text-destructive' : 'text-muted-foreground')}>
+        {sourceIds.length === 0
+          ? t('releases.detail.cleanup.noSources')
+          : cutoffInvalid
+            ? t('releases.detail.cleanup.invalidCutoff')
+            : cutoffSummary}
+      </p>
+
+      {cleanupError ? <p className="mt-2 text-[12px] text-destructive">{cleanupError}</p> : null}
+
       <Dialog open={cleanupDialogOpen} onOpenChange={setCleanupDialogOpen}>
         <DialogContent data-testid="release-run-result-cleanup-dialog">
           <DialogHeader>
-            <DialogTitle>{t('releases.detail.results.cleanup.title')}</DialogTitle>
-            <DialogDescription>{t('releases.detail.results.cleanup.description')}</DialogDescription>
+            <DialogTitle>{t('releases.detail.cleanup.dialogTitle')}</DialogTitle>
+            <DialogDescription>{t('releases.detail.cleanup.dialogDescription')}</DialogDescription>
           </DialogHeader>
           {cleanupPreview ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <CleanupMetric
-                label={t('releases.detail.results.cleanup.runResults')}
+                label={t('releases.detail.cleanup.runResults')}
                 value={formatCount(cleanupPreview.runResults)}
               />
               <CleanupMetric
-                label={t('releases.detail.results.cleanup.annotations')}
+                label={t('releases.detail.cleanup.annotations')}
                 value={formatCount(cleanupPreview.annotations)}
               />
               <CleanupMetric
-                label={t('releases.detail.results.cleanup.reclaimable')}
+                label={t('releases.detail.cleanup.reclaimable')}
                 value={formatResultBytes(cleanupPreview.estimatedReclaimableBytes)}
               />
               <CleanupMetric
-                label={t('releases.detail.results.cleanup.deferred')}
+                label={t('releases.detail.cleanup.deferred')}
                 value={formatResultBytes(cleanupPreview.deferredObjectBytes)}
               />
             </div>
@@ -2323,9 +2464,7 @@ function ResultsPane({
               onClick={handleCleanup}
               disabled={!cleanupPreview || cleanupPreview.runResults === 0 || cleanupMutation.isPending}
             >
-              {cleanupMutation.isPending
-                ? t('releases.detail.results.cleanup.deleting')
-                : t('releases.detail.results.cleanup.confirm')}
+              {cleanupMutation.isPending ? t('releases.detail.cleanup.deleting') : t('releases.detail.cleanup.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
