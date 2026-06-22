@@ -621,7 +621,18 @@
     border-color: var(--border);
   }
 
+  html {
+    background: var(--background);
+    color-scheme: light;
+  }
+
+  html[data-theme='dark'],
+  html.dark {
+    color-scheme: dark;
+  }
+
   body {
+    min-height: 100svh;
     @apply bg-background text-foreground;
   }
 }

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
-import Script from 'next/script';
 import { Suspense, type ReactNode } from 'react';
 // Server-safe language utils MUST come from the non-'use client' subpath: the i18n barrel
 // (index.tsx) is 'use client', so importing resolveAcceptLanguageHeader from it and calling it
@@ -16,6 +15,29 @@ export const metadata: Metadata = {
   title: 'ProofHound',
   description: '提示词全生命周期治理平台',
 };
+
+const initialPaintStyle = `
+:root {
+  background: #ffffff;
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  background: #020817;
+  color-scheme: dark;
+}
+:root[data-theme='light'],
+:root[data-theme='twilight'],
+:root[data-theme='electric'] {
+  background: #ffffff;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    background: #020817;
+    color-scheme: dark;
+  }
+}
+`;
 
 const preferenceInitScript = `
 try {
@@ -37,9 +59,12 @@ try {
   for (var i = 0; !resolvedLanguage && i < browserLanguages.length; i += 1) {
     resolvedLanguage = resolveBrowserLanguage(browserLanguages[i]);
   }
+  var themeColorMeta = document.querySelector("meta[name='theme-color']");
+  if (themeColorMeta) themeColorMeta.setAttribute('content', resolvedTheme === 'dark' ? '#020817' : '#ffffff');
   document.documentElement.dataset.theme = resolvedTheme;
   document.documentElement.dataset.themePreference = themePreference;
   document.documentElement.classList.toggle('dark', resolvedTheme === 'dark');
+  document.documentElement.style.colorScheme = resolvedTheme === 'dark' ? 'dark' : 'light';
   document.documentElement.lang = resolvedLanguage || '${DEFAULT_LANGUAGE}';
 } catch (_) {}
 `;
@@ -55,9 +80,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang={defaultLanguage} suppressHydrationWarning>
       <head>
-        <Script
+        <meta name="color-scheme" content="light dark" />
+        <meta name="theme-color" content="#ffffff" />
+        <style id="proofhound-initial-paint" dangerouslySetInnerHTML={{ __html: initialPaintStyle }} />
+        <script
           id="proofhound-preferences"
-          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: preferenceInitScript }}
         />
       </head>

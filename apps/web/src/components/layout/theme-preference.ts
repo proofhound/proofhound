@@ -24,6 +24,7 @@ function applyTheme(theme: ThemeName) {
   document.documentElement.dataset.theme = resolvedTheme;
   document.documentElement.dataset.themePreference = theme;
   document.documentElement.classList.toggle('dark', resolvedTheme === 'dark');
+  document.documentElement.style.colorScheme = resolvedTheme === 'dark' ? 'dark' : 'light';
 
   const themeColor = resolvedTheme === 'dark' ? '#020817' : '#ffffff';
   document.querySelector("meta[name='theme-color']")?.setAttribute('content', themeColor);
@@ -32,13 +33,19 @@ function applyTheme(theme: ThemeName) {
 export function useThemePreference() {
   // Initial value uses SSR default 'system'; after mount, sync with the real localStorage value to avoid hydration mismatch
   const [theme, setTheme] = useState<ThemeName>('system');
+  const [hasSyncedStoredTheme, setHasSyncedStoredTheme] = useState(false);
 
   useEffect(() => {
+    const storedTheme = getStoredTheme();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe localStorage sync, runs once on mount
-    setTheme(getStoredTheme());
+    setTheme(storedTheme);
+    applyTheme(storedTheme);
+    setHasSyncedStoredTheme(true);
   }, []);
 
   useEffect(() => {
+    if (!hasSyncedStoredTheme) return;
+
     applyTheme(theme);
 
     if (theme !== 'system') return;
@@ -48,7 +55,7 @@ export function useThemePreference() {
     mediaQuery.addEventListener('change', handleSystemThemeChange);
 
     return () => mediaQuery.removeEventListener('change', handleSystemThemeChange);
-  }, [theme]);
+  }, [hasSyncedStoredTheme, theme]);
 
   useEffect(() => {
     const handleThemeChange = (event: Event) => {
