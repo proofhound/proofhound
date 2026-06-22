@@ -11,7 +11,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import { ObjectStorageProvider, type StoredObjectRef } from '../../common/contracts/object-storage.provider';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import {
   type CompactionRow,
   type PayloadField,

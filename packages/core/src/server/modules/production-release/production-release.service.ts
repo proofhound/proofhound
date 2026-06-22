@@ -15,8 +15,8 @@ import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-autho
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { ReleaseLineService } from '../release-line/release-line.service';
 import { assertReleasePromptVariableMapping } from '../release-line/release-variable-mapping';
+import { ProductionReleaseRepository } from './production-release.repository';
 import {
-  ProductionReleaseRepository,
   type ProductionReleaseEventRowWithJoins,
   type ProductionReleasePromptRow,
   type ProductionReleasePromptVersionRow,

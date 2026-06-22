@@ -281,6 +281,7 @@ CREATE TABLE ph_assets.dataset_imports (
   raw_upload_expires_at TIMESTAMPTZ,
   raw_object_ref      JSONB,
   raw_upload_completed_at TIMESTAMPTZ,
+  progress            JSONB NOT NULL DEFAULT '{}'::jsonb,
   job_id              TEXT,
   error_code          TEXT,
   error_message       TEXT,
@@ -327,6 +328,7 @@ Fields and lifecycle:
 - `import_mode='batch'` is the legacy client-streamed JSONL / CSV / TSV path where the frontend pushes parsed samples to `POST /dataset-imports/:id/batch`.
 - `import_mode='raw_object'` is the browser-direct raw object path. `raw_upload_session_id` stores the provider-issued pending upload session id until upload-complete/abort/sweep; `raw_upload_expires_at` mirrors the provider expiry for cleanup; `raw_object_ref` stores the finalized object reference after `completeUpload` and before the worker finishes parsing/promoting it. The raw object is temporary and may be deleted after successful promotion.
 - `status` follows the state machine in [22 §3.1](22-datasets.md#31-uploading-data). `failed` / `aborted` rows are retained for readable status and error reporting, but staging rows and temporary raw upload resources are removed best-effort.
+- `progress` is a user-facing progress snapshot for long server-side work after byte transfer: it stores visible `phase`, `totalShards`, `completedShards`, and `committedRows` counters so the upload page can poll the session during promotion. It is informational for rendering, but `phase='finalizing' | 'offloading' | 'committing'` also tells abort cleanup to request cancellation instead of deleting staging under an active promotion transaction; `status` remains the authoritative lifecycle state.
 - `dataset_id` is NULL during import and is backfilled to point to the newly created dataset after a successful `complete` promotion.
 - `received_rows` is the count of staged parsed rows and also serves as progress; `updated_at` is the heartbeat advanced on batch writes and state transitions. `job_id` links a raw import to its BullMQ job for idempotent queueing/debugging. Lifecycle timestamps support status display without scanning worker logs.
 - `field_mappings` is submitted by the frontend field wizard when the session is created, and `complete` finalizes `datasets.field_schema` based on it.

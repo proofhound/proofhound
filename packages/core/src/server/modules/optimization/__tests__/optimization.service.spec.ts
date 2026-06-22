@@ -24,7 +24,7 @@ const actor = {
   isSuperAdmin: false,
   isActive: true,
 };
-const projectAccess = (role: string | null = null): OptimizationProjectAccessRow => ({
+const projectAccess = (_role: string | null = null): OptimizationProjectAccessRow => ({
   id: '77777777-7777-4777-8777-777777777777',
 });
 

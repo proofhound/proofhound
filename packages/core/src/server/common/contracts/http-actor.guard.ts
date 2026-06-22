@@ -14,7 +14,8 @@ import type { Request } from 'express';
 import type { ActorContext, ProjectContext } from '../actor-context';
 import type { CurrentUserPayload } from '../decorators/current-user.decorator';
 import { ActorContextResolver } from './actor-context.resolver';
-import { ProjectAccessDeniedError, ProjectContextResolver } from './project-context.resolver';
+import { ProjectContextResolver } from './project-context.resolver';
+import { ProjectAccessDeniedError } from './project-context.resolver';
 
 @Injectable()
 export class HttpActorGuard implements CanActivate {

@@ -13,6 +13,7 @@ import type {
   UnarchiveReleaseLineInputDto,
   UpdateReleaseLineInputRouteInputDto,
   UpdateReleaseLineOutputRouteInputDto,
+  UpdateReleaseLineRetentionInputDto,
   UpdateReleaseLineRunConfigInputDto,
   UpdateReleaseLineTrafficRatioInputDto,
 } from '@proofhound/shared';
@@ -218,6 +219,19 @@ export function useUpdateReleaseLineInputRoute(projectId: string) {
       void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
       void queryClient.invalidateQueries({ queryKey: ['production-releases', projectId] });
       void queryClient.invalidateQueries({ queryKey: ['canary-releases', projectId] });
+    },
+  });
+}
+
+export function useUpdateReleaseLineRetention(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ releaseLineId, body }: { releaseLineId: string; body: UpdateReleaseLineRetentionInputDto }) =>
+      releaseLineClient.updateRetention(projectId, releaseLineId, body),
+    onSuccess: (_data, { releaseLineId }) => {
+      void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
+      void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId, 'detail', releaseLineId, 'events'] });
+      void queryClient.invalidateQueries({ queryKey: ['production-releases', projectId] });
     },
   });
 }

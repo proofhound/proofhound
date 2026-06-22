@@ -1,4 +1,4 @@
-import { Buffer } from 'node:buffer';
+import type { Buffer } from 'node:buffer';
 import type { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { ObjectStorageProvider, type StoredObjectRef } from '../../../common/contracts/object-storage.provider';

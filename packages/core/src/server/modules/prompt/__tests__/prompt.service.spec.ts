@@ -175,7 +175,12 @@ describe('PromptService', () => {
 
     await service.updateDraftVersion(projectId, promptId, draftVersionId, dto, actor);
 
-    expect(repo.updateDraftVersion).toHaveBeenCalledWith(projectId, promptId, draftVersionId, dto);
+    expect(repo.updateDraftVersion).toHaveBeenCalledWith(projectId, promptId, draftVersionId, {
+      ...dto,
+      judgmentRules: {
+        rules: [{ decisionField: 'label', expectedField: 'expected_output', operator: 'exact_match' }],
+      },
+    });
   });
 
   it('creates a prompt without a default dataset', async () => {

@@ -21,7 +21,7 @@ test('uploads a JSONL dataset and browses its server-paginated detail', async ({
     await expect(page.getByTestId('dataset-upload-image-samples')).toBeVisible();
     await expect(page.getByTestId('dataset-image-sample-proofhound-image-url-fields.csv')).toHaveAttribute(
       'href',
-      '/examples/datasets/images/image-url-fields.csv',
+      /^data:text\/csv;charset=utf-8,/,
     );
     await expect(page.getByTestId('dataset-image-sample-proofhound-image-url-array.csv')).toHaveAttribute(
       'download',
@@ -29,11 +29,11 @@ test('uploads a JSONL dataset and browses its server-paginated detail', async ({
     );
     await expect(page.getByTestId('dataset-image-sample-proofhound-image-base64.jsonl')).toHaveAttribute(
       'href',
-      '/examples/datasets/images/image-base64.jsonl',
+      /^data:application\/x-ndjson;charset=utf-8,/,
     );
     await expect(page.getByTestId('dataset-image-sample-proofhound-image-zip-relative-paths.zip')).toHaveAttribute(
       'href',
-      '/examples/datasets/images/image-zip-relative-paths.zip',
+      /^data:application\/zip;base64,UEs/,
     );
 
     // The file input is hidden; setInputFiles drives the in-browser parse + field-role inference.

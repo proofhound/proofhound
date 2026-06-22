@@ -84,11 +84,10 @@ export class DatasetController {
     const file = delivery.file;
     response.set({
       'Content-Disposition': `attachment; filename="${file.fileName}"; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
-      'Content-Length': String(file.byteLength),
       'Content-Type': file.contentType,
     });
 
-    return new StreamableFile(file.buffer);
+    return new StreamableFile(file.createStream());
   }
 
   @Get(':datasetId')

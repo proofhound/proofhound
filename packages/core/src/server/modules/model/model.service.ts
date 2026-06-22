@@ -34,14 +34,15 @@ import { AccessControlService } from '../../common/contracts/access-control.serv
 import { LimiterKeyStrategy } from '../../common/contracts/limiter-key.strategy';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import { RuntimeLimitsProvider } from '../../common/contracts/runtime-limits.provider';
-import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
+import { UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
+import { safeRecordUsageEvent } from '../../common/contracts/usage-metering.hook';
 import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { REDIS_LIMITER } from '../../../shared/redis/redis.constants';
 import { applyRuntimeLimits } from '../../../shared/llm/runtime-limits';
+import { ModelRepository } from './model.repository';
 import {
-  ModelRepository,
   type ModelContextWindowRow,
   type ModelInsertRow,
   type ModelReferenceCounts,

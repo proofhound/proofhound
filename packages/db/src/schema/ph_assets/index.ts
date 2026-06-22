@@ -198,6 +198,9 @@ export const datasetImports = phAssets.table(
     rawUploadExpiresAt: timestamp('raw_upload_expires_at', { withTimezone: true }),
     rawUploadCompletedAt: timestamp('raw_upload_completed_at', { withTimezone: true }),
     rawObjectRef: jsonb('raw_object_ref'),
+    progress: jsonb('progress')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     declaredTotalRows: integer('declared_total_rows'),
     receivedRows: integer('received_rows').notNull().default(0),
     jobId: text('job_id'),

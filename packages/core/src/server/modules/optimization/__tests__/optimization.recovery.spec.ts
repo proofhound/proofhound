@@ -1,4 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import type * as DbosSdk from '@dbos-inc/dbos-sdk';
 import { describe, expect, it, vi } from 'vitest';
 import type { ProjectContextResolver } from '../../../common/contracts/project-context.resolver';
 import type { OptimizationLauncher } from '../optimization.launcher';
@@ -8,7 +9,7 @@ import { OptimizationRecoveryService } from '../optimization.recovery';
 const getWorkflowStatusMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@dbos-inc/dbos-sdk', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@dbos-inc/dbos-sdk')>();
+  const actual = await importOriginal<typeof DbosSdk>();
   return {
     ...actual,
     DBOS: {

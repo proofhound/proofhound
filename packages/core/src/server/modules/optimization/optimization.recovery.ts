@@ -1,4 +1,5 @@
-import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
+import type { OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { createLogger } from '@proofhound/logger';
 import type { ActorContext } from '../../common/actor-context';

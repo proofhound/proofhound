@@ -4,7 +4,8 @@ import { alias } from 'drizzle-orm/pg-core';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import { type DatasetSamplePayloadRef, DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
+import { DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
+import { type DatasetSamplePayloadRef } from '../dataset/dataset-sample-payload';
 import type { RunResultPayloadRef } from '../run-result/run-result-payload';
 import { RunResultPayloadReader } from '../run-result/run-result-payload.reader';
 

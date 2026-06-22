@@ -27,7 +27,7 @@ import {
   readExpectedField,
   type ExperimentPlan,
 } from '../experiment.workflow';
-import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
+import type { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
 import { DatasetSamplePayloadReader } from '../../dataset/dataset-sample-payload';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -249,8 +249,9 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
       outputSchema: null,
       judgmentRules: null,
       promptLanguage: 'en-US',
+      expectedField: 'label',
     });
-    r['loadSampleDataByIds'] = vi.fn().mockResolvedValue([{ id: 's1', data: {} }]);
+    r['loadSampleDataByIds'] = vi.fn().mockResolvedValue([{ id: 's1', data: { label: 'bad' } }]);
 
     return { registrar, enqueueLlmJob };
   }
@@ -278,6 +279,15 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
     expect(enqueueLlmJob).toHaveBeenCalledTimes(1);
     expect(enqueueLlmJob.mock.calls[0]?.[0]?.orgId).toBeUndefined();
   });
+
+  it('空 judgmentRules 时使用数据集 expected 字段名取 expectedOutput', async () => {
+    const { registrar, enqueueLlmJob } = buildEnqueueRegistrar();
+
+    await (registrar as unknown as { runWorkflow: (id: string) => Promise<void> }).runWorkflow('exp-1');
+
+    expect(enqueueLlmJob).toHaveBeenCalledTimes(1);
+    expect(enqueueLlmJob.mock.calls[0]?.[0]?.judgment?.expectedOutput).toBe('bad');
+  });
 });
 
 describe('readExpectedField', () => {
@@ -287,6 +297,11 @@ describe('readExpectedField', () => {
         rules: [{ field: 'sentiment', operator: 'exact_match', value: 'gold_label' }],
       }),
     ).toBe('gold_label');
+  });
+
+  it('falls back to the dataset expected field when rules are empty', () => {
+    expect(readExpectedField({ rules: [] }, 'label')).toBe('label');
+    expect(readExpectedField(null, 'label')).toBe('label');
   });
 });
 

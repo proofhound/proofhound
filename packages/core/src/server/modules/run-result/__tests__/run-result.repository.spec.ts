@@ -1,7 +1,7 @@
 import type { DbClient } from '@proofhound/db';
 import type { RunResultListQueryDto, RunResultReleaseListQueryDto } from '@proofhound/shared';
 import type { Query, SQL } from 'drizzle-orm';
-import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
+import type { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
 import { RunResultPayloadReader } from '../run-result-payload.reader';
 import { RunResultRepository } from '../run-result.repository';
 

@@ -4,7 +4,7 @@
 // inserted with its queryable projection + a pointer at its line in the shard, with inline data cleared.
 // The shard is written before the rows that reference it (object stores have no atomic rename); a
 // caller-side rollback may orphan the just-written shard until an operator storage-lifecycle cleanup reclaims it.
-import { Buffer } from 'node:buffer';
+import type { Buffer } from 'node:buffer';
 import type { DatasetFieldSchemaDto } from '@proofhound/shared';
 import type { ObjectCodec, StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import { encodeShard } from '../run-result/run-result-payload';
@@ -36,6 +36,7 @@ export interface OffloadStagingOptions {
   readBatch: (offset: number, limit: number) => Promise<StagingSample[]>;
   putShard: (name: string, body: Buffer) => Promise<StoredObjectRef>;
   insertRows: (rows: DatasetSampleOffloadRow[]) => Promise<void>;
+  onProgress?: (progress: { completedShards: number; processedRows: number }) => Promise<void> | void;
 }
 
 export async function offloadStagingToShards(
@@ -77,6 +78,7 @@ export async function offloadStagingToShards(
 
     offset += batch.length;
     shardSeq += 1;
+    await opts.onProgress?.({ completedShards: shardSeq, processedRows: offset });
   }
 
   return {

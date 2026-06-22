@@ -1,7 +1,7 @@
 import type { DbClient } from '@proofhound/db';
 import type { Query, SQL } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
-import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
+import type { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
 import { RunResultPayloadReader } from '../../run-result/run-result-payload.reader';
 import { AnnotationRepository } from '../annotation.repository';
 

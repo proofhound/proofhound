@@ -24,6 +24,22 @@ export type DatasetImportStatus = DatasetImportState;
 export const datasetImportModeSchema = z.enum(['batch', 'raw_object']);
 export type DatasetImportMode = z.infer<typeof datasetImportModeSchema>;
 
+export const datasetImportProgressPhaseSchema = z.enum([
+  'created',
+  'uploading',
+  'uploaded',
+  'queued',
+  'parsing',
+  'importing',
+  'finalizing',
+  'offloading',
+  'committing',
+  'completed',
+  'failed',
+  'aborted',
+]);
+export type DatasetImportProgressPhase = z.infer<typeof datasetImportProgressPhaseSchema>;
+
 export const datasetImportSourceFileSchema = z.object({
   fileName: z.string().trim().min(1).max(260),
   fileSizeBytes: z.number().int().nonnegative(),
@@ -84,11 +100,15 @@ export type DatasetImportBatchResponseDto = z.infer<typeof datasetImportBatchRes
 
 export const datasetImportProgressSchema = z.object({
   state: datasetImportStateSchema,
+  phase: datasetImportProgressPhaseSchema.nullable(),
   uploadedBytes: z.number().int().nonnegative().nullable(),
   parsedRows: z.number().int().nonnegative(),
   importedRows: z.number().int().nonnegative(),
   totalRows: z.number().int().nonnegative().nullable(),
   totalBytes: z.number().int().nonnegative().nullable(),
+  totalShards: z.number().int().nonnegative().nullable(),
+  completedShards: z.number().int().nonnegative().nullable(),
+  committedRows: z.number().int().nonnegative(),
   percentage: z.number().min(0).max(100).nullable(),
 });
 export type DatasetImportProgressDto = z.infer<typeof datasetImportProgressSchema>;

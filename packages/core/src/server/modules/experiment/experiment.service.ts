@@ -35,7 +35,8 @@ import { ModelService } from '../model/model.service';
 import { RunResultService } from '../run-result/run-result.service';
 import { aggregateExperimentMetrics } from './experiment.aggregator';
 import { ExperimentLauncher } from './experiment.launcher';
-import { ExperimentRepository, type ExperimentProjectAccessRow, type ExperimentRow } from './experiment.repository';
+import { ExperimentRepository } from './experiment.repository';
+import { type ExperimentProjectAccessRow, type ExperimentRow } from './experiment.repository';
 
 const { datasets, promptVersions, prompts } = schema;
 
@@ -70,6 +71,7 @@ export class ExperimentService {
     source: AuditSource = 'api',
     orgId?: string,
   ): Promise<ExperimentListItemDto> {
+    void source;
     await this.getWritableProject(projectId, actor);
     const parsed = createExperimentSchema.parse(dto);
     const existing = await this.repo.findExperimentByProjectAndName(projectId, parsed.name);
@@ -95,9 +97,8 @@ export class ExperimentService {
       createdBy: actor.sub,
     });
 
-    let workflowId: string | null = null;
     try {
-      workflowId = await this.launcher.launch(experimentId, orgId);
+      await this.launcher.launch(experimentId, orgId);
     } catch (error) {
       await this.repo.updateExperiment(projectId, experimentId, {
         status: 'failed',
@@ -157,6 +158,7 @@ export class ExperimentService {
     source: AuditSource = 'api',
     orgId?: string,
   ): Promise<ExperimentListItemDto> {
+    void source;
     await this.getWritableProject(projectId, actor);
     const parsedAction = experimentControlActionSchema.parse(action);
     const current = await this.repo.findExperimentById(projectId, experimentId);

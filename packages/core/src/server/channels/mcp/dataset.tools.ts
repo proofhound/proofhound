@@ -3,6 +3,7 @@
  * Each tool delegates to DatasetService, matching the REST surface 1:1.
  * See docs/specs/00-overview.md §5 (three-channel parity).
  */
+import { Buffer } from 'node:buffer';
 import {
   createDatasetSchema,
   datasetExportFormatSchema,
@@ -82,13 +83,14 @@ export function createDatasetTools(datasetService: DatasetService): McpToolDefin
         const datasetId = datasetIdParamSchema.parse(input.datasetId);
         const format = datasetExportFormatSchema.parse(input.format ?? 'csv');
         const file = await datasetService.exportDataset(projectId, datasetId, format, getMcpActor(ctx));
+        const buffer = await streamToBuffer(file.createStream());
 
         return {
           fileName: file.fileName,
           contentType: file.contentType,
-          byteLength: file.byteLength,
+          byteLength: buffer.byteLength,
           format: file.format,
-          contentBase64: file.buffer.toString('base64'),
+          contentBase64: buffer.toString('base64'),
         };
       },
     },
@@ -179,7 +181,7 @@ export function createDatasetTools(datasetService: DatasetService): McpToolDefin
     },
     {
       name: 'dataset_update_metadata',
-      description: '更新数据集名称与描述',
+      description: '更新数据集名称、描述与字段角色',
       inputSchema: {
         type: 'object',
         required: ['datasetId', 'name'],
@@ -187,6 +189,7 @@ export function createDatasetTools(datasetService: DatasetService): McpToolDefin
           datasetId: { type: 'string', format: 'uuid' },
           name: { type: 'string' },
           description: { type: 'string' },
+          fieldMappings: { type: 'array' },
         },
       },
       handler: async (input, ctx) => {
@@ -195,6 +198,7 @@ export function createDatasetTools(datasetService: DatasetService): McpToolDefin
         const dto = updateDatasetMetadataSchema.parse({
           name: input.name,
           description: input.description,
+          fieldMappings: input.fieldMappings,
         });
         return datasetService.updateDatasetMetadata(projectId, datasetId, dto, getMcpActor(ctx));
       },
@@ -218,4 +222,12 @@ export function createDatasetTools(datasetService: DatasetService): McpToolDefin
       },
     },
   ];
+}
+
+async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks);
 }

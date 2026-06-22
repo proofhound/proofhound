@@ -12,6 +12,8 @@ import {
   Check,
   ChevronDown,
   CircleDollarSign,
+  Download,
+  FileDown,
   Gauge,
   MoreHorizontal,
   Play,
@@ -44,9 +46,13 @@ import type {
   ProjectMonitoringFilterDto,
   ProjectMonitoringStatsDto,
   ProjectMonitoringTimeseriesDto,
+  ReleaseRunResultCleanupFilterDto,
+  ReleaseRunResultCleanupImpactDto,
   ReleaseLineDeletionImpactDto,
   ReleaseLineEventDto,
   ReleaseVersionKindDto,
+  RunResultExportFormatDto,
+  RunResultReleaseListQueryDto,
   ReleaseRunResultListItemDto,
   SourceBucket,
 } from '@proofhound/shared';
@@ -105,7 +111,12 @@ import {
   useUpdateReleaseLineRunConfig,
   useUpdateReleaseLineTrafficRatio,
 } from '../../hooks';
-import { useReleaseRunResults } from '../../hooks';
+import {
+  useDownloadReleaseRunResults,
+  useReleaseRunResultCleanup,
+  useReleaseRunResultCleanupPreview,
+  useReleaseRunResults,
+} from '../../hooks';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh, useDateTimeFormatter } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage, getReleaseLineId, getReleaseStopConfirmationName } from '../../lib';
@@ -159,6 +170,18 @@ function useDateTimeOrDash() {
     (value: string | null | undefined) => (value ? formatDateTime(value, { fallback: '—' }) : '—'),
     [formatDateTime],
   );
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  if (typeof window === 'undefined') return;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 type ReleaseTimeseriesMetric =
@@ -1863,6 +1886,9 @@ function ResultsPane({
   const [releaseVersionFilter, setReleaseVersionFilter] = useState(initialReleaseVersionId ?? 'all');
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(20);
+  const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
+  const [cleanupPreview, setCleanupPreview] = useState<ReleaseRunResultCleanupImpactDto | null>(null);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
   const sourceIds = useMemo(() => getReleaseResultSourceIds(line, releaseEvents), [line, releaseEvents]);
   const releaseVersionOptions = useMemo(
     () => getReleaseResultVersionOptions(line, releaseEvents),
@@ -1872,8 +1898,26 @@ function ResultsPane({
     releaseVersionFilter === 'all' || releaseVersionOptions.some((option) => option.id === releaseVersionFilter)
       ? releaseVersionFilter
       : 'all';
-  const releaseVersionIds = activeReleaseVersionFilter === 'all' ? undefined : [activeReleaseVersionFilter];
+  const releaseVersionIds = useMemo(
+    () => (activeReleaseVersionFilter === 'all' ? undefined : [activeReleaseVersionFilter]),
+    [activeReleaseVersionFilter],
+  );
   const applyDateRange = isResultDateRangeApplied(dateRange);
+  const cleanupFilter = useMemo<ReleaseRunResultCleanupFilterDto | null>(() => {
+    if (!applyDateRange || !dateRange.to || sourceIds.length === 0) return null;
+    return {
+      sourceIds,
+      releaseVersionIds,
+      releaseVersionScope: 'exact',
+      from: dateRange.from,
+      to: dateRange.to,
+    };
+  }, [applyDateRange, dateRange.from, dateRange.to, releaseVersionIds, sourceIds]);
+  const cleanupPreviewMutation = useReleaseRunResultCleanupPreview(projectId);
+  const cleanupMutation = useReleaseRunResultCleanup(projectId);
+  const downloadReleaseRunResults = useDownloadReleaseRunResults(projectId);
+  const cleanupActionDisabled =
+    cleanupFilter === null || cleanupPreviewMutation.isPending || cleanupMutation.isPending || sourceIds.length === 0;
   const handleDateRangeChange = useCallback((next: DateRangeValue) => {
     setDateRange(next);
     setPageIndex(0);
@@ -1919,9 +1963,8 @@ function ResultsPane({
     }),
     [t],
   );
-  const resultsQuery = useReleaseRunResults(
-    projectId,
-    {
+  const resultQuery = useMemo<RunResultReleaseListQueryDto>(
+    () => ({
       page: pageIndex + 1,
       pageSize,
       sort: 'created_desc',
@@ -1933,8 +1976,46 @@ function ResultsPane({
       releaseVersionScope: 'exact',
       from: applyDateRange ? dateRange.from : undefined,
       to: applyDateRange ? dateRange.to : undefined,
+    }),
+    [applyDateRange, dateRange.from, dateRange.to, pageIndex, pageSize, releaseVersionIds, sourceIds],
+  );
+  const resultsQuery = useReleaseRunResults(projectId, resultQuery, sourceIds.length > 0);
+  const handlePreviewCleanup = useCallback(async () => {
+    if (!cleanupFilter) return;
+    setCleanupError(null);
+    try {
+      const preview = await cleanupPreviewMutation.mutateAsync(cleanupFilter);
+      setCleanupPreview(preview);
+      setCleanupDialogOpen(true);
+    } catch (error) {
+      setCleanupError(getApiErrorMessage(error) ?? t('releases.detail.results.cleanup.loadFailed'));
+    }
+  }, [cleanupFilter, cleanupPreviewMutation, t]);
+  const handleCleanup = useCallback(async () => {
+    if (!cleanupFilter) return;
+    setCleanupError(null);
+    try {
+      const result = await cleanupMutation.mutateAsync({
+        ...cleanupFilter,
+        confirmation: 'delete_release_run_results',
+      });
+      setCleanupPreview(result);
+      setCleanupDialogOpen(false);
+      setPageIndex(0);
+    } catch (error) {
+      setCleanupError(getApiErrorMessage(error) ?? t('releases.detail.results.cleanup.deleteFailed'));
+    }
+  }, [cleanupFilter, cleanupMutation, t]);
+  const handleExportResults = useCallback(
+    (format: RunResultExportFormatDto) => {
+      downloadReleaseRunResults.mutate(
+        { format, query: resultQuery },
+        {
+          onSuccess: (result) => downloadBlob(result.blob, result.fileName),
+        },
+      );
     },
-    sourceIds.length > 0,
+    [downloadReleaseRunResults, resultQuery],
   );
   const rows = resultsQuery.data?.data ?? [];
   const resultsLoading = useDelayedLoading(resultsQuery.isLoading);
@@ -1970,8 +2051,62 @@ function ResultsPane({
             }}
             disabled={releaseVersionOptions.length === 0}
           />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-10 gap-1.5"
+                disabled={sourceIds.length === 0 || downloadReleaseRunResults.isPending}
+              >
+                <Download className="size-3.5" aria-hidden="true" />
+                {downloadReleaseRunResults.isPending
+                  ? t('releases.detail.results.exporting')
+                  : t('releases.detail.results.export')}
+                <ChevronDown className="size-3.5" aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                disabled={sourceIds.length === 0 || downloadReleaseRunResults.isPending}
+                onClick={() => handleExportResults('csv')}
+              >
+                <Download className="size-4" aria-hidden="true" />
+                {t('releases.detail.results.exportCsv')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={sourceIds.length === 0 || downloadReleaseRunResults.isPending}
+                onClick={() => handleExportResults('jsonl')}
+              >
+                <FileDown className="size-4" aria-hidden="true" />
+                {t('releases.detail.results.exportJsonl')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handlePreviewCleanup}
+            disabled={cleanupActionDisabled}
+            title={
+              cleanupFilter
+                ? t('releases.detail.results.cleanup.preview')
+                : t('releases.detail.results.cleanup.dateRequired')
+            }
+            className="h-10 gap-1.5"
+          >
+            <Trash2 className="size-3.5" aria-hidden="true" />
+            {cleanupPreviewMutation.isPending
+              ? t('releases.detail.results.cleanup.previewing')
+              : t('releases.detail.results.cleanup.preview')}
+          </Button>
         </div>
       </div>
+      {cleanupError ? (
+        <div className="border-b bg-destructive/5 px-4 py-2 text-[12px] text-destructive">{cleanupError}</div>
+      ) : null}
       <Table columns={RESULT_COLUMNS}>
         <TableHeader>
           <TableRow>
@@ -2046,6 +2181,63 @@ function ResultsPane({
           setPageIndex(0);
         }}
       />
+      <Dialog open={cleanupDialogOpen} onOpenChange={setCleanupDialogOpen}>
+        <DialogContent data-testid="release-run-result-cleanup-dialog">
+          <DialogHeader>
+            <DialogTitle>{t('releases.detail.results.cleanup.title')}</DialogTitle>
+            <DialogDescription>{t('releases.detail.results.cleanup.description')}</DialogDescription>
+          </DialogHeader>
+          {cleanupPreview ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <CleanupMetric
+                label={t('releases.detail.results.cleanup.runResults')}
+                value={formatCount(cleanupPreview.runResults)}
+              />
+              <CleanupMetric
+                label={t('releases.detail.results.cleanup.annotations')}
+                value={formatCount(cleanupPreview.annotations)}
+              />
+              <CleanupMetric
+                label={t('releases.detail.results.cleanup.reclaimable')}
+                value={formatResultBytes(cleanupPreview.estimatedReclaimableBytes)}
+              />
+              <CleanupMetric
+                label={t('releases.detail.results.cleanup.deferred')}
+                value={formatResultBytes(cleanupPreview.deferredObjectBytes)}
+              />
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCleanupDialogOpen(false)}
+              disabled={cleanupMutation.isPending}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleCleanup}
+              disabled={!cleanupPreview || cleanupPreview.runResults === 0 || cleanupMutation.isPending}
+            >
+              {cleanupMutation.isPending
+                ? t('releases.detail.results.cleanup.deleting')
+                : t('releases.detail.results.cleanup.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CleanupMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-muted/35 px-3 py-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="mt-1 font-mono text-[13px] font-semibold">{value}</div>
     </div>
   );
 }
@@ -2398,6 +2590,19 @@ function formatResultTokens(row: ReleaseRunResultListItemDto): string {
   const output = row.outputTokens ?? 0;
   const total = input + output;
   return total > 0 ? formatCount(total) : '—';
+}
+
+function formatResultBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const digits = value >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
 function formatShortId(value: string | null | undefined) {

@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import type { DatasetService } from '../../../modules/dataset/dataset.service';
 import { dispatchTool } from '../mcp-server.factory';
@@ -29,10 +30,9 @@ function serviceStub(): DatasetService {
     listDatasets: vi.fn().mockResolvedValue({ data: [], total: 0 }),
     getDataset: vi.fn().mockResolvedValue({ id: DATASET_ID }),
     listDatasetSamples: vi.fn().mockResolvedValue({ data: [], total: 0 }),
-    // exportDataset's handler reads file.buffer.toString('base64'), so the stub must return a real Buffer.
+    // exportDataset's handler reads file.createStream() and returns the content as base64.
     exportDataset: vi.fn().mockResolvedValue({
-      buffer: Buffer.from('id,text\n1,hi\n', 'utf8'),
-      byteLength: 12,
+      createStream: () => Readable.from(['id,text\n1,hi\n']),
       contentType: 'text/csv; charset=utf-8',
       fileName: 'dataset.csv',
       format: 'csv',
@@ -364,7 +364,12 @@ describe('MCP dataset tools', () => {
     const result = await dispatchTool(
       createDatasetTools(service),
       'dataset_update_metadata',
-      { datasetId: DATASET_ID, name: 'renamed', description: 'updated' },
+      {
+        datasetId: DATASET_ID,
+        name: 'renamed',
+        description: 'updated',
+        fieldMappings: [{ name: 'label', role: 'expected' }],
+      },
       context,
     );
 
@@ -372,7 +377,11 @@ describe('MCP dataset tools', () => {
     expect(service.updateDatasetMetadata).toHaveBeenCalledWith(
       PROJECT_ID,
       DATASET_ID,
-      expect.objectContaining({ name: 'renamed', description: 'updated' }),
+      expect.objectContaining({
+        name: 'renamed',
+        description: 'updated',
+        fieldMappings: [{ name: 'label', role: 'expected' }],
+      }),
       actor,
     );
   });

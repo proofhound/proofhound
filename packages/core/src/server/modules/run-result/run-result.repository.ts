@@ -3,6 +3,11 @@ import type { DbClient } from '@proofhound/db';
 import type { ClassificationAggregateRow, JudgmentStatus, RunStatus } from '@proofhound/metrics';
 import type {
   DatasetFieldSchemaRole,
+  ReleaseRunResultCleanupFilterDto,
+  ReleaseRunResultCleanupImpactDto,
+  ReleaseRunResultLaneDto,
+  ReleaseRunResultListItemDto,
+  ReleaseRunResultListResponseDto,
   RunResultDatasetFieldValueDto,
   RunResultDetailDto,
   RunResultJudgmentStatusDto,
@@ -11,13 +16,12 @@ import type {
   RunResultListResponseDto,
   RunResultReleaseListQueryDto,
   RunResultStatusDto,
-  ReleaseRunResultLaneDto,
-  ReleaseRunResultListItemDto,
-  ReleaseRunResultListResponseDto,
 } from '@proofhound/shared';
 import { sql, type SQL } from 'drizzle-orm';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
+import type { StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import type { RunResultPayloadRef } from './run-result-payload';
+import { collectStoredObjectRefs, sumStoredObjectBytes } from './run-result-payload-ref';
 import { RunResultPayloadReader } from './run-result-payload.reader';
 
 export interface BatchTerminalCounts {
@@ -28,6 +32,43 @@ export interface BatchTerminalCounts {
 export interface ExperimentAccessRow {
   experimentId: string;
   projectId: string;
+}
+
+export interface ReleaseRunResultCleanupDeleteResult extends ReleaseRunResultCleanupImpactDto {
+  payloadRefs: StoredObjectRef[];
+}
+
+export interface ReleaseRunResultRetentionTarget {
+  projectId: string;
+  sourceId: string;
+  retentionDays: number;
+  cutoff: string;
+}
+
+export interface ReleaseRunResultRetentionCleanup {
+  target: ReleaseRunResultRetentionTarget;
+  impact: ReleaseRunResultCleanupImpactDto;
+  payloadRefs: StoredObjectRef[];
+}
+
+export interface ReleaseRunResultRetentionCleanupBatch {
+  lockAcquired: boolean;
+  targets: number;
+  cleanups: ReleaseRunResultRetentionCleanup[];
+}
+
+export interface RunResultExportCursor {
+  createdAt: string;
+  id: string;
+}
+
+export interface RunResultExportBatch<T> {
+  rows: T[];
+  nextCursor: RunResultExportCursor | null;
+}
+
+export interface ReleaseRunResultExportItem extends ReleaseRunResultListItemDto {
+  renderedPrompt: unknown | null;
 }
 
 @Injectable()
@@ -288,69 +329,7 @@ export class RunResultRepository {
     projectId: string,
     query: RunResultReleaseListQueryDto,
   ): Promise<ReleaseRunResultListResponseDto> {
-    const conditions: SQL[] = [sql`rr.project_id = ${projectId}::uuid`, sql`rr.source = 'release'`];
-
-    if (query.sourceIds && query.sourceIds.length > 0) {
-      conditions.push(sql`rr.source_id IN (${uuidList(query.sourceIds)})`);
-    }
-
-    if (query.releaseVersionIds && query.releaseVersionIds.length > 0) {
-      conditions.push(releaseVersionConditionSql(query.releaseVersionIds, query.releaseVersionScope));
-    }
-
-    if (query.promptVersionIds && query.promptVersionIds.length > 0) {
-      conditions.push(sql`rr.prompt_version_id IN (${uuidList(query.promptVersionIds)})`);
-    }
-
-    if (query.lane && query.lane.length > 0) {
-      conditions.push(sql`release_event.lane_type IN (${stringList(query.lane)})`);
-    }
-
-    if (query.status && query.status.length > 0) {
-      conditions.push(sql`rr.status IN (${stringList(query.status)})`);
-    }
-
-    if (query.judgmentStatus && query.judgmentStatus.length > 0) {
-      conditions.push(sql`rr.judgment_status IN (${stringList(query.judgmentStatus)})`);
-    }
-
-    if (typeof query.isCorrect === 'boolean') {
-      conditions.push(sql`rr.is_correct = ${query.isCorrect}`);
-    }
-
-    if (query.externalId && query.externalId.length > 0) {
-      conditions.push(sql`rr.external_id ILIKE ${`%${query.externalId}%`}`);
-    }
-
-    if (query.from) {
-      conditions.push(sql`rr.created_at >= ${query.from}::timestamptz`);
-    }
-
-    if (query.to) {
-      conditions.push(sql`rr.created_at < ${query.to}::timestamptz`);
-    }
-
-    if (query.search && query.search.length > 0) {
-      const pattern = `%${query.search}%`;
-      conditions.push(
-        sql`(
-          rr.external_id ILIKE ${pattern}
-          OR rr.source_id::text ILIKE ${pattern}
-          OR COALESCE(rr.release_version_id, release_event.release_version_id)::text ILIKE ${pattern}
-          OR release_event.prompt_name ILIKE ${pattern}
-          OR COALESCE(release_version.model_snapshot->>'name', release_event.model_snapshot->>'name') ILIKE ${pattern}
-          OR rr.raw_response ILIKE ${pattern}
-          OR rr.input_variables::text ILIKE ${pattern}
-          OR rr.decision_output ILIKE ${pattern}
-          OR rr.input_preview ILIKE ${pattern}
-          OR rr.output_preview ILIKE ${pattern}
-          OR rr.expected_output ILIKE ${pattern}
-          OR rr.error_message ILIKE ${pattern}
-        )`,
-      );
-    }
-
-    const whereSql = sql.join(conditions, sql` AND `);
+    const whereSql = releaseRunResultWhereSql(projectId, query);
 
     const sortSql =
       query.sort === 'latency_desc'
@@ -461,6 +440,428 @@ export class RunResultRepository {
       total,
       page: query.page,
       pageSize: query.pageSize,
+    };
+  }
+
+  async listExperimentExportBatch(
+    experimentId: string,
+    query: RunResultListQueryDto,
+    options: { limit: number; cursor?: RunResultExportCursor | null },
+  ): Promise<RunResultExportBatch<RunResultDetailDto>> {
+    const whereSql = experimentRunResultWhereSql(experimentId, query, options.cursor ?? null);
+    const rows = unwrapRows<RunResultDetailRowShape>(
+      await this.db.execute(sql`
+        SELECT
+          rr.id,
+          rr.project_id,
+          rr.source_id,
+          rr.sample_id,
+          COALESCE(rr.external_id, ds.external_id) AS external_id,
+          rr.status,
+          rr.judgment_status,
+          rr.is_correct,
+          rr.decision_output,
+          rr.expected_output,
+          ds.data AS sample_data,
+          d.field_schema AS dataset_field_schema,
+          rr.input_preview,
+          rr.output_preview,
+          rr.error_class,
+          rr.error_message,
+          rr.latency_ms,
+          rr.input_tokens,
+          rr.output_tokens,
+          rr.cost_estimate,
+          rr.attempt,
+          rr.created_at,
+          rr.prompt_version_id,
+          rr.model_id,
+          rr.rendered_prompt,
+          rr.input_variables,
+          rr.raw_response,
+          rr.parsed_output,
+          rr.payload_ref,
+          rr.dbos_workflow_id,
+          rr.bullmq_job_id
+        FROM ph_runs.run_results rr
+        LEFT JOIN ph_assets.dataset_samples ds ON ds.id = rr.sample_id
+        LEFT JOIN ph_runs.experiments e ON e.id = rr.source_id
+        LEFT JOIN ph_assets.datasets d ON d.id = e.dataset_id
+        WHERE ${whereSql}
+        ORDER BY rr.created_at ASC, rr.id ASC
+        LIMIT ${options.limit}
+      `),
+    );
+
+    const fields = await this.payloadReader.hydrateMany(
+      rows.map((r) => ({
+        renderedPrompt: r.rendered_prompt,
+        inputVariables: r.input_variables,
+        rawResponse: r.raw_response,
+        parsedOutput: r.parsed_output,
+        payloadRef: r.payload_ref,
+      })),
+    );
+    rows.forEach((r, i) => {
+      const f = fields[i];
+      if (!f) return;
+      r.rendered_prompt = f.renderedPrompt;
+      r.input_variables = f.inputVariables;
+      r.raw_response = f.rawResponse;
+      r.parsed_output = f.parsedOutput;
+    });
+
+    return {
+      rows: rows.map(toDetail),
+      nextCursor: nextCursorFromRows(rows, options.limit),
+    };
+  }
+
+  async listReleaseExportBatch(
+    projectId: string,
+    query: RunResultReleaseListQueryDto,
+    options: { limit: number; cursor?: RunResultExportCursor | null },
+  ): Promise<RunResultExportBatch<ReleaseRunResultExportItem>> {
+    const whereSql = releaseRunResultWhereSql(projectId, query, options.cursor ?? null);
+    const rows = unwrapRows<ReleaseRunResultExportRowShape>(
+      await this.db.execute(sql`
+        SELECT
+          rr.id,
+          rr.project_id,
+          rr.source,
+          rr.source_id,
+          release_event.id AS release_event_id,
+          COALESCE(rr.release_version_id, release_event.release_version_id) AS release_version_id,
+          release_version.kind AS release_version_kind,
+          release_version.production_version_number AS release_version_production_number,
+          release_version.target_production_version_number AS release_version_target_production_number,
+          release_version.candidate_number AS release_version_candidate_number,
+          rr.external_id,
+          release_event.prompt_name AS prompt_name,
+          rr.prompt_version_id,
+          COALESCE(release_event.prompt_version_number, pv.version_number) AS prompt_version_number,
+          rr.model_id,
+          COALESCE(
+            release_version.model_snapshot->>'name',
+            release_event.model_snapshot->>'name',
+            model.name
+          ) AS model_name,
+          COALESCE(
+            release_version.model_snapshot->>'providerType',
+            release_version.model_snapshot->>'provider',
+            release_event.model_snapshot->>'providerType',
+            release_event.model_snapshot->>'provider',
+            model.provider_type
+          ) AS model_provider,
+          release_event.lane_type AS lane_type,
+          rr.status,
+          rr.judgment_status,
+          rr.is_correct,
+          rr.decision_output,
+          rr.input_preview,
+          rr.output_preview,
+          rr.rendered_prompt,
+          rr.input_variables,
+          rr.raw_response,
+          rr.parsed_output,
+          rr.payload_ref,
+          rr.error_class,
+          rr.error_message,
+          rr.latency_ms,
+          rr.input_tokens,
+          rr.output_tokens,
+          rr.cost_estimate,
+          rr.attempt,
+          rr.created_at
+        FROM ph_runs.run_results rr
+        JOIN ph_releases.release_line_events release_event
+          ON release_event.id = rr.source_id
+         AND release_event.project_id = rr.project_id
+        LEFT JOIN ph_releases.release_versions release_version
+          ON release_version.id = COALESCE(rr.release_version_id, release_event.release_version_id)
+        LEFT JOIN ph_assets.prompt_versions pv ON pv.id = rr.prompt_version_id
+        LEFT JOIN ph_assets.models model ON model.id = rr.model_id
+        WHERE ${whereSql}
+        ORDER BY rr.created_at ASC, rr.id ASC
+        LIMIT ${options.limit}
+      `),
+    );
+
+    const fields = await this.payloadReader.hydrateMany(
+      rows.map((r) => ({
+        renderedPrompt: r.rendered_prompt,
+        inputVariables: r.input_variables,
+        rawResponse: r.raw_response,
+        parsedOutput: r.parsed_output,
+        payloadRef: r.payload_ref,
+      })),
+    );
+    rows.forEach((r, i) => {
+      const f = fields[i];
+      if (!f) return;
+      r.rendered_prompt = f.renderedPrompt;
+      r.input_variables = f.inputVariables;
+      r.raw_response = f.rawResponse;
+      r.parsed_output = f.parsedOutput;
+    });
+
+    return {
+      rows: rows.map(toReleaseExportItem),
+      nextCursor: nextCursorFromRows(rows, options.limit),
+    };
+  }
+
+  async previewReleaseCleanup(
+    projectId: string,
+    filter: ReleaseRunResultCleanupFilterDto,
+  ): Promise<ReleaseRunResultCleanupImpactDto> {
+    return (await this.describeReleaseCleanup((query) => this.db.execute(query), projectId, filter)).impact;
+  }
+
+  async deleteReleaseCleanup(
+    projectId: string,
+    filter: ReleaseRunResultCleanupFilterDto,
+  ): Promise<ReleaseRunResultCleanupDeleteResult> {
+    return this.db.transaction((tx) =>
+      this.deleteReleaseCleanupWithExecutor((query) => tx.execute(query), projectId, filter),
+    );
+  }
+
+  async deleteReleaseRetentionCleanupBatch(now: Date, limit = 50): Promise<ReleaseRunResultRetentionCleanupBatch> {
+    return this.db.transaction(async (tx) => {
+      const lockRows = unwrapRows<{ acquired: boolean }>(
+        await tx.execute(sql`SELECT pg_try_advisory_xact_lock(22030, 30) AS acquired`),
+      );
+      if (lockRows[0]?.acquired !== true) {
+        return { lockAcquired: false, targets: 0, cleanups: [] };
+      }
+
+      const execute = (query: SQL) => tx.execute(query);
+      const targets = await this.listReleaseRetentionCleanupTargets(now, limit, execute);
+      const cleanups: ReleaseRunResultRetentionCleanup[] = [];
+
+      for (const target of targets) {
+        const { payloadRefs, ...impact } = await this.deleteReleaseCleanupWithExecutor(execute, target.projectId, {
+          sourceIds: [target.sourceId],
+          releaseVersionScope: 'exact',
+          to: target.cutoff,
+        });
+        cleanups.push({ target, impact, payloadRefs });
+      }
+
+      return { lockAcquired: true, targets: targets.length, cleanups };
+    });
+  }
+
+  async listReleaseRetentionCleanupTargets(
+    now: Date,
+    limit = 50,
+    execute: (query: SQL) => Promise<unknown> = (query) => this.db.execute(query),
+  ): Promise<ReleaseRunResultRetentionTarget[]> {
+    const rows = unwrapRows<{
+      project_id: string;
+      source_id: string;
+      retention_days: number | string;
+      cutoff: string | Date;
+    }>(
+      await execute(sql`
+        SELECT
+          event.project_id,
+          event.id AS source_id,
+          event.retention_days,
+          (${now.toISOString()}::timestamptz - make_interval(days => event.retention_days)) AS cutoff
+        FROM ph_releases.release_line_events event
+        WHERE event.retention_days IS NOT NULL
+          AND event.retention_days > 0
+          AND EXISTS (
+            SELECT 1
+            FROM ph_runs.run_results rr
+            WHERE rr.project_id = event.project_id
+              AND rr.source = 'release'
+              AND rr.source_id = event.id
+              AND rr.created_at < (${now.toISOString()}::timestamptz - make_interval(days => event.retention_days))
+          )
+        ORDER BY event.project_id ASC, event.id ASC
+        LIMIT ${limit}
+      `),
+    );
+
+    return rows.map((row) => ({
+      projectId: row.project_id,
+      sourceId: row.source_id,
+      retentionDays: Number(row.retention_days),
+      cutoff: toIsoString(row.cutoff),
+    }));
+  }
+
+  private async deleteReleaseCleanupWithExecutor(
+    execute: (query: SQL) => Promise<unknown>,
+    projectId: string,
+    filter: ReleaseRunResultCleanupFilterDto,
+  ): Promise<ReleaseRunResultCleanupDeleteResult> {
+    const { impact, reclaimablePayloadRefs } = await this.describeReleaseCleanup(execute, projectId, filter);
+
+    if (impact.runResults === 0) {
+      return { ...impact, payloadRefs: [] };
+    }
+
+    const whereSql = releaseRunResultWhereSql(projectId, filter);
+    await execute(sql`
+      WITH target_run_results AS (
+        SELECT rr.id, rr.created_at
+        FROM ph_runs.run_results rr
+        JOIN ph_releases.release_line_events release_event
+          ON release_event.id = rr.source_id
+         AND release_event.project_id = rr.project_id
+        LEFT JOIN ph_releases.release_versions release_version
+          ON release_version.id = COALESCE(rr.release_version_id, release_event.release_version_id)
+        WHERE ${whereSql}
+      )
+      DELETE FROM ph_runs.annotations annotation
+      USING target_run_results target
+      WHERE annotation.run_result_id = target.id
+        AND annotation.run_result_created_at = target.created_at
+    `);
+
+    await execute(sql`
+      WITH target_run_results AS (
+        SELECT rr.id, rr.created_at
+        FROM ph_runs.run_results rr
+        JOIN ph_releases.release_line_events release_event
+          ON release_event.id = rr.source_id
+         AND release_event.project_id = rr.project_id
+        LEFT JOIN ph_releases.release_versions release_version
+          ON release_version.id = COALESCE(rr.release_version_id, release_event.release_version_id)
+        WHERE ${whereSql}
+      )
+      DELETE FROM ph_runs.run_results rr
+      USING target_run_results target
+      WHERE rr.id = target.id
+        AND rr.created_at = target.created_at
+    `);
+
+    return { ...impact, payloadRefs: reclaimablePayloadRefs };
+  }
+
+  private async describeReleaseCleanup(
+    execute: (query: SQL) => Promise<unknown>,
+    projectId: string,
+    filter: ReleaseRunResultCleanupFilterDto,
+  ): Promise<{ impact: ReleaseRunResultCleanupImpactDto; reclaimablePayloadRefs: StoredObjectRef[] }> {
+    const whereSql = releaseRunResultWhereSql(projectId, filter);
+    const impactRows = unwrapRows<{
+      run_results: number | string;
+      annotations: number | string;
+      run_result_row_bytes: number | string | null;
+      annotation_bytes: number | string | null;
+    }>(
+      await execute(sql`
+        WITH target_run_results AS (
+          SELECT
+            rr.id,
+            rr.created_at,
+            pg_column_size(to_jsonb(rr))::bigint AS row_bytes
+          FROM ph_runs.run_results rr
+          JOIN ph_releases.release_line_events release_event
+            ON release_event.id = rr.source_id
+           AND release_event.project_id = rr.project_id
+          LEFT JOIN ph_releases.release_versions release_version
+            ON release_version.id = COALESCE(rr.release_version_id, release_event.release_version_id)
+          WHERE ${whereSql}
+        ),
+        target_annotations AS (
+          SELECT pg_column_size(to_jsonb(annotation))::bigint AS row_bytes
+          FROM ph_runs.annotations annotation
+          JOIN target_run_results target
+            ON annotation.run_result_id = target.id
+           AND annotation.run_result_created_at = target.created_at
+        )
+        SELECT
+          (SELECT COUNT(*)::int FROM target_run_results) AS run_results,
+          (SELECT COUNT(*)::int FROM target_annotations) AS annotations,
+          (SELECT COALESCE(SUM(row_bytes), 0)::bigint FROM target_run_results) AS run_result_row_bytes,
+          (SELECT COALESCE(SUM(row_bytes), 0)::bigint FROM target_annotations) AS annotation_bytes
+      `),
+    );
+
+    const allPayloadRows = unwrapRows<{ payload_ref: unknown }>(
+      await execute(sql`
+        WITH target_run_results AS (
+          SELECT rr.payload_ref
+          FROM ph_runs.run_results rr
+          JOIN ph_releases.release_line_events release_event
+            ON release_event.id = rr.source_id
+           AND release_event.project_id = rr.project_id
+          LEFT JOIN ph_releases.release_versions release_version
+            ON release_version.id = COALESCE(rr.release_version_id, release_event.release_version_id)
+          WHERE ${whereSql}
+        )
+        SELECT payload_ref
+        FROM target_run_results
+        WHERE payload_ref IS NOT NULL
+      `),
+    );
+
+    const reclaimablePayloadRows = unwrapRows<{ payload_ref: unknown }>(
+      await execute(sql`
+        WITH target_run_results AS (
+          SELECT rr.id, rr.created_at, rr.payload_ref
+          FROM ph_runs.run_results rr
+          JOIN ph_releases.release_line_events release_event
+            ON release_event.id = rr.source_id
+           AND release_event.project_id = rr.project_id
+          LEFT JOIN ph_releases.release_versions release_version
+            ON release_version.id = COALESCE(rr.release_version_id, release_event.release_version_id)
+          WHERE ${whereSql}
+        )
+        SELECT DISTINCT target.payload_ref
+        FROM target_run_results target
+        WHERE target.payload_ref IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM ph_runs.run_results other
+            WHERE other.payload_ref IS NOT NULL
+              AND COALESCE(other.payload_ref->'shard'->>'key', other.payload_ref->>'key')
+                = COALESCE(target.payload_ref->'shard'->>'key', target.payload_ref->>'key')
+              AND NOT EXISTS (
+                SELECT 1
+                FROM target_run_results same_target
+                WHERE same_target.id = other.id
+                  AND same_target.created_at = other.created_at
+              )
+          )
+      `),
+    );
+
+    const first = impactRows[0] ?? {
+      run_results: 0,
+      annotations: 0,
+      run_result_row_bytes: 0,
+      annotation_bytes: 0,
+    };
+    const runResultRowBytes = nonnegativeInteger(first.run_result_row_bytes);
+    const annotationBytes = nonnegativeInteger(first.annotation_bytes);
+    const dbBytes = runResultRowBytes + annotationBytes;
+    const allPayloadRefs = collectStoredObjectRefs(allPayloadRows.map((row) => row.payload_ref));
+    const reclaimablePayloadRefs = collectStoredObjectRefs(reclaimablePayloadRows.map((row) => row.payload_ref));
+    const objectBytes = sumStoredObjectBytes(allPayloadRefs);
+    const reclaimableObjectBytes = sumStoredObjectBytes(reclaimablePayloadRefs);
+    const deferredObjectBytes = Math.max(0, objectBytes - reclaimableObjectBytes);
+
+    return {
+      impact: {
+        runResults: nonnegativeInteger(first.run_results),
+        annotations: nonnegativeInteger(first.annotations),
+        runResultRowBytes,
+        annotationBytes,
+        dbBytes,
+        objectBytes,
+        reclaimableObjectBytes,
+        deferredObjectBytes,
+        estimatedMatchedBytes: dbBytes + objectBytes,
+        estimatedReclaimableBytes: dbBytes + reclaimableObjectBytes,
+      },
+      reclaimablePayloadRefs,
     };
   }
 
@@ -607,6 +1008,10 @@ interface ReleaseRunResultRowShape {
   created_at: string | Date;
 }
 
+interface ReleaseRunResultExportRowShape extends ReleaseRunResultRowShape {
+  rendered_prompt: unknown;
+}
+
 const TEXT_FIELD_ROLES = new Set<DatasetFieldSchemaRole>(['text']);
 const IMAGE_FIELD_ROLES = new Set<DatasetFieldSchemaRole>(['image', 'image_url', 'image_base64']);
 
@@ -652,10 +1057,28 @@ function toIsoString(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
+function nextCursorFromRows<T extends { id: string; created_at: string | Date }>(
+  rows: T[],
+  limit: number,
+): RunResultExportCursor | null {
+  if (rows.length < limit) return null;
+  const last = rows[rows.length - 1];
+  if (!last) return null;
+  return {
+    id: last.id,
+    createdAt: toIsoString(last.created_at),
+  };
+}
+
 function toNumberOrNull(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   const num = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+function nonnegativeInteger(value: unknown): number {
+  const num = typeof value === 'number' ? value : Number(value ?? 0);
+  return Number.isFinite(num) && num > 0 ? Math.floor(num) : 0;
 }
 
 function runResultFailureSql(): SQL {
@@ -678,6 +1101,139 @@ function stringList(values: readonly string[]): SQL {
     values.map((value) => sql`${value}`),
     sql`, `,
   );
+}
+
+interface ReleaseRunResultFilter {
+  sourceIds?: readonly string[];
+  releaseVersionIds?: readonly string[];
+  releaseVersionScope?: 'exact' | 'journey';
+  promptVersionIds?: readonly string[];
+  lane?: readonly string[];
+  status?: readonly string[];
+  judgmentStatus?: readonly string[];
+  isCorrect?: boolean;
+  externalId?: string;
+  from?: string;
+  to?: string;
+  search?: string;
+}
+
+function experimentRunResultWhereSql(
+  experimentId: string,
+  query: RunResultListQueryDto,
+  cursor?: RunResultExportCursor | null,
+): SQL {
+  const conditions: SQL[] = [sql`rr.source = 'experiment'`, sql`rr.source_id = ${experimentId}::uuid`];
+
+  if (query.status && query.status.length > 0) {
+    conditions.push(sql`rr.status IN (${stringList(query.status)})`);
+  }
+
+  if (query.judgmentStatus && query.judgmentStatus.length > 0) {
+    conditions.push(sql`rr.judgment_status IN (${stringList(query.judgmentStatus)})`);
+  }
+
+  if (typeof query.isCorrect === 'boolean') {
+    conditions.push(sql`rr.is_correct = ${query.isCorrect}`);
+  }
+
+  if (query.search && query.search.length > 0) {
+    const pattern = `%${query.search}%`;
+    conditions.push(
+      sql`(
+        rr.external_id ILIKE ${pattern}
+        OR ds.external_id ILIKE ${pattern}
+        OR ds.data::text ILIKE ${pattern}
+        OR rr.raw_response ILIKE ${pattern}
+        OR rr.input_variables::text ILIKE ${pattern}
+        OR rr.decision_output ILIKE ${pattern}
+        OR rr.input_preview ILIKE ${pattern}
+        OR rr.output_preview ILIKE ${pattern}
+        OR rr.expected_output ILIKE ${pattern}
+        OR rr.error_message ILIKE ${pattern}
+      )`,
+    );
+  }
+
+  if (cursor) {
+    conditions.push(sql`(rr.created_at, rr.id) > (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`);
+  }
+
+  return sql.join(conditions, sql` AND `);
+}
+
+function releaseRunResultWhereSql(
+  projectId: string,
+  query: ReleaseRunResultFilter,
+  cursor?: RunResultExportCursor | null,
+): SQL {
+  const conditions: SQL[] = [sql`rr.project_id = ${projectId}::uuid`, sql`rr.source = 'release'`];
+
+  if (query.sourceIds && query.sourceIds.length > 0) {
+    conditions.push(sql`rr.source_id IN (${uuidList(query.sourceIds)})`);
+  }
+
+  if (query.releaseVersionIds && query.releaseVersionIds.length > 0) {
+    conditions.push(releaseVersionConditionSql(query.releaseVersionIds, query.releaseVersionScope ?? 'exact'));
+  }
+
+  if (query.promptVersionIds && query.promptVersionIds.length > 0) {
+    conditions.push(sql`rr.prompt_version_id IN (${uuidList(query.promptVersionIds)})`);
+  }
+
+  if (query.lane && query.lane.length > 0) {
+    conditions.push(sql`release_event.lane_type IN (${stringList(query.lane)})`);
+  }
+
+  if (query.status && query.status.length > 0) {
+    conditions.push(sql`rr.status IN (${stringList(query.status)})`);
+  }
+
+  if (query.judgmentStatus && query.judgmentStatus.length > 0) {
+    conditions.push(sql`rr.judgment_status IN (${stringList(query.judgmentStatus)})`);
+  }
+
+  if (typeof query.isCorrect === 'boolean') {
+    conditions.push(sql`rr.is_correct = ${query.isCorrect}`);
+  }
+
+  if (query.externalId && query.externalId.length > 0) {
+    conditions.push(sql`rr.external_id ILIKE ${`%${query.externalId}%`}`);
+  }
+
+  if (query.from) {
+    conditions.push(sql`rr.created_at >= ${query.from}::timestamptz`);
+  }
+
+  if (query.to) {
+    conditions.push(sql`rr.created_at < ${query.to}::timestamptz`);
+  }
+
+  if (query.search && query.search.length > 0) {
+    const pattern = `%${query.search}%`;
+    conditions.push(
+      sql`(
+        rr.external_id ILIKE ${pattern}
+        OR rr.source_id::text ILIKE ${pattern}
+        OR COALESCE(rr.release_version_id, release_event.release_version_id)::text ILIKE ${pattern}
+        OR release_event.prompt_name ILIKE ${pattern}
+        OR COALESCE(release_version.model_snapshot->>'name', release_event.model_snapshot->>'name') ILIKE ${pattern}
+        OR rr.raw_response ILIKE ${pattern}
+        OR rr.input_variables::text ILIKE ${pattern}
+        OR rr.decision_output ILIKE ${pattern}
+        OR rr.input_preview ILIKE ${pattern}
+        OR rr.output_preview ILIKE ${pattern}
+        OR rr.expected_output ILIKE ${pattern}
+        OR rr.error_message ILIKE ${pattern}
+      )`,
+    );
+  }
+
+  if (cursor) {
+    conditions.push(sql`(rr.created_at, rr.id) > (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`);
+  }
+
+  return sql.join(conditions, sql` AND `);
 }
 
 function releaseVersionConditionSql(ids: readonly string[], scope: 'exact' | 'journey'): SQL {
@@ -787,6 +1343,13 @@ function toReleaseListItem(row: ReleaseRunResultRowShape): ReleaseRunResultListI
     costEstimate: toNumberOrNull(row.cost_estimate),
     attempt: Number(row.attempt),
     createdAt: toIsoString(row.created_at),
+  };
+}
+
+function toReleaseExportItem(row: ReleaseRunResultExportRowShape): ReleaseRunResultExportItem {
+  return {
+    ...toReleaseListItem(row),
+    renderedPrompt: row.rendered_prompt ?? null,
   };
 }
 

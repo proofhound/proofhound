@@ -5,7 +5,8 @@ import type { DbClient } from '@proofhound/db';
 import type { LLMRunResultRecord, LLMRunResultWriter } from '@proofhound/llm-client';
 import { createLogger } from '@proofhound/logger';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
-import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
+import { UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
+import { safeRecordUsageEvent } from '../../common/contracts/usage-metering.hook';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 
 // ph_runs.run_results is monthly-partitioned by created_at, so UNIQUE(id) cannot live on that table.

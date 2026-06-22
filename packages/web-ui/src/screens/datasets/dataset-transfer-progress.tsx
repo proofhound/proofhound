@@ -13,6 +13,7 @@ interface DatasetTransferState {
   status: TransferStatus;
   loadedBytes: number;
   totalBytes: number | null;
+  percentOverride: number | null;
   startedAt: number;
   updatedAt: number;
   finishedAt: number | null;
@@ -77,6 +78,7 @@ export function useDatasetTransferProgress() {
       status: 'running',
       loadedBytes: 0,
       totalBytes: totalBytes ?? null,
+      percentOverride: null,
       startedAt,
       updatedAt: startedAt,
       finishedAt: null,
@@ -91,18 +93,25 @@ export function useDatasetTransferProgress() {
         ...current,
         loadedBytes: Math.max(current.loadedBytes, progress.loadedBytes),
         totalBytes: progress.totalBytes ?? current.totalBytes,
+        percentOverride: null,
         updatedAt: now(),
       };
     });
   }, []);
 
-  const setMessage = useCallback((title: string, description?: string) => {
+  const setMessage = useCallback((title: string, description?: string, percentOverride?: number | null) => {
     setState((current) => {
       if (!current) return current;
       return {
         ...current,
         title,
         description,
+        percentOverride:
+          percentOverride === undefined
+            ? current.percentOverride
+            : percentOverride === null
+              ? null
+              : clampPercent(percentOverride),
         updatedAt: now(),
       };
     });
@@ -120,6 +129,7 @@ export function useDatasetTransferProgress() {
         status: 'success',
         loadedBytes: nextLoadedBytes,
         totalBytes: current.totalBytes ?? nextLoadedBytes,
+        percentOverride: null,
         updatedAt: finishedAt,
         finishedAt,
       };
@@ -133,6 +143,7 @@ export function useDatasetTransferProgress() {
       return {
         ...current,
         status: 'error',
+        percentOverride: null,
         updatedAt: finishedAt,
         finishedAt,
       };
@@ -146,12 +157,13 @@ export function useDatasetTransferProgress() {
 
     const referenceTime = state.status === 'running' ? clock : (state.finishedAt ?? state.updatedAt);
     const elapsedMs = Math.max(0, referenceTime - state.startedAt);
-    const percent =
+    const measuredPercent =
       state.totalBytes && state.totalBytes > 0
         ? clampPercent((state.loadedBytes / state.totalBytes) * 100)
         : state.status === 'success'
           ? 100
           : null;
+    const percent = state.percentOverride ?? measuredPercent;
     const remainingMs =
       state.status === 'running' && percent !== null && percent > 0 && percent < 100
         ? (elapsedMs / percent) * (100 - percent)
@@ -191,8 +203,9 @@ export function DatasetTransferProgressPanel({
   const loadedLabel = progress.totalBytes
     ? `${formatBytes(progress.loadedBytes)} / ${formatBytes(progress.totalBytes)}`
     : formatBytes(progress.loadedBytes);
+  const usesPercentOverride = progress.percentOverride !== null;
   const progressLabel =
-    progress.percent !== null && progress.totalBytes
+    progress.percent !== null && progress.totalBytes && !usesPercentOverride
       ? formatProgressLabel({
           value: progress.loadedBytes,
           max: progress.totalBytes,

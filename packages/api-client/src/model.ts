@@ -63,49 +63,49 @@ export const modelClient = {
       .then((r) => r.data),
 
   // ---------------- Local models ----------------
-  listProjectModels: (projectId: string) =>
+  listProjectModels: (_projectId: string) =>
     httpClient.get<ProjectModelListResponseDto>(`/models`).then((r) => r.data),
 
-  getProjectModel: (projectId: string, modelId: string) =>
+  getProjectModel: (_projectId: string, modelId: string) =>
     httpClient.get<ProjectModelListItemDto>(`/models/${modelId}`).then((r) => r.data),
 
-  createProjectModel: (projectId: string, body: CreateProjectModelDto) =>
+  createProjectModel: (_projectId: string, body: CreateProjectModelDto) =>
     httpClient.post<ProjectModelListItemDto>(`/models`, body).then((r) => r.data),
 
-  probeDraftProjectModel: (projectId: string, body: ProbeDraftProjectModelDto) =>
+  probeDraftProjectModel: (_projectId: string, body: ProbeDraftProjectModelDto) =>
     httpClient.post<ProbeModelResponseDto>(`/models/probe-draft`, body).then((r) => r.data),
 
-  updateProjectModel: (projectId: string, modelId: string, body: UpdateProjectModelDto) =>
+  updateProjectModel: (_projectId: string, modelId: string, body: UpdateProjectModelDto) =>
     httpClient
       .patch<ProjectModelListItemDto>(`/models/${modelId}`, body)
       .then((r) => r.data),
 
-  deleteProjectModel: (projectId: string, modelId: string, options?: ModelDeleteOptions) =>
+  deleteProjectModel: (_projectId: string, modelId: string, options?: ModelDeleteOptions) =>
     httpClient
       .delete<void>(`/models/${modelId}`, { params: buildDeleteParams(options) })
       .then(() => undefined),
 
-  duplicateProjectModel: (projectId: string, modelId: string) =>
+  duplicateProjectModel: (_projectId: string, modelId: string) =>
     httpClient
       .post<ProjectModelListItemDto>(`/models/${modelId}/duplicate`)
       .then((r) => r.data),
 
-  probeProjectModel: (projectId: string, modelId: string) =>
+  probeProjectModel: (_projectId: string, modelId: string) =>
     httpClient
       .post<ProbeModelResponseDto>(`/models/${modelId}/probe`)
       .then((r) => r.data),
 
-  revealProjectModelApiKey: (projectId: string, modelId: string) =>
+  revealProjectModelApiKey: (_projectId: string, modelId: string) =>
     httpClient
       .get<RevealApiKeyResponseDto>(`/models/${modelId}/api-key`)
       .then((r) => r.data),
 
-  getProjectModelReferences: (projectId: string, modelId: string) =>
+  getProjectModelReferences: (_projectId: string, modelId: string) =>
     httpClient
       .get<ModelReferencesDto>(`/models/${modelId}/references`)
       .then((r) => r.data),
 
-  exportProjectModels: (projectId: string) =>
+  exportProjectModels: (_projectId: string) =>
     httpClient
       .get<Blob>(`/models/export`, { responseType: 'blob' })
       .then((r): ModelExportResult => {

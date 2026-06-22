@@ -1,6 +1,7 @@
 // Compares the LLM output against the sample's expected output
 // See docs/specs/24-experiments.md §7
 import type { JudgmentContext, JudgmentOutcome, JudgmentStrategy } from '../types';
+import { readJudgmentDecisionField } from './rule-reader';
 
 const DEFAULT_DECISION_FIELD = 'label';
 
@@ -14,13 +15,6 @@ function readStringField(source: Record<string, unknown>, keys: string[]): strin
     if (typeof value === 'string' && value.trim().length > 0) return value.trim();
   }
   return null;
-}
-
-function readFirstRule(rules: unknown): Record<string, unknown> | null {
-  if (!isRecord(rules)) return null;
-  const rawRules = rules['rules'];
-  if (!Array.isArray(rawRules)) return null;
-  return rawRules.find((rule): rule is Record<string, unknown> => isRecord(rule)) ?? null;
 }
 
 function readDecisionFieldFromOutputSchema(outputSchema: unknown): string | null {
@@ -48,13 +42,9 @@ export function extractDecisionValue(parsed: unknown, decisionField: string): st
 }
 
 export function readDecisionField(context: JudgmentContext): string {
-  const rules = (context.judgmentRules as Record<string, unknown> | null) ?? {};
-  const firstRule = readFirstRule(rules);
-  return (
-    readStringField(rules, ['decision_field', 'decisionField']) ??
-    (firstRule ? readStringField(firstRule, ['field', 'decision_field', 'decisionField']) : null) ??
-    readDecisionFieldFromOutputSchema(context.outputSchema) ??
-    DEFAULT_DECISION_FIELD
+  return readJudgmentDecisionField(
+    context.judgmentRules,
+    readDecisionFieldFromOutputSchema(context.outputSchema) ?? DEFAULT_DECISION_FIELD,
   );
 }
 

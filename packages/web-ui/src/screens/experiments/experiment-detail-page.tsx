@@ -24,6 +24,7 @@ import type {
   ExperimentListItemDto,
   ExperimentStatusDto,
   RunResultDatasetFieldValueDto,
+  RunResultExportFormatDto,
   RunResultJudgmentStatusDto,
   RunResultListItemDto,
   RunResultStatusDto,
@@ -33,11 +34,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   ImagePreviewDialog,
   ImageZoomHoverOverlay,
   Input,
-  ModalityIcon,
   ModalityIconGroup,
   DetailPageSkeleton,
   Progress,
@@ -54,7 +55,7 @@ import {
   TooltipProvider,
   cn,
 } from '@proofhound/ui';
-import type { ModalityKind, TableColumn } from '@proofhound/ui';
+import type { TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { formatLatencySeconds } from '../../lib';
@@ -62,11 +63,13 @@ import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
 import { useDateTimeFormatter } from '../../hooks';
 import { useControlExperiment, useDownloadExperiment, useExperiment } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
-import { useExperimentRunResults } from '../../hooks';
+import { useDownloadExperimentRunResults, useExperimentRunResults } from '../../hooks';
 import { experimentTone } from './experiment-theme';
 import { buildRepeatExperimentHref } from './experiment-repeat-href';
 import { derivePromptModalityKinds } from './experiment-view-model';
 import { ExperimentStatusBadge, formatNumber } from './experiment-ui';
+import type { DatasetFieldRole } from '../datasets/dataset-types';
+import { RolePill } from '../datasets/dataset-ui';
 import {
   compactHumanValue,
   getModelOutputFieldValue,
@@ -74,8 +77,10 @@ import {
   hasStructuredModelOutput,
 } from './run-result-display';
 import {
-  formatRunResultFailureReason,
+  formatRunResultFailureReasonParts,
   getBinaryRunResultJudgmentStatus,
+  getRunResultChainStatus,
+  getRunResultChainStatusLabelKey,
   getRunResultJudgmentLabelKey,
 } from './run-result-labels';
 import { RunResultDetailSheet } from './run-result-detail-sheet';
@@ -201,10 +206,7 @@ function ExperimentTimingSubtitle({ detail, className }: { detail: ExperimentLis
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-        <Play
-          className={cn('size-2 fill-current stroke-current', experimentTone.positive.text)}
-          aria-hidden="true"
-        />
+        <Play className={cn('size-2 fill-current stroke-current', experimentTone.positive.text)} aria-hidden="true" />
         <TimePoint date={startDate} includeDate={includeDate} />
         <span className="font-mono text-[10.5px] text-muted-foreground/70 sm:text-[11px]" aria-hidden="true">
           →
@@ -404,8 +406,20 @@ function isInputFieldRole(role: DatasetFieldSchemaDto['role']): role is InputFie
   return INPUT_FIELD_ROLES.has(role);
 }
 
-function mapRoleToModality(role: InputFieldRole): ModalityKind {
+function mapInputRoleToDatasetFieldRole(role: InputFieldRole): DatasetFieldRole {
   return role === 'text' ? 'text' : 'image';
+}
+
+function JudgmentFieldBadge({ label }: { label: string }) {
+  return (
+    <span
+      aria-label={label}
+      className="inline-flex items-center gap-1 rounded-[4px] border border-[var(--status-canary-bd)] bg-[var(--status-canary-bg)] px-1.5 py-0 font-mono text-[10px] font-medium leading-[14px] text-[var(--status-canary-fg)]"
+    >
+      <span className="size-1.5 rounded-full bg-[var(--status-canary-dot)]" />
+      {label}
+    </span>
+  );
 }
 
 function ImageThumbnail({
@@ -559,6 +573,24 @@ function RunResultJudgmentBadge({ sample }: { sample: RunResultListItemDto }) {
   );
 }
 
+function RunResultChainStatusBadge({ sample }: { sample: RunResultListItemDto }) {
+  const { t } = useI18n();
+  const chainStatus = getRunResultChainStatus(sample);
+  const labelKey = getRunResultChainStatusLabelKey(chainStatus);
+  const tone =
+    chainStatus === 'success'
+      ? experimentTone.positive.pill
+      : chainStatus === 'failed'
+        ? experimentTone.danger.pill
+        : experimentTone.muted.pill;
+
+  return (
+    <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium', tone)}>
+      {t(labelKey)}
+    </span>
+  );
+}
+
 function SampleResultsSection({
   detail,
   projectId,
@@ -606,10 +638,11 @@ function SampleResultsSection({
       : [{ key: 'output', width: 'flex', minPx: 320 }];
     return [
       ...baseCols,
-      ...outputCols,
       { key: 'expected', width: 'normal' },
+      ...outputCols,
+      { key: 'chainStatus', width: 'compact' },
       { key: 'judgment', width: 'compact' },
-      { key: 'failure', width: 'normal' },
+      { key: 'failure', width: 'wide' },
       { key: 'latency', width: 'compact' },
       { key: 'createdAt', width: 'normal' },
     ];
@@ -621,8 +654,7 @@ function SampleResultsSection({
   const filterValue = useMemo<SampleFilterValue>(() => {
     if (filter === 'ok') return { isCorrect: true, judgmentStatus: undefined, status: undefined, search };
     if (filter === 'bad') return { isCorrect: false, judgmentStatus: undefined, status: undefined, search };
-    if (filter === 'error')
-      return { isCorrect: undefined, judgmentStatus: undefined, status: ['failed'], search };
+    if (filter === 'error') return { isCorrect: undefined, judgmentStatus: undefined, status: ['failed'], search };
     return { isCorrect: undefined, judgmentStatus: undefined, status: undefined, search };
   }, [filter, search]);
 
@@ -708,23 +740,25 @@ function SampleResultsSection({
       <Table columns={sampleResultColumns}>
         <TableHeader>
           <TableRow>
-            <TableHead column="externalId">
-              {t('experiments.detail.samples.col.externalId')}
-            </TableHead>
-            {inputColumns.map((col) => {
-              const isImage = col.role !== 'text';
-              return (
-                <TableHead key={col.name} column={`field:${col.name}`}>
-                  <span className="flex items-center gap-1.5">
-                    <ModalityIcon kind={mapRoleToModality(col.role)} size="sm" />
-                    <span className="font-mono text-[12px] text-foreground">{col.name}</span>
-                    {isImage && (
-                      <span className="font-mono text-[10px] normal-case text-muted-foreground">{col.role}</span>
-                    )}
+            <TableHead column="externalId">{t('experiments.detail.samples.col.externalId')}</TableHead>
+            {inputColumns.map((col) => (
+              <TableHead key={col.name} column={`field:${col.name}`}>
+                <span className="flex flex-nowrap items-center gap-2">
+                  <span className="whitespace-nowrap font-mono text-[12px] font-semibold text-foreground">
+                    {col.name}
                   </span>
-                </TableHead>
-              );
-            })}
+                  <RolePill role={mapInputRoleToDatasetFieldRole(col.role)} size="micro" />
+                </span>
+              </TableHead>
+            ))}
+            <TableHead column="expected">
+              <span className="flex flex-nowrap items-center gap-2">
+                <span className="whitespace-nowrap text-[12px] font-semibold text-foreground">
+                  {t('experiments.detail.samples.col.expected')}
+                </span>
+                <RolePill role="expected" size="micro" />
+              </span>
+            </TableHead>
             {hasDynamicOutput ? (
               outputFields.map((field) => {
                 const titleParts: string[] = [];
@@ -733,15 +767,10 @@ function SampleResultsSection({
                 const headTitle = titleParts.join(' · ') || undefined;
                 return (
                   <TableHead key={field.key} column={`output:${field.key}`}>
-                    <span className="flex items-center gap-1.5" title={headTitle}>
-                      <span className="font-mono text-[12px] text-foreground">{field.key}</span>
+                    <span className="flex flex-nowrap items-center gap-2" title={headTitle}>
+                      <span className="font-mono text-[12px] font-semibold text-foreground">{field.key}</span>
                       {field.isJudgment && (
-                        <span
-                          aria-label={t('experiments.detail.samples.output.judgmentBadge')}
-                          className="font-mono text-[10px] text-muted-foreground"
-                        >
-                          [J]
-                        </span>
+                        <JudgmentFieldBadge label={t('experiments.detail.samples.output.judgmentBadge')} />
                       )}
                     </span>
                   </TableHead>
@@ -750,7 +779,7 @@ function SampleResultsSection({
             ) : (
               <TableHead column="output">{t('experiments.detail.samples.col.output')}</TableHead>
             )}
-            <TableHead column="expected">{t('experiments.detail.samples.col.expected')}</TableHead>
+            <TableHead column="chainStatus">{t('experiments.detail.samples.col.chainStatus')}</TableHead>
             <TableHead column="judgment">{t('experiments.detail.samples.col.judgment')}</TableHead>
             <TableHead column="failure">{t('experiments.detail.samples.col.failure')}</TableHead>
             <TableHead column="latency">{t('experiments.detail.samples.col.latency')}</TableHead>
@@ -763,14 +792,13 @@ function SampleResultsSection({
           {samples.map((sample) => {
             const fieldMap = buildSampleFieldValueMap(sample.datasetTextFields, sample.datasetImageFields);
             const externalId = sample.externalId ?? sample.sampleId ?? sample.id;
-            const failureReason = formatRunResultFailureReason(sample, t);
+            const failureReason = formatRunResultFailureReasonParts(sample, t);
+            const failureReasonTitle = failureReason
+              ? [failureReason.summary, failureReason.detail].filter(Boolean).join('\n')
+              : undefined;
             return (
               <TableRow key={sample.id} onClick={() => onOpenDetail(sample.id)}>
-                <TableCell
-                  column="externalId"
-                  truncate
-                  className="font-mono text-[11.5px] text-muted-foreground"
-                >
+                <TableCell column="externalId" truncate className="font-mono text-[11.5px] text-muted-foreground">
                   <span title={externalId}>{externalId}</span>
                 </TableCell>
                 {inputColumns.map((col) => {
@@ -788,31 +816,22 @@ function SampleResultsSection({
                     </TableCell>
                   );
                 })}
+                <TableCell column="expected" truncate className="text-[12px] text-muted-foreground">
+                  <span title={sample.expectedOutput ?? '—'}>{compactHumanValue(sample.expectedOutput, 120)}</span>
+                </TableCell>
                 {hasDynamicOutput ? (
                   hasStructuredModelOutput(sample) ? (
                     outputFields.map((field) => {
                       const fieldValue = getModelOutputFieldValue(sample, field.key);
                       return (
-                        <TableCell
-                          key={field.key}
-                          column={`output:${field.key}`}
-                          truncate
-                          className="text-[12px]"
-                        >
-                          <span title={compactHumanValue(fieldValue, 500)}>
-                            {compactHumanValue(fieldValue, 180)}
-                          </span>
+                        <TableCell key={field.key} column={`output:${field.key}`} truncate className="text-[12px]">
+                          <span title={compactHumanValue(fieldValue, 500)}>{compactHumanValue(fieldValue, 180)}</span>
                         </TableCell>
                       );
                     })
                   ) : (
                     outputFields.map((field, idx) => (
-                      <TableCell
-                        key={field.key}
-                        column={`output:${field.key}`}
-                        truncate
-                        className="text-[12px]"
-                      >
+                      <TableCell key={field.key} column={`output:${field.key}`} truncate className="text-[12px]">
                         {idx === 0 ? (
                           <span title={compactHumanValue(getModelOutputValue(sample), 500)}>
                             {compactHumanValue(getModelOutputValue(sample), 180)}
@@ -830,16 +849,27 @@ function SampleResultsSection({
                     </span>
                   </TableCell>
                 )}
-                <TableCell column="expected" truncate className="text-[12px] text-muted-foreground">
-                  <span title={sample.expectedOutput ?? '—'}>{compactHumanValue(sample.expectedOutput, 120)}</span>
+                <TableCell column="chainStatus">
+                  <RunResultChainStatusBadge sample={sample} />
                 </TableCell>
                 <TableCell column="judgment">
                   <RunResultJudgmentBadge sample={sample} />
                 </TableCell>
-                <TableCell column="failure" truncate className="text-[12px] text-destructive">
-                  <span title={failureReason ?? undefined}>
-                    {failureReason ? compactHumanValue(failureReason, 120) : '—'}
-                  </span>
+                <TableCell column="failure" className="text-[12px]">
+                  {failureReason ? (
+                    <span className="block min-w-0" title={failureReasonTitle}>
+                      <span className={cn('block font-medium', experimentTone.danger.text)}>
+                        {compactHumanValue(failureReason.summary, 56)}
+                      </span>
+                      {failureReason.detail && (
+                        <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                          {compactHumanValue(failureReason.detail, 96)}
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </TableCell>
                 <TableCell column="latency" className="font-mono text-[11.5px] text-muted-foreground">
                   {formatDurationMs(sample.latencyMs)}
@@ -894,6 +924,7 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
 
   const controlExperiment = useControlExperiment(projectId);
   const downloadExperiment = useDownloadExperiment(projectId);
+  const downloadRunResults = useDownloadExperimentRunResults(projectId, experimentId);
 
   const queryClient = useQueryClient();
   const isLive = detail?.status === 'running';
@@ -913,10 +944,7 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
   if (detailLoading) {
     return (
       <Main className="gap-0 bg-muted/35 p-0">
-        <div
-          className="mx-auto w-full max-w-[1760px] px-4 py-6 sm:px-6 lg:px-8"
-          data-testid="experiment-detail-page"
-        >
+        <div className="mx-auto w-full max-w-[1760px] px-4 py-6 sm:px-6 lg:px-8" data-testid="experiment-detail-page">
           <DetailPageSkeleton />
         </div>
       </Main>
@@ -939,7 +967,7 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
 
   const buttons = deriveControlButtons(detail.status, detail.controlState);
   const inProgressAction = controlExperiment.isPending ? controlExperiment.variables?.action : null;
-  const inProgressDownload = downloadExperiment.isPending;
+  const inProgressDownload = downloadExperiment.isPending || downloadRunResults.isPending;
 
   const percent = detail.totalSamples > 0 ? (detail.processedSamples / detail.totalSamples) * 100 : 0;
   const progressLabel = formatProgressLabel({
@@ -972,6 +1000,25 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
   const handleExport = (format: ExperimentExportFormatDto) => {
     downloadExperiment.mutate(
       { experimentId, format },
+      {
+        onSuccess: (result) => downloadBlob(result.blob, result.fileName),
+      },
+    );
+  };
+
+  const handleRunResultsExport = (format: RunResultExportFormatDto) => {
+    downloadRunResults.mutate(
+      {
+        format,
+        query: {
+          page: 1,
+          pageSize: 200,
+          sort: 'created_desc',
+          status: undefined,
+          judgmentStatus: undefined,
+          isCorrect: undefined,
+        },
+      },
       {
         onSuccess: (result) => downloadBlob(result.blob, result.fileName),
       },
@@ -1021,6 +1068,15 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
                   <DropdownMenuItem disabled={inProgressDownload} onClick={() => handleExport('jsonl')}>
                     <FileDown className="size-4" />
                     {t('experiments.action.exportJsonl')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled={inProgressDownload} onClick={() => handleRunResultsExport('csv')}>
+                    <Download className="size-4" />
+                    {t('experiments.action.exportRunResultsCsv')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={inProgressDownload} onClick={() => handleRunResultsExport('jsonl')}>
+                    <FileDown className="size-4" />
+                    {t('experiments.action.exportRunResultsJsonl')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1241,10 +1297,7 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
                         value={
                           <span className="inline-flex items-center gap-1.5 break-all">
                             <span>
-                              <Link
-                                href={`/datasets/${detail.datasetId}`}
-                                className="hover:underline"
-                              >
+                              <Link href={`/datasets/${detail.datasetId}`} className="hover:underline">
                                 {detail.datasetName}
                               </Link>
                               {` · ${formatNumber(detail.datasetSamples)}`}
@@ -1267,10 +1320,7 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
                       <SpecLine
                         label={t('experiments.detail.spec.model')}
                         value={
-                          <Link
-                            href={`/models/${detail.modelId}/edit`}
-                            className="break-all hover:underline"
-                          >
+                          <Link href={`/models/${detail.modelId}/edit`} className="break-all hover:underline">
                             {detail.modelName}
                           </Link>
                         }

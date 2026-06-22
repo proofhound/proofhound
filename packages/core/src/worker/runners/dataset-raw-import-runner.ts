@@ -5,15 +5,18 @@ import type { DatasetFieldMappingDto, DatasetImportSourceFormat } from '@proofho
 import type { DatasetRawImportJobPayload } from '@proofhound/orchestration-shared';
 import { buildDatasetFieldSchema } from '../../server/modules/dataset/dataset-field-schema.util';
 import { parseRawDatasetRows } from '../../server/modules/dataset/dataset-import-raw-parser';
+import type {
+  DatasetImportRepository} from '../../server/modules/dataset/dataset-import.repository';
 import {
+  DatasetImportAbortedError,
   DatasetImportEmptyError,
-  DatasetImportRepository,
   DatasetNameTakenError,
   type BatchSampleRow,
   type DatasetImportRow,
 } from '../../server/modules/dataset/dataset-import.repository';
-import { ObjectStorageProvider, type StoredObjectRef } from '../../server/common/contracts/object-storage.provider';
-import { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
+import type { ObjectStorageProvider} from '../../server/common/contracts/object-storage.provider';
+import { type StoredObjectRef } from '../../server/common/contracts/object-storage.provider';
+import type { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 import { safeRecordUsageEvent, type UsageMeteringHook } from '../../server/common/contracts/usage-metering.hook';
 import type { ActorContext } from '../../server/common/actor-context';
 
@@ -36,13 +39,6 @@ export interface DatasetRawImportJobContext {
   bullmqJobId: string;
   bullmqQueue: string;
   attempt: number;
-}
-
-class DatasetImportAbortedError extends Error {
-  constructor() {
-    super('dataset_import_aborted');
-    this.name = 'DatasetImportAbortedError';
-  }
 }
 
 export function createDatasetRawImportRunner(deps: DatasetRawImportRunnerDependencies) {
@@ -103,6 +99,7 @@ export function createDatasetRawImportRunner(deps: DatasetRawImportRunnerDepende
     } catch (error) {
       const latest = await deps.repo.findImportById(input.projectId, input.importId);
       if (latest?.status === 'aborted' || error instanceof DatasetImportAbortedError) {
+        await deps.repo.clearStaging(input.importId);
         await cleanupRawObjectRef(deps, session.rawObjectRef, input.importId);
         return { importId: input.importId, datasetId: null, sampleCount: latest?.receivedRows ?? 0, status: 'aborted' };
       }
@@ -187,25 +184,31 @@ async function promoteStagedImport(
   input: DatasetRawImportJobPayload,
   session: DatasetImportRow,
 ): Promise<{ datasetId: string; sampleCount: number }> {
-  const sampleRows = await deps.repo.getSampleDataForInference(session.id, TYPE_INFERENCE_SAMPLE_LIMIT);
-  const fieldSchema = buildDatasetFieldSchema(toFieldMappings(session), sampleRows);
+  const promoting = await deps.repo.markPromoting(input.projectId, session.id);
+  if (!promoting) {
+    await assertNotAborted(deps.repo, input.projectId, session.id);
+    throw new DatasetImportAbortedError();
+  }
+  const sampleRows = await deps.repo.getSampleDataForInference(promoting.id, TYPE_INFERENCE_SAMPLE_LIMIT);
+  const fieldSchema = buildDatasetFieldSchema(toFieldMappings(promoting), sampleRows);
   const hasImages = fieldSchema.some((field) => IMAGE_ROLES.has(field.role));
   const datasetId = randomUUID();
   const { sampleCount } = await deps.repo.promote({
-    importId: session.id,
+    importId: promoting.id,
     projectId: input.projectId,
-    actorUserId: input.actorId ?? session.createdBy,
+    actorUserId: input.actorId ?? promoting.createdBy,
     datasetId,
-    name: session.name,
-    description: session.description,
+    name: promoting.name,
+    description: promoting.description,
     fieldSchema,
     hasImages,
+    onProgress: (progress) => deps.repo.updateProgress(input.projectId, promoting.id, progress),
   });
   await recordDatasetImportCompleted(
     deps,
     input.projectId,
-    input.actorId ?? session.createdBy,
-    session.id,
+    input.actorId ?? promoting.createdBy,
+    promoting.id,
     datasetId,
     sampleCount,
   );

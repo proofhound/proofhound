@@ -2,7 +2,7 @@
 
 import { Link } from '../../components/navigation/link';
 import { useEffect, useMemo, useState } from 'react';
-import type { DatasetExportFormatDto, DatasetSampleDto } from '@proofhound/shared';
+import type { DatasetExportFormatDto, DatasetFieldMappingDto, DatasetSampleDto } from '@proofhound/shared';
 import {
   AlertTriangle,
   ChevronDown,
@@ -31,8 +31,9 @@ import {
   cn,
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { useDatasetSamples, useDeleteDatasetSamples, useDownloadDataset } from '../../hooks';
+import { useDatasetSamples, useDeleteDatasetSamples, useDownloadDataset, useUpdateDataset } from '../../hooks';
 import { useI18n } from '../../i18n';
+import { getApiErrorMessage } from '../../lib';
 import {
   getReferenceCount,
   type DatasetField,
@@ -268,6 +269,10 @@ function applyFieldRoleChange(fields: DatasetField[], fieldName: string, nextRol
     }
     return field;
   });
+}
+
+function toFieldMappings(fields: DatasetField[]): DatasetFieldMappingDto[] {
+  return fields.map((field) => ({ name: field.name, role: field.role }));
 }
 
 function FieldRoleBadgeButton({
@@ -617,9 +622,11 @@ export function DatasetDetailPage({
 }) {
   const { t } = useI18n();
   const downloadDatasetMutation = useDownloadDataset(projectId);
+  const updateDatasetMutation = useUpdateDataset(projectId);
   const deleteSamplesMutation = useDeleteDatasetSamples(projectId, dataset.id);
   const downloadProgress = useDatasetTransferProgress();
   const [fields, setFields] = useState<DatasetField[]>(() => cloneFields(dataset.fields));
+  const [fieldRoleSaveError, setFieldRoleSaveError] = useState<string | null>(null);
 
   // Server-side pagination + search: only the current page of samples is ever loaded into the browser.
   const [pageIndex, setPageIndex] = useState(0);
@@ -672,8 +679,27 @@ export function DatasetDetailPage({
     }),
     [dataset, displayFields],
   );
-  const handleFieldRoleChange = (fieldName: string, nextRole: DatasetFieldRole) => {
-    setFields(applyFieldRoleChange(displayFields, fieldName, nextRole));
+  const handleFieldRoleChange = async (fieldName: string, nextRole: DatasetFieldRole) => {
+    if (updateDatasetMutation.isPending) return;
+    const previousFields = fields;
+    const nextFields = applyFieldRoleChange(displayFields, fieldName, nextRole);
+    setFields(nextFields);
+    setFieldRoleSaveError(null);
+
+    try {
+      await updateDatasetMutation.mutateAsync({
+        datasetId: dataset.id,
+        body: {
+          name: dataset.name,
+          description: dataset.description || null,
+          fieldMappings: toFieldMappings(nextFields),
+        },
+      });
+    } catch (error) {
+      setFields(previousFields);
+      const message = getApiErrorMessage(error);
+      setFieldRoleSaveError(message || t('datasets.detail.fieldRoleSaveFailed'));
+    }
   };
 
   // The server already applied search + pagination; show the page rows minus any locally-deleted ones.
@@ -818,6 +844,16 @@ export function DatasetDetailPage({
         </div>
 
         <DatasetTransferProgressPanel progress={downloadProgress.progress} className="mb-4" />
+
+        {fieldRoleSaveError && (
+          <div
+            className="mb-4 flex gap-2 rounded-md border border-destructive/35 bg-destructive/10 p-3 text-sm text-destructive"
+            role="alert"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            {fieldRoleSaveError}
+          </div>
+        )}
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <section className="min-w-0 rounded-lg border bg-card">

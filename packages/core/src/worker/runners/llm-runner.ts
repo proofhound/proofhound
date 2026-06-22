@@ -170,7 +170,7 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
                 attempt: jobContext.attempt,
                 webhookTokenId: input.webhookTokenId ?? null,
               },
-              // The judgment strategy expects a parsed[expected_field]-style structure; when parseResponse is not provided, parsed=undefined,
+              // The judgment strategy expects a parsed[decisionField]-style structure; when parseResponse is not provided, parsed=undefined,
               // and the whole metrics is unreliable. Parse strict JSON first; on failure, fall back to parsing a Markdown JSON fence.
               parseResponse: parseJsonResponseWithMarkdownFallback,
               evaluateJudgment: evaluateJudgmentHook,

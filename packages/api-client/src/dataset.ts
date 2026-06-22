@@ -51,16 +51,16 @@ function getFileNameFromDisposition(disposition: string | undefined, fallback: s
 }
 
 export const datasetClient = {
-  listDatasets: (projectId: string) =>
+  listDatasets: (_projectId: string) =>
     httpClient
       .get<{ data: DatasetListItemDto[]; total: number }>(`/datasets`)
       .then((r) => r.data),
-  getDataset: (projectId: string, datasetId: string) =>
+  getDataset: (_projectId: string, datasetId: string) =>
     httpClient.get<DatasetListItemDto>(`/datasets/${datasetId}`).then((r) => r.data),
-  getDatasetDeleteImpact: (projectId: string, datasetId: string) =>
+  getDatasetDeleteImpact: (_projectId: string, datasetId: string) =>
     httpClient.get<DatasetDeletionImpactDto>(`/datasets/${datasetId}/delete-impact`).then((r) => r.data),
   listDatasetSamples: (
-    projectId: string,
+    _projectId: string,
     datasetId: string,
     query?: { page?: number; pageSize?: number; search?: string },
   ) =>
@@ -69,22 +69,22 @@ export const datasetClient = {
         params: { page: query?.page, pageSize: query?.pageSize, search: query?.search || undefined },
       })
       .then((r) => r.data),
-  createDataset: (projectId: string, body: CreateDatasetDto, options?: DatasetTransferOptions) =>
+  createDataset: (_projectId: string, body: CreateDatasetDto, options?: DatasetTransferOptions) =>
     httpClient
       .post<DatasetCreateResponseDto>(`/datasets`, body, {
         onUploadProgress: options?.onProgress ? (event) => options.onProgress?.(toTransferProgress(event)) : undefined,
       })
       .then((r) => r.data),
-  updateDataset: (projectId: string, datasetId: string, body: UpdateDatasetMetadataDto) =>
+  updateDataset: (_projectId: string, datasetId: string, body: UpdateDatasetMetadataDto) =>
     httpClient
       .patch<DatasetListItemDto>(`/datasets/${datasetId}`, body)
       .then((r) => r.data),
-  archiveDataset: (projectId: string, datasetId: string) =>
+  archiveDataset: (_projectId: string, datasetId: string) =>
     httpClient.patch<DatasetListItemDto>(`/datasets/${datasetId}/archive`).then((r) => r.data),
-  restoreDataset: (projectId: string, datasetId: string) =>
+  restoreDataset: (_projectId: string, datasetId: string) =>
     httpClient.patch<DatasetListItemDto>(`/datasets/${datasetId}/restore`).then((r) => r.data),
   downloadDataset: (
-    projectId: string,
+    _projectId: string,
     datasetId: string,
     format: DatasetExportFormatDto,
     options?: DatasetTransferOptions,
@@ -110,9 +110,9 @@ export const datasetClient = {
           ),
         };
       }),
-  deleteDataset: (projectId: string, datasetId: string) =>
+  deleteDataset: (_projectId: string, datasetId: string) =>
     httpClient.delete<void>(`/datasets/${datasetId}`).then(() => undefined),
-  deleteDatasetSamples: (projectId: string, datasetId: string, body: DeleteDatasetSamplesDto) =>
+  deleteDatasetSamples: (_projectId: string, datasetId: string, body: DeleteDatasetSamplesDto) =>
     httpClient
       .delete<DeleteDatasetSamplesResponseDto>(`/datasets/${datasetId}/samples`, { data: body })
       .then((r) => r.data),

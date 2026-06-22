@@ -60,4 +60,34 @@ describe('evaluateJudgment', () => {
 
     expect(out).toEqual({ decisionOutput: 'positive', isCorrect: true, judgmentStatus: 'correct' });
   });
+
+  it('reads the canonical rules array shape', () => {
+    const out = evaluateJudgment(
+      'classification',
+      { sentiment: 'positive' },
+      {
+        outputSchema: { fields: [{ key: 'sentiment', value: 'positive | negative', isJudgment: true }] },
+        judgmentRules: {
+          rules: [{ decisionField: 'sentiment', expectedField: 'gold', operator: 'exact_match' }],
+        },
+        expectedOutput: 'positive',
+      },
+    );
+
+    expect(out).toEqual({ decisionOutput: 'positive', isCorrect: true, judgmentStatus: 'correct' });
+  });
+
+  it('reads legacy ruleName/config wrappers', () => {
+    const out = evaluateJudgment(
+      'classification',
+      { decision: 'positive' },
+      {
+        outputSchema: { fields: [{ key: 'decision', value: 'positive | negative', isJudgment: true }] },
+        judgmentRules: { ruleName: 'exact_match', expectedField: 'gold', config: { decisionField: 'decision' } },
+        expectedOutput: 'positive',
+      },
+    );
+
+    expect(out).toEqual({ decisionOutput: 'positive', isCorrect: true, judgmentStatus: 'correct' });
+  });
 });

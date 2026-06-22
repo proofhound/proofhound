@@ -61,6 +61,7 @@ function makeRepo(): Mocked<DatasetRepository> {
     findDatasetById: vi.fn(),
     listDatasets: vi.fn(),
     listDatasetSamples: vi.fn(),
+    listDatasetSamplesBatch: vi.fn().mockResolvedValue({ rows: [], nextCursor: null }),
     listDatasetSamplesPage: vi.fn().mockResolvedValue({ rows: [], total: 0 }),
     aggregateCategoryDistribution: vi.fn().mockResolvedValue([]),
     countDatasetReferences: vi.fn().mockResolvedValue(new Map()),
@@ -111,6 +112,14 @@ describe('DatasetService', () => {
       ],
     }).compile();
     return module.get(DatasetService);
+  }
+
+  async function readStream(stream: NodeJS.ReadableStream): Promise<string> {
+    let out = '';
+    for await (const chunk of stream) {
+      out += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+    }
+    return out;
   }
 
   it('creates a dataset with inferred schema metadata', async () => {
@@ -340,21 +349,22 @@ describe('DatasetService', () => {
   it('exports dataset samples as CSV with ordered schema fields and extra fields', async () => {
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.findDatasetById.mockResolvedValue(datasetRow());
-    repo.listDatasetSamples.mockResolvedValue([
-      {
-        id: '33333333-3333-4333-8333-333333333333',
-        datasetId: '22222222-2222-4222-8222-222222222222',
-        data: {
-          sample_id: 'case-1',
-          question: '是否拦截, 这次访问?',
-          label: { decision: 'block' },
-          source: 'manual',
-        },
-        externalId: 'case-1',
-        createdAt: new Date('2026-05-16T00:00:00Z'),
-        updatedAt: new Date('2026-05-16T00:00:00Z'),
+    const row = {
+      id: '33333333-3333-4333-8333-333333333333',
+      datasetId: '22222222-2222-4222-8222-222222222222',
+      data: {
+        sample_id: 'case-1',
+        question: '是否拦截, 这次访问?',
+        label: { decision: 'block' },
+        source: 'manual',
       },
-    ]);
+      externalId: 'case-1',
+      createdAt: new Date('2026-05-16T00:00:00Z'),
+      updatedAt: new Date('2026-05-16T00:00:00Z'),
+    };
+    repo.listDatasetSamplesBatch
+      .mockResolvedValueOnce({ rows: [row], nextCursor: null })
+      .mockResolvedValueOnce({ rows: [row], nextCursor: null });
 
     const file = await service.exportDataset(
       '77777777-7777-4777-8777-777777777777',
@@ -365,8 +375,7 @@ describe('DatasetService', () => {
 
     expect(file.fileName).toBe('risk-eval-v4.csv');
     expect(file.contentType).toBe('text/csv; charset=utf-8');
-    expect(file.byteLength).toBe(file.buffer.byteLength);
-    expect(file.buffer.toString('utf8')).toBe(
+    await expect(readStream(file.createStream())).resolves.toBe(
       '\uFEFFsample_id,question,label,source\ncase-1,"是否拦截, 这次访问?","{""decision"":""block""}",manual\n',
     );
   });
@@ -374,16 +383,19 @@ describe('DatasetService', () => {
   it('exports dataset samples as JSONL', async () => {
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.findDatasetById.mockResolvedValue(datasetRow());
-    repo.listDatasetSamples.mockResolvedValue([
-      {
-        id: '33333333-3333-4333-8333-333333333333',
-        datasetId: '22222222-2222-4222-8222-222222222222',
-        data: { sample_id: 'case-1', question: '是否拦截?', label: 'block' },
-        externalId: 'case-1',
-        createdAt: new Date('2026-05-16T00:00:00Z'),
-        updatedAt: new Date('2026-05-16T00:00:00Z'),
-      },
-    ]);
+    repo.listDatasetSamplesBatch.mockResolvedValueOnce({
+      nextCursor: null,
+      rows: [
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          datasetId: '22222222-2222-4222-8222-222222222222',
+          data: { sample_id: 'case-1', question: '是否拦截?', label: 'block' },
+          externalId: 'case-1',
+          createdAt: new Date('2026-05-16T00:00:00Z'),
+          updatedAt: new Date('2026-05-16T00:00:00Z'),
+        },
+      ],
+    });
 
     const file = await service.exportDataset(
       '77777777-7777-4777-8777-777777777777',
@@ -394,7 +406,9 @@ describe('DatasetService', () => {
 
     expect(file.fileName).toBe('risk-eval-v4.jsonl');
     expect(file.contentType).toBe('application/x-ndjson; charset=utf-8');
-    expect(file.buffer.toString('utf8')).toBe('{"sample_id":"case-1","question":"是否拦截?","label":"block"}\n');
+    await expect(readStream(file.createStream())).resolves.toBe(
+      '{"sample_id":"case-1","question":"是否拦截?","label":"block"}\n',
+    );
   });
 
   describe('exportDatasetForDownload', () => {
@@ -404,16 +418,19 @@ describe('DatasetService', () => {
     function primeExport() {
       repo.findProjectAccess.mockResolvedValue(projectAccess());
       repo.findDatasetById.mockResolvedValue(datasetRow());
-      repo.listDatasetSamples.mockResolvedValue([
-        {
-          id: '33333333-3333-4333-8333-333333333333',
-          datasetId,
-          data: { sample_id: 'case-1', question: '是否拦截?', label: 'block' },
-          externalId: 'case-1',
-          createdAt: new Date('2026-05-16T00:00:00Z'),
-          updatedAt: new Date('2026-05-16T00:00:00Z'),
-        },
-      ]);
+      repo.listDatasetSamplesBatch.mockResolvedValue({
+        nextCursor: null,
+        rows: [
+          {
+            id: '33333333-3333-4333-8333-333333333333',
+            datasetId,
+            data: { sample_id: 'case-1', question: '是否拦截?', label: 'block' },
+            externalId: 'case-1',
+            createdAt: new Date('2026-05-16T00:00:00Z'),
+            updatedAt: new Date('2026-05-16T00:00:00Z'),
+          },
+        ],
+      });
     }
 
     async function buildServiceWith(objectStorage: Partial<ObjectStorageProvider>): Promise<DatasetService> {
@@ -487,7 +504,9 @@ describe('DatasetService', () => {
           resourceId: expect.any(String),
           name: 'risk-eval-v4.csv',
         }),
-        expect.any(Buffer),
+        expect.objectContaining({
+          readable: true,
+        }),
         expect.objectContaining({
           contentType: 'text/csv; charset=utf-8',
           contentDisposition: expect.stringContaining('risk-eval-v4.csv'),
@@ -679,6 +698,78 @@ describe('DatasetService', () => {
         idempotencyKey: expect.stringContaining('storage:dataset.updated:22222222-2222-4222-8222-222222222222'),
       }),
     );
+  });
+
+  it('updates dataset field roles while preserving existing field types and image sub-roles', async () => {
+    const currentFieldSchema = [
+      { name: 'sample_id', role: 'metadata' as const, type: 'string' as const },
+      { name: 'question', role: 'text' as const, type: 'string' as const },
+      { name: 'image_url', role: 'image_url' as const, type: 'string' as const },
+      { name: 'label', role: 'expected_output' as const, type: 'string' as const },
+    ];
+    const nextFieldSchema = [
+      { name: 'sample_id', role: 'metadata' as const, type: 'string' as const },
+      { name: 'question', role: 'expected_output' as const, type: 'string' as const },
+      { name: 'image_url', role: 'image_url' as const, type: 'string' as const },
+      { name: 'label', role: 'metadata' as const, type: 'string' as const },
+    ];
+
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findDatasetById.mockResolvedValue(datasetRow({ fieldSchema: currentFieldSchema, hasImages: true }));
+    repo.findDatasetByProjectAndName.mockResolvedValue(null);
+    repo.updateDatasetMetadata.mockResolvedValue(datasetRow({ fieldSchema: nextFieldSchema, hasImages: true }));
+
+    const result = await service.updateDatasetMetadata(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      {
+        name: 'risk-eval-v4',
+        description: 'new samples',
+        fieldMappings: [
+          { name: 'sample_id', role: 'id' },
+          { name: 'question', role: 'expected' },
+          { name: 'image_url', role: 'image' },
+          { name: 'label', role: 'metadata' },
+        ],
+      },
+      actor,
+    );
+
+    expect(result.fieldSchema).toEqual(nextFieldSchema);
+    expect(repo.updateDatasetMetadata).toHaveBeenCalledWith(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      {
+        name: 'risk-eval-v4',
+        description: 'new samples',
+        fieldSchema: nextFieldSchema,
+        hasImages: true,
+      },
+    );
+  });
+
+  it('rejects duplicate field mappings when updating dataset roles', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findDatasetById.mockResolvedValue(datasetRow());
+    repo.findDatasetByProjectAndName.mockResolvedValue(null);
+
+    await expect(
+      service.updateDatasetMetadata(
+        '77777777-7777-4777-8777-777777777777',
+        '22222222-2222-4222-8222-222222222222',
+        {
+          name: 'risk-eval-v4',
+          description: 'new samples',
+          fieldMappings: [
+            { name: 'question', role: 'text' },
+            { name: 'question', role: 'metadata' },
+          ],
+        },
+        actor,
+      ),
+    ).rejects.toThrow(new ConflictException('dataset_field_mapping_duplicate'));
+
+    expect(repo.updateDatasetMetadata).not.toHaveBeenCalled();
   });
 
   it('rejects metadata updates when the target name is already used', async () => {

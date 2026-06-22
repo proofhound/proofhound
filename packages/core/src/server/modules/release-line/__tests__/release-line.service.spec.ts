@@ -63,7 +63,7 @@ function createWritableRepoMock() {
     unarchiveLine: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     restoreHistoryToLane: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     forceStopRunningLanesForDelete: vi.fn().mockResolvedValue(undefined),
-    hardDeleteLine: vi.fn().mockResolvedValue(1),
+    hardDeleteLine: vi.fn().mockResolvedValue({ deleted: 1, payloadRefs: [] }),
     updateActiveLaneRunConfig: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     updateActiveLaneOutputRoute: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     updateActiveLaneInputRoute: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),

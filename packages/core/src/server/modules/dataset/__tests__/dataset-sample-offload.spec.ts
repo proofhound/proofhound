@@ -1,4 +1,4 @@
-import { Buffer } from 'node:buffer';
+import type { Buffer } from 'node:buffer';
 import type { DatasetFieldSchemaDto } from '@proofhound/shared';
 import { describe, expect, it } from 'vitest';
 import type { StoredObjectRef } from '../../../common/contracts/object-storage.provider';

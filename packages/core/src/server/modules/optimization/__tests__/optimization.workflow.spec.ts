@@ -107,8 +107,8 @@ describe('readExpectedField', () => {
     expect(readExpectedField({ expectedField: 'gold' })).toBe('gold');
   });
 
-  it('prefers snake_case when both are present', () => {
-    expect(readExpectedField({ expected_field: 'a', expectedField: 'b' })).toBe('a');
+  it('prefers canonical camelCase when both are present', () => {
+    expect(readExpectedField({ expected_field: 'a', expectedField: 'b' })).toBe('b');
   });
 
   it('falls back to default when field value is empty string or non-string', () => {
@@ -126,15 +126,13 @@ describe('readExpectedField', () => {
 });
 
 describe('deriveJudgmentRulesFromOutputSchema', () => {
-  it('uses the generated isJudgment field as decision_field for first versions', () => {
+  it('uses the generated isJudgment field as decisionField for first versions', () => {
     expect(
       deriveJudgmentRulesFromOutputSchema({
         fields: [{ key: 'sentiment', value: 'positive | negative', isJudgment: true }],
       }),
     ).toEqual({
-      mode: 'exact_match',
-      expected_field: 'expected_output',
-      decision_field: 'sentiment',
+      rules: [{ decisionField: 'sentiment', expectedField: 'expected_output', operator: 'exact_match' }],
     });
   });
 
@@ -147,8 +145,7 @@ describe('deriveJudgmentRulesFromOutputSchema', () => {
         'gold_category',
       ),
     ).toMatchObject({
-      expected_field: 'gold_category',
-      decision_field: 'category',
+      rules: [{ decisionField: 'category', expectedField: 'gold_category', operator: 'exact_match' }],
     });
   });
 });

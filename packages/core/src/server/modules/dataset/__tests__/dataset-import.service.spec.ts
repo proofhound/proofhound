@@ -10,7 +10,8 @@ import {
 import { DatasetImportService } from '../dataset-import.service';
 import type { DatasetService } from '../dataset.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
-import { ObjectStorageProvider, type StoredObjectRef } from '../../../common/contracts/object-storage.provider';
+import type { ObjectStorageProvider} from '../../../common/contracts/object-storage.provider';
+import { type StoredObjectRef } from '../../../common/contracts/object-storage.provider';
 import { LocalQuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 
 const ACTOR: CurrentUserPayload = {
@@ -39,6 +40,7 @@ function fakeImport(overrides: Partial<DatasetImportRow> = {}): DatasetImportRow
     rawUploadExpiresAt: null,
     rawUploadCompletedAt: null,
     rawObjectRef: null,
+    progress: { phase: overrides.status ?? 'uploading' },
     declaredTotalRows: null,
     receivedRows: 0,
     jobId: null,
@@ -82,6 +84,7 @@ function buildService(storage = fakeStorage()) {
     findImportById: vi.fn(),
     appendBatch: vi.fn(),
     getSampleDataForInference: vi.fn(),
+    markPromoting: vi.fn().mockResolvedValue(fakeImport({ progress: { phase: 'finalizing' } })),
     promote: vi.fn(),
     deleteImport: vi.fn().mockResolvedValue(1),
     findStaleImportIds: vi.fn(),
@@ -94,6 +97,7 @@ function buildService(storage = fakeStorage()) {
     markFailed: vi.fn().mockResolvedValue(undefined),
     markAborted: vi.fn(),
     clearStaging: vi.fn().mockResolvedValue(undefined),
+    updateProgress: vi.fn().mockResolvedValue(undefined),
   } as unknown as Mocked<DatasetImportRepository>;
 
   const datasetService = {
@@ -449,6 +453,13 @@ describe('DatasetImportService.complete', () => {
           completedAt: new Date('2026-05-28T00:01:00Z'),
         }),
       );
+    repo.markPromoting.mockResolvedValue(
+      fakeImport({
+        fieldMappings: [{ name: 'label', role: 'expected' }],
+        name: 'Large dataset',
+        progress: { phase: 'finalizing' },
+      }),
+    );
     repo.getSampleDataForInference.mockResolvedValue([{ label: 'spam' }]);
     repo.promote.mockResolvedValue({ sampleCount: 3 });
 
@@ -456,9 +467,22 @@ describe('DatasetImportService.complete', () => {
 
     expect(result.status).toBe('completed');
     expect(result.datasetId).toBe('00000000-0000-4000-8000-000000000200');
+    expect(repo.markPromoting).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID);
     const promoteArgs = repo.promote.mock.calls[0]?.[0];
     expect(promoteArgs?.fieldSchema).toEqual([{ name: 'label', role: 'expected_output', type: 'string' }]);
     expect(promoteArgs?.hasImages).toBe(false);
+    await promoteArgs?.onProgress?.({
+      phase: 'offloading',
+      totalShards: 2,
+      completedShards: 1,
+      committedRows: 200,
+    });
+    expect(repo.updateProgress).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID, {
+      phase: 'offloading',
+      totalShards: 2,
+      completedShards: 1,
+      committedRows: 200,
+    });
     expect(datasetService.recordDatasetImportCompleted).toHaveBeenCalledWith({
       projectId: PROJECT_ID,
       datasetId: promoteArgs?.datasetId,
@@ -477,7 +501,33 @@ describe('DatasetImportService.abort', () => {
 
     await service.abort(PROJECT_ID, IMPORT_ID, ACTOR);
 
-    expect(repo.markAborted).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID);
+    expect(repo.markAborted).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID, { clearStaging: true });
+  });
+
+  it('defers staging cleanup when aborting a promote that is already finalizing', async () => {
+    const rawObjectRef: StoredObjectRef = {
+      provider: 'fake',
+      key: 'dataset_raw/import/input.csv',
+      bytes: 100,
+      resourceType: 'dataset_raw',
+      resourceId: IMPORT_ID,
+    };
+    const storage = fakeStorage({
+      abortUpload: vi.fn().mockResolvedValue(undefined),
+      deleteObjects: vi.fn().mockResolvedValue(undefined),
+    });
+    const { service, repo } = buildService(storage);
+    repo.findImportById.mockResolvedValue(
+      fakeImport({ progress: { phase: 'offloading' }, rawUploadSessionId: 'upload-1', rawObjectRef }),
+    );
+    repo.markAborted.mockResolvedValue(fakeImport({ status: 'aborted', rawUploadSessionId: 'upload-1', rawObjectRef }));
+
+    await service.abort(PROJECT_ID, IMPORT_ID, ACTOR);
+
+    expect(repo.markAborted).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID, { clearStaging: false });
+    expect(repo.clearStaging).not.toHaveBeenCalled();
+    expect(storage.abortUpload).toHaveBeenCalledWith('upload-1');
+    expect(storage.deleteObjects).toHaveBeenCalledWith([rawObjectRef]);
   });
 
   it('surfaces a missing import only on get, not on abort', async () => {
@@ -538,5 +588,35 @@ describe('DatasetImportService.sweepStaleImports', () => {
     expect(storage.abortUpload).toHaveBeenCalledWith('upload-1');
     expect(storage.deleteObjects).toHaveBeenCalledWith([rawObjectRef]);
     expect(storage.sweepPendingUploads).toHaveBeenCalled();
+  });
+
+  it('finishes deferred cleanup for aborted promotion sessions', async () => {
+    const storage = fakeStorage({
+      abortUpload: vi.fn().mockResolvedValue(undefined),
+      deleteObjects: vi.fn().mockResolvedValue(undefined),
+      sweepPendingUploads: vi.fn().mockResolvedValue(0),
+    });
+    const { service, repo } = buildService(storage);
+    const rawObjectRef: StoredObjectRef = {
+      provider: 'fake',
+      key: 'dataset_raw/import/input.csv',
+      bytes: 100,
+      resourceType: 'dataset_raw',
+      resourceId: IMPORT_ID,
+    };
+    repo.findStaleImports.mockResolvedValue([
+      fakeImport({
+        status: 'aborted',
+        progress: { phase: 'aborted', cleanupPending: 1 },
+        rawObjectRef,
+      }),
+    ]);
+
+    await service.sweepStaleImports();
+
+    expect(repo.markAborted).not.toHaveBeenCalled();
+    expect(repo.clearStaging).toHaveBeenCalledWith(IMPORT_ID);
+    expect(repo.updateProgress).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID, { cleanupPending: null });
+    expect(storage.deleteObjects).toHaveBeenCalledWith([rawObjectRef]);
   });
 });

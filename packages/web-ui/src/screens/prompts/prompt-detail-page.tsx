@@ -74,9 +74,12 @@ import { DATASET_MODALITY_LABEL_KEYS, type DatasetModality, type ProjectDataset 
 import { toProjectDataset } from '../datasets/dataset-mappers';
 import {
   deriveJudgmentField,
+  serializeJudgmentRules,
+  syncJudgmentRulesWithBinding,
   toProjectPrompt,
   upsertJudgmentField,
   type ProjectPrompt,
+  type PromptJudgmentRule,
   type PromptOutputField,
   type PromptVariable,
   type PromptVersion,
@@ -921,12 +924,35 @@ function serializeOutputFields(fields: PromptOutputField[]) {
   );
 }
 
+function serializePromptJudgmentRules(rules: PromptJudgmentRule[]) {
+  return JSON.stringify(serializeJudgmentRules(rules));
+}
+
+function getDatasetExpectedFieldName(dataset: ProjectDataset | null): string | null {
+  return dataset?.fields.find((field) => field.role === 'expected')?.name ?? null;
+}
+
 function getDatasetJudgmentField(dataset: ProjectDataset | null): PromptOutputField {
-  const expectedField = dataset?.fields.find((field) => field.role === 'expected');
   const labels = dataset?.categoryProfile.slices.map((slice) => slice.label) ?? [];
   return deriveJudgmentField({
-    expectedOutputFieldName: expectedField?.name ?? null,
+    expectedOutputFieldName: getDatasetExpectedFieldName(dataset),
     categoryLabels: labels,
+  });
+}
+
+function getJudgmentRulesForBinding({
+  rules,
+  dataset,
+  outputFields,
+}: {
+  rules: PromptJudgmentRule[];
+  dataset: ProjectDataset | null;
+  outputFields: PromptOutputField[];
+}) {
+  const decisionField = outputFields.find((field) => field.isJudgment)?.key ?? null;
+  return syncJudgmentRulesWithBinding(rules, {
+    decisionField,
+    expectedField: getDatasetExpectedFieldName(dataset),
   });
 }
 
@@ -937,6 +963,7 @@ function getPromptVersionSyncKey({
   promptLanguage,
   variables,
   outputFields,
+  judgmentRules,
 }: {
   promptId: string;
   versionId: string;
@@ -944,10 +971,11 @@ function getPromptVersionSyncKey({
   promptLanguage: PromptLanguage;
   variables: PromptVariable[];
   outputFields: PromptOutputField[];
+  judgmentRules: PromptJudgmentRule[];
 }) {
   return `${promptId}:${versionId}:${body}:${promptLanguage}:${serializePromptVariables(variables)}:${serializeOutputFields(
     outputFields,
-  )}`;
+  )}:${serializePromptJudgmentRules(judgmentRules)}`;
 }
 
 function VersionLabelPill({ label, onRemove }: { label: PromptVersion['labels'][number]; onRemove?: () => void }) {
@@ -1581,6 +1609,7 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
           promptLanguage: activeVersion.promptLanguage,
           variables: activeVersion.variables ?? [],
           outputFields: activeVersion.outputFields ?? [],
+          judgmentRules: activeVersion.judgmentRules ?? [],
         })
       : '';
   if (prompt && activeVersion && activeSyncKey !== activeVersionSyncKey) {
@@ -1773,6 +1802,11 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
     }
 
     try {
+      const nextJudgmentRules = getJudgmentRulesForBinding({
+        rules: activeVersion.judgmentRules,
+        dataset: selectedDataset,
+        outputFields,
+      });
       const nextPrompt = await updateDraftVersionMutation.mutateAsync({
         promptId: prompt.id,
         versionId: activeVersion.id,
@@ -1787,7 +1821,7 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
               isJudgment: field.isJudgment,
             })),
           },
-          judgmentRules: { rules: activeVersion.judgmentRules },
+          judgmentRules: serializeJudgmentRules(nextJudgmentRules),
           changeReason: activeVersion.changeReason || null,
         },
       });
@@ -1798,6 +1832,7 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
       const nextPromptLanguage = nextActive?.promptLanguage ?? promptLanguage;
       const nextVariables = nextActive?.variables ?? nextProjectPrompt.variables;
       const nextOutputFields = nextActive?.outputFields ?? nextProjectPrompt.outputFields;
+      const nextRules = nextActive?.judgmentRules ?? nextJudgmentRules;
       const nextCustomFields = nextOutputFields.filter((field) => !field.isJudgment);
       setBody(nextBody);
       setSavedBody(nextBody);
@@ -1815,6 +1850,7 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
           promptLanguage: nextPromptLanguage,
           variables: nextVariables,
           outputFields: nextOutputFields,
+          judgmentRules: nextRules,
         }),
       );
       setSaveError(null);
@@ -1827,7 +1863,18 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
       setSaveError(String(message));
       return false;
     }
-  }, [activeVersion, body, isReadOnly, outputFields, prompt, promptLanguage, t, updateDraftVersionMutation, variables]);
+  }, [
+    activeVersion,
+    body,
+    isReadOnly,
+    outputFields,
+    prompt,
+    promptLanguage,
+    selectedDataset,
+    t,
+    updateDraftVersionMutation,
+    variables,
+  ]);
 
   const autoSaveConfigVersion = useCallback(
     async ({
@@ -1842,6 +1889,11 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
       if (!prompt || !activeVersion || isReadOnly) return false;
 
       const nextOutputFields = upsertJudgmentField(savedCustomOutputFields, getDatasetJudgmentField(nextDataset));
+      const nextJudgmentRules = getJudgmentRulesForBinding({
+        rules: activeVersion.judgmentRules,
+        dataset: nextDataset,
+        outputFields: nextOutputFields,
+      });
 
       try {
         const nextPrompt = await updateDraftVersionMutation.mutateAsync({
@@ -1858,7 +1910,7 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
                 isJudgment: field.isJudgment,
               })),
             },
-            judgmentRules: { rules: activeVersion.judgmentRules },
+            judgmentRules: serializeJudgmentRules(nextJudgmentRules),
             changeReason: activeVersion.changeReason || null,
           },
         });
@@ -1869,6 +1921,7 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
         const persistedPromptLanguage = nextActive?.promptLanguage ?? nextPromptLanguage;
         const persistedVariables = nextActive?.variables ?? nextVariables;
         const persistedOutputFields = nextActive?.outputFields ?? nextOutputFields;
+        const persistedRules = nextActive?.judgmentRules ?? nextJudgmentRules;
         const persistedCustomFields = persistedOutputFields.filter((field) => !field.isJudgment);
 
         setSavedBody(persistedBody);
@@ -1885,6 +1938,7 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
             promptLanguage: persistedPromptLanguage,
             variables: persistedVariables,
             outputFields: persistedOutputFields,
+            judgmentRules: persistedRules,
           }),
         );
         setSaveError(null);
@@ -2053,6 +2107,11 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
         const createdVersionId = created.id;
         const inheritedVariables = toPromptVariablesFromDataset(inheritedDataset);
         const inheritedOutputFields = upsertJudgmentField([], getDatasetJudgmentField(inheritedDataset));
+        const inheritedJudgmentRules = getJudgmentRulesForBinding({
+          rules: created.judgmentRules,
+          dataset: inheritedDataset,
+          outputFields: inheritedOutputFields,
+        });
         const updated = await updateDraftVersionMutation.mutateAsync({
           promptId: prompt.id,
           versionId: createdVersionId,
@@ -2067,7 +2126,7 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
                 isJudgment: field.isJudgment,
               })),
             },
-            judgmentRules: { rules: created.judgmentRules },
+            judgmentRules: serializeJudgmentRules(inheritedJudgmentRules),
             changeReason: created.changeReason || null,
           },
         });

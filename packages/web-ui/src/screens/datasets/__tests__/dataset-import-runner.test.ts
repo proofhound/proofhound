@@ -53,11 +53,15 @@ function importStatus(
     state,
     progress: {
       state,
+      phase: state,
       uploadedBytes: state === 'uploading' ? null : CREATE_BODY.sourceFile.fileSizeBytes,
       parsedRows: overrides.receivedRows ?? 0,
       importedRows: state === 'completed' ? (overrides.receivedRows ?? 0) : 0,
       totalRows: null,
       totalBytes: CREATE_BODY.sourceFile.fileSizeBytes,
+      totalShards: null,
+      completedShards: null,
+      committedRows: state === 'completed' ? (overrides.receivedRows ?? 0) : 0,
       percentage: state === 'completed' ? 100 : null,
     },
     errorCode: null,
@@ -153,6 +157,63 @@ describe('runDatasetImport', () => {
 
     expect(client.completeDatasetImport).not.toHaveBeenCalled();
     expect(client.abortDatasetImport).toHaveBeenCalledWith(PROJECT_ID, 'imp-1');
+  });
+
+  it('polls visible server progress while batch completion is still running', async () => {
+    const offloadingStatus = importStatus('importing', {
+      receivedRows: 3,
+      progress: {
+        state: 'importing',
+        phase: 'offloading',
+        uploadedBytes: CREATE_BODY.sourceFile.fileSizeBytes,
+        parsedRows: 3,
+        importedRows: 2,
+        totalRows: 3,
+        totalBytes: CREATE_BODY.sourceFile.fileSizeBytes,
+        totalShards: 2,
+        completedShards: 1,
+        committedRows: 2,
+        percentage: 94,
+      },
+    });
+    const client = fakeClient({
+      completeDatasetImport: vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return importStatus('completed', { receivedRows: 3 });
+      }),
+      getDatasetImport: vi
+        .fn()
+        .mockResolvedValueOnce(offloadingStatus)
+        .mockResolvedValue(importStatus('completed', { receivedRows: 3 })),
+    });
+    (client.appendDatasetImportBatch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      importId: 'imp-1',
+      receivedRows: 3,
+    });
+    const progress: DatasetImportProgress[] = [];
+
+    const result = await runDatasetImport({
+      projectId: PROJECT_ID,
+      createBody: CREATE_BODY,
+      batches: batchesOf([{ a: 1 }, { a: 2 }, { a: 3 }]),
+      client,
+      onProgress: (event) => progress.push(event),
+      pollIntervalMs: 5,
+    });
+
+    expect(client.getDatasetImport).toHaveBeenCalledWith(PROJECT_ID, 'imp-1');
+    expect(result).toMatchObject({ status: 'completed', receivedRows: 3 });
+    expect(progress).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          phase: 'offloading',
+          receivedRows: 3,
+          status: expect.objectContaining({
+            progress: expect.objectContaining({ totalShards: 2, completedShards: 1, committedRows: 2 }),
+          }),
+        }),
+      ]),
+    );
   });
 
   it('projects streamed rows into batches bounded by rows and encoded bytes', async () => {
@@ -310,6 +371,43 @@ describe('runRawDatasetImport', () => {
 
     expect(client.completeDatasetImport).not.toHaveBeenCalled();
     expect(client.completeRawDatasetUpload).not.toHaveBeenCalled();
+    expect(client.abortDatasetImport).toHaveBeenCalledWith(PROJECT_ID, 'imp-raw-1');
+  });
+
+  it('aborts the raw session when the user leaves during server import polling', async () => {
+    const controller = new AbortController();
+    const client = fakeClient({
+      createRawDatasetImport: vi.fn().mockResolvedValue({
+        import: { id: 'imp-raw-1' },
+        uploadSession: {
+          sessionId: 'up-1',
+          url: 'https://storage.example/upload',
+          expiresAt: new Date().toISOString(),
+        },
+        maxBytes: 2_147_483_648,
+      }),
+      uploadRawDatasetFile: vi.fn().mockResolvedValue(undefined),
+      completeRawDatasetUpload: vi.fn().mockResolvedValue(importStatus('uploaded')),
+      completeDatasetImport: vi.fn().mockResolvedValue(importStatus('queued')),
+      getDatasetImport: vi.fn(),
+    });
+
+    await expect(
+      runRawDatasetImport({
+        projectId: PROJECT_ID,
+        createBody: CREATE_BODY,
+        file: new Blob(['x']),
+        signal: controller.signal,
+        client,
+        onProgress: (event) => {
+          if (event.phase === 'queued') controller.abort();
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(client.completeRawDatasetUpload).toHaveBeenCalledWith(PROJECT_ID, 'imp-raw-1');
+    expect(client.completeDatasetImport).toHaveBeenCalledWith(PROJECT_ID, 'imp-raw-1');
+    expect(client.getDatasetImport).not.toHaveBeenCalled();
     expect(client.abortDatasetImport).toHaveBeenCalledWith(PROJECT_ID, 'imp-raw-1');
   });
 });

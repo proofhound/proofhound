@@ -61,8 +61,186 @@ export const promptOutputSchema = z
   .nullable();
 export type PromptOutputSchemaDto = z.infer<typeof promptOutputSchema>;
 
-export const promptJudgmentRulesSchema = z.record(z.string(), z.unknown()).nullable();
+export const DEFAULT_PROMPT_JUDGMENT_DECISION_FIELD = 'label';
+export const DEFAULT_PROMPT_JUDGMENT_EXPECTED_FIELD = 'expected_output';
+export const DEFAULT_PROMPT_JUDGMENT_OPERATOR = 'exact_match';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readStringAlias(source: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
+function isThresholdComparisonOperator(value: string | undefined): value is 'gt' | 'gte' | 'lt' | 'lte' | 'eq' {
+  return value === 'gt' || value === 'gte' || value === 'lt' || value === 'lte' || value === 'eq';
+}
+
+function readJudgmentOperatorAlias(source: Record<string, unknown>): string | undefined {
+  const explicitMode = readStringAlias(source, ['mode', 'ruleName']);
+  if (explicitMode) return explicitMode;
+  const operator = readStringAlias(source, ['operator']);
+  if (isThresholdComparisonOperator(operator) && source['threshold'] !== undefined) return 'threshold';
+  return operator;
+}
+
+function readThresholdOperatorAlias(source: Record<string, unknown>): string | undefined {
+  const explicit = readStringAlias(source, ['thresholdOperator', 'comparisonOperator']);
+  if (explicit) return explicit;
+  const operator = readStringAlias(source, ['operator']);
+  return isThresholdComparisonOperator(operator) ? operator : undefined;
+}
+
+function sanitizeRuleExtras(source: Record<string, unknown>): Record<string, unknown> {
+  const extra = { ...source };
+  for (const key of ['decision_field', 'expected_field', 'field', 'value', 'mode', 'ruleName', 'config']) {
+    delete extra[key];
+  }
+  if (typeof extra['id'] !== 'string' || extra['id'].trim().length === 0) delete extra['id'];
+  if (typeof extra['description'] !== 'string') delete extra['description'];
+  return extra;
+}
+
+function sanitizeRulesRootExtras(source: Record<string, unknown>): Record<string, unknown> {
+  const extra = sanitizeRuleExtras(source);
+  for (const key of ['decisionField', 'expectedField', 'operator', 'description', 'id', 'threshold']) {
+    delete extra[key];
+  }
+  return extra;
+}
+
+function mergeLegacyConfig(source: Record<string, unknown>): Record<string, unknown> {
+  const config = isRecord(source['config']) ? source['config'] : null;
+  return config ? { ...config, ...source } : source;
+}
+
+function hasRuleSignal(rule: Record<string, unknown>, root?: JudgmentRuleRootAliases): boolean {
+  return Boolean(
+    readStringAlias(rule, ['decisionField', 'decision_field', 'field']) ??
+      readStringAlias(rule, ['expectedField', 'expected_field', 'value']) ??
+      readStringAlias(rule, ['operator', 'mode', 'ruleName']) ??
+      root?.decisionField ??
+      root?.expectedField ??
+      root?.operator ??
+      rule['threshold'] ??
+      rule['description'],
+  );
+}
+
+interface JudgmentRuleRootAliases {
+  decisionField?: string;
+  expectedField?: string;
+  operator?: string;
+}
+
+function readRuleRootAliases(source: Record<string, unknown>): JudgmentRuleRootAliases {
+  const merged = mergeLegacyConfig(source);
+  return {
+    decisionField: readStringAlias(merged, ['decisionField', 'decision_field', 'field']),
+    expectedField: readStringAlias(merged, ['expectedField', 'expected_field', 'value']),
+    operator: readJudgmentOperatorAlias(merged),
+  };
+}
+
+function normalizePromptJudgmentRuleInput(
+  value: unknown,
+  root?: JudgmentRuleRootAliases,
+): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const merged = mergeLegacyConfig(value);
+  if (!hasRuleSignal(merged, root)) return null;
+
+  const extra = sanitizeRuleExtras(merged);
+  const thresholdOperator = readThresholdOperatorAlias(merged);
+  if (thresholdOperator && extra['thresholdOperator'] === undefined) {
+    extra['thresholdOperator'] = thresholdOperator;
+  }
+  return {
+    ...extra,
+    decisionField:
+      readStringAlias(merged, ['decisionField', 'decision_field', 'field']) ??
+      root?.decisionField ??
+      DEFAULT_PROMPT_JUDGMENT_DECISION_FIELD,
+    expectedField:
+      readStringAlias(merged, ['expectedField', 'expected_field', 'value']) ??
+      root?.expectedField ??
+      DEFAULT_PROMPT_JUDGMENT_EXPECTED_FIELD,
+    operator: readJudgmentOperatorAlias(merged) ?? root?.operator ?? DEFAULT_PROMPT_JUDGMENT_OPERATOR,
+  };
+}
+
+function normalizePromptJudgmentRulesInput(value: unknown): unknown {
+  if (!isRecord(value)) return null;
+
+  const merged = mergeLegacyConfig(value);
+  const root = readRuleRootAliases(value);
+  const rootExtras = sanitizeRulesRootExtras(merged);
+  delete rootExtras['rules'];
+
+  const rawRules = Array.isArray(value['rules']) ? value['rules'] : merged['rules'];
+  if (Array.isArray(rawRules)) {
+    const rules = rawRules
+      .map((rule) => normalizePromptJudgmentRuleInput(rule, root))
+      .filter((rule): rule is Record<string, unknown> => Boolean(rule));
+    if (rules.length === 0) {
+      const directRule = normalizePromptJudgmentRuleInput(value);
+      return { ...rootExtras, rules: directRule ? [directRule] : [] };
+    }
+    return { ...rootExtras, rules };
+  }
+
+  const directRule = normalizePromptJudgmentRuleInput(value);
+  return { ...rootExtras, rules: directRule ? [directRule] : [] };
+}
+
+export const promptJudgmentOperatorSchema = z.string().trim().min(1).max(80);
+export const promptJudgmentRuleSchema = z
+  .object({
+    id: z.string().trim().min(1).max(120).optional(),
+    decisionField: z.string().trim().min(1).max(160),
+    expectedField: z.string().trim().min(1).max(160),
+    operator: promptJudgmentOperatorSchema.default(DEFAULT_PROMPT_JUDGMENT_OPERATOR),
+    description: z.string().trim().max(1000).optional(),
+  })
+  .passthrough();
+export type PromptJudgmentRuleDto = z.infer<typeof promptJudgmentRuleSchema>;
+
+const promptJudgmentRulesObjectSchema = z
+  .object({
+    rules: z.array(promptJudgmentRuleSchema).max(50).default([]),
+  })
+  .passthrough();
+
+export const promptJudgmentRulesSchema = z.preprocess(
+  normalizePromptJudgmentRulesInput,
+  promptJudgmentRulesObjectSchema.nullable(),
+);
 export type PromptJudgmentRulesDto = z.infer<typeof promptJudgmentRulesSchema>;
+
+export function normalizePromptJudgmentRules(value: unknown): PromptJudgmentRulesDto {
+  return promptJudgmentRulesSchema.parse(value);
+}
+
+export function readPromptJudgmentExpectedField(
+  value: unknown,
+  fallback = DEFAULT_PROMPT_JUDGMENT_EXPECTED_FIELD,
+): string {
+  const rules = normalizePromptJudgmentRules(value)?.rules ?? [];
+  return rules.find((rule) => rule.expectedField.trim().length > 0)?.expectedField ?? fallback;
+}
+
+export function readPromptJudgmentDecisionField(
+  value: unknown,
+  fallback = DEFAULT_PROMPT_JUDGMENT_DECISION_FIELD,
+): string {
+  const rules = normalizePromptJudgmentRules(value)?.rules ?? [];
+  return rules.find((rule) => rule.decisionField.trim().length > 0)?.decisionField ?? fallback;
+}
 
 export const promptVersionSchema = z.object({
   id: z.string().uuid(),

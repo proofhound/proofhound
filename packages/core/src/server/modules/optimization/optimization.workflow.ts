@@ -33,7 +33,6 @@ import { schema } from '@proofhound/db';
 import { RateLimitExceededError, type RateLimiter } from '@proofhound/limiter';
 import {
   type LLMCallLogger,
-  type LLMMessage,
   type ModelImageCapability,
   type ModelInvocationConfig,
   type RateLimiterLike,
@@ -41,6 +40,7 @@ import {
 import { createLogger } from '@proofhound/logger';
 import {
   DEFAULT_PROMPT_LANGUAGE,
+  readPromptJudgmentExpectedField,
   optimizationFieldWhitelistSchema,
   optimizationGoalSchema,
   experimentRunConfigSchema,
@@ -69,16 +69,8 @@ import { applyRuntimeLimits } from '../../../shared/llm/runtime-limits';
 import { ExperimentService } from '../experiment/experiment.service';
 import { ExperimentWorkflowRegistrar } from '../experiment/experiment.workflow';
 import { PromptRepository } from '../prompt/prompt.repository';
-import {
-  OptimizationRepository,
-  type OptimizationAnalysisExperimentRow,
-  type OptimizationRoundHistoryRow,
-  type OptimizationRunResultRow,
-  type OptimizationWorkflowContext,
-  type OptimizationRoundStepKind,
-  type OptimizationRoundStepStatus,
-  type RoundStepUpsertInput,
-} from './optimization.repository';
+import { OptimizationRepository } from './optimization.repository';
+import type { OptimizationAnalysisExperimentRow, OptimizationRoundHistoryRow, OptimizationRunResultRow, RoundStepUpsertInput } from './optimization.repository';
 
 const { models, runResults, experiments } = schema;
 
@@ -2336,7 +2328,7 @@ export function toLoopFieldWhitelist(dto: OptimizationFieldWhitelistDto | null, 
   // Semantic mapping: inputFields = variables that may appear in the prompt template; metaFields = metadata fields shown only to the analysis LLM.
   // SPEC 25 §9 expresses these two concepts as one; the DTO is the current minimal set; modifiableSections has no DTO field yet and is left empty.
   //
-  // Safety constraint: the expected_field referenced by judgment rules (default expected_output) is the ground truth;
+  // Safety constraint: the expectedField referenced by judgment rules (default expected_output) is the ground truth;
   // the business prompt MUST NOT inject it as a variable (it would leak the answer). If the UI / DTO puts it into inputFields (the frontend by default
   // dumps every dataset field), we strip it here and demote to analysisOnlyFields — eliminating leakage and
   // avoiding the over-reactive "defensive" response where the generate LLM sees this field name and strips every {{var}}.
@@ -2459,9 +2451,13 @@ export function deriveJudgmentRulesFromOutputSchema(
   expectedField = 'expected_output',
 ): PromptJudgmentRulesDto {
   return {
-    mode: 'exact_match',
-    expected_field: expectedField,
-    decision_field: readJudgmentDecisionField(outputSchema) ?? 'label',
+    rules: [
+      {
+        decisionField: readJudgmentDecisionField(outputSchema) ?? 'label',
+        expectedField,
+        operator: 'exact_match',
+      },
+    ],
   };
 }
 
@@ -2472,26 +2468,10 @@ function normalizeBaselineExperimentStatus(status: string): BaselineExperimentSt
   return 'running';
 }
 
-// Behavior matches experiment.workflow.ts's same-name helper: reads the expected field name from judgmentRules JSONB,
-// default 'expected_output'. The two channels keep their implementations separate to avoid cross-module coupling (SPEC 23/24's judgmentRules contract)
+// Behavior matches experiment.workflow.ts's same-name helper: reads the expected field name from canonical judgmentRules
+// (with legacy aliases supported by @proofhound/shared) and defaults to 'expected_output'.
 export function readExpectedField(rules: unknown): string {
-  if (rules && typeof rules === 'object') {
-    const record = rules as Record<string, unknown>;
-    const f = record['expected_field'] ?? record['expectedField'];
-    if (typeof f === 'string' && f.length > 0) return f;
-    const rawRules = record['rules'];
-    if (Array.isArray(rawRules)) {
-      for (const rule of rawRules) {
-        if (!rule || typeof rule !== 'object' || Array.isArray(rule)) continue;
-        const nested =
-          (rule as Record<string, unknown>)['expected_field'] ??
-          (rule as Record<string, unknown>)['expectedField'] ??
-          (rule as Record<string, unknown>)['value'];
-        if (typeof nested === 'string' && nested.length > 0) return nested;
-      }
-    }
-  }
-  return 'expected_output';
+  return readPromptJudgmentExpectedField(rules);
 }
 
 // Project the dataset's raw samples into SampleRecord consumed by the strategy package; expected is pulled from data[expectedField];

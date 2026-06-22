@@ -2,20 +2,23 @@
 // See docs/specs/24-experiments.md §7
 import type { JudgmentOutcome, JudgmentStrategy } from '../types';
 import { extractDecisionValue, readDecisionField } from './expected-output';
+import { normalizeJudgmentRules } from './rule-reader';
 
 type ThresholdOperator = 'gt' | 'gte' | 'lt' | 'lte' | 'eq';
 
 function readOperator(rules: unknown): ThresholdOperator {
-  if (rules && typeof rules === 'object') {
-    const op = (rules as Record<string, unknown>)['operator'];
+  const rule = normalizeJudgmentRules(rules)?.rules[0];
+  if (rule) {
+    const op = rule['thresholdOperator'] ?? rule['comparisonOperator'];
     if (op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte' || op === 'eq') return op;
   }
   return 'gte';
 }
 
 function readThreshold(rules: unknown): number | null {
-  if (rules && typeof rules === 'object') {
-    const raw = (rules as Record<string, unknown>)['threshold'];
+  const rule = normalizeJudgmentRules(rules)?.rules[0];
+  if (rule) {
+    const raw = rule['threshold'];
     if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
     if (typeof raw === 'string' && raw.trim().length > 0) {
       const parsed = Number(raw);

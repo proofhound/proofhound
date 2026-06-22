@@ -6,7 +6,8 @@
 // has no payload_ref, it is a pure pass-through of the inline fields, so behaviour is unchanged on an
 // OSS deployment with no storage configured.
 import { Injectable } from '@nestjs/common';
-import { ObjectStorageProvider, type StoredObjectRef } from '../../common/contracts/object-storage.provider';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import {
   type RunResultPayloadFields,
   type RunResultPayloadRef,

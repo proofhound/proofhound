@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { createLogger } from '@proofhound/logger';
 import type {
@@ -7,6 +8,7 @@ import type {
   DatasetCategoryDistributionDto,
   DatasetCreateResponseDto,
   DatasetExportFormatDto,
+  DatasetFieldMappingDto,
   DatasetFieldSchemaDto,
   DatasetListItemDto,
   DatasetReferencesDto,
@@ -22,13 +24,16 @@ import type {
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
-import { ObjectStorageProvider, type StoredObjectRef } from '../../common/contracts/object-storage.provider';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
-import { safeRecordUsageEvent, UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
+import { UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
+import { safeRecordUsageEvent } from '../../common/contracts/usage-metering.hook';
 import { DatasetDeletionHook } from './dataset-deletion.hook';
 import { buildDatasetFieldSchema } from './dataset-field-schema.util';
+import { DatasetRepository } from './dataset.repository';
 import {
-  DatasetRepository,
+  type DatasetSampleExportCursor,
   type DatasetProjectAccessRow,
   type DatasetRow,
   type DatasetSampleRow,
@@ -37,15 +42,14 @@ import {
 export interface DatasetExportFile {
   fileName: string;
   contentType: string;
-  byteLength: number;
-  buffer: Buffer;
+  createStream: () => Readable;
   format: DatasetExportFormatDto;
 }
 
 /**
  * How the export should be delivered to the client:
- *  - `stream`: respond with the buffer (object storage disabled, or the provider can't mint a
- *    public URL — e.g. LocalFs); preserves the original streamed-download behaviour.
+ *  - `stream`: respond with a fresh export stream (object storage disabled, or the provider can't
+ *    mint a public URL — e.g. LocalFs); preserves the original streamed-download behaviour.
  *  - `redirect`: the artifact was written to object storage; redirect the client to a signed URL
  *    so the bytes are served directly by the store (no DB / API egress for the payload).
  */
@@ -54,6 +58,8 @@ export type DatasetExportDelivery =
   | { kind: 'redirect'; url: string; expiresAt: string };
 
 const DEFAULT_DATASET_RAW_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+const DATASET_EXPORT_BATCH_SIZE = 500;
+const IMAGE_FIELD_SCHEMA_ROLES = new Set<DatasetFieldSchemaDto['role']>(['image', 'image_url', 'image_base64']);
 
 @Injectable()
 export class DatasetService {
@@ -120,15 +126,11 @@ export class DatasetService {
     actor: CurrentUserPayload,
   ): Promise<DatasetExportFile> {
     const dataset = await this.getDataset(projectId, datasetId, actor);
-    const rows = await this.repo.listDatasetSamples(datasetId);
-    const samples = rows.map((row) => this.toDatasetSample(row));
-    const content = format === 'csv' ? this.toCsv(dataset, samples) : this.toJsonl(samples);
-    const buffer = Buffer.from(content, 'utf8');
+    const columns = format === 'csv' ? await this.getExportColumns(dataset, datasetId) : [];
 
     return {
-      buffer,
-      byteLength: buffer.byteLength,
       contentType: format === 'csv' ? 'text/csv; charset=utf-8' : 'application/x-ndjson; charset=utf-8',
+      createStream: () => Readable.from(this.streamDatasetExport(datasetId, format, columns)),
       fileName: this.getExportFileName(dataset.name, format),
       format,
     };
@@ -138,7 +140,7 @@ export class DatasetService {
    * Build the export artifact and decide how to deliver it. When an object-storage provider is
    * configured and can mint a signed URL, the artifact is written to the store and the caller is
    * redirected there (payload bytes leave the store, not the DB/API). Otherwise — provider disabled
-   * or unable to sign (e.g. LocalFs) — it falls back to streaming the buffer, exactly as before.
+   * or unable to sign (e.g. LocalFs) — it falls back to streaming a fresh DB-backed export.
    */
   async exportDatasetForDownload(
     project: ProjectContext,
@@ -152,7 +154,7 @@ export class DatasetService {
       const contentDisposition = `attachment; filename="${file.fileName}"; filename*=UTF-8''${encodeURIComponent(file.fileName)}`;
       const ref = await this.objectStorage.putObject(
         { project, resourceType: 'export', resourceId: randomUUID(), name: file.fileName },
-        file.buffer,
+        file.createStream(),
         { contentType: file.contentType, contentDisposition },
       );
       const signed = await this.objectStorage.createSignedDownloadUrl(ref);
@@ -280,10 +282,20 @@ export class DatasetService {
       }
     }
 
-    const updated = await this.repo.updateDatasetMetadata(projectId, datasetId, {
+    const fieldSchema = dto.fieldMappings
+      ? this.buildUpdatedFieldSchema(row.fieldSchema, dto.fieldMappings)
+      : undefined;
+    const updateArgs = {
       name: dto.name,
       description: dto.description === undefined ? row.description : dto.description?.trim() || null,
-    });
+      ...(fieldSchema
+        ? {
+            fieldSchema,
+            hasImages: fieldSchema.some((field) => IMAGE_FIELD_SCHEMA_ROLES.has(field.role)),
+          }
+        : {}),
+    };
+    const updated = await this.repo.updateDatasetMetadata(projectId, datasetId, updateArgs);
     if (!updated) {
       throw new NotFoundException(`Dataset ${datasetId} not found`);
     }
@@ -293,6 +305,7 @@ export class DatasetService {
     await this.recordDatasetStorageEvents(updated, actor.sub, 'dataset.updated', {
       previousName: row.name,
       previousDescription: row.description,
+      fieldSchemaUpdated: Boolean(fieldSchema),
     });
     return this.toDatasetListItem(updated, distribution, references.get(datasetId) ?? this.emptyReferences());
   }
@@ -478,6 +491,43 @@ export class DatasetService {
     }
   }
 
+  private assertUniqueFieldMappings(mappings: DatasetFieldMappingDto[]) {
+    const mappingNames = mappings.map((field) => field.name);
+    const uniqueNames = new Set(mappingNames);
+    if (uniqueNames.size !== mappingNames.length) {
+      throw new ConflictException('dataset_field_mapping_duplicate');
+    }
+  }
+
+  private buildUpdatedFieldSchema(
+    currentValue: unknown,
+    mappings: DatasetFieldMappingDto[],
+  ): DatasetFieldSchemaDto[] {
+    this.assertUniqueFieldMappings(mappings);
+
+    const currentSchema = this.toFieldSchema(currentValue);
+    const currentByName = new Map(currentSchema.map((field) => [field.name, field]));
+
+    return mappings.map((field) => {
+      const current = currentByName.get(field.name);
+      return {
+        name: field.name,
+        role: this.toUpdatedFieldSchemaRole(field, current?.role),
+        type: current?.type ?? 'unknown',
+      };
+    });
+  }
+
+  private toUpdatedFieldSchemaRole(
+    field: DatasetFieldMappingDto,
+    currentRole: DatasetFieldSchemaDto['role'] | undefined,
+  ): DatasetFieldSchemaDto['role'] {
+    if (field.role === 'expected') return 'expected_output';
+    if (field.role === 'id') return 'metadata';
+    if (field.role !== 'image') return field.role;
+    return currentRole && IMAGE_FIELD_SCHEMA_ROLES.has(currentRole) ? currentRole : 'image';
+  }
+
   private assertUploadSourceSizeWithinLimit(bytes: number | undefined): void {
     const value = Number.isFinite(bytes) ? Math.max(0, Math.trunc(bytes ?? 0)) : 0;
     if (value > this.getUploadMaxBytes()) {
@@ -632,27 +682,53 @@ export class DatasetService {
     };
   }
 
-  private toCsv(dataset: DatasetListItemDto, samples: DatasetSampleDto[]) {
-    const columns = this.getExportColumns(dataset, samples);
-    const rows = samples.map((sample) => columns.map((column) => this.toCsvCell(sample.data[column])).join(','));
-    return `\uFEFF${[columns.map((column) => this.toCsvCell(column)).join(','), ...rows].join('\n')}\n`;
+  private async *streamDatasetExport(
+    datasetId: string,
+    format: DatasetExportFormatDto,
+    columns: string[],
+  ): AsyncGenerator<string> {
+    if (format === 'csv') {
+      yield `\uFEFF${columns.map((column) => this.toCsvCell(column)).join(',')}\n`;
+    }
+
+    let cursor: DatasetSampleExportCursor | null = null;
+    do {
+      const batch = await this.repo.listDatasetSamplesBatch(datasetId, {
+        limit: DATASET_EXPORT_BATCH_SIZE,
+        cursor,
+      });
+      for (const row of batch.rows) {
+        const sample = this.toDatasetSample(row);
+        if (format === 'jsonl') {
+          yield `${JSON.stringify(sample.data)}\n`;
+          continue;
+        }
+        yield `${columns.map((column) => this.toCsvCell(sample.data[column])).join(',')}\n`;
+      }
+      cursor = batch.nextCursor;
+    } while (cursor);
   }
 
-  private toJsonl(samples: DatasetSampleDto[]) {
-    return `${samples.map((sample) => JSON.stringify(sample.data)).join('\n')}\n`;
-  }
-
-  private getExportColumns(dataset: DatasetListItemDto, samples: DatasetSampleDto[]) {
+  private async getExportColumns(dataset: DatasetListItemDto, datasetId: string) {
     const columns = dataset.fieldSchema.map((field) => field.name);
     const known = new Set(columns);
 
-    for (const sample of samples) {
-      for (const fieldName of Object.keys(sample.data)) {
-        if (known.has(fieldName)) continue;
-        known.add(fieldName);
-        columns.push(fieldName);
+    let cursor: DatasetSampleExportCursor | null = null;
+    do {
+      const batch = await this.repo.listDatasetSamplesBatch(datasetId, {
+        limit: DATASET_EXPORT_BATCH_SIZE,
+        cursor,
+      });
+      for (const row of batch.rows) {
+        const sample = this.toDatasetSample(row);
+        for (const fieldName of Object.keys(sample.data)) {
+          if (known.has(fieldName)) continue;
+          known.add(fieldName);
+          columns.push(fieldName);
+        }
       }
-    }
+      cursor = batch.nextCursor;
+    } while (cursor);
 
     return columns;
   }

@@ -167,7 +167,7 @@ describe('dataset upload parser', () => {
     expect(parsed.columns).toEqual(['sample_id', 'text', 'expected_output', 'split', 'source_dataset']);
   });
 
-  it('selects the manifest-referenced data file when a folder is uploaded', async () => {
+  it('selects the manifest-referenced data file from a file collection', async () => {
     const dataFile = makeFile(
       'chnsenticorp-random-50.jsonl',
       '{"text":"hello","label":"positive"}\n',

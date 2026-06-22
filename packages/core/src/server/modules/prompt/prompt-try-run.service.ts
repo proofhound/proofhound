@@ -89,7 +89,7 @@ export class PromptTryRunService {
     const variables = parseVariables(version.variables);
     const outputSchema = parseOutputSchema(version.outputSchema);
     const promptLanguage = parsePromptLanguage(version.promptLanguage);
-    const { renderedPrompt, inputVariables } = renderPromptForSample(
+    const { renderedPrompt } = renderPromptForSample(
       { body: version.body ?? '', variables, outputSchema, promptLanguage },
       { data: parsed.variables },
     );

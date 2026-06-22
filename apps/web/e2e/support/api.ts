@@ -88,7 +88,9 @@ export async function seedPromptVersion(
       outputSchema: { fields: [{ key: 'decision', isJudgment: true, value: 'A | B' }] },
       // expectedField MUST be declared: without it the judge defaults to the `expected_output` key,
       // which the samples do not have (they store `expected`), yielding judge_error / accuracy 0.
-      judgmentRules: { ruleName: 'exact_match', expectedField: 'expected', config: { decisionField: 'decision' } },
+      judgmentRules: {
+        rules: [{ decisionField: 'decision', expectedField: 'expected', operator: 'exact_match' }],
+      },
       promptLanguage: 'zh-CN',
       changeReason: 'e2e content',
     },

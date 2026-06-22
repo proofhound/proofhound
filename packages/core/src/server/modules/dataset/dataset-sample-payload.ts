@@ -6,7 +6,8 @@
 // the shard. Pure pass-through when storage is disabled / the row was never offloaded. It reuses the
 // generic JSONL shard codec from the run-result seam (one data object per line).
 import { Injectable } from '@nestjs/common';
-import { ObjectStorageProvider, type StoredObjectRef } from '../../common/contracts/object-storage.provider';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import { decodeShard } from '../run-result/run-result-payload';
 
 /** Stored in `dataset_samples.payload_ref`: the shard holding this sample's data + its line. */

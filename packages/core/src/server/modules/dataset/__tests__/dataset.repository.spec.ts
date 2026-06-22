@@ -1,5 +1,5 @@
 import type { DbClient } from '@proofhound/db';
-import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
+import type { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
 import { DatasetSamplePayloadReader } from '../dataset-sample-payload';
 import { DatasetRepository } from '../dataset.repository';
 

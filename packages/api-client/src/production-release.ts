@@ -18,22 +18,22 @@ export interface ProductionReleaseHistoryResponseDto {
 }
 
 export const productionReleaseClient = {
-  list: (projectId: string) =>
+  list: (_projectId: string) =>
     httpClient
       .get<ProductionReleaseListResponseDto>(`/production-releases`)
       .then((r) => r.data),
 
-  get: (projectId: string, eventId: string) =>
+  get: (_projectId: string, eventId: string) =>
     httpClient
       .get<ProductionReleaseEventDto>(`/production-releases/${eventId}`)
       .then((r) => r.data),
 
-  create: (projectId: string, body: CreateProductionReleaseInputDto) =>
+  create: (_projectId: string, body: CreateProductionReleaseInputDto) =>
     httpClient
       .post<ProductionReleaseEventDto>(`/production-releases`, body)
       .then((r) => r.data),
 
-  stop: (projectId: string, eventId: string, body: StopProductionReleaseInputDto) =>
+  stop: (_projectId: string, eventId: string, body: StopProductionReleaseInputDto) =>
     httpClient
       .post<ProductionReleaseEventDto>(
         `/production-releases/${eventId}/stop`,
@@ -41,7 +41,7 @@ export const productionReleaseClient = {
       )
       .then((r) => r.data),
 
-  getHistory: (projectId: string, promptId: string) =>
+  getHistory: (_projectId: string, promptId: string) =>
     httpClient
       .get<ProductionReleaseHistoryResponseDto>(
         `/production-releases/by-prompt/${promptId}/history`,

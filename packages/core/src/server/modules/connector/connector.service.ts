@@ -31,7 +31,6 @@ import type {
   PeekConnectorResponseDto,
   ProbeConnectorResponseDto,
   ProjectContext,
-  RedisConnectionConfig,
   UpdateConnectorDto,
 } from '@proofhound/shared';
 import { toActorContext } from '../../common/access-control';
@@ -40,8 +39,8 @@ import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-autho
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { ConnectorDriverFactory } from './connector.driver-factory';
+import { ConnectorRepository } from './connector.repository';
 import {
-  ConnectorRepository,
   type ConnectorInsertRow,
   type ConnectorProjectAccessRow,
   type ConnectorRowWithJoins,

@@ -22,11 +22,14 @@ import type {
   UnarchiveReleaseLineInputDto,
   UpdateReleaseLineInputRouteInputDto,
   UpdateReleaseLineOutputRouteInputDto,
+  UpdateReleaseLineRetentionInputDto,
   UpdateReleaseLineRunConfigInputDto,
   UpdateReleaseLineTrafficRatioInputDto,
 } from '@proofhound/shared';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { isUniqueViolation } from '../../common/errors/db-error';
 import { UsageMeteringHook, safeRecordUsageEvent } from '../../common/contracts/usage-metering.hook';
@@ -52,6 +55,7 @@ export class ReleaseLineService {
     @Inject(UsageMeteringHook)
     @Optional()
     private readonly usageMetering?: UsageMeteringHook,
+    @Optional() private readonly objectStorage?: ObjectStorageProvider,
   ) {}
 
   async list(projectId: string, actor: CurrentUserPayload): Promise<{ data: ReleaseLineDto[]; total: number }> {
@@ -265,8 +269,9 @@ export class ReleaseLineService {
     // Force-stop any running lane first (its own transaction) so the runner stops dispatching before we
     // physically delete the line — a best-effort barrier against in-flight jobs racing the cascade.
     await this.repo.forceStopRunningLanesForDelete(projectId, releaseLineId);
-    const deleted = await this.repo.hardDeleteLine(projectId, releaseLineId);
-    if (deleted === 0) throw new NotFoundException(`Release line ${releaseLineId} not found`);
+    const result = await this.repo.hardDeleteLine(projectId, releaseLineId);
+    if (result.deleted === 0) throw new NotFoundException(`Release line ${releaseLineId} not found`);
+    await this.cleanupPayloadRefs(result.payloadRefs, { projectId, releaseLineId, operation: 'release_line.delete' });
     this.logger.info({ releaseLineId, reason: input.reason ?? null }, 'release_line_deleted');
     if (this.usageMetering) {
       await safeRecordUsageEvent(this.usageMetering, {
@@ -359,6 +364,19 @@ export class ReleaseLineService {
       'release_line_input_route_updated',
     );
     await this.recordLineMutationEvents(updated, actor.sub, 'input_route_updated');
+    return updated;
+  }
+
+  async updateRetention(
+    projectId: string,
+    releaseLineId: string,
+    input: UpdateReleaseLineRetentionInputDto,
+    actor: CurrentUserPayload,
+  ): Promise<ReleaseLineDto> {
+    await this.assertWriteAccess(projectId, actor);
+    const updated = await this.repo.updateCurrentProductionRetention(projectId, releaseLineId, input.retentionDays);
+    if (!updated) throw new BadRequestException(`Release line ${releaseLineId} has no editable production lane`);
+    this.logger.info({ releaseLineId, retentionDays: input.retentionDays }, 'release_line_retention_updated');
     return updated;
   }
 
@@ -662,6 +680,15 @@ export class ReleaseLineService {
       },
       this.logger,
     );
+  }
+
+  private async cleanupPayloadRefs(refs: StoredObjectRef[], context: Record<string, unknown>): Promise<void> {
+    if (refs.length === 0 || !this.objectStorage?.isEnabled()) return;
+    try {
+      await this.objectStorage.deleteObjects(refs);
+    } catch (err) {
+      this.logger.warn({ ...context, refs: refs.length, err }, 'object_storage_payload_cleanup_failed');
+    }
   }
 }
 

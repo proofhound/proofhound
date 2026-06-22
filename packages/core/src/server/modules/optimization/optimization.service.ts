@@ -49,8 +49,8 @@ import { PromptRepository } from '../prompt/prompt.repository';
 import { RunResultService } from '../run-result/run-result.service';
 import { OptimizationLauncher } from './optimization.launcher';
 import { SYSTEM_ACTOR_OPTIMIZATION } from './optimization.workflow';
+import { OptimizationRepository } from './optimization.repository';
 import {
-  OptimizationRepository,
   type OptimizationProjectAccessRow,
   type OptimizationRoundExperimentRow,
   type OptimizationRoundLlmRow,
@@ -197,6 +197,7 @@ export class OptimizationService {
     // composes an org-scoped limiter key; child-experiment launches inside the workflow inherit it from the snapshot.
     orgId?: string,
   ): Promise<OptimizationListItemDto> {
+    void source;
     await this.getWritableProject(projectId, actor);
     const existing = await this.repo.findOptimizationByProjectAndName(projectId, body.name);
     if (existing) {
@@ -295,9 +296,8 @@ export class OptimizationService {
       createdBy: actor.sub,
     });
 
-    let workflowId: string | null = null;
     try {
-      workflowId = await this.launcher.launch(insertedId, orgId);
+      await this.launcher.launch(insertedId, orgId);
     } catch (error) {
       const reason = `launch_failed: ${(error as Error).message}`;
       const now = new Date();
@@ -390,6 +390,7 @@ export class OptimizationService {
     // rate-limit bucket (SPEC 08 §3.7). Threaded into launcher.resume on the resume path.
     orgId?: string,
   ): Promise<OptimizationListItemDto> {
+    void source;
     await this.getWritableProject(projectId, actor);
     const parsedAction = optimizationControlActionSchema.parse(action);
 

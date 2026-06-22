@@ -16,7 +16,8 @@ import { AccessControlService } from '../../common/contracts/access-control.serv
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { TokenService, type ActionSource } from '../../common/contracts/token.service';
-import { TokenRepository, type UserTokenRow, type UserTokenRowWithCreator } from './token.repository';
+import { TokenRepository } from './token.repository';
+import { type UserTokenRow, type UserTokenRowWithCreator } from './token.repository';
 
 export { TokenService };
 export type { ActionSource };

@@ -69,8 +69,20 @@ const DEFAULT_TPM = 120_000;
 const DEFAULT_CONCURRENCY = 4;
 const DEFAULT_QUEUE_TRAFFIC_PERCENT = 10;
 const TRAFFIC_PERCENT_PRESETS = [1, 5, 20, 50, 100] as const;
+const RELEASE_RETENTION_OPTIONS = ['30', '7', 'forever'] as const;
 type ReleaseTrafficMode = CreateCanaryReleaseInputDto['trafficMode'];
 type CanaryStopConditions = NonNullable<CreateCanaryReleaseInputDto['stopConditions']>;
+type ReleaseRetentionOption = (typeof RELEASE_RETENTION_OPTIONS)[number];
+const RELEASE_RETENTION_LABEL_KEYS: Record<
+  ReleaseRetentionOption,
+  | 'productionReleases.new.retention.30'
+  | 'productionReleases.new.retention.7'
+  | 'productionReleases.new.retention.forever'
+> = {
+  '30': 'productionReleases.new.retention.30',
+  '7': 'productionReleases.new.retention.7',
+  forever: 'productionReleases.new.retention.forever',
+};
 
 function buildDefaultReleaseName(): string {
   const now = new Date();
@@ -1213,6 +1225,7 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
   const [tpm, setTpm] = useState(searchParams.get('tpmLimit') ?? '');
   const [concurrency, setConcurrency] = useState(searchParams.get('concurrency') ?? '');
   const [temperature, setTemperature] = useState(searchParams.get('temperature') ?? '0.3');
+  const [retentionOption, setRetentionOption] = useState<ReleaseRetentionOption>('30');
   const [runtimeDefaultsModelId, setRuntimeDefaultsModelId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -1352,6 +1365,7 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
   const tpmValue = positiveIntegerFromText(tpm);
   const concurrencyValue = positiveIntegerFromText(concurrency);
   const temperatureValue = temperatureFromText(temperature);
+  const retentionDays = retentionOption === 'forever' ? null : Number(retentionOption);
   const stopConditions = stopConditionsFromDraft(
     useStopMaxSamples,
     useStopMaxDurationSeconds,
@@ -1578,7 +1592,7 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
       recordMode,
       recordCategories,
       externalIdField: effectiveExternalIdField || null,
-      retentionDays: null,
+      retentionDays,
       submitReason,
       sourceExperimentId: initialSourceExperimentId || null,
       sourceCanaryId: null,
@@ -2055,6 +2069,31 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                 </div>
               ) : null}
 
+              {!shouldCreateCanaryRelease ? (
+                <div className="border-t border-dashed pt-5">
+                  <Label>{t('productionReleases.new.field.retentionDays')}</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">{t('productionReleases.new.helpRetention')}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {RELEASE_RETENTION_OPTIONS.map((option) => {
+                      const selected = option === retentionOption;
+                      return (
+                        <Button
+                          key={option}
+                          type="button"
+                          variant={selected ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setRetentionOption(option)}
+                          aria-pressed={selected}
+                          className="h-8"
+                        >
+                          {t(RELEASE_RETENTION_LABEL_KEYS[option])}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="border-t border-dashed pt-5">
                 <Label>{t('canaryReleases.new.field.recordCategories')}</Label>
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -2127,6 +2166,16 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                 />
                 {shouldCreateCanaryRelease ? (
                   <SummaryRow label={t('canaryReleases.new.field.termination')} value={stopConditionSummary} />
+                ) : null}
+                {!shouldCreateCanaryRelease ? (
+                  <SummaryRow
+                    label={t('productionReleases.new.field.retentionDays')}
+                    value={
+                      retentionDays === null
+                        ? t('productionReleases.new.retention.forever')
+                        : t(RELEASE_RETENTION_LABEL_KEYS[String(retentionDays) as '7' | '30'])
+                    }
+                  />
                 ) : null}
               </div>
 

@@ -2,9 +2,10 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
-import type { CreateDatasetImportDto, DatasetFieldSchemaDto } from '@proofhound/shared';
+import type { CreateDatasetImportDto, DatasetFieldSchemaDto, DatasetImportProgressPhase } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import { ObjectStorageProvider, type StoredObjectRef } from '../../common/contracts/object-storage.provider';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import { offloadStagingToShards } from './dataset-sample-offload';
 
 const { datasetImports, datasetImportSamples, datasetSamples, datasets, projects } = schema;
@@ -12,6 +13,15 @@ const { datasetImports, datasetImportSamples, datasetSamples, datasets, projects
 // Per-shard batch for offload-at-promote. Bounded so a batch's data stays in memory only briefly
 // (large image/base64 samples make per-row size unpredictable); each batch becomes one R2 shard.
 const PROMOTE_SHARD_BATCH = 200;
+const PROMOTION_PHASES = ['finalizing', 'offloading', 'committing'] as const;
+
+export interface DatasetImportProgressPatch {
+  phase?: DatasetImportProgressPhase;
+  totalShards?: number | null;
+  completedShards?: number | null;
+  committedRows?: number | null;
+  cleanupPending?: number | null;
+}
 
 export interface DatasetImportRow {
   id: string;
@@ -29,6 +39,7 @@ export interface DatasetImportRow {
   rawUploadExpiresAt: Date | null;
   rawUploadCompletedAt: Date | null;
   rawObjectRef: StoredObjectRef | null;
+  progress: unknown;
   declaredTotalRows: number | null;
   receivedRows: number;
   jobId: string | null;
@@ -73,11 +84,18 @@ export interface PromoteDatasetImportArgs {
   description: string | null;
   fieldSchema: DatasetFieldSchemaDto[];
   hasImages: boolean;
+  onProgress?: (progress: DatasetImportProgressPatch) => Promise<void> | void;
 }
 
 // Thrown inside the promote transaction so the caller can map to the right HTTP status while the tx rolls back.
 export class DatasetImportEmptyError extends Error {}
 export class DatasetNameTakenError extends Error {}
+export class DatasetImportAbortedError extends Error {
+  constructor() {
+    super('dataset_import_aborted');
+    this.name = 'DatasetImportAbortedError';
+  }
+}
 
 @Injectable()
 export class DatasetImportRepository {
@@ -105,6 +123,7 @@ export class DatasetImportRepository {
   }
 
   async createImport(args: CreateDatasetImportArgs): Promise<DatasetImportRow> {
+    const initialStatus = args.initialStatus ?? (args.importMode === 'raw_object' ? 'created' : 'uploading');
     const [row] = await this.db
       .insert(datasetImports)
       .values({
@@ -121,7 +140,8 @@ export class DatasetImportRepository {
         rawUploadSessionId: args.rawUploadSession?.sessionId ?? null,
         rawUploadExpiresAt: args.rawUploadSession?.expiresAt ? new Date(args.rawUploadSession.expiresAt) : null,
         declaredTotalRows: args.dto.declaredTotalRows ?? null,
-        status: args.initialStatus ?? (args.importMode === 'raw_object' ? 'created' : 'uploading'),
+        status: initialStatus,
+        progress: { phase: initialStatus },
         createdBy: args.actorUserId,
       })
       .returning();
@@ -152,6 +172,9 @@ export class DatasetImportRepository {
         .set({
           receivedRows: sql`GREATEST(${datasetImports.receivedRows}, ${nextReceivedRows})`,
           status: 'importing',
+          progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
+            phase: 'importing',
+          })}::jsonb`,
           updatedAt: new Date(),
         })
         .where(eq(datasetImports.id, importId))
@@ -172,84 +195,169 @@ export class DatasetImportRepository {
     );
   }
 
+  async markPromoting(projectId: string, importId: string): Promise<DatasetImportRow | null> {
+    const now = new Date();
+    const [row] = await this.db
+      .update(datasetImports)
+      .set({
+        status: 'importing',
+        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
+          phase: 'finalizing',
+          totalShards: null,
+          completedShards: null,
+          committedRows: 0,
+        })}::jsonb`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(datasetImports.projectId, projectId),
+          eq(datasetImports.id, importId),
+          sql`${datasetImports.status} IN ('uploading', 'parsing', 'importing')`,
+          sql`COALESCE(${datasetImports.progress}->>'phase', ${datasetImports.status}) NOT IN (${sql.join(
+            PROMOTION_PHASES.map((phase) => sql`${phase}`),
+            sql`, `,
+          )})`,
+        ),
+      )
+      .returning();
+    return (row as DatasetImportRow | undefined) ?? null;
+  }
+
   // Atomic promote: create the dataset row, bulk-copy staging rows into dataset_samples, mark the session completed, drop staging.
   async promote(args: PromoteDatasetImportArgs): Promise<{ sampleCount: number }> {
-    return this.db.transaction(async (tx) => {
-      const [countRow] = await tx
-        .select({ count: sql<number>`count(*)::int` })
-        .from(datasetImportSamples)
-        .where(eq(datasetImportSamples.importId, args.importId));
-      const sampleCount = Number(countRow?.count ?? 0);
-      if (sampleCount === 0) throw new DatasetImportEmptyError();
+    const writtenShardRefs: StoredObjectRef[] = [];
+    try {
+      return await this.db.transaction(async (tx) => {
+        const assertNotAbortRequested = async () => {
+          const [importRow] = await tx
+            .select({ status: datasetImports.status })
+            .from(datasetImports)
+            .where(eq(datasetImports.id, args.importId))
+            .limit(1);
+          if (importRow?.status === 'aborted') throw new DatasetImportAbortedError();
+        };
 
-      const taken = await tx
-        .select({ id: datasets.id })
-        .from(datasets)
-        .where(and(eq(datasets.projectId, args.projectId), eq(datasets.name, args.name), isNull(datasets.deletedAt)))
-        .limit(1);
-      if (taken.length > 0) throw new DatasetNameTakenError();
+        await assertNotAbortRequested();
+        const [countRow] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(datasetImportSamples)
+          .where(eq(datasetImportSamples.importId, args.importId));
+        const sampleCount = Number(countRow?.count ?? 0);
+        if (sampleCount === 0) throw new DatasetImportEmptyError();
+        await args.onProgress?.({ phase: 'finalizing', committedRows: 0 });
+        await assertNotAbortRequested();
 
-      await tx.insert(datasets).values({
-        id: args.datasetId,
-        projectId: args.projectId,
-        name: args.name,
-        description: args.description,
-        sampleCount,
-        fieldSchema: args.fieldSchema,
-        hasImages: args.hasImages,
-        createdBy: args.actorUserId,
-      });
+        const taken = await tx
+          .select({ id: datasets.id })
+          .from(datasets)
+          .where(and(eq(datasets.projectId, args.projectId), eq(datasets.name, args.name), isNull(datasets.deletedAt)))
+          .limit(1);
+        if (taken.length > 0) throw new DatasetNameTakenError();
+        await assertNotAbortRequested();
 
-      if (this.storage.isEnabled()) {
-        // Offload-at-promote (SPEC 22 §7.2): stream staging into shards + projected rows. The pure
-        // orchestration lives in dataset-sample-offload.ts; here we just bind the tx / storage I/O.
-        const project = { projectId: args.projectId, source: 'local' as const };
-        const { storagePrefix } = await offloadStagingToShards({
-          datasetId: args.datasetId,
+        await tx.insert(datasets).values({
+          id: args.datasetId,
+          projectId: args.projectId,
+          name: args.name,
+          description: args.description,
           sampleCount,
-          batchSize: PROMOTE_SHARD_BATCH,
           fieldSchema: args.fieldSchema,
-          readBatch: (offset, limit) =>
-            tx
-              .select({ data: datasetImportSamples.data, externalId: datasetImportSamples.externalId })
-              .from(datasetImportSamples)
-              .where(eq(datasetImportSamples.importId, args.importId))
-              .orderBy(asc(datasetImportSamples.rowIndex))
-              .limit(limit)
-              .offset(offset),
-          putShard: (name, body) =>
-            this.storage.putObject(
-              { project, resourceType: 'dataset_normalized', resourceId: args.datasetId, name },
-              body,
-              {
-                codec: 'gzip',
-              },
-            ),
-          insertRows: async (rows) => {
-            await tx.insert(datasetSamples).values(rows);
-          },
+          hasImages: args.hasImages,
+          createdBy: args.actorUserId,
         });
-        if (storagePrefix) {
-          await tx.update(datasets).set({ storagePrefix }).where(eq(datasets.id, args.datasetId));
-        }
-      } else {
-        await tx.execute(sql`
+
+        if (this.storage.isEnabled()) {
+          // Offload-at-promote (SPEC 22 §7.2): stream staging into shards + projected rows. The pure
+          // orchestration lives in dataset-sample-offload.ts; here we just bind the tx / storage I/O.
+          const project = { projectId: args.projectId, source: 'local' as const };
+          const totalShards = Math.ceil(sampleCount / PROMOTE_SHARD_BATCH);
+          await args.onProgress?.({ phase: 'offloading', totalShards, completedShards: 0, committedRows: 0 });
+          const { storagePrefix } = await offloadStagingToShards({
+            datasetId: args.datasetId,
+            sampleCount,
+            batchSize: PROMOTE_SHARD_BATCH,
+            fieldSchema: args.fieldSchema,
+            onProgress: async ({ completedShards, processedRows }) => {
+              await args.onProgress?.({
+                phase: 'offloading',
+                totalShards,
+                completedShards,
+                committedRows: processedRows,
+              });
+            },
+            readBatch: async (offset, limit) => {
+              await assertNotAbortRequested();
+              return tx
+                .select({ data: datasetImportSamples.data, externalId: datasetImportSamples.externalId })
+                .from(datasetImportSamples)
+                .where(eq(datasetImportSamples.importId, args.importId))
+                .orderBy(asc(datasetImportSamples.rowIndex))
+                .limit(limit)
+                .offset(offset);
+            },
+            putShard: (name, body) =>
+              this.storage
+                .putObject({ project, resourceType: 'dataset_normalized', resourceId: args.datasetId, name }, body, {
+                  codec: 'gzip',
+                })
+                .then((ref) => {
+                  writtenShardRefs.push(ref);
+                  return ref;
+                }),
+            insertRows: async (rows) => {
+              await assertNotAbortRequested();
+              await tx.insert(datasetSamples).values(rows);
+            },
+          });
+          await assertNotAbortRequested();
+          if (storagePrefix) {
+            await tx.update(datasets).set({ storagePrefix }).where(eq(datasets.id, args.datasetId));
+          }
+          await args.onProgress?.({
+            phase: 'committing',
+            totalShards,
+            completedShards: totalShards,
+            committedRows: sampleCount,
+          });
+        } else {
+          await args.onProgress?.({ phase: 'committing', committedRows: 0 });
+          await assertNotAbortRequested();
+          await tx.execute(sql`
           INSERT INTO ph_assets.dataset_samples (dataset_id, data, external_id)
           SELECT ${args.datasetId}::uuid, data, external_id
           FROM ph_assets.dataset_import_samples
           WHERE import_id = ${args.importId}::uuid
         `);
+        }
+
+        await assertNotAbortRequested();
+        const [completed] = await tx
+          .update(datasetImports)
+          .set({
+            status: 'completed',
+            datasetId: args.datasetId,
+            progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
+              phase: 'completed',
+              committedRows: sampleCount,
+            })}::jsonb`,
+            completedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(datasetImports.id, args.importId), sql`${datasetImports.status} <> 'aborted'`))
+          .returning({ id: datasetImports.id });
+        if (!completed) throw new DatasetImportAbortedError();
+
+        await tx.delete(datasetImportSamples).where(eq(datasetImportSamples.importId, args.importId));
+
+        return { sampleCount };
+      });
+    } catch (error) {
+      if (writtenShardRefs.length > 0) {
+        await this.storage.deleteObjects(writtenShardRefs).catch(() => undefined);
       }
-
-      await tx
-        .update(datasetImports)
-        .set({ status: 'completed', datasetId: args.datasetId, completedAt: new Date(), updatedAt: new Date() })
-        .where(eq(datasetImports.id, args.importId));
-
-      await tx.delete(datasetImportSamples).where(eq(datasetImportSamples.importId, args.importId));
-
-      return { sampleCount };
-    });
+      throw error;
+    }
   }
 
   async deleteImport(projectId: string, importId: string): Promise<number> {
@@ -266,7 +374,11 @@ export class DatasetImportRepository {
       .from(datasetImports)
       .where(
         and(
-          sql`${datasetImports.status} IN ('created', 'uploading', 'uploaded')`,
+          sql`(${datasetImports.status} IN ('created', 'uploading', 'uploaded') OR (${datasetImports.importMode} = 'batch' AND ${datasetImports.status} = 'importing') OR (${datasetImports.status} = 'aborted' AND ${datasetImports.progress}->>'cleanupPending' = '1'))`,
+          sql`COALESCE(${datasetImports.progress}->>'phase', ${datasetImports.status}) NOT IN (${sql.join(
+            PROMOTION_PHASES.map((phase) => sql`${phase}`),
+            sql`, `,
+          )})`,
           lt(datasetImports.updatedAt, olderThan),
         ),
       );
@@ -306,6 +418,9 @@ export class DatasetImportRepository {
       .set({
         rawObjectRef,
         status: 'uploaded',
+        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
+          phase: 'uploaded',
+        })}::jsonb`,
         rawUploadCompletedAt: now,
         updatedAt: now,
       })
@@ -327,6 +442,9 @@ export class DatasetImportRepository {
       .set({
         status: 'queued',
         jobId,
+        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
+          phase: 'queued',
+        })}::jsonb`,
         queuedAt: now,
         updatedAt: now,
       })
@@ -345,7 +463,16 @@ export class DatasetImportRepository {
     const now = new Date();
     const [row] = await this.db
       .update(datasetImports)
-      .set({ status: 'parsing', startedAt: now, updatedAt: now, errorCode: null, errorMessage: null })
+      .set({
+        status: 'parsing',
+        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
+          phase: 'parsing',
+        })}::jsonb`,
+        startedAt: now,
+        updatedAt: now,
+        errorCode: null,
+        errorMessage: null,
+      })
       .where(
         and(
           eq(datasetImports.projectId, projectId),
@@ -363,6 +490,9 @@ export class DatasetImportRepository {
       .update(datasetImports)
       .set({
         status: 'failed',
+        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
+          phase: 'failed',
+        })}::jsonb`,
         errorCode,
         errorMessage: errorMessage.slice(0, 2000),
         failedAt: now,
@@ -372,22 +502,57 @@ export class DatasetImportRepository {
     await this.clearStaging(importId);
   }
 
-  async markAborted(projectId: string, importId: string): Promise<DatasetImportRow | null> {
+  async markAborted(
+    projectId: string,
+    importId: string,
+    options: { clearStaging?: boolean } = {},
+  ): Promise<DatasetImportRow | null> {
     const now = new Date();
     const [row] = await this.db
       .update(datasetImports)
       .set({
         status: 'aborted',
+        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
+          phase: 'aborted',
+          cleanupPending: options.clearStaging === false ? 1 : null,
+        })}::jsonb`,
         abortedAt: now,
         updatedAt: now,
       })
-      .where(and(eq(datasetImports.projectId, projectId), eq(datasetImports.id, importId)))
+      .where(
+        and(
+          eq(datasetImports.projectId, projectId),
+          eq(datasetImports.id, importId),
+          sql`${datasetImports.status} IN ('created', 'uploading', 'uploaded', 'queued', 'parsing', 'importing')`,
+        ),
+      )
       .returning();
-    await this.clearStaging(importId);
-    return (row as DatasetImportRow | undefined) ?? null;
+    if (!row) return null;
+    if (options.clearStaging !== false) await this.clearStaging(importId);
+    return row as DatasetImportRow;
   }
 
   async clearStaging(importId: string): Promise<void> {
     await this.db.delete(datasetImportSamples).where(eq(datasetImportSamples.importId, importId));
   }
+
+  async updateProgress(projectId: string, importId: string, progress: DatasetImportProgressPatch): Promise<void> {
+    await this.db
+      .update(datasetImports)
+      .set({
+        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify(
+          sanitizeProgressPatch(progress),
+        )}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(datasetImports.projectId, projectId), eq(datasetImports.id, importId)));
+  }
+}
+
+function sanitizeProgressPatch(progress: DatasetImportProgressPatch): Record<string, string | number | null> {
+  return Object.fromEntries(
+    Object.entries(progress).filter(
+      ([, value]) => value === null || typeof value === 'string' || typeof value === 'number',
+    ),
+  );
 }

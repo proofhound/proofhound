@@ -19,7 +19,7 @@ import { useRunResult } from '../../hooks';
 import { useDateTimeFormatter } from '../../hooks';
 import { experimentTone } from './experiment-theme';
 import {
-  formatRunResultFailureReason,
+  formatRunResultFailureReasonParts,
   getBinaryRunResultJudgmentStatus,
   getRunResultJudgmentLabelKey,
   getRunResultStatusLabelKey,
@@ -60,10 +60,10 @@ export function RunResultDetailSheet({ projectId, experimentId, runResultId, onC
   const statusLabel = detail ? t(getRunResultStatusLabelKey(detail.status)) : '';
   const judgmentLabel = detail ? t(getRunResultJudgmentLabelKey(detail)) : '—';
   const judgmentStatus = detail ? getBinaryRunResultJudgmentStatus(detail) : null;
-  const failureReason = detail ? formatRunResultFailureReason(detail, t) : null;
-  const parsedRawResponse = detail ? parseJsonString(detail.rawResponse) : null;
+  const failureReason = detail ? formatRunResultFailureReasonParts(detail, t) : null;
+  const parsedModelRawResponse = detail ? parseJsonString(detail.rawResponse) : null;
   const modelOutput =
-    detail?.parsedOutput ?? parsedRawResponse ?? detail?.rawResponse ?? detail?.decisionOutput ?? null;
+    detail?.parsedOutput ?? parsedModelRawResponse ?? detail?.rawResponse ?? detail?.decisionOutput ?? null;
   const textVariables = detail ? datasetFieldDisplays(detail.datasetTextFields, 'text') : [];
   const imageVariables = detail ? datasetFieldDisplays(detail.datasetImageFields, 'image') : [];
 
@@ -159,7 +159,10 @@ export function RunResultDetailSheet({ projectId, experimentId, runResultId, onC
                 {detail.errorClass && (
                   <p className="mb-1 font-mono text-[10.5px] uppercase tracking-wide">{detail.errorClass}</p>
                 )}
-                <p className="break-words text-foreground">{failureReason}</p>
+                <p className="font-medium text-foreground">{failureReason.summary}</p>
+                {failureReason.detail && (
+                  <p className="mt-1 break-words font-mono text-[11px] text-muted-foreground">{failureReason.detail}</p>
+                )}
               </section>
             )}
 
@@ -201,7 +204,7 @@ export function RunResultDetailSheet({ projectId, experimentId, runResultId, onC
                 copyValue={detail.rawResponse}
                 onCopy={handleCopy}
               >
-                <ReadableValue value={parsedRawResponse ?? detail.rawResponse} />
+                <RawResponseValue value={detail.rawResponse} />
               </ReadableSection>
             )}
 
@@ -409,6 +412,14 @@ function RenderedPromptView({ value }: { value: unknown }) {
         </div>
       ))}
     </div>
+  );
+}
+
+export function RawResponseValue({ value }: { value: string }) {
+  return (
+    <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-2.5 font-mono text-[11.5px] leading-relaxed text-foreground">
+      {value}
+    </pre>
   );
 }
 

@@ -4,9 +4,11 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import type { CreateDatasetDto, DatasetFieldSchemaDto } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import { ObjectStorageProvider, type StoredObjectRef } from '../../common/contracts/object-storage.provider';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import { offloadStagingToShards } from './dataset-sample-offload';
-import { type DatasetSamplePayloadRef, DatasetSamplePayloadReader } from './dataset-sample-payload';
+import { DatasetSamplePayloadReader } from './dataset-sample-payload';
+import { type DatasetSamplePayloadRef } from './dataset-sample-payload';
 
 const { optimizations, datasetSamples, datasets, experiments, projects, promptVersions } = schema;
 
@@ -44,6 +46,16 @@ export interface DatasetSampleRow {
   updatedAt: Date;
 }
 
+export interface DatasetSampleExportCursor {
+  createdAt: string;
+  id: string;
+}
+
+export interface DatasetSampleExportBatch {
+  rows: DatasetSampleRow[];
+  nextCursor: DatasetSampleExportCursor | null;
+}
+
 export interface CreateDatasetRecordArgs {
   datasetId: string;
   projectId: string;
@@ -58,6 +70,8 @@ export interface CreateDatasetRecordArgs {
 export interface UpdateDatasetMetadataArgs {
   name: string;
   description: string | null;
+  fieldSchema?: DatasetFieldSchemaDto[];
+  hasImages?: boolean;
 }
 
 export interface DatasetDeletionImpactRow {
@@ -183,6 +197,31 @@ export class DatasetRepository {
       .where(eq(datasetSamples.datasetId, datasetId))
       .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id));
     return this.hydrateSampleRows(rows);
+  }
+
+  async listDatasetSamplesBatch(
+    datasetId: string,
+    options: { limit: number; cursor?: DatasetSampleExportCursor | null },
+  ): Promise<DatasetSampleExportBatch> {
+    const cursorWhere = options.cursor
+      ? sql`(${datasetSamples.createdAt}, ${datasetSamples.id}) > (${options.cursor.createdAt}::timestamptz, ${options.cursor.id}::uuid)`
+      : undefined;
+    const where = cursorWhere
+      ? and(eq(datasetSamples.datasetId, datasetId), cursorWhere)
+      : eq(datasetSamples.datasetId, datasetId);
+    const rows = await this.db
+      .select()
+      .from(datasetSamples)
+      .where(where)
+      .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id))
+      .limit(options.limit);
+
+    const hydrated = await this.hydrateSampleRows(rows);
+    const last = hydrated.length >= options.limit ? hydrated[hydrated.length - 1] : null;
+    return {
+      rows: hydrated,
+      nextCursor: last ? { createdAt: last.createdAt.toISOString(), id: last.id } : null,
+    };
   }
 
   // Server-side paginated browse with optional cross-field search (data::text ILIKE), so the detail page
@@ -563,13 +602,16 @@ export class DatasetRepository {
     datasetId: string,
     args: UpdateDatasetMetadataArgs,
   ): Promise<DatasetRow | null> {
+    const updateValues = {
+      name: args.name,
+      description: args.description,
+      ...(args.fieldSchema ? { fieldSchema: args.fieldSchema, hasImages: args.hasImages ?? false } : {}),
+      updatedAt: new Date(),
+    };
+
     await this.db
       .update(datasets)
-      .set({
-        name: args.name,
-        description: args.description,
-        updatedAt: new Date(),
-      })
+      .set(updateValues)
       .where(and(eq(datasets.projectId, projectId), eq(datasets.id, datasetId), isNull(datasets.deletedAt)));
 
     return this.findDatasetById(projectId, datasetId);

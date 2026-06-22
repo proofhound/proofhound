@@ -32,43 +32,43 @@ export interface CanaryAnnotationListQuery {
 }
 
 export const canaryReleaseClient = {
-  list: (projectId: string) =>
+  list: (_projectId: string) =>
     httpClient
       .get<CanaryReleaseListResponseDto>(`/canary-releases`)
       .then((r) => r.data),
 
-  get: (projectId: string, canaryId: string) =>
+  get: (_projectId: string, canaryId: string) =>
     httpClient
       .get<CanaryReleaseDto>(`/canary-releases/${canaryId}`)
       .then((r) => r.data),
 
-  create: (projectId: string, body: CreateCanaryReleaseInputDto) =>
+  create: (_projectId: string, body: CreateCanaryReleaseInputDto) =>
     httpClient
       .post<CanaryReleaseDto>(`/canary-releases`, body)
       .then((r) => r.data),
 
-  start: (projectId: string, canaryId: string) =>
+  start: (_projectId: string, canaryId: string) =>
     httpClient
       .post<CanaryReleaseDto>(`/canary-releases/${canaryId}/start`, {})
       .then((r) => r.data),
 
-  stop: (projectId: string, canaryId: string) =>
+  stop: (_projectId: string, canaryId: string) =>
     httpClient
       .post<CanaryReleaseDto>(`/canary-releases/${canaryId}/stop`, {})
       .then((r) => r.data),
 
-  resume: (projectId: string, canaryId: string) =>
+  resume: (_projectId: string, canaryId: string) =>
     httpClient
       .post<CanaryReleaseDto>(`/canary-releases/${canaryId}/resume`, {})
       .then((r) => r.data),
 
-  cancel: (projectId: string, canaryId: string) =>
+  cancel: (_projectId: string, canaryId: string) =>
     httpClient
       .post<CanaryReleaseDto>(`/canary-releases/${canaryId}/cancel`, {})
       .then((r) => r.data),
 
   updateTrafficRatio: (
-    projectId: string,
+    _projectId: string,
     canaryId: string,
     body: UpdateCanaryTrafficRatioInputDto,
   ) =>
@@ -77,7 +77,7 @@ export const canaryReleaseClient = {
       .then((r) => r.data),
 
   softDelete: (
-    projectId: string,
+    _projectId: string,
     canaryId: string,
     options?: { force?: boolean; reason?: string },
   ) =>
@@ -87,7 +87,7 @@ export const canaryReleaseClient = {
       })
       .then((r) => r.data),
 
-  listAnnotations: (projectId: string, canaryId: string, query?: CanaryAnnotationListQuery) =>
+  listAnnotations: (_projectId: string, canaryId: string, query?: CanaryAnnotationListQuery) =>
     httpClient
       .get<CanaryAnnotationListResponseDto>(
         `/canary-releases/${canaryId}/annotations`,
@@ -96,7 +96,7 @@ export const canaryReleaseClient = {
       .then((r) => r.data),
 
   claimAnnotations: (
-    projectId: string,
+    _projectId: string,
     canaryId: string,
     body: ClaimCanaryAnnotationsInputDto,
   ) =>
@@ -108,7 +108,7 @@ export const canaryReleaseClient = {
       .then((r) => r.data),
 
   submitAnnotation: (
-    projectId: string,
+    _projectId: string,
     canaryId: string,
     body: SubmitCanaryAnnotationInputDto,
   ) =>
@@ -120,7 +120,7 @@ export const canaryReleaseClient = {
       .then((r) => r.data),
 
   releaseAnnotation: (
-    projectId: string,
+    _projectId: string,
     canaryId: string,
     body: ReleaseCanaryAnnotationInputDto,
   ) =>

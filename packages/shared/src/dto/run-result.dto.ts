@@ -26,6 +26,9 @@ export type ReleaseRunResultVersionScopeDto = z.infer<typeof releaseRunResultVer
 export const runResultSortSchema = z.enum(['created_desc', 'latency_desc', 'tokens_desc']);
 export type RunResultSortDto = z.infer<typeof runResultSortSchema>;
 
+export const runResultExportFormatSchema = z.enum(['csv', 'jsonl']);
+export type RunResultExportFormatDto = z.infer<typeof runResultExportFormatSchema>;
+
 export const runResultDatasetFieldValueSchema = z.object({
   name: z.string(),
   role: datasetFieldSchemaRoleSchema,
@@ -127,6 +130,62 @@ export const runResultReleaseListQuerySchema = runResultListQuerySchema.extend({
   to: z.string().datetime().optional(),
 });
 export type RunResultReleaseListQueryDto = z.infer<typeof runResultReleaseListQuerySchema>;
+
+export const releaseRunResultCleanupFilterSchema = z.object({
+  sourceIds: uuidCsvSchema,
+  releaseVersionIds: uuidCsvSchema,
+  releaseVersionScope: releaseRunResultVersionScopeSchema.optional().default('exact'),
+  promptVersionIds: uuidCsvSchema,
+  lane: releaseLaneCsvSchema,
+  status: statusCsvSchema,
+  judgmentStatus: judgmentCsvSchema,
+  isCorrect: z
+    .union([z.boolean(), z.enum(['true', 'false'])])
+    .optional()
+    .transform((value) => {
+      if (value === undefined) return undefined;
+      return typeof value === 'boolean' ? value : value === 'true';
+    }),
+  search: z.string().trim().max(200).optional(),
+  externalId: z.string().trim().max(200).optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime(),
+});
+export interface ReleaseRunResultCleanupFilterDto {
+  sourceIds?: string[];
+  releaseVersionIds?: string[];
+  releaseVersionScope: ReleaseRunResultVersionScopeDto;
+  promptVersionIds?: string[];
+  lane?: ReleaseRunResultLaneDto[];
+  status?: RunResultStatusDto[];
+  judgmentStatus?: RunResultJudgmentStatusDto[];
+  isCorrect?: boolean;
+  search?: string;
+  externalId?: string;
+  from?: string;
+  to: string;
+}
+
+export const releaseRunResultCleanupInputSchema = releaseRunResultCleanupFilterSchema.extend({
+  confirmation: z.literal('delete_release_run_results'),
+});
+export interface ReleaseRunResultCleanupInputDto extends ReleaseRunResultCleanupFilterDto {
+  confirmation: 'delete_release_run_results';
+}
+
+export const releaseRunResultCleanupImpactSchema = z.object({
+  runResults: z.number().int().nonnegative(),
+  annotations: z.number().int().nonnegative(),
+  runResultRowBytes: z.number().int().nonnegative(),
+  annotationBytes: z.number().int().nonnegative(),
+  dbBytes: z.number().int().nonnegative(),
+  objectBytes: z.number().int().nonnegative(),
+  reclaimableObjectBytes: z.number().int().nonnegative(),
+  deferredObjectBytes: z.number().int().nonnegative(),
+  estimatedMatchedBytes: z.number().int().nonnegative(),
+  estimatedReclaimableBytes: z.number().int().nonnegative(),
+});
+export type ReleaseRunResultCleanupImpactDto = z.infer<typeof releaseRunResultCleanupImpactSchema>;
 
 export const runResultListItemSchema = z.object({
   id: z.string().uuid(),

@@ -80,10 +80,22 @@ export const createDatasetSchema = z
   });
 export type CreateDatasetDto = z.infer<typeof createDatasetSchema>;
 
-export const updateDatasetMetadataSchema = z.object({
-  name: z.string().trim().min(1).max(160),
-  description: z.string().trim().max(1000).optional().nullable(),
-});
+export const updateDatasetMetadataSchema = z
+  .object({
+    name: z.string().trim().min(1).max(160),
+    description: z.string().trim().max(1000).optional().nullable(),
+    fieldMappings: z.array(datasetFieldMappingSchema).min(1).max(200).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const expectedFields = value.fieldMappings?.filter((field) => field.role === 'expected') ?? [];
+    if (expectedFields.length > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['fieldMappings'],
+        message: 'dataset_expected_field_unique',
+      });
+    }
+  });
 export type UpdateDatasetMetadataDto = z.infer<typeof updateDatasetMetadataSchema>;
 
 export const datasetListItemSchema = z.object({

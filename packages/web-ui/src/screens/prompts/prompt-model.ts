@@ -1,6 +1,11 @@
 import {
   DEFAULT_PROMPT_LANGUAGE,
+  DEFAULT_PROMPT_JUDGMENT_DECISION_FIELD,
+  DEFAULT_PROMPT_JUDGMENT_EXPECTED_FIELD,
+  DEFAULT_PROMPT_JUDGMENT_OPERATOR,
+  normalizePromptJudgmentRules,
   type PromptDetailDto,
+  type PromptJudgmentRuleDto,
   type PromptJudgmentRulesDto,
   type PromptLanguageDto,
   type PromptListCustomLabelDto,
@@ -41,10 +46,11 @@ export const PROMPT_JUDGMENT_VALUE_SEPARATOR = ' 或 ';
 
 export interface PromptJudgmentRule {
   id: string;
-  field: string;
+  decisionField: string;
   operator: string;
-  value: string;
+  expectedField: string;
   description: string;
+  [key: string]: unknown;
 }
 
 export interface PromptVersion {
@@ -140,34 +146,65 @@ export function upsertJudgmentField(fields: PromptOutputField[], judgment: Promp
   return [judgment, ...others];
 }
 
+function toPromptJudgmentRule(rule: PromptJudgmentRuleDto, index: number): PromptJudgmentRule {
+  const { id, decisionField, expectedField, operator, description, ...extra } = rule;
+  return {
+    ...extra,
+    id: id ?? `rule-${index + 1}`,
+    decisionField,
+    operator,
+    expectedField,
+    description: description ?? '',
+  };
+}
+
 function toJudgmentRules(judgmentRules: PromptJudgmentRulesDto): PromptJudgmentRule[] {
-  if (!judgmentRules) return [];
+  const normalized = normalizePromptJudgmentRules(judgmentRules);
+  return (normalized?.rules ?? []).map(toPromptJudgmentRule);
+}
 
-  const rawRules = judgmentRules.rules;
-  if (Array.isArray(rawRules)) {
-    return rawRules
-      .filter((rule): rule is Record<string, unknown> => Boolean(rule) && typeof rule === 'object')
-      .map((rule, index) => ({
-        id: String(rule.id ?? `rule-${index + 1}`),
-        field: String(rule.field ?? ''),
-        operator: String(rule.operator ?? judgmentRules.mode ?? 'match'),
-        value: String(rule.value ?? rule.expected_field ?? ''),
-        description: String(rule.description ?? ''),
-      }))
-      .filter((rule) => rule.field.length > 0);
-  }
+export function serializeJudgmentRules(rules: PromptJudgmentRule[]): PromptJudgmentRulesDto {
+  return normalizePromptJudgmentRules({
+    rules: rules.map(({ id: _id, description, ...rule }) => ({
+      ...rule,
+      ...(description.trim().length > 0 ? { description: description.trim() } : {}),
+    })),
+  });
+}
 
-  const decisionField = judgmentRules.decision_field ?? judgmentRules.decisionField ?? 'label';
-  const expectedField = judgmentRules.expected_field ?? judgmentRules.expectedField ?? 'expected_output';
-  return [
-    {
-      id: 'rule-primary',
-      field: String(decisionField),
-      operator: String(judgmentRules.mode ?? 'exact_match'),
-      value: String(expectedField),
-      description: String(judgmentRules.description ?? ''),
-    },
-  ];
+export function syncJudgmentRulesWithBinding(
+  rules: PromptJudgmentRule[],
+  {
+    decisionField,
+    expectedField,
+  }: {
+    decisionField: string | null | undefined;
+    expectedField: string | null | undefined;
+  },
+): PromptJudgmentRule[] {
+  const nextDecisionField = decisionField?.trim() || DEFAULT_PROMPT_JUDGMENT_DECISION_FIELD;
+  const nextExpectedField = expectedField?.trim() || DEFAULT_PROMPT_JUDGMENT_EXPECTED_FIELD;
+  const sourceRules =
+    rules.length > 0
+      ? rules
+      : [
+          {
+            id: 'rule-primary',
+            decisionField: nextDecisionField,
+            expectedField: nextExpectedField,
+            operator: DEFAULT_PROMPT_JUDGMENT_OPERATOR,
+            description: '',
+          },
+        ];
+
+  return sourceRules.map((rule, index) => ({
+    ...rule,
+    id: rule.id || `rule-${index + 1}`,
+    decisionField: nextDecisionField,
+    expectedField: nextExpectedField,
+    operator: rule.operator?.trim() || DEFAULT_PROMPT_JUDGMENT_OPERATOR,
+    description: rule.description ?? '',
+  }));
 }
 
 function toPromptVersion(version: PromptVersionDto, versions: PromptVersionDto[]): PromptVersion {

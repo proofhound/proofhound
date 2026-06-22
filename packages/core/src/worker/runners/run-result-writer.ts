@@ -1,9 +1,9 @@
 import { Buffer } from 'node:buffer';
 import { sql } from 'drizzle-orm';
-import type { DbClient } from '@proofhound/db';
+import { DbClient } from '@proofhound/db';
 import type { LLMRunResultRecord, LLMRunResultWriter } from '@proofhound/llm-client';
 import { createLogger } from '@proofhound/logger';
-import type { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
+import { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 import { safeRecordUsageEvent, type UsageMeteringHook } from '../../server/common/contracts/usage-metering.hook';
 
 // ph_runs.run_results is monthly-partitioned by created_at, so UNIQUE(id) cannot live on that table.

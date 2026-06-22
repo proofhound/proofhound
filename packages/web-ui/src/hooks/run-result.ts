@@ -1,8 +1,24 @@
-import { runResultClient } from '@proofhound/api-client';
-import type { RunResultListQueryDto, RunResultReleaseListQueryDto } from '@proofhound/shared';
-import { useQuery } from '@tanstack/react-query';
+import { runResultClient, type RunResultTransferOptions } from '@proofhound/api-client';
+import type {
+  ReleaseRunResultCleanupFilterDto,
+  ReleaseRunResultCleanupInputDto,
+  RunResultExportFormatDto,
+  RunResultListQueryDto,
+  RunResultReleaseListQueryDto,
+} from '@proofhound/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 const RUN_RESULT_REFETCH_INTERVAL_MS = 5_000;
+
+interface DownloadExperimentRunResultsVariables extends RunResultTransferOptions {
+  format: RunResultExportFormatDto;
+  query: RunResultListQueryDto;
+}
+
+interface DownloadReleaseRunResultsVariables extends RunResultTransferOptions {
+  format: RunResultExportFormatDto;
+  query: RunResultReleaseListQueryDto;
+}
 
 export function useExperimentRunResults(projectId: string, experimentId: string, query: RunResultListQueryDto) {
   const serializedQuery = serializeQuery(query);
@@ -33,6 +49,37 @@ export function useRunResult(projectId: string, experimentId: string, runResultI
     queryKey: ['run-results', projectId, experimentId, 'detail', runResultId],
     queryFn: () => runResultClient.get(projectId, experimentId, runResultId as string),
     enabled: projectId.length > 0 && experimentId.length > 0 && Boolean(runResultId),
+  });
+}
+
+export function useDownloadExperimentRunResults(projectId: string, experimentId: string) {
+  return useMutation({
+    mutationFn: ({ format, query, onProgress }: DownloadExperimentRunResultsVariables) =>
+      runResultClient.downloadForExperiment(projectId, experimentId, format, query, { onProgress }),
+  });
+}
+
+export function useDownloadReleaseRunResults(projectId: string) {
+  return useMutation({
+    mutationFn: ({ format, query, onProgress }: DownloadReleaseRunResultsVariables) =>
+      runResultClient.downloadForRelease(projectId, format, query, { onProgress }),
+  });
+}
+
+export function useReleaseRunResultCleanupPreview(projectId: string) {
+  return useMutation({
+    mutationFn: (input: ReleaseRunResultCleanupFilterDto) => runResultClient.previewReleaseCleanup(projectId, input),
+  });
+}
+
+export function useReleaseRunResultCleanup(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ReleaseRunResultCleanupInputDto) => runResultClient.cleanupRelease(projectId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['run-results', projectId, 'releases'] });
+      void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
+    },
   });
 }
 

@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   DEFAULT_PROMPT_LANGUAGE,
+  normalizePromptJudgmentRules,
   promptVariableSchema,
   promptLanguageSchema,
   type CreatePromptDraftVersionDto,
@@ -148,7 +149,10 @@ export class PromptService {
       throw new ConflictException('prompt_version_frozen');
     }
 
-    await this.repo.updateDraftVersion(projectId, promptId, versionId, dto);
+    await this.repo.updateDraftVersion(projectId, promptId, versionId, {
+      ...dto,
+      judgmentRules: normalizePromptJudgmentRules(dto.judgmentRules),
+    });
 
     return this.getPrompt(projectId, promptId, actor);
   }
@@ -605,8 +609,7 @@ export class PromptService {
   }
 
   private toJudgmentRules(value: unknown): PromptJudgmentRulesDto {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    return value as Record<string, unknown>;
+    return normalizePromptJudgmentRules(value);
   }
 
   private buildLabelsByVersion(

@@ -5,7 +5,7 @@
  * Use `pnpm db:seed:dev` for local fixture data.
  */
 async function main(): Promise<void> {
-  console.log('ProofHound self-hosted seed: no platform users to create.');
+  console.warn('ProofHound self-hosted seed: no platform users to create.');
 }
 
 void main();

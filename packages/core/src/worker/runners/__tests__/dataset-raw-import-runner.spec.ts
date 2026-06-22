@@ -38,6 +38,7 @@ function fakeImport(overrides: Partial<DatasetImportRow> = {}): DatasetImportRow
     rawUploadExpiresAt: null,
     rawUploadCompletedAt: new Date('2026-06-20T00:00:00Z'),
     rawObjectRef: RAW_REF,
+    progress: { phase: overrides.status ?? 'queued' },
     declaredTotalRows: null,
     receivedRows: 0,
     jobId: `dataset-raw-import-${IMPORT_ID}`,
@@ -71,8 +72,11 @@ function buildRunner(
     getSampleDataForInference: vi
       .fn()
       .mockResolvedValue([{ sample_id: 'case-1', text: 'hello', expected_output: 'pass' }]),
+    markPromoting: vi.fn().mockResolvedValue(fakeImport({ status: 'importing', progress: { phase: 'finalizing' } })),
     promote: vi.fn().mockResolvedValue({ sampleCount: 1 }),
     markFailed: vi.fn().mockResolvedValue(undefined),
+    clearStaging: vi.fn().mockResolvedValue(undefined),
+    updateProgress: vi.fn().mockResolvedValue(undefined),
     ...overrides.repo,
   };
   const storage = {
@@ -115,6 +119,7 @@ describe('createDatasetRawImportRunner', () => {
 
     expect(result).toMatchObject({ importId: IMPORT_ID, status: 'completed', sampleCount: 1 });
     expect(repo.markParsing).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID);
+    expect(repo.markPromoting).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID);
     expect(repo.appendBatch).toHaveBeenCalledWith(
       IMPORT_ID,
       [
@@ -132,6 +137,11 @@ describe('createDatasetRawImportRunner', () => {
       { name: 'text', role: 'text', type: 'string' },
       { name: 'expected_output', role: 'expected_output', type: 'string' },
     ]);
+    await promoteArgs.onProgress({ phase: 'committing', committedRows: 1 });
+    expect(repo.updateProgress).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID, {
+      phase: 'committing',
+      committedRows: 1,
+    });
     expect(quotaPolicy.assertCanStore).toHaveBeenCalledWith(
       expect.objectContaining({ source: 'dataset_raw_import_batch' }),
     );
@@ -175,6 +185,7 @@ describe('createDatasetRawImportRunner', () => {
 
     expect(result.status).toBe('aborted');
     expect(repo.markFailed).not.toHaveBeenCalled();
+    expect(repo.clearStaging).toHaveBeenCalledWith(IMPORT_ID);
     expect(storage.deleteObjects).toHaveBeenCalledWith([RAW_REF]);
   });
 });

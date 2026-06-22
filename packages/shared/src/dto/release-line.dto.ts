@@ -266,6 +266,11 @@ export const updateReleaseLineInputRouteInputSchema = z.discriminatedUnion('lane
 ]);
 export type UpdateReleaseLineInputRouteInputDto = z.infer<typeof updateReleaseLineInputRouteInputSchema>;
 
+export const updateReleaseLineRetentionInputSchema = z.object({
+  retentionDays: z.number().int().positive().nullable(),
+});
+export type UpdateReleaseLineRetentionInputDto = z.infer<typeof updateReleaseLineRetentionInputSchema>;
+
 export const stopReleaseLineInputSchema = z.object({
   reason: z.string().min(1).max(2000),
 });

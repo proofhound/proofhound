@@ -24,6 +24,7 @@ import {
   type PromptLanguageDto,
   type PromptOutputSchemaDto,
   type PromptVariableDto,
+  readPromptJudgmentExpectedField,
 } from '@proofhound/shared';
 import type Redis from 'ioredis';
 import { ConnectorContextResolver } from '../../../server/common/contracts/connector-context.resolver';
@@ -452,20 +453,7 @@ function readExpectedOutput(
 }
 
 function readExpectedField(judgmentRules: unknown): string {
-  if (!judgmentRules || typeof judgmentRules !== 'object' || Array.isArray(judgmentRules)) return 'expected_output';
-  const record = judgmentRules as Record<string, unknown>;
-  const direct = record['expected_field'] ?? record['expectedField'];
-  if (typeof direct === 'string' && direct.trim().length > 0) return direct.trim();
-  const rules = record['rules'];
-  if (Array.isArray(rules)) {
-    for (const rule of rules) {
-      if (!rule || typeof rule !== 'object' || Array.isArray(rule)) continue;
-      const nested =
-        (rule as Record<string, unknown>)['expected_field'] ?? (rule as Record<string, unknown>)['expectedField'];
-      if (typeof nested === 'string' && nested.trim().length > 0) return nested.trim();
-    }
-  }
-  return 'expected_output';
+  return readPromptJudgmentExpectedField(judgmentRules);
 }
 
 function pickInference(runConfig: Record<string, unknown>): LlmJobPayload['inference'] {

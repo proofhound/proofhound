@@ -4,6 +4,7 @@ import { getJudgment, registerJudgment } from '../registry';
 import type { JudgmentContext, JudgmentOutcome } from '../types';
 import { containsStrategy, equalsStrategy, exactMatchStrategy } from './expected-output';
 import { enumMatchStrategy } from './enum-match';
+import { readJudgmentMode } from './rule-reader';
 import { thresholdStrategy } from './threshold';
 
 registerJudgment(exactMatchStrategy);
@@ -28,20 +29,8 @@ const CLASSIFICATION_MODE_ALIASES: Record<string, string> = {
   threshold: 'threshold',
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function readFirstRule(rules: Record<string, unknown>): Record<string, unknown> | null {
-  const rawRules = rules['rules'];
-  if (!Array.isArray(rawRules)) return null;
-  return rawRules.find((rule): rule is Record<string, unknown> => isRecord(rule)) ?? null;
-}
-
 function readMode(context: JudgmentContext): string {
-  const rules = (context.judgmentRules as Record<string, unknown> | null) ?? {};
-  const firstRule = readFirstRule(rules);
-  const rawMode = rules['mode'] ?? rules['operator'] ?? firstRule?.['operator'] ?? firstRule?.['mode'];
+  const rawMode = readJudgmentMode(context.judgmentRules);
   if (typeof rawMode !== 'string' || rawMode.trim().length === 0) return 'exact_match';
   return CLASSIFICATION_MODE_ALIASES[rawMode.trim().toLowerCase()] ?? 'exact_match';
 }

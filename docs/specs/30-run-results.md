@@ -23,6 +23,8 @@ failed_run_results / total_run_results
 
 Here `failed_run_results` is counted only under the run-result failure definition above; `incorrect` is a quality judgment result and is not equivalent to a run failure. When the model produces output normally but the output does not match the expected result, only the quality judgment is written — it is not counted in the failure count / failure rate. Downstream delivery success / failure belongs to the delivery-path metrics and must be named explicitly as downstream delivery metrics; do not reuse "failure rate" for the run failure rate definition.
 
+Run-result UIs must display the chain success state separately from the quality judgment. Chain success is `success` only when the whole call / parse / judgment chain completed; it is `failed` when any run-result failure condition above is true. The quality judgment stays binary (`correct` / `incorrect`) and does not use failure labels. For failed rows, the failure reason should expose both a short summary and a detailed error line suitable for troubleshooting.
+
 The run result status state machine has only `running` / `success` / `failed`. Failure forms such as `error`, `time_out`, and `rate_limit` are represented as error type / error detail under `status='failed'`; they are not separate run-result states.
 
 ## 2. List
@@ -64,6 +66,7 @@ The experiment dimension query is currently implemented:
 
 ```text
 GET /experiments/:experimentId/run-results
+GET /experiments/:experimentId/run-results/export?format=csv|jsonl
 GET /experiments/:experimentId/run-results/:runResultId
 ```
 
@@ -79,9 +82,12 @@ Pagination query parameters:
 
 Results are shown in descending order of creation time by default, i.e. the most recently written run results appear first.
 
+The export endpoint accepts the same filters and format `csv | jsonl`. It exports all matching rows, not only the current `page` / `pageSize`, and uses stable keyset pagination ordered by `(created_at ASC, id ASC)` so large experiment result sets can be streamed without loading them all into memory. Export rows include the full rendered prompt, input variables, raw response, and parsed output; offloaded fields are rehydrated through `RunResultPayloadReader`.
+
 MCP:
 
 - `run_result_list_for_experiment`
+- `run_result_export_for_experiment`
 - `run_result_get`
 
 The release dimension queries on `source='release' + source_id=release_line_events.id`; the lane is derived from the release event's `lane_type`.
@@ -90,6 +96,7 @@ The unified release detail page currently provides the release dimension list en
 
 ```text
 GET /run-results/releases
+GET /run-results/releases/export?format=csv|jsonl
 ```
 
 Pagination query parameters:
@@ -112,9 +119,12 @@ Pagination query parameters:
 
 Results are shown in descending order of creation time by default, i.e. the most recently written run results appear first.
 
+The release export endpoint accepts the same release filters and format `csv | jsonl`. It exports all matching rows across the selected source events / release versions / lanes / time window, not only the visible page, and streams batches ordered by `(created_at ASC, id ASC)`. Export rows include release version label, prompt version, model, lane, rendered prompt, input variables, raw response, parsed output, and engineering metrics; offloaded payload fields are rehydrated through `RunResultPayloadReader`.
+
 MCP:
 
 - `run_result_list_for_release`
+- `run_result_export_for_release`
 
 The release run results list must show the release version label, prompt version, and model name together; users should not see only a UUID.
 
@@ -148,6 +158,16 @@ Annotations are used for manual correction or to supplement the judgment:
 
 - Raw run results are retained permanently by default.
 - The webhook asynchronous `call_id` receipt is written to a short-lived Redis cache with a fixed expiry; it does not change the `run_results` retention policy.
+- Release run results add two operator-controlled cleanup paths:
+  - **Manual cleanup**: `POST /run-results/releases/cleanup-preview` estimates the rows and bytes matched by a release run-result filter, and `POST /run-results/releases/cleanup` deletes the same filter after an explicit confirmation token. Cleanup filters are intentionally date-bounded: `to` is required, while `from`, `sourceIds`, `releaseVersionIds`, `promptVersionIds`, lane, status, judgment, correctness, `externalId`, and search mirror the release list filters.
+  - **Retention rotation**: production release events may set `retention_days` (for example 7 or 30). The OSS server process runs a periodic sweeper that deletes that event's release run results whose `created_at` is older than `now - retention_days`. `NULL` means retain permanently. The sweep is guarded by a PostgreSQL advisory transaction lock, so horizontally scaled server replicas skip rather than competing for the same rotation pass.
+  - Deployments that provide their own scheduler set `RUN_RESULT_RETENTION_SWEEP_MODE=external` (or `disabled`) and call the same retention cleanup service path from their scheduler. This is the SaaS extension point for Supabase Cron / worker-driven rotation without forking run-result cleanup semantics.
+- Cleanup deletes dependent annotations first, then `run_results`. The preview returns an approximate storage impact:
+  - `dbBytes` is a rough DB-row estimate for matched run results plus annotations.
+  - `objectBytes` is the total byte size of object-storage shards referenced by the matched rows.
+  - `reclaimableObjectBytes` is the subset whose shard is no longer referenced by any remaining run result and can be deleted immediately.
+  - `deferredObjectBytes` is shared shard bytes that remain until all rows pointing at the shard are removed. Cleanup does not rewrite partially retained shards in place.
+- Release-line hard delete uses the same object-ref accounting: once it removes the line's release run results, it best-effort deletes only unreferenced `run_result_shard` objects.
 
 ## 8. Real-time behavior
 
@@ -170,6 +190,7 @@ A small row whose offloaded fields serialize under a configured byte threshold m
 
 - **List** serves preview-only: it stops selecting the four big fields and returns the index columns + `input_preview` / `output_preview` / `decision_output`. The list-item DTOs keep the big fields optional for backward compatibility; they are simply absent in list responses.
 - **Detail** and every **background business read** (optimization analysis/generate reuse, canary/release output mapping, webhook receipts, annotation detail, strategy analysis) go through one seam — `RunResultPayloadReader` (`readRenderedPrompt` / `readInputVariables` / `readRawResponse` / `readParsedOutput` + batch variants). The seam returns the inline value when present, otherwise reads the row's shard (by `payload_ref` + `rowIndex`) and returns the field. No read path touches a tiered field directly.
+- **Export** uses the same seam as detail. Experiment and release exports read rows by bounded keyset batches and rehydrate offloaded fields with `hydrateMany`, so CSV / JSONL output stays logically complete even after large payloads have moved to object storage.
 - Reading a shard is a cheap object-storage GET with no egress cost; a cache miss costs only a few tens of milliseconds, not a DB egress charge.
 
 ### 9.3 Write path: compaction-at-finalize

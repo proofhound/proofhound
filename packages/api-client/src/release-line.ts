@@ -11,6 +11,7 @@ import type {
   UnarchiveReleaseLineInputDto,
   UpdateReleaseLineInputRouteInputDto,
   UpdateReleaseLineOutputRouteInputDto,
+  UpdateReleaseLineRetentionInputDto,
   UpdateReleaseLineRunConfigInputDto,
   UpdateReleaseLineTrafficRatioInputDto,
 } from '@proofhound/shared';
@@ -87,5 +88,10 @@ export const releaseLineClient = {
   updateInputRoute: (_projectId: string, releaseLineId: string, body: UpdateReleaseLineInputRouteInputDto) =>
     httpClient
       .post<ReleaseLineDto>(`/release-lines/${releaseLineId}/input-route`, body)
+      .then((response) => response.data),
+
+  updateRetention: (_projectId: string, releaseLineId: string, body: UpdateReleaseLineRetentionInputDto) =>
+    httpClient
+      .post<ReleaseLineDto>(`/release-lines/${releaseLineId}/retention`, body)
       .then((response) => response.data),
 };

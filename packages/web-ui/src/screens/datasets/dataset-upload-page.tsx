@@ -7,6 +7,7 @@ import type {
   CreateDatasetDto,
   CreateDatasetImportDto,
   DatasetFieldRole,
+  DatasetImportStatusDto,
   DatasetImportSourceFormat,
   DatasetRawImportCapabilitiesDto,
 } from '@proofhound/shared';
@@ -40,7 +41,12 @@ import {
 import { Main } from '@proofhound/ui/layout';
 import { useCreateDataset } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { projectSampleRowsToBatches, runDatasetImport, runRawDatasetImport } from './dataset-import-runner';
+import {
+  projectSampleRowsToBatches,
+  runDatasetImport,
+  runRawDatasetImport,
+  type DatasetImportProgress,
+} from './dataset-import-runner';
 import { DatasetTransferProgressPanel, useDatasetTransferProgress } from './dataset-transfer-progress';
 import { RoleArrowLabel, RolePill } from './dataset-ui';
 import {
@@ -67,34 +73,83 @@ const ROLE_OPTIONS: Array<{ role: DatasetFieldRole; labelKey: TranslationKey }> 
   { role: 'metadata', labelKey: 'datasets.role.metadata' },
 ];
 
-const directoryInputProps = { webkitdirectory: '', directory: '' } as Record<string, string>;
-
-export const DATASET_IMAGE_SAMPLE_DOWNLOADS: Array<{
+export type DatasetImageSampleDownload = {
   labelKey: TranslationKey;
-  href: string;
   fileName: string;
-}> = [
+  mimeType: string;
+  content: string;
+  encoding?: 'base64';
+};
+
+const IMAGE_ZIP_RELATIVE_PATHS_BASE64 = [
+  'UEsDBBQAAAAAAAAAAAC417L5IAAAACAAAAANAAAAbWFuaWZlc3QuanNvbnsKICAiZmlsZSI6ICJkYXRhL2ltYWdlcy5jc3YiCn0K',
+  'UEsDBBQAAAAAAAAAAADVSiYxQQEAAEEBAAAPAAAAZGF0YS9pbWFnZXMuY3N2c2FtcGxlX2lkLHRleHQsaW1hZ2VfcGF0aCxp',
+  'bWFnZV9wYXRocyxleHBlY3RlZF9vdXRwdXQKemlwLTEsIkltYWdlcyBjYW4gYmUgcmVmZXJlbmNlZCBieSByZWxhdGl2ZSBw',
+  'YXRoIGluc2lkZSB0aGUgWklQIixpbWFnZXMvcmVkLnN2ZywiWyIiaW1hZ2VzL3JlZC5zdmciIiwiImltYWdlcy9ibHVlLnN2',
+  'ZyIiXSIscmVkLWJsdWUKemlwLTIsIlRoZSBwYXJzZXIgaW5saW5lcyBaSVAgaW1hZ2VzIGludG8gZGF0YSBVUkxzIGJlZm9y',
+  'ZSBpbXBvcnQiLGltYWdlcy9ibHVlLnN2ZywiWyIiaW1hZ2VzL2JsdWUuc3ZnIiIsIiJpbWFnZXMvcmVkLnN2ZyIiXSIsYmx1',
+  'ZS1yZWQKUEsDBBQAAAAAAAAAAADpvKld8AAAAPAAAAAOAAAAaW1hZ2VzL3JlZC5zdmc8c3ZnIHhtbG5zPSJodHRwOi8vd3d3',
+  'LnczLm9yZy8yMDAwL3N2ZyIgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3',
+  'aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgZmlsbD0iI2VmNDQ0NCIvPjx0ZXh0IHg9IjY0IiB5PSI3MiIgdGV4dC1hbmNob3I9',
+  'Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjIwIiBmaWxsPSJ3aGl0ZSI+cmVkPC90ZXh0Pjwvc3Zn',
+  'PgpQSwMEFAAAAAAAAAAAALFgrlrxAAAA8QAAAA8AAABpbWFnZXMvYmx1ZS5zdmc8c3ZnIHhtbG5zPSJodHRwOi8vd3d3Lncz',
+  'Lm9yZy8yMDAwL3N2ZyIgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0',
+  'aD0iMTI4IiBoZWlnaHQ9IjEyOCIgZmlsbD0iIzI1NjNlYiIvPjx0ZXh0IHg9IjY0IiB5PSI3MiIgdGV4dC1hbmNob3I9Im1p',
+  'ZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjIwIiBmaWxsPSJ3aGl0ZSI+Ymx1ZTwvdGV4dD48L3N2Zz4K',
+  'UEsBAhQAFAAAAAAAAAAAALjXsvkgAAAAIAAAAA0AAAAAAAAAAAAAAAAAAAAAAG1hbmlmZXN0Lmpzb25QSwECFAAUAAAAAAAA',
+  'AAAA1UomMUEBAABBAQAADwAAAAAAAAAAAAAAAABLAAAAZGF0YS9pbWFnZXMuY3N2UEsBAhQAFAAAAAAAAAAAAOm8qV3wAAAA',
+  '8AAAAA4AAAAAAAAAAAAAAAAAuQEAAGltYWdlcy9yZWQuc3ZnUEsBAhQAFAAAAAAAAAAAALFgrlrxAAAA8QAAAA8AAAAAAAAA',
+  'AAAAAAAA1QIAAGltYWdlcy9ibHVlLnN2Z1BLBQYAAAAABAAEAPEAAADzAwAAAAA=',
+].join('');
+
+export const DATASET_IMAGE_SAMPLE_DOWNLOADS: DatasetImageSampleDownload[] = [
   {
     labelKey: 'datasets.upload.imageSamples.urlFields',
-    href: '/examples/datasets/images/image-url-fields.csv',
     fileName: 'proofhound-image-url-fields.csv',
+    mimeType: 'text/csv;charset=utf-8',
+    content: [
+      'sample_id,text,front_image_url,back_image_url,expected_output',
+      'url-1,"Classify the object from two public image URLs","https://placehold.co/128x128/png?text=front","https://placehold.co/128x128/png?text=back","same-product"',
+      'url-2,"Use one or more columns as image fields","https://placehold.co/128x128/png?text=left","https://placehold.co/128x128/png?text=right","compare"',
+      '',
+    ].join('\n'),
   },
   {
     labelKey: 'datasets.upload.imageSamples.urlArray',
-    href: '/examples/datasets/images/image-url-array.csv',
     fileName: 'proofhound-image-url-array.csv',
+    mimeType: 'text/csv;charset=utf-8',
+    content: [
+      'sample_id,text,image_urls,expected_output',
+      'array-1,"A single CSV field can contain multiple image URLs","[""https://placehold.co/128x128/png?text=a"",""https://placehold.co/128x128/png?text=b&query=1,2""]","two-images"',
+      'array-2,"Keep the value as a valid JSON array string","[""https://placehold.co/128x128/png?text=front"",""https://placehold.co/128x128/png?text=back""]","paired"',
+      '',
+    ].join('\n'),
   },
   {
     labelKey: 'datasets.upload.imageSamples.base64',
-    href: '/examples/datasets/images/image-base64.jsonl',
     fileName: 'proofhound-image-base64.jsonl',
+    mimeType: 'application/x-ndjson;charset=utf-8',
+    content: [
+      '{"sample_id":"base64-1","text":"This sample stores the image as a data URL.","image_base64":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=","expected_output":"tiny-pixel"}',
+      '{"sample_id":"base64-2","text":"A single field may also hold an array of data URLs.","image_base64s":["data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=","data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="],"expected_output":"two-pixels"}',
+      '',
+    ].join('\n'),
   },
   {
     labelKey: 'datasets.upload.imageSamples.zip',
-    href: '/examples/datasets/images/image-zip-relative-paths.zip',
     fileName: 'proofhound-image-zip-relative-paths.zip',
+    mimeType: 'application/zip',
+    content: IMAGE_ZIP_RELATIVE_PATHS_BASE64,
+    encoding: 'base64',
   },
 ];
+
+export function getDatasetImageSampleDownloadHref(sample: DatasetImageSampleDownload) {
+  if (sample.encoding === 'base64') {
+    return `data:${sample.mimeType};base64,${sample.content}`;
+  }
+  return `data:${sample.mimeType},${encodeURIComponent(sample.content)}`;
+}
 
 function normalizeExpectedRoles(
   roles: Record<string, DatasetFieldRole>,
@@ -131,7 +186,7 @@ function Section({
 }: {
   number: number;
   title: string;
-  hint: string;
+  hint: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -140,7 +195,7 @@ function Section({
       <div className="flex items-center gap-2 border-b px-4 py-3">
         <SectionNumber value={number} />
         <h2 className="text-[14.5px] font-semibold">{title}</h2>
-        <span className="ml-auto text-[11.5px] text-muted-foreground">{hint}</span>
+        <div className="ml-auto flex items-center text-[11.5px] text-muted-foreground">{hint}</div>
       </div>
       <div className="p-4">{children}</div>
     </section>
@@ -166,74 +221,42 @@ function formatTemplate(template: string, values: Record<string, string | number
   );
 }
 
-function withRelativePath(file: File, relativePath: string) {
-  Object.defineProperty(file, 'proofhoundRelativePath', {
-    configurable: true,
-    value: relativePath,
+type DatasetServerProgressPhase = 'finalizing' | 'offloading' | 'committing';
+
+function isDatasetServerProgressPhase(phase: DatasetImportProgress['phase']): phase is DatasetServerProgressPhase {
+  return phase === 'finalizing' || phase === 'offloading' || phase === 'committing';
+}
+
+function importStatusPercent(status?: DatasetImportStatusDto): number | null {
+  return status?.progress.percentage ?? null;
+}
+
+function droppedSelectionContainsDirectory(dataTransfer: DataTransfer) {
+  return Array.from(dataTransfer.items).some((item) => {
+    const getEntry = (item as { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry;
+    return getEntry?.call(item)?.isDirectory === true;
   });
-  return file;
 }
 
-function readFileEntry(entry: FileSystemFileEntry, relativePath: string) {
-  return new Promise<File>((resolve, reject) => {
-    entry.file((file) => resolve(withRelativePath(file, relativePath)), reject);
-  });
-}
-
-async function readDirectoryEntry(entry: FileSystemDirectoryEntry, parentPath: string): Promise<File[]> {
-  const reader = entry.createReader();
-  const entries: FileSystemEntry[] = [];
-
-  for (;;) {
-    const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => {
-      reader.readEntries(resolve, reject);
-    });
-    if (batch.length === 0) break;
-    entries.push(...batch);
-  }
-
-  const nestedFiles = await Promise.all(entries.map((item) => readEntryFiles(item, `${parentPath}${entry.name}/`)));
-  return nestedFiles.flat();
-}
-
-function readEntryFiles(entry: FileSystemEntry, parentPath = ''): Promise<File[]> {
-  if (entry.isFile) {
-    return readFileEntry(entry as FileSystemFileEntry, `${parentPath}${entry.name}`).then((file) => [file]);
-  }
-
-  if (entry.isDirectory) {
-    return readDirectoryEntry(entry as FileSystemDirectoryEntry, parentPath);
-  }
-
-  return Promise.resolve([]);
-}
-
-async function getDroppedFiles(dataTransfer: DataTransfer) {
-  const entries = Array.from(dataTransfer.items)
-    .map((item) => {
-      const getEntry = (item as { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry;
-      return getEntry?.call(item) ?? null;
-    })
-    .filter((entry): entry is FileSystemEntry => entry !== null);
-
-  if (entries.length === 0) {
-    return Array.from(dataTransfer.files);
-  }
-
-  const files = await Promise.all(entries.map((entry) => readEntryFiles(entry)));
-  const flattenedFiles = files.flat();
-  return flattenedFiles.length > 0 ? flattenedFiles : Array.from(dataTransfer.files);
+function getDroppedFiles(dataTransfer: DataTransfer) {
+  return Array.from(dataTransfer.files);
 }
 
 function getParseErrorKey(parseError: string | null): TranslationKey {
   if (parseError === 'unsupported_file_type') return 'datasets.upload.unsupportedFile';
   if (parseError === 'large_requires_streaming_format') return 'datasets.upload.largeRequiresStreamingFormat';
   if (parseError === 'file_too_large') return 'datasets.upload.fileTooLarge';
+  if (parseError === 'single_file_only') return 'datasets.upload.singleFileOnly';
   return 'datasets.upload.parseFailed';
 }
 
 export function estimateUploadProgressBytes(sourceFile: CreateDatasetDto['uploadSource']) {
   return Math.max(1, sourceFile.fileSizeBytes);
+}
+
+export async function selectSingleDatasetUploadFile(files: File[]): Promise<File> {
+  if (files.length !== 1) throw new Error('single_file_only');
+  return selectDatasetFile(files);
 }
 
 // Files larger than this are not parsed whole on drop: only a head prefix is read for preview.
@@ -417,11 +440,12 @@ function ImageSampleDownloads() {
       <div className="mt-2 flex flex-wrap gap-2">
         {DATASET_IMAGE_SAMPLE_DOWNLOADS.map((sample) => {
           const label = t(sample.labelKey);
+          const href = getDatasetImageSampleDownloadHref(sample);
           return (
             <a
-              key={sample.href}
+              key={sample.fileName}
               className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-background px-2.5 text-[11.5px] font-medium text-foreground transition-colors hover:bg-muted"
-              href={sample.href}
+              href={href}
               download={sample.fileName}
               aria-label={formatTemplate(t('datasets.upload.imageSamples.downloadAria'), { name: label })}
               data-testid={`dataset-image-sample-${sample.fileName}`}
@@ -442,7 +466,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
   const createDataset = useCreateDataset(projectId);
   const uploadProgress = useDatasetTransferProgress();
   const fileInputId = useId();
-  const folderInputId = useId();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [datasetName, setDatasetName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -459,10 +483,9 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
   const abortOnLeaveRef = useRef(false);
   const leaveActionRef = useRef<(() => void) | null>(null);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
-  const [serverImportContinues, setServerImportContinues] = useState(false);
   const [activeImportPath, setActiveImportPath] = useState<DatasetUploadImportPath | null>(null);
 
-  // Before raw upload is finalized, leaving can cancel the transfer. After server-side import starts, it continues.
+  // Leaving before completion cancels the import and asks the server to clear any staged/raw data.
   useEffect(
     () => () => {
       if (abortOnLeaveRef.current) importAbortRef.current?.abort();
@@ -487,7 +510,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
 
   // While an import is in flight, guard every way to leave so the user is warned before losing it.
   useEffect(() => {
-    if (!isImporting || serverImportContinues) return undefined;
+    if (!isImporting) return undefined;
 
     // Tab close / refresh / hard URL change: only the browser's native prompt is possible here.
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -545,10 +568,12 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
       document.removeEventListener('click', onClickCapture, true);
       window.removeEventListener('popstate', onPopState);
     };
-  }, [isImporting, serverImportContinues, router, projectId]);
+  }, [isImporting, router, projectId]);
 
   const confirmLeaveImport = () => {
     setLeaveDialogOpen(false);
+    const importId = importIdRef.current;
+    if (importId) datasetImportClient.abortDatasetImportBeacon(projectId, importId);
     if (abortOnLeaveRef.current) importAbortRef.current?.abort();
     setIsImporting(false);
     const action = leaveActionRef.current;
@@ -582,17 +607,71 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     ? `${t('datasets.upload.importRows')} (${sampleCountLabel} · ${selectedColumns.length} ${t('datasets.detail.fields')})`
     : t('datasets.upload.importRows');
 
+  const showServerImportProgress = (
+    event: DatasetImportProgress,
+    fallbackTitleKey: TranslationKey,
+    fallbackDescriptionKey: TranslationKey,
+  ) => {
+    const serverProgress = event.status?.progress;
+    const phase = serverProgress?.phase ?? event.phase;
+    const percent = serverProgress?.percentage ?? (isDatasetServerProgressPhase(phase) ? 90 : null);
+
+    if (phase === 'offloading') {
+      const totalShards = serverProgress?.totalShards ?? null;
+      const completedShards = serverProgress?.completedShards ?? null;
+      uploadProgress.setMessage(
+        t('datasets.transfer.serverOffloadTitle'),
+        totalShards && completedShards !== null
+          ? formatTemplate(t('datasets.transfer.serverOffloadProgressDescription'), {
+              completed: completedShards,
+              total: totalShards,
+            })
+          : t('datasets.transfer.serverOffloadDescription'),
+        percent,
+      );
+      return;
+    }
+
+    if (phase === 'committing') {
+      const totalRows = serverProgress?.totalRows ?? null;
+      const committedRows = serverProgress?.committedRows ?? null;
+      uploadProgress.setMessage(
+        t('datasets.transfer.serverCommitTitle'),
+        totalRows && committedRows !== null && committedRows > 0
+          ? formatTemplate(t('datasets.transfer.serverCommitProgressDescription'), {
+              committed: committedRows,
+              total: totalRows,
+            })
+          : t('datasets.transfer.serverCommitDescription'),
+        serverProgress?.percentage ?? 98,
+      );
+      return;
+    }
+
+    uploadProgress.setMessage(
+      t(phase === 'finalizing' ? 'datasets.transfer.serverFinalizeTitle' : fallbackTitleKey),
+      t(phase === 'finalizing' ? 'datasets.transfer.serverFinalizeDescription' : fallbackDescriptionKey),
+      percent,
+    );
+  };
+
+  const resetFileSelection = (error: string | null = null) => {
+    setSelectedFile(null);
+    setParsedFile(null);
+    setParseError(error);
+    setIsLargeFile(false);
+    setFieldRoles({});
+    setSelectedFields({});
+    uploadProgress.reset();
+  };
+
   const updateFiles = async (files: File[]) => {
     if (files.length === 0) return;
 
-    setSelectedFile(null);
-    setParsedFile(null);
-    setParseError(null);
-    setIsLargeFile(false);
-    uploadProgress.reset();
+    resetFileSelection();
 
     try {
-      const file = await selectDatasetFile(files);
+      const file = await selectSingleDatasetUploadFile(files);
       if (file.size > getEffectiveUploadMaxBytes(rawImportCapabilities)) {
         throw new Error('file_too_large');
       }
@@ -616,9 +695,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
       setSelectedFields(Object.fromEntries(parsed.columns.map((column) => [column, true])));
       setDatasetName((current) => current || getDatasetNameFromFile(file.name));
     } catch (error) {
-      setParseError(error instanceof Error ? error.message : 'parse_failed');
-      setFieldRoles({});
-      setSelectedFields({});
+      resetFileSelection(error instanceof Error ? error.message : 'parse_failed');
     }
   };
 
@@ -630,7 +707,11 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
   const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setIsDragOver(false);
-    await updateFiles(await getDroppedFiles(event.dataTransfer));
+    if (droppedSelectionContainsDirectory(event.dataTransfer)) {
+      resetFileSelection('single_file_only');
+      return;
+    }
+    await updateFiles(getDroppedFiles(event.dataTransfer));
   };
 
   const importStreamingDataset = async (
@@ -651,7 +732,6 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     importAbortRef.current = controller;
     abortOnLeaveRef.current = true;
     setActiveImportPath('streaming');
-    setServerImportContinues(false);
     setIsImporting(true);
     uploadProgress.start(
       t('datasets.transfer.streamingUploadTitle'),
@@ -674,11 +754,12 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
         onCreated: (id) => {
           importIdRef.current = id;
         },
-        onProgress: ({ phase }) => {
-          if (phase === 'completing') {
-            uploadProgress.setMessage(
-              t('datasets.transfer.streamingCompleteTitle'),
-              t('datasets.transfer.streamingCompleteDescription'),
+        onProgress: (event) => {
+          if (event.phase === 'completing' || event.status) {
+            showServerImportProgress(
+              event,
+              'datasets.transfer.streamingCompleteTitle',
+              'datasets.transfer.streamingCompleteDescription',
             );
           }
         },
@@ -714,7 +795,6 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     importAbortRef.current = controller;
     abortOnLeaveRef.current = true;
     setActiveImportPath('raw');
-    setServerImportContinues(false);
     setIsImporting(true);
     uploadProgress.start(
       t('datasets.transfer.rawUploadTitle'),
@@ -736,25 +816,31 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
           uploadProgress.update({ loadedBytes: totalBytes, totalBytes });
           uploadProgress.setMessage(t('datasets.transfer.rawVerifyTitle'), t('datasets.transfer.rawVerifyDescription'));
         },
-        onProgress: ({ phase }) => {
-          if (phase === 'queued' || phase === 'parsing' || phase === 'importing') {
-            abortOnLeaveRef.current = false;
-            setServerImportContinues(true);
-          }
+        onProgress: (event) => {
+          const phase = event.status?.progress.phase ?? event.phase;
           if (phase === 'queued') {
             uploadProgress.setMessage(
               t('datasets.transfer.rawQueuedTitle'),
               t('datasets.transfer.rawQueuedDescription'),
+              importStatusPercent(event.status),
             );
           } else if (phase === 'parsing') {
             uploadProgress.setMessage(
               t('datasets.transfer.rawParsingTitle'),
               t('datasets.transfer.rawParsingDescription'),
+              importStatusPercent(event.status),
             );
           } else if (phase === 'importing') {
             uploadProgress.setMessage(
               t('datasets.transfer.rawImportingTitle'),
               t('datasets.transfer.rawImportingDescription'),
+              importStatusPercent(event.status),
+            );
+          } else if (isDatasetServerProgressPhase(phase)) {
+            showServerImportProgress(
+              event,
+              'datasets.transfer.serverFinalizeTitle',
+              'datasets.transfer.serverFinalizeDescription',
             );
           }
         },
@@ -768,7 +854,6 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
       importAbortRef.current = null;
       importIdRef.current = null;
       abortOnLeaveRef.current = false;
-      setServerImportContinues(false);
       setActiveImportPath(null);
     }
   };
@@ -794,7 +879,6 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     importAbortRef.current = controller;
     abortOnLeaveRef.current = true;
     setActiveImportPath('buffered');
-    setServerImportContinues(false);
     setIsImporting(true);
     uploadProgress.start(
       t('datasets.transfer.batchUploadTitle'),
@@ -811,17 +895,18 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
         onCreated: (id) => {
           importIdRef.current = id;
         },
-        onProgress: ({ phase, receivedRows }) => {
-          if (phase === 'completing') {
-            uploadProgress.setMessage(
-              t('datasets.transfer.batchCompleteTitle'),
-              t('datasets.transfer.batchCompleteDescription'),
-            );
-          }
+        onProgress: (event) => {
           uploadProgress.update({
-            loadedBytes: totalRows > 0 ? Math.round((estimatedBytes * receivedRows) / totalRows) : estimatedBytes,
+            loadedBytes: totalRows > 0 ? Math.round((estimatedBytes * event.receivedRows) / totalRows) : estimatedBytes,
             totalBytes: estimatedBytes,
           });
+          if (event.phase === 'completing' || event.status) {
+            showServerImportProgress(
+              event,
+              'datasets.transfer.batchCompleteTitle',
+              'datasets.transfer.batchCompleteDescription',
+            );
+          }
         },
       });
       uploadProgress.complete(estimatedBytes);
@@ -893,6 +978,11 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     }
   };
 
+  const openFilePicker = () => {
+    if (isImporting) return;
+    fileInputRef.current?.click();
+  };
+
   return (
     <Main className="gap-0 bg-muted/35 p-0">
       <div
@@ -929,20 +1019,16 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
             <div>
               <div className="font-medium">
                 {t(
-                  serverImportContinues
-                    ? 'datasets.upload.backgroundImportNoticeTitle'
-                    : activeImportPath === 'raw'
-                      ? 'datasets.upload.importingNoticeTitle'
-                      : 'datasets.upload.clientImportingNoticeTitle',
+                  activeImportPath === 'raw'
+                    ? 'datasets.upload.importingNoticeTitle'
+                    : 'datasets.upload.clientImportingNoticeTitle',
                 )}
               </div>
               <div className="mt-0.5 text-[12.5px]">
                 {t(
-                  serverImportContinues
-                    ? 'datasets.upload.backgroundImportNoticeBody'
-                    : activeImportPath === 'raw'
-                      ? 'datasets.upload.importingNoticeBody'
-                      : 'datasets.upload.clientImportingNoticeBody',
+                  activeImportPath === 'raw'
+                    ? 'datasets.upload.importingNoticeBody'
+                    : 'datasets.upload.clientImportingNoticeBody',
                 )}
               </div>
             </div>
@@ -952,13 +1038,31 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
         <DatasetTransferProgressPanel progress={uploadProgress.progress} className="mb-4" />
 
         <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-          <Section number={1} title={t('datasets.upload.file')} hint={t('datasets.upload.fileHint')}>
+          <Section
+            number={1}
+            title={t('datasets.upload.file')}
+            hint={
+              <div className="flex items-center gap-2">
+                <span className="font-mono">{t('datasets.upload.fileHint')}</span>
+                <UploadLimitInfoIcon rawMaxBytes={getEffectiveUploadMaxBytes(rawImportCapabilities)} />
+              </div>
+            }
+          >
             <div className="space-y-3">
               <div
                 className={cn(
-                  'block rounded-lg border border-dashed border-[var(--status-running-bd)] bg-[var(--status-running-bg)]/45 p-4 transition-colors hover:bg-[var(--status-running-bg)]/65',
+                  'block cursor-pointer rounded-lg border border-dashed border-[var(--status-running-bd)] bg-[var(--status-running-bg)]/45 p-4 transition-colors hover:bg-[var(--status-running-bg)]/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                   isDragOver && 'border-primary bg-primary/10',
                 )}
+                role="button"
+                tabIndex={0}
+                aria-label={selectedFile ? t('datasets.action.replaceFile') : t('datasets.upload.chooseFile')}
+                onClick={openFilePicker}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  openFilePicker();
+                }}
                 onDragEnter={(event) => {
                   event.preventDefault();
                   setIsDragOver(true);
@@ -969,18 +1073,11 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
               >
                 <input
                   id={fileInputId}
+                  ref={fileInputRef}
                   type="file"
                   accept={FORMAT_CHIPS.join(',')}
                   className="sr-only"
                   onChange={updateFileInput}
-                />
-                <input
-                  id={folderInputId}
-                  type="file"
-                  multiple
-                  className="sr-only"
-                  onChange={updateFileInput}
-                  {...directoryInputProps}
                 />
                 <div className="flex items-start gap-3">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[var(--status-running-bg)] text-[var(--status-running-fg)]">
@@ -1013,7 +1110,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
                       label={formatProgressLabel({ value: parsedFile ? 1 : 0, max: 1 })}
                       className="mt-2"
                     />
-                    <div className="mt-1.5 flex items-center justify-between gap-3">
+                    <div className="mt-1.5 flex items-center gap-3">
                       <span className="font-mono text-[10.5px] text-[var(--status-running-fg)]">
                         {parsedFile
                           ? t('datasets.upload.uploadReady')
@@ -1021,21 +1118,6 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
                             ? t('datasets.upload.dropHere')
                             : t('datasets.upload.waitingForFile')}
                       </span>
-                      <div className="flex items-center gap-2 text-[11.5px]">
-                        <label
-                          className="cursor-pointer text-muted-foreground hover:text-foreground"
-                          htmlFor={fileInputId}
-                        >
-                          {selectedFile ? t('datasets.action.replaceFile') : t('datasets.upload.browse')}
-                        </label>
-                        <span className="text-muted-foreground">·</span>
-                        <label
-                          className="cursor-pointer text-muted-foreground hover:text-foreground"
-                          htmlFor={folderInputId}
-                        >
-                          {t('datasets.upload.browseFolder')}
-                        </label>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -1048,20 +1130,6 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  {t('datasets.upload.supportedFormats')}
-                </span>
-                <UploadLimitInfoIcon rawMaxBytes={getEffectiveUploadMaxBytes(rawImportCapabilities)} />
-                {FORMAT_CHIPS.map((format) => (
-                  <span
-                    key={format}
-                    className="inline-flex rounded-[5px] border bg-muted px-2 py-0.5 font-mono text-[11px]"
-                  >
-                    {format}
-                  </span>
-                ))}
-              </div>
               <ImageSampleDownloads />
             </div>
           </Section>

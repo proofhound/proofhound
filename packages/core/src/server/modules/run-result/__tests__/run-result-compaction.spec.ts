@@ -6,7 +6,7 @@ import {
   planCompaction,
 } from '../run-result-compaction';
 import { type StoredObjectRef } from '../../../common/contracts/object-storage.provider';
-import { type RunResultPayloadRow, decodeShard, encodeShard } from '../run-result-payload';
+import { type RunResultPayloadRow, encodeShard } from '../run-result-payload';
 import { RunResultPayloadReader } from '../run-result-payload.reader';
 import { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
 

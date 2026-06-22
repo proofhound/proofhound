@@ -5,7 +5,9 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { createLogger } from '@proofhound/logger';
 import type { LlmJobPayload } from '@proofhound/orchestration-shared';
+import { readPromptJudgmentExpectedField } from '@proofhound/shared';
 import type {
+  DatasetFieldSchemaDto,
   ExperimentMetricsDto,
   PromptLanguageDto,
   PromptOutputSchemaDto,
@@ -15,7 +17,8 @@ import { and, asc, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 import { BullmqService } from '../../infrastructure/orchestration/bullmq.service';
-import { type DatasetSamplePayloadRef, DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
+import { DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
+import { type DatasetSamplePayloadRef } from '../dataset/dataset-sample-payload';
 import { RunResultCompactor } from '../run-result/run-result-compactor';
 import { RunResultService } from '../run-result/run-result.service';
 import { aggregateExperimentMetrics } from './experiment.aggregator';
@@ -50,12 +53,6 @@ export interface ExperimentPlan {
   batchSize: number;
   isFrozen: boolean;
   promptVersionExists: boolean;
-}
-
-interface RenderedPromptForPayload {
-  renderedPrompt: LlmJobPayload['renderedPrompt'];
-  inputVariables: Record<string, unknown>;
-  expectedOutput: unknown;
 }
 
 // DBOS SDK 4.x requires the host class of instance-method workflow / step to extend ConfiguredInstance,
@@ -318,7 +315,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
   private async enqueueBatchImpl(experimentId: string, sampleIds: string[], orgId?: string): Promise<string[]> {
     const renderContext = await this.loadRenderContext(experimentId);
     const samples = await this.loadSampleDataByIds(sampleIds);
-    const expectedField = readExpectedField(renderContext.judgmentRules);
+    const expectedField = readExpectedField(renderContext.judgmentRules, renderContext.expectedField);
     // Inside the step we call DBOS.workflowID to capture the current workflow id, and pass it along in the payload to the worker,
     // so that LLM call logs and ph_runs.run_results.dbos_workflow_id can be threaded by workflow (SPEC 05 §5.6)
     const dbosWorkflowId = DBOS.workflowID;
@@ -477,10 +474,12 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
         judgmentRules: promptVersions.judgmentRules,
         promptLanguage: promptVersions.promptLanguage,
         modelProviderId: models.providerModelId,
+        datasetFieldSchema: datasets.fieldSchema,
       })
       .from(experiments)
       .innerJoin(promptVersions, eq(promptVersions.id, experiments.promptVersionId))
       .innerJoin(models, eq(models.id, experiments.modelId))
+      .innerJoin(datasets, eq(datasets.id, experiments.datasetId))
       .where(eq(experiments.id, experimentId))
       .limit(1);
     const row = rows[0];
@@ -496,6 +495,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
       outputSchema: row.outputSchema as PromptOutputSchemaDto,
       judgmentRules: row.judgmentRules ?? null,
       promptLanguage: row.promptLanguage as PromptLanguageDto,
+      expectedField: readExpectedFieldFromDatasetSchema(row.datasetFieldSchema as DatasetFieldSchemaDto[] | null),
     };
   }
 
@@ -516,24 +516,12 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
   }
 }
 
-export function readExpectedField(rules: unknown): string {
-  if (rules && typeof rules === 'object') {
-    const record = rules as Record<string, unknown>;
-    const f = record['expected_field'] ?? record['expectedField'];
-    if (typeof f === 'string' && f.length > 0) return f;
-    const rawRules = record['rules'];
-    if (Array.isArray(rawRules)) {
-      for (const rule of rawRules) {
-        if (!rule || typeof rule !== 'object' || Array.isArray(rule)) continue;
-        const nested =
-          (rule as Record<string, unknown>)['expected_field'] ??
-          (rule as Record<string, unknown>)['expectedField'] ??
-          (rule as Record<string, unknown>)['value'];
-        if (typeof nested === 'string' && nested.length > 0) return nested;
-      }
-    }
-  }
-  return 'expected_output';
+function readExpectedFieldFromDatasetSchema(fieldSchema: DatasetFieldSchemaDto[] | null | undefined): string | undefined {
+  return fieldSchema?.find((field) => field.role === 'expected_output')?.name;
+}
+
+export function readExpectedField(rules: unknown, fallback = 'expected_output'): string {
+  return readPromptJudgmentExpectedField(rules, fallback);
 }
 
 function pickInference(runConfig: Record<string, unknown>): LlmJobPayload['inference'] {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatRunResultFailureReason,
+  formatRunResultFailureReasonParts,
+  getRunResultChainStatus,
   getRunResultJudgmentLabelKey,
   type RunResultLabelSource,
 } from './run-result-labels';
@@ -48,6 +50,14 @@ describe('run result labels', () => {
     expect(getRunResultJudgmentLabelKey(runResult({}))).toBe('experiments.runResult.judgment.incorrect');
   });
 
+  it('keeps chain success separate from judgment correctness', () => {
+    expect(getRunResultChainStatus(runResult({ judgmentStatus: 'incorrect', isCorrect: false }))).toBe('success');
+    expect(getRunResultChainStatus(runResult({ status: 'failed', isCorrect: false }))).toBe('failed');
+    expect(getRunResultChainStatus(runResult({ judgmentStatus: 'parse_error', isCorrect: false }))).toBe('failed');
+    expect(getRunResultChainStatus(runResult({ judgmentStatus: 'judge_error', isCorrect: false }))).toBe('failed');
+    expect(getRunResultChainStatus(runResult({ status: 'running' }))).toBe('running');
+  });
+
   it('routes parse and call failures to the failure reason label', () => {
     expect(formatRunResultFailureReason(runResult({ judgmentStatus: 'parse_error' }), t)).toBe(
       'experiments.runResult.judgment.parseError',
@@ -55,5 +65,25 @@ describe('run result labels', () => {
     expect(
       formatRunResultFailureReason(runResult({ status: 'failed', errorMessage: 'provider down' }), t),
     ).toBe('experiments.runResult.status.failed: provider down');
+  });
+
+  it('does not show a failure reason for normal incorrect judgments', () => {
+    expect(formatRunResultFailureReason(runResult({ judgmentStatus: 'incorrect', isCorrect: false }), t)).toBeNull();
+  });
+
+  it('formats failure reason as summary plus a detailed final stack line', () => {
+    expect(
+      formatRunResultFailureReasonParts(
+        runResult({
+          status: 'failed',
+          errorClass: 'ProviderError',
+          errorMessage: 'ProviderError: quota exceeded\n    at requestModel\n    at runSample',
+        }),
+        t,
+      ),
+    ).toEqual({
+      summary: 'experiments.runResult.status.failed',
+      detail: 'at runSample',
+    });
   });
 });

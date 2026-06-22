@@ -18,6 +18,7 @@ import type {
   DatasetFieldMappingDto,
   DatasetImportBatchDto,
   DatasetImportBatchResponseDto,
+  DatasetImportProgressPhase,
   DatasetRawImportCapabilitiesDto,
   DatasetImportSourceFormat,
   DatasetImportState,
@@ -26,15 +27,18 @@ import type {
 } from '@proofhound/shared';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
-import { ObjectStorageProvider, type StoredObjectRef } from '../../common/contracts/object-storage.provider';
+import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
+import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { BullmqService } from '../../infrastructure/orchestration';
 import { buildDatasetFieldSchema } from './dataset-field-schema.util';
+import { DatasetImportRepository } from './dataset-import.repository';
 import {
+  DatasetImportAbortedError,
   DatasetImportEmptyError,
-  DatasetImportRepository,
   DatasetNameTakenError,
+  type DatasetImportProgressPatch,
   type DatasetImportRow,
 } from './dataset-import.repository';
 import { DatasetService } from './dataset.service';
@@ -288,8 +292,9 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
     await this.getWritableProject(projectId, actor);
     const row = await this.repo.findImportById(projectId, importId);
     if (!row || row.status === 'completed') return;
-    const aborted = await this.repo.markAborted(projectId, importId);
-    await this.cleanupRawImportResources(aborted ?? row);
+    const aborted = await this.repo.markAborted(projectId, importId, { clearStaging: !isPromotionPhase(row.progress) });
+    if (!aborted) return;
+    await this.cleanupRawImportResources(aborted);
   }
 
   async getImport(projectId: string, importId: string, actor: CurrentUserPayload): Promise<DatasetImportStatusDto> {
@@ -311,8 +316,19 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
         await this.storage.sweepPendingUploads(threshold.toISOString()).catch(() => undefined);
         return;
       }
-      await Promise.all(staleImports.map((row) => this.repo.markAborted(row.projectId, row.id)));
-      await Promise.all(staleImports.map((row) => this.cleanupRawImportResources(row)));
+      const abortedRows = (
+        await Promise.all(
+          staleImports.map(async (row) => {
+            if (row.status === 'aborted') {
+              await this.repo.clearStaging(row.id);
+              await this.repo.updateProgress(row.projectId, row.id, { cleanupPending: null });
+              return row;
+            }
+            return this.repo.markAborted(row.projectId, row.id);
+          }),
+        )
+      ).filter((row): row is DatasetImportRow => row !== null);
+      await Promise.all(abortedRows.map((row) => this.cleanupRawImportResources(row)));
       const pendingUploads = await this.storage.sweepPendingUploads(threshold.toISOString()).catch(() => 0);
       this.logger.info({ aborted: ids.length, pendingUploads }, 'dataset_import_sweep_reaped');
     } catch (error) {
@@ -381,34 +397,74 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
     if (!['uploading', 'importing'].includes(session.status)) {
       return this.toImportItem(session);
     }
+    const promoting = await this.repo.markPromoting(projectId, session.id);
+    if (!promoting) {
+      const latest = await this.repo.findImportById(projectId, session.id);
+      if (latest) return this.toImportItem(latest);
+      throw new NotFoundException(`Dataset import ${session.id} not found`);
+    }
     try {
-      const sampleRows = await this.repo.getSampleDataForInference(session.id, TYPE_INFERENCE_SAMPLE_LIMIT);
-      const fieldSchema = buildDatasetFieldSchema(this.toFieldMappings(session), sampleRows);
+      const sampleRows = await this.repo.getSampleDataForInference(promoting.id, TYPE_INFERENCE_SAMPLE_LIMIT);
+      const fieldSchema = buildDatasetFieldSchema(this.toFieldMappings(promoting), sampleRows);
       const hasImages = fieldSchema.some((field) => IMAGE_ROLES.has(field.role));
       const datasetId = randomUUID();
       const { sampleCount } = await this.repo.promote({
-        importId: session.id,
+        importId: promoting.id,
         projectId,
         actorUserId: actor.sub,
         datasetId,
-        name: session.name,
-        description: session.description,
+        name: promoting.name,
+        description: promoting.description,
         fieldSchema,
         hasImages,
+        onProgress: (progress) => this.repo.updateProgress(projectId, promoting.id, progress),
       });
       await this.datasetService.recordDatasetImportCompleted({
         projectId,
         datasetId,
-        importId: session.id,
+        importId: promoting.id,
         actorId: actor.sub,
         sampleCount,
       });
-      this.logger.info({ importId: session.id, datasetId, sampleCount }, 'dataset_import_completed');
-      const row = await this.repo.findImportById(projectId, session.id);
-      return this.toImportItem(row ?? { ...session, datasetId, status: 'completed', receivedRows: sampleCount });
+      this.logger.info({ importId: promoting.id, datasetId, sampleCount }, 'dataset_import_completed');
+      const row = await this.repo.findImportById(projectId, promoting.id);
+      return this.toImportItem(
+        row ?? {
+          ...promoting,
+          datasetId,
+          status: 'completed',
+          receivedRows: sampleCount,
+          progress: { phase: 'completed', committedRows: sampleCount },
+        },
+      );
     } catch (error) {
-      if (error instanceof DatasetImportEmptyError) throw new BadRequestException('dataset_import_empty');
-      if (error instanceof DatasetNameTakenError) throw new ConflictException('dataset_name_taken');
+      if (error instanceof DatasetImportAbortedError) {
+        await this.repo.clearStaging(promoting.id);
+        await this.cleanupRawImportResources(promoting);
+        const latest = await this.repo.findImportById(projectId, promoting.id);
+        return this.toImportItem(
+          latest ?? {
+            ...promoting,
+            status: 'aborted',
+            progress: { phase: 'aborted' },
+            abortedAt: new Date(),
+          },
+        );
+      }
+
+      const failure =
+        error instanceof DatasetImportEmptyError
+          ? { code: 'dataset_import_empty', response: new BadRequestException('dataset_import_empty') }
+          : error instanceof DatasetNameTakenError
+            ? { code: 'dataset_name_taken', response: new ConflictException('dataset_name_taken') }
+            : null;
+      await this.repo.markFailed(
+        projectId,
+        promoting.id,
+        failure?.code ?? 'dataset_import_complete_failed',
+        error instanceof Error ? error.message : String(error),
+      );
+      if (failure) throw failure.response;
       throw error;
     }
   }
@@ -496,8 +552,8 @@ function utf8JsonBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value ?? null), 'utf8');
 }
 
-function nonnegativeInteger(value: number | undefined): number {
-  return Number.isFinite(value) ? Math.max(0, Math.trunc(value ?? 0)) : 0;
+function nonnegativeInteger(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
 }
 
 function isoOrNull(value: Date | null): string | null {
@@ -505,30 +561,94 @@ function isoOrNull(value: Date | null): string | null {
 }
 
 function buildImportProgress(row: DatasetImportRow, state: DatasetImportState) {
+  const storedProgress = readImportProgress(row.progress);
   const totalBytes = nonnegativeInteger(row.fileSizeBytes);
   const uploadedBytes =
     row.rawObjectRef?.bytes ??
     (['uploaded', 'queued', 'parsing', 'importing', 'completed'].includes(state) ? totalBytes : null);
   const totalRows = row.declaredTotalRows;
   const parsedRows = nonnegativeInteger(row.receivedRows);
-  const importedRows = state === 'completed' ? parsedRows : 0;
+  const committedRows = nonnegativeInteger(storedProgress.committedRows);
+  const importedRows = state === 'completed' ? Math.max(parsedRows, committedRows) : committedRows;
+  const phase = resolveImportProgressPhase(storedProgress.phase, state);
+  const totalShards = nullableNonnegativeInteger(storedProgress.totalShards);
+  const completedShards = nullableNonnegativeInteger(storedProgress.completedShards);
 
-  let percentage: number | null = null;
+  let percentage: number | null = progressPercentage({ phase, totalShards, completedShards });
   if (state === 'completed') {
     percentage = 100;
-  } else if (totalRows && totalRows > 0) {
+  } else if (percentage === null && totalRows && totalRows > 0) {
     percentage = Math.min(99, Math.round((parsedRows / totalRows) * 100));
-  } else if (uploadedBytes !== null && totalBytes > 0) {
+  } else if (percentage === null && uploadedBytes !== null && totalBytes > 0) {
     percentage = Math.min(75, Math.round((uploadedBytes / totalBytes) * 75));
   }
 
   return {
     state,
+    phase,
     uploadedBytes,
     parsedRows,
     importedRows,
     totalRows,
     totalBytes,
+    totalShards,
+    completedShards,
+    committedRows,
     percentage,
   };
+}
+
+function readImportProgress(progress: unknown): Partial<DatasetImportProgressPatch> {
+  return progress !== null && typeof progress === 'object' && !Array.isArray(progress)
+    ? (progress as Partial<DatasetImportProgressPatch>)
+    : {};
+}
+
+function isPromotionPhase(progress: unknown): boolean {
+  const phase = readImportProgress(progress).phase;
+  return phase === 'finalizing' || phase === 'offloading' || phase === 'committing';
+}
+
+function resolveImportProgressPhase(
+  phase: Partial<DatasetImportProgressPatch>['phase'],
+  state: DatasetImportState,
+): DatasetImportProgressPhase {
+  return isImportProgressPhase(phase) ? phase : state;
+}
+
+function isImportProgressPhase(value: unknown): value is DatasetImportProgressPhase {
+  return (
+    value === 'created' ||
+    value === 'uploading' ||
+    value === 'uploaded' ||
+    value === 'queued' ||
+    value === 'parsing' ||
+    value === 'importing' ||
+    value === 'finalizing' ||
+    value === 'offloading' ||
+    value === 'committing' ||
+    value === 'completed' ||
+    value === 'failed' ||
+    value === 'aborted'
+  );
+}
+
+function nullableNonnegativeInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : null;
+}
+
+function progressPercentage({
+  phase,
+  totalShards,
+  completedShards,
+}: {
+  phase: DatasetImportProgressPhase;
+  totalShards: number | null;
+  completedShards: number | null;
+}): number | null {
+  if (phase === 'finalizing') return 90;
+  if (phase === 'committing') return 98;
+  if (phase !== 'offloading') return null;
+  if (!totalShards || totalShards <= 0 || completedShards === null) return 90;
+  return Math.min(98, Math.max(90, 90 + Math.floor((completedShards / totalShards) * 8)));
 }

@@ -40,5 +40,12 @@ export default [
       ],
     },
   },
+  {
+    files: ['packages/core/src/**/*.ts'],
+    rules: {
+      // Nest's emitDecoratorMetadata uses constructor parameter classes as runtime DI tokens.
+      '@typescript-eslint/consistent-type-imports': 'off',
+    },
+  },
   prettier,
 ];

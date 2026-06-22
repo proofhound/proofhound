@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { RunResultCompactor } from '../run-result-compactor';
+import type { RunResultCompactor } from '../run-result-compactor';
 import { RunResultCompactionSweeper } from '../run-result-compaction-sweeper';
 
 function sweeperWith(compactPending: () => Promise<{ groups: number; compactedRows: number }>) {

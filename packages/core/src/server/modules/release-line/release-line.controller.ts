@@ -8,6 +8,7 @@ import {
   unarchiveReleaseLineInputSchema,
   updateReleaseLineInputRouteInputSchema,
   updateReleaseLineOutputRouteInputSchema,
+  updateReleaseLineRetentionInputSchema,
   updateReleaseLineRunConfigInputSchema,
   updateReleaseLineTrafficRatioInputSchema,
 } from '@proofhound/shared';
@@ -197,6 +198,18 @@ export class ReleaseLineController {
     const parse = updateReleaseLineInputRouteInputSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
     return this.service.updateInputRoute(project.projectId, this.parseUuid(releaseLineId), parse.data, actor);
+  }
+
+  @Post(':releaseLineId/retention')
+  async updateRetention(
+    @Param('releaseLineId') releaseLineId: string,
+    @Body() rawBody: unknown,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    const parse = updateReleaseLineRetentionInputSchema.safeParse(rawBody);
+    if (!parse.success) throw new BadRequestException(parse.error.issues);
+    return this.service.updateRetention(project.projectId, this.parseUuid(releaseLineId), parse.data, actor);
   }
 
   private parseUuid(value: string): string {
