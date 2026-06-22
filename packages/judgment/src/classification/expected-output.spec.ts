@@ -18,6 +18,11 @@ describe('exactMatchStrategy', () => {
     expect(out).toEqual({ decisionOutput: 'Negative', isCorrect: false, judgmentStatus: 'incorrect' });
   });
 
+  it('treats a parsed mismatch as normal incorrect instead of a run failure', () => {
+    const out = exactMatchStrategy.evaluate({ label: 'bad' }, { ...baseContext, expectedOutput: 'good' });
+    expect(out).toEqual({ decisionOutput: 'bad', isCorrect: false, judgmentStatus: 'incorrect' });
+  });
+
   it('returns parse_error when decision field missing', () => {
     const out = exactMatchStrategy.evaluate({ other: 'positive' }, baseContext);
     expect(out.judgmentStatus).toBe('parse_error');
