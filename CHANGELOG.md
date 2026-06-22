@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.17](https://github.com/proofhound/proofhound/compare/v0.1.16...v0.1.17) (2026-06-22)
+
+
+### Bug Fixes
+
+* **experiments:** stop queued llm jobs on stop ([7bef7fb](https://github.com/proofhound/proofhound/commit/7bef7fbb435f6a9e19006610c8e536334c28e72c))
+
 ## [0.1.16](https://github.com/proofhound/proofhound/compare/v0.1.15...v0.1.16) (2026-06-21)
 
 
