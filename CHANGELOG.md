@@ -1,5 +1,26 @@
 # proofhound
 
+## [0.1.17](https://github.com/proofhound/proofhound/compare/v0.1.16...v0.1.17) (2026-06-22)
+
+
+### Bug Fixes
+
+* **experiments:** stop queued llm jobs on stop ([7bef7fb](https://github.com/proofhound/proofhound/commit/7bef7fbb435f6a9e19006610c8e536334c28e72c))
+
+## [0.1.16](https://github.com/proofhound/proofhound/compare/v0.1.15...v0.1.16) (2026-06-21)
+
+
+### Bug Fixes
+
+* **datasets:** restore batch-only oss imports ([332c3d9](https://github.com/proofhound/proofhound/commit/332c3d987f6b90bc86f111a1f0043f6769e45c05))
+
+## [0.1.15](https://github.com/proofhound/proofhound/compare/v0.1.14...v0.1.15) (2026-06-20)
+
+
+### Features
+
+* **datasets:** add async raw imports ([0968db5](https://github.com/proofhound/proofhound/commit/0968db5db6033ec97415a58ea0c58931b825e551))
+
 ## [0.1.14](https://github.com/proofhound/proofhound/compare/v0.1.13...v0.1.14) (2026-06-20)
 
 

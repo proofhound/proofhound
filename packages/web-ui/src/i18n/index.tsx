@@ -2106,6 +2106,7 @@ const dictionaries = {
     'datasets.upload.largeRequiresStreamingFormat':
       '超过有界解析阈值的 JSON 数组和 ZIP 暂不支持导入；请拆分后上传，或改用 CSV / TSV / JSONL。',
     'datasets.upload.fileTooLarge': '文件超过当前上传上限，请拆分后上传。',
+    'datasets.upload.zipFileTooLarge': 'ZIP 文件超过当前 {zipLimit} 上限，请拆分后上传。',
     'datasets.upload.imageSamples.title': '图片样例数据',
     'datasets.upload.imageSamples.hint': '下载不同图片字段写法的最小样例。',
     'datasets.upload.imageSamples.urlFields': 'URL 多字段',
@@ -5417,6 +5418,7 @@ const dictionaries = {
     'datasets.upload.largeRequiresStreamingFormat':
       'JSON arrays and ZIP files above the bounded parser threshold are not importable yet. Split them, or use CSV / TSV / JSONL.',
     'datasets.upload.fileTooLarge': 'This file exceeds the current upload limit. Split it before uploading.',
+    'datasets.upload.zipFileTooLarge': 'This ZIP exceeds the current {zipLimit} limit. Split it before uploading.',
     'datasets.upload.imageSamples.title': 'Image sample datasets',
     'datasets.upload.imageSamples.hint': 'Download minimal examples for each image-field shape.',
     'datasets.upload.imageSamples.urlFields': 'URL fields',

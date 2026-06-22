@@ -7,7 +7,7 @@ import { SERVER_URL } from './support/api';
 // server + isolated e2e database running (e.g. `pnpm dev:e2e`).
 const fixturePath = resolve('e2e/fixtures/dataset-smoke.jsonl');
 // The visually-hidden file input (the folder input has no `accept`).
-const FILE_INPUT = 'input[accept=".csv,.tsv,.jsonl,.json,.zip"]';
+const FILE_INPUT = 'input[accept=".csv,.tsv,.jsonl,.zip"]';
 const STREAMING_THRESHOLD_BYTES = 10 * 1024 * 1024;
 
 test('uploads a JSONL dataset and browses its server-paginated detail', async ({ page }) => {
@@ -45,13 +45,26 @@ test('uploads a JSONL dataset and browses its server-paginated detail', async ({
     const importButton = page.getByRole('button', { name: /Import/ });
     await expect(importButton).toBeEnabled();
 
-    const createResponse = page.waitForResponse(
-      (response) => response.request().method() === 'POST' && response.url().endsWith('/datasets'),
+    const createImportResponse = page.waitForResponse(
+      (response) => response.request().method() === 'POST' && response.url().endsWith('/dataset-imports'),
+    );
+    const firstBatchResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && /\/dataset-imports\/[^/]+\/batch$/u.test(response.url()),
+    );
+    const completeResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && /\/dataset-imports\/[^/]+\/complete$/u.test(response.url()),
     );
     await importButton.click();
-    const created = await createResponse;
+    const created = await createImportResponse;
     expect(created.status()).toBe(201);
-    datasetId = ((await created.json()) as { dataset: { id: string } }).dataset.id;
+    const firstBatch = await firstBatchResponse;
+    expect(firstBatch.status()).toBe(201);
+    const completed = await completeResponse;
+    expect(completed.status()).toBe(201);
+    datasetId = ((await completed.json()) as { datasetId: string | null }).datasetId ?? '';
+    expect(datasetId).not.toBe('');
 
     // Lands back on the list with the new dataset visible.
     await page.waitForURL('**/datasets');
@@ -81,13 +94,6 @@ test('uploads a JSONL dataset and browses its server-paginated detail', async ({
 });
 
 test.describe('large delimited dataset upload', () => {
-  test('reports raw upload unavailable with the OSS default object storage provider', async ({ request }) => {
-    const response = await request.get(`${SERVER_URL}/dataset-imports/raw/capabilities`);
-
-    expect(response.ok()).toBe(true);
-    await expect(response.json()).resolves.toEqual({ supported: false, maxBytes: 2_147_483_648 });
-  });
-
   for (const { format, delimiter } of [
     { format: 'csv' as const, delimiter: ',' },
     { format: 'tsv' as const, delimiter: '\t' },
@@ -114,7 +120,7 @@ test.describe('large delimited dataset upload', () => {
         await page.getByPlaceholder('risk-eval-v4').fill(name);
 
         const importButton = page.getByRole('button', { name: /Import/ });
-        await expect(importButton).toContainText('Large file · sample count tallied while importing');
+        await expect(importButton).toContainText('Sample count tallied while importing');
         await expect(importButton).toBeEnabled();
 
         const createImportResponse = page.waitForResponse(

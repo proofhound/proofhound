@@ -5,7 +5,12 @@ import {
   modelIdParamSchema,
   projectModelListItemSchema,
 } from './model.dto';
-import { createDatasetSchema } from './dataset.dto';
+import {
+  createDatasetSchema,
+  datasetFieldMappingSchema,
+  datasetIdParamSchema,
+  datasetUploadSourceSchema,
+} from './dataset.dto';
 import { DEFAULT_PROMPT_LANGUAGE, promptLanguageSchema } from './prompt.dto';
 import {
   optimizationLoopLimitsSchema,
@@ -63,6 +68,18 @@ export type QuickStartModelOptionsResponseDto = z.infer<typeof quickStartModelOp
 export const probeQuickStartDraftModelSchema = createProjectModelSchema;
 export type ProbeQuickStartDraftModelDto = z.infer<typeof probeQuickStartDraftModelSchema>;
 
+export const importedQuickStartDatasetSchema = z.object({
+  kind: z.literal('imported'),
+  datasetId: datasetIdParamSchema,
+  name: z.string().trim().min(1).max(160),
+  uploadSource: datasetUploadSourceSchema,
+  fieldMappings: z.array(datasetFieldMappingSchema).min(1).max(200),
+});
+export type ImportedQuickStartDatasetDto = z.infer<typeof importedQuickStartDatasetSchema>;
+
+export const quickStartDatasetSchema = z.union([importedQuickStartDatasetSchema, createDatasetSchema]);
+export type QuickStartDatasetDto = z.infer<typeof quickStartDatasetSchema>;
+
 export const createQuickStartSchema = z
   .object({
     projectName: z.string().trim().min(1).max(120).optional(),
@@ -76,7 +93,7 @@ export const createQuickStartSchema = z
     optimizationName: z.string().trim().min(1).max(160).optional(),
     taskDescription: z.string().trim().min(1).max(200),
     promptLanguage: promptLanguageSchema.default(DEFAULT_PROMPT_LANGUAGE),
-    dataset: createDatasetSchema,
+    dataset: quickStartDatasetSchema,
     experimentModel: quickStartModelRefSchema,
     analysisModel: quickStartModelRefSchema,
     goals: z

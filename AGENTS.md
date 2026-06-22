@@ -67,6 +67,23 @@ Common commands (pnpm@10 + turbo orchestration):
 - After creating a worktree, before working in it: (1) link local secrets / notes from the primary worktree so the new tree can boot and keep local docs available — e.g. `ln -s ../../.env worktrees/<name>/.env` and `mkdir -p worktrees/<name>/docs && ln -s ../../../docs/notes worktrees/<name>/docs/notes` when those sources exist; (2) build its own CodeGraph index with `cd worktrees/<name> && codegraph init -i` (`.codegraph` state is gitignored and per-worktree, so the index does not carry over).
 - Keep the VS Code multi-root workspace in step with the live worktrees. The single workspace file lives at the main checkout's `.vscode/proofhound.code-workspace` (under the gitignored `.vscode/`, so it is per-machine and never committed; its `folders` paths are relative to `.vscode/`). When you **add** a worktree, append `{ "path": "../worktrees/<name>" }` to its `folders` array — create the file if it is missing, always keeping `{ "path": ".." }` (the main checkout) as the first entry, e.g. `{ "folders": [{ "path": ".." }, { "path": "../worktrees/<name>" }], "settings": {} }`. When you **remove** a worktree, delete the matching `folders` entry.
 
+### Local SaaS validation before package release
+
+When an OSS change must be verified in the SaaS repo before a formal npm release, keep the OSS/SaaS boundary intact by packing this worktree and letting SaaS consume the tarballs. Do not publish a throwaway npm version just for feedback, and do not ask SaaS to import files from this checkout.
+
+From the OSS branch worktree:
+
+```bash
+OSS_PACK_DIR="${TMPDIR:-/tmp}/proofhound-oss-packs"
+pnpm build
+pnpm packages:pack "$OSS_PACK_DIR"
+pnpm packages:pack:check
+```
+
+Then in the SaaS `worktrees/dev` checkout, temporarily point `pnpm.overrides` for the needed `@proofhound/*` packages at the generated `file:$OSS_PACK_DIR/proofhound-<package>-<version>.tgz` tarballs, run `pnpm install`, and execute the SaaS checks or manual flow being debugged.
+
+If SaaS validation reveals a bug, fix it in the same OSS branch worktree, rerun the build/pack commands above, rerun `pnpm install` in SaaS, and test again. The SaaS `file:` overrides and resulting lockfile changes are local-only verification state and must not be committed. After the OSS PR merges and publishes the real package version, SaaS should remove the local overrides and use the normal registry bump.
+
 ## 3. What to Read Before Starting
 
 | What you want to do                                                  | Required SPEC                                                                                                                                                                |

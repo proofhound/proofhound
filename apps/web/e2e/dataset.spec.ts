@@ -3,11 +3,11 @@ import { expect, test } from '@playwright/test';
 import { SERVER_URL } from './support/api';
 
 // Mirrors dataset-upload.spec.ts (JSONL) for the CSV happy path: it exercises the real
-// in-browser parse → POST /datasets → list flow, so it needs the API server + database
+// in-browser parse -> dataset import session -> list flow, so it needs the API server + database
 // running (e.g. `pnpm dev`). It self-cleans the dataset it creates via the REST API.
 const fixturePath = resolve('e2e/fixtures/dataset-smoke.csv');
 // The visually-hidden file input (the folder input has no `accept`).
-const FILE_INPUT = 'input[accept=".csv,.tsv,.jsonl,.json,.zip"]';
+const FILE_INPUT = 'input[accept=".csv,.tsv,.jsonl,.zip"]';
 
 test('uploads a CSV dataset and lands on the list', async ({ page }) => {
   const name = `e2e-ds-csv-${Date.now()}`;
@@ -26,14 +26,26 @@ test('uploads a CSV dataset and lands on the list', async ({ page }) => {
     const importButton = page.getByRole('button', { name: /Import/ });
     await expect(importButton).toBeEnabled();
 
-    // 12 rows stay under SYNC_MAX_SAMPLES, so this is the synchronous POST /datasets path (201).
-    const createResponse = page.waitForResponse(
-      (response) => response.request().method() === 'POST' && response.url().endsWith('/datasets'),
+    const createImportResponse = page.waitForResponse(
+      (response) => response.request().method() === 'POST' && response.url().endsWith('/dataset-imports'),
+    );
+    const firstBatchResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && /\/dataset-imports\/[^/]+\/batch$/u.test(response.url()),
+    );
+    const completeResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && /\/dataset-imports\/[^/]+\/complete$/u.test(response.url()),
     );
     await importButton.click();
-    const created = await createResponse;
+    const created = await createImportResponse;
     expect(created.status()).toBe(201);
-    datasetId = ((await created.json()) as { dataset: { id: string } }).dataset.id;
+    const firstBatch = await firstBatchResponse;
+    expect(firstBatch.status()).toBe(201);
+    const completed = await completeResponse;
+    expect(completed.status()).toBe(201);
+    datasetId = ((await completed.json()) as { datasetId: string | null }).datasetId ?? '';
+    expect(datasetId).not.toBe('');
 
     // Lands back on the list with the new dataset visible.
     await page.waitForURL('**/datasets');

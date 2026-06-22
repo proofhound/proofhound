@@ -9,9 +9,11 @@ import {
 import type {
   CreateOptimizationDto,
   CreateQuickStartDto,
+  DatasetFieldMappingDto,
   ProbeQuickStartDraftModelDto,
   ProjectContext,
   QuickStartCreateResponseDto,
+  QuickStartDatasetDto,
   QuickStartModelRefDto,
 } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -62,7 +64,7 @@ export class QuickStartService {
     const englishPromptLanguage = dto.promptLanguage === 'en-US';
     const projectId = project.projectId;
 
-    const dataset = await this.datasets.createDataset(projectId, dto.dataset, actor);
+    const datasetId = await this.resolveDataset(projectId, dto.dataset, actor);
 
     const modelCache: ResolvedModelCache = {};
     const experimentModel = await this.resolveModel(project, dto.experimentModel, actor, source, modelCache);
@@ -75,7 +77,7 @@ export class QuickStartService {
       strategy: 'error_pattern_analysis',
       strategyConfig: dto.strategyConfig,
       startingMode: 'from_dataset_only',
-      datasetId: dataset.dataset.id,
+      datasetId,
       experimentModelId: experimentModel.id,
       analysisModelId: analysisModel.id,
       promptLanguage: dto.promptLanguage,
@@ -101,10 +103,24 @@ export class QuickStartService {
 
     return {
       projectId,
-      datasetId: dataset.dataset.id,
+      datasetId,
       promptId: optimization.promptId,
       optimizationId: optimization.id,
     };
+  }
+
+  private async resolveDataset(projectId: string, dataset: QuickStartDatasetDto, actor: CurrentUserPayload) {
+    if (isImportedDataset(dataset)) {
+      const existing = await this.datasets.getDataset(projectId, dataset.datasetId, actor);
+      if (existing.status !== 'active') {
+        throw new BadRequestException('quick_start_dataset_not_active');
+      }
+      assertImportedDatasetMappingsExist(dataset.fieldMappings, existing.fieldSchema);
+      return existing.id;
+    }
+
+    const created = await this.datasets.createDataset(projectId, dataset, actor);
+    return created.dataset.id;
   }
 
   private async resolveModel(
@@ -169,4 +185,19 @@ function buildFieldWhitelist(fieldMappings: CreateQuickStartDto['dataset']['fiel
   }
 
   return { inputFields, metaFields };
+}
+
+function isImportedDataset(dataset: QuickStartDatasetDto): dataset is Extract<QuickStartDatasetDto, { kind: 'imported' }> {
+  return 'kind' in dataset && dataset.kind === 'imported';
+}
+
+function assertImportedDatasetMappingsExist(
+  fieldMappings: DatasetFieldMappingDto[],
+  fieldSchema: Array<{ name: string }>,
+) {
+  const available = new Set(fieldSchema.map((field) => field.name));
+  const missing = fieldMappings.find((field) => !available.has(field.name));
+  if (missing) {
+    throw new BadRequestException('quick_start_dataset_field_missing');
+  }
 }

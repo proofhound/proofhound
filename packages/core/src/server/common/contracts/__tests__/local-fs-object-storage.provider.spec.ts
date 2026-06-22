@@ -120,7 +120,7 @@ describe('LocalFsObjectStorageProvider', () => {
     it('createUploadSession returns null (no browser-reachable upload URL)', async () => {
       expect(provider.supportsClientUploadSessions()).toBe(false);
       await expect(
-        provider.createUploadSession({ ...loc, resourceType: 'dataset_raw', resourceId: 'imp-1', name: 'input.csv' }),
+        provider.createUploadSession({ ...loc, resourceType: 'export', resourceId: 'exp-1', name: 'input.csv' }),
       ).resolves.toBeNull();
     });
 

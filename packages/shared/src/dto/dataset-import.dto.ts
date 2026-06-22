@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { datasetFieldMappingSchema } from './dataset.dto';
 
+export const DATASET_IMPORT_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
+export const DATASET_IMPORT_ZIP_MAX_FILE_BYTES = 1024 * 1024 * 1024;
+
 export const datasetImportSourceFormatSchema = z.enum(['jsonl', 'csv', 'tsv', 'json', 'zip']);
 export type DatasetImportSourceFormat = z.infer<typeof datasetImportSourceFormatSchema>;
 
@@ -60,6 +63,16 @@ export const createDatasetImportSchema = z
     const expectedFields = value.fieldMappings.filter((field) => field.role === 'expected');
     if (expectedFields.length > 1) {
       ctx.addIssue({ code: 'custom', path: ['fieldMappings'], message: 'dataset_expected_field_unique' });
+    }
+
+    const maxBytes =
+      value.sourceFormat === 'zip' ? DATASET_IMPORT_ZIP_MAX_FILE_BYTES : DATASET_IMPORT_MAX_FILE_BYTES;
+    if (value.sourceFile.fileSizeBytes > maxBytes) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['sourceFile', 'fileSizeBytes'],
+        message: 'dataset_import_file_too_large',
+      });
     }
   });
 export type CreateDatasetImportDto = z.infer<typeof createDatasetImportSchema>;

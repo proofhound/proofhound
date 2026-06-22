@@ -2,8 +2,11 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  DATASET_PREVIEW_PAGE_SIZE,
+  getDatasetPreviewPage,
   inferRole,
   parseDatasetFile,
+  parseDatasetPreview,
   projectSamplesToColumns,
   isStreamingImportFile,
   selectDatasetFile,
@@ -146,12 +149,91 @@ function makeStoredZipFile(entries: Record<string, Uint8Array | string>) {
 }
 
 describe('dataset upload parser', () => {
+  it('paginates parsed preview rows at 10 rows per page', () => {
+    const rows = Array.from({ length: 25 }, (_, index) => ({ sample_id: `case-${index + 1}` }));
+
+    const firstPage = getDatasetPreviewPage(rows, 0);
+    expect(DATASET_PREVIEW_PAGE_SIZE).toBe(10);
+    expect(firstPage).toMatchObject({
+      totalRows: 25,
+      pageIndex: 0,
+      pageCount: 3,
+      rangeStart: 1,
+      rangeEnd: 10,
+      canGoPrevious: false,
+      canGoNext: true,
+    });
+    expect(firstPage.rows.map((row) => row.sample_id)).toEqual([
+      'case-1',
+      'case-2',
+      'case-3',
+      'case-4',
+      'case-5',
+      'case-6',
+      'case-7',
+      'case-8',
+      'case-9',
+      'case-10',
+    ]);
+
+    const lastPage = getDatasetPreviewPage(rows, 2);
+    expect(lastPage).toMatchObject({
+      pageIndex: 2,
+      rangeStart: 21,
+      rangeEnd: 25,
+      canGoPrevious: true,
+      canGoNext: false,
+    });
+    expect(lastPage.rows.map((row) => row.sample_id)).toEqual(['case-21', 'case-22', 'case-23', 'case-24', 'case-25']);
+  });
+
+  it('clamps preview pagination to the available row range', () => {
+    const rows = Array.from({ length: 12 }, (_, index) => ({ sample_id: `case-${index + 1}` }));
+
+    expect(getDatasetPreviewPage(rows, -5)).toMatchObject({ pageIndex: 0, rangeStart: 1, rangeEnd: 10 });
+    expect(getDatasetPreviewPage(rows, 99)).toMatchObject({ pageIndex: 1, rangeStart: 11, rangeEnd: 12 });
+    expect(getDatasetPreviewPage([], 1)).toMatchObject({ pageIndex: 0, pageCount: 1, rangeStart: 0, rangeEnd: 0 });
+  });
+
   it('allows JSONL/CSV/TSV to enter the large-file streaming path', () => {
     expect(isStreamingImportFile(makeFile('large.jsonl', '{}\n'))).toBe(true);
     expect(isStreamingImportFile(makeFile('large.csv', 'id\n1\n'))).toBe(true);
     expect(isStreamingImportFile(makeFile('large.tsv', 'id\n1\n'))).toBe(true);
     expect(isStreamingImportFile(makeFile('large.json', '[]'))).toBe(false);
     expect(isStreamingImportFile(new File([], 'large.zip'))).toBe(false);
+  });
+
+  it('does not accept standalone JSON array files', async () => {
+    await expect(parseDatasetFile(makeFile('standalone.json', '[{"id":"1"}]'))).rejects.toThrow(
+      'unsupported_file_type',
+    );
+  });
+
+  it('parses at most 100 JSONL rows for upload preview without reading the full text payload', async () => {
+    const rowCount = 150;
+    const content = Array.from({ length: rowCount }, (_, index) =>
+      JSON.stringify({ sample_id: `case-${index}`, text: `sample ${index}` }),
+    ).join('\n');
+
+    const parsed = await parseDatasetPreview(makeStreamingFile('preview.jsonl', content));
+
+    expect(parsed.samples).toHaveLength(100);
+    expect(parsed.samples[0]).toEqual({ sample_id: 'case-0', text: 'sample 0' });
+    expect(parsed.samples.at(-1)).toEqual({ sample_id: 'case-99', text: 'sample 99' });
+  });
+
+  it('parses at most 100 CSV rows for upload preview without reading the full text payload', async () => {
+    const rowCount = 150;
+    const content = [
+      'sample_id,text,expected_output',
+      ...Array.from({ length: rowCount }, (_, index) => `case-${index},"sample ${index}",ok`),
+    ].join('\n');
+
+    const parsed = await parseDatasetPreview(makeFileThatRejectsText('preview.csv', content));
+
+    expect(parsed.samples).toHaveLength(100);
+    expect(parsed.samples[0]).toEqual({ sample_id: 'case-0', text: 'sample 0', expected_output: 'ok' });
+    expect(parsed.samples.at(-1)).toEqual({ sample_id: 'case-99', text: 'sample 99', expected_output: 'ok' });
   });
 
   it('parses the ChnSentiCorp random-50 JSONL as exactly 50 samples', async () => {
