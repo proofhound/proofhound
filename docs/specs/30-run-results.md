@@ -70,6 +70,14 @@ GET /experiments/:experimentId/run-results/export?format=csv|jsonl
 GET /experiments/:experimentId/run-results/:runResultId
 ```
 
+The experiment detail page combines these rows with the experiment summary export through:
+
+```text
+GET /experiments/:experimentId/export-package?format=csv|jsonl
+```
+
+This endpoint returns a ZIP file. The package always includes `summary.csv`; the selected format controls the run-results detail member, either `run-results.csv` or `run-results.jsonl`.
+
 Pagination query parameters:
 
 - `page`

@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { DATABASE_CLIENT } from '../../../../shared/database/database.constants';
 import { ModelService } from '../../model/model.service';
@@ -100,6 +101,7 @@ function makeRunResults(): Mocked<RunResultService> {
     countBatchTerminal: vi.fn(),
     listExperimentRunResults: vi.fn(),
     getExperimentRunResult: vi.fn(),
+    exportExperimentRunResults: vi.fn(),
   } as unknown as Mocked<RunResultService>;
 }
 
@@ -112,6 +114,14 @@ function makeSelectQuery(rows: unknown[]) {
   };
 
   return query;
+}
+
+async function readBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks);
 }
 
 describe('ExperimentService', () => {
@@ -617,5 +627,53 @@ describe('ExperimentService', () => {
     expect(file.fileName).toBe('experiments-77777777.csv');
     expect(file.contentType).toBe('text/csv; charset=utf-8');
     expect(file.buffer.toString('utf8')).toContain('exp-2026-0518-sql-risk');
+  });
+
+  it('exports a single experiment package with summary CSV and selected run-result detail format', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findExperimentById.mockResolvedValue(experimentRow({ status: 'success' }));
+    runResults.exportExperimentRunResults.mockResolvedValue({
+      fileName: 'experiment-run-results.jsonl',
+      contentType: 'application/x-ndjson; charset=utf-8',
+      stream: Readable.from(['{"id":"rr-1"}\n']),
+    });
+
+    const file = await service.exportExperimentPackage(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      'jsonl',
+      actor,
+      {
+        page: 1,
+        pageSize: 20,
+        sort: 'created_desc',
+        status: undefined,
+        judgmentStatus: undefined,
+        isCorrect: undefined,
+      },
+    );
+    const zip = await readBuffer(file.stream);
+    const text = zip.toString('latin1');
+
+    expect(file.fileName).toBe('experiment-exp-2026-0518-sql-risk-jsonl.zip');
+    expect(file.contentType).toBe('application/zip');
+    expect(text).toContain('summary.csv');
+    expect(text).toContain('run-results.jsonl');
+    expect(text).toContain('exp-2026-0518-sql-risk');
+    expect(text).toContain('{"id":"rr-1"}');
+    expect(runResults.exportExperimentRunResults).toHaveBeenCalledWith(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      actor,
+      'jsonl',
+      {
+        page: 1,
+        pageSize: 20,
+        sort: 'created_desc',
+        status: undefined,
+        judgmentStatus: undefined,
+        isCorrect: undefined,
+      },
+    );
   });
 });

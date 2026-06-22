@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { Readable } from 'node:stream';
 import type { ExperimentService } from '../../../modules/experiment/experiment.service';
 import { dispatchTool } from '../mcp-server.factory';
 import { createExperimentTools } from '../experiment.tools';
@@ -39,6 +40,12 @@ function serviceStub(): ExperimentService {
       fileName: 'experiments.csv',
       format: 'csv',
     }),
+    exportExperimentPackage: vi.fn().mockResolvedValue({
+      stream: Readable.from([Buffer.from('PK fake zip', 'utf8')]),
+      contentType: 'application/zip',
+      fileName: 'experiment-baseline-csv.zip',
+      detailFormat: 'csv',
+    }),
     deleteExperiment: vi.fn().mockResolvedValue(undefined),
   } as unknown as ExperimentService;
 }
@@ -52,6 +59,7 @@ describe('MCP experiment tools', () => {
       'experiment_get_experiment',
       'experiment_control_experiment',
       'experiment_export_experiments',
+      'experiment_export_package',
       'experiment_delete_experiment',
     ]);
   });
@@ -262,6 +270,33 @@ describe('MCP experiment tools', () => {
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain('invalid tool input');
     expect(service.exportExperiments).not.toHaveBeenCalled();
+  });
+
+  it('experiment_export_package: delegates the detail format + filters and base64-encodes the zip', async () => {
+    const service = serviceStub();
+    const result = await dispatchTool(
+      createExperimentTools(service),
+      'experiment_export_package',
+      {
+        experimentId: EXPERIMENT_ID,
+        format: 'jsonl',
+        status: ['success'],
+        search: 'case-7',
+      },
+      context,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(service.exportExperimentPackage).toHaveBeenCalledWith(
+      PROJECT_ID,
+      EXPERIMENT_ID,
+      'jsonl',
+      actor,
+      expect.objectContaining({ status: ['success'], search: 'case-7' }),
+    );
+    expect((result.content[0] as { text: string }).text).toContain(
+      Buffer.from('PK fake zip', 'utf8').toString('base64'),
+    );
   });
 
   it('experiment_delete_experiment: delegates the id scoped by project + actor over the mcp source', async () => {

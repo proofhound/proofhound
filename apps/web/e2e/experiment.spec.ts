@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { ResourceLedger, seedDataset, seedModel, seedPrompt, seedPromptVersion } from './support/api';
+import type { RunResultListResponseDto } from '@proofhound/shared';
+import { ResourceLedger, SERVER_URL, seedDataset, seedModel, seedPrompt, seedPromptVersion } from './support/api';
 
 test('creates an experiment via the UI and it runs to success against the fake LLM', async ({ page, request }) => {
   test.setTimeout(150_000); // orchestration: queue + worker + 5s UI polling can exceed the 30s default
@@ -29,7 +30,24 @@ test('creates an experiment via the UI and it runs to success against the fake L
 
     // Worker drains the queue, calls the fake LLM, writes run_results; DBOS flips status. UI polls every 5s.
     await expect(page.getByTestId('experiment-detail-status-badge')).toContainText(/success/i, { timeout: 90_000 });
-    await expect(page.getByTestId('experiment-samples')).toBeVisible();
+    const samplesTable = page.getByTestId('experiment-samples');
+    await expect(samplesTable).toBeVisible();
+    await expect(samplesTable.getByText(/Expected|期望输出/u)).toBeVisible();
+    await expect(samplesTable.getByText(/Success|是否成功/u)).toBeVisible();
+    await expect(samplesTable.getByText(/Failure reason|失败原因/u)).toBeVisible();
+    await expect(samplesTable.getByText(/Correct|正确/u).first()).toBeVisible();
+
+    const resultsResponse = await request.get(`${SERVER_URL}/experiments/${experimentId}/run-results`, {
+      params: { pageSize: 20 },
+    });
+    expect(resultsResponse.ok()).toBeTruthy();
+    const results = (await resultsResponse.json()) as RunResultListResponseDto;
+    expect(results.data.length).toBeGreaterThan(0);
+    expect(results.data.every((row) => row.expectedOutput === 'A' || row.expectedOutput === 'B')).toBe(true);
+    expect(results.data.every((row) => row.status === 'success')).toBe(true);
+    expect(results.data.every((row) => row.judgmentStatus === 'correct')).toBe(true);
+    expect(results.data.every((row) => row.isCorrect === true)).toBe(true);
+    expect(results.data.every((row) => row.errorMessage === null)).toBe(true);
   } finally {
     await ledger.cleanup();
   }

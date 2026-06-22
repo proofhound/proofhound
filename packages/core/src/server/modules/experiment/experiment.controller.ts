@@ -19,6 +19,8 @@ import {
   experimentExportFormatSchema,
   experimentIdParamSchema,
   experimentListQuerySchema,
+  runResultExportFormatSchema,
+  runResultListQuerySchema,
 } from '@proofhound/shared';
 import type { Response } from 'express';
 import { CurrentUser, type CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -101,6 +103,34 @@ export class ExperimentController {
     return new StreamableFile(file.buffer);
   }
 
+  @Get(':experimentId/export-package')
+  async exportExperimentPackage(
+    @Param('experimentId') experimentId: string,
+    @Query() rawQuery: Record<string, unknown>,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const queryParse = runResultListQuerySchema.safeParse(rawQuery ?? {});
+    if (!queryParse.success) {
+      throw new BadRequestException(queryParse.error.issues);
+    }
+    const formatParse = runResultExportFormatSchema.safeParse(rawQuery?.['format'] ?? 'csv');
+    if (!formatParse.success) {
+      throw new BadRequestException(formatParse.error.issues);
+    }
+
+    const file = await this.experimentService.exportExperimentPackage(
+      project.projectId,
+      this.parseExperimentId(experimentId),
+      formatParse.data,
+      actor,
+      queryParse.data,
+    );
+    this.setStreamExportHeaders(response, file);
+    return new StreamableFile(file.stream);
+  }
+
   @Get(':experimentId')
   async getExperiment(
     @Param('experimentId') experimentId: string,
@@ -154,6 +184,13 @@ export class ExperimentController {
     response.set({
       'Content-Disposition': `attachment; filename="${file.fileName}"; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
       'Content-Length': String(file.byteLength),
+      'Content-Type': file.contentType,
+    });
+  }
+
+  private setStreamExportHeaders(response: Response, file: { fileName: string; contentType: string }) {
+    response.set({
+      'Content-Disposition': `attachment; filename="${file.fileName}"; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
       'Content-Type': file.contentType,
     });
   }

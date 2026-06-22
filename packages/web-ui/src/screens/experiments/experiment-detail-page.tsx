@@ -20,7 +20,6 @@ import {
 } from 'lucide-react';
 import type {
   DatasetFieldSchemaDto,
-  ExperimentExportFormatDto,
   ExperimentListItemDto,
   ExperimentStatusDto,
   RunResultDatasetFieldValueDto,
@@ -34,7 +33,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
   ImagePreviewDialog,
   ImageZoomHoverOverlay,
@@ -61,9 +59,9 @@ import { useI18n, type TranslationKey } from '../../i18n';
 import { formatLatencySeconds } from '../../lib';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
 import { useDateTimeFormatter } from '../../hooks';
-import { useControlExperiment, useDownloadExperiment, useExperiment } from '../../hooks';
+import { useControlExperiment, useDownloadExperimentPackage, useExperiment } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
-import { useDownloadExperimentRunResults, useExperimentRunResults } from '../../hooks';
+import { useExperimentRunResults } from '../../hooks';
 import { experimentTone } from './experiment-theme';
 import { buildRepeatExperimentHref } from './experiment-repeat-href';
 import { derivePromptModalityKinds } from './experiment-view-model';
@@ -923,8 +921,7 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
   const [selectedRunResultId, setSelectedRunResultId] = useState<string | null>(null);
 
   const controlExperiment = useControlExperiment(projectId);
-  const downloadExperiment = useDownloadExperiment(projectId);
-  const downloadRunResults = useDownloadExperimentRunResults(projectId, experimentId);
+  const downloadExperimentPackage = useDownloadExperimentPackage(projectId);
 
   const queryClient = useQueryClient();
   const isLive = detail?.status === 'running';
@@ -967,7 +964,7 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
 
   const buttons = deriveControlButtons(detail.status, detail.controlState);
   const inProgressAction = controlExperiment.isPending ? controlExperiment.variables?.action : null;
-  const inProgressDownload = downloadExperiment.isPending || downloadRunResults.isPending;
+  const inProgressDownload = downloadExperimentPackage.isPending;
 
   const percent = detail.totalSamples > 0 ? (detail.processedSamples / detail.totalSamples) * 100 : 0;
   const progressLabel = formatProgressLabel({
@@ -997,19 +994,11 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
     controlExperiment.mutate({ experimentId, action });
   };
 
-  const handleExport = (format: ExperimentExportFormatDto) => {
-    downloadExperiment.mutate(
-      { experimentId, format },
+  const handleExportPackage = (detailFormat: RunResultExportFormatDto) => {
+    downloadExperimentPackage.mutate(
       {
-        onSuccess: (result) => downloadBlob(result.blob, result.fileName),
-      },
-    );
-  };
-
-  const handleRunResultsExport = (format: RunResultExportFormatDto) => {
-    downloadRunResults.mutate(
-      {
-        format,
+        experimentId,
+        detailFormat,
         query: {
           page: 1,
           pageSize: 200,
@@ -1056,27 +1045,18 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
                     aria-label={t('experiments.action.download')}
                   >
                     <Download className="size-4" />
-                    {t('experiments.action.download')}
+                    {inProgressDownload ? t('experiments.action.exporting') : t('experiments.action.download')}
                     <ChevronDown className="size-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem disabled={inProgressDownload} onClick={() => handleExport('csv')}>
+                  <DropdownMenuItem disabled={inProgressDownload} onClick={() => handleExportPackage('csv')}>
                     <Download className="size-4" />
-                    {t('experiments.action.exportCsv')}
+                    {t('experiments.action.exportPackageCsv')}
                   </DropdownMenuItem>
-                  <DropdownMenuItem disabled={inProgressDownload} onClick={() => handleExport('jsonl')}>
+                  <DropdownMenuItem disabled={inProgressDownload} onClick={() => handleExportPackage('jsonl')}>
                     <FileDown className="size-4" />
-                    {t('experiments.action.exportJsonl')}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem disabled={inProgressDownload} onClick={() => handleRunResultsExport('csv')}>
-                    <Download className="size-4" />
-                    {t('experiments.action.exportRunResultsCsv')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem disabled={inProgressDownload} onClick={() => handleRunResultsExport('jsonl')}>
-                    <FileDown className="size-4" />
-                    {t('experiments.action.exportRunResultsJsonl')}
+                    {t('experiments.action.exportPackageJsonl')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1186,9 +1166,7 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
                     </thead>
                     <tbody>
                       <tr className="border-b bg-primary/5">
-                        <td className="px-3 py-2 font-mono text-[11.5px]">
-                          {t('experiments.detail.classOverall')}
-                        </td>
+                        <td className="px-3 py-2 font-mono text-[11.5px]">{t('experiments.detail.classOverall')}</td>
                         <td className="px-3 py-2 font-mono text-[12.5px]">{detail.processedSamples}</td>
                         <td className="px-3 py-2 font-mono text-[12.5px] tabular-nums">
                           {Number.isFinite(accuracy) ? accuracy.toFixed(3) : '—'}

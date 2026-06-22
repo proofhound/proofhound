@@ -3,12 +3,15 @@
  * Each tool delegates to ExperimentService, matching the REST surface 1:1.
  * See docs/specs/00-overview.md §5 (three-channel parity) + docs/specs/24-experiments.md.
  */
+import { Buffer } from 'node:buffer';
 import {
   createExperimentSchema,
   experimentControlActionSchema,
   experimentExportFormatSchema,
   experimentIdParamSchema,
   experimentListQuerySchema,
+  runResultExportFormatSchema,
+  runResultListQuerySchema,
 } from '@proofhound/shared';
 import { getMcpActor, resolveMcpProjectContext } from './mcp-context';
 import type { ExperimentService } from '../../modules/experiment/experiment.service';
@@ -120,6 +123,58 @@ export function createExperimentTools(experimentService: ExperimentService): Mcp
       },
     },
     {
+      name: 'experiment_export_package',
+      description: '导出单个实验的完整 ZIP 包：summary.csv + run-results.csv/jsonl',
+      inputSchema: {
+        type: 'object',
+        required: ['experimentId'],
+        properties: {
+          experimentId: { type: 'string', format: 'uuid' },
+          format: { type: 'string', enum: ['csv', 'jsonl'] },
+          page: { type: 'integer', minimum: 1 },
+          pageSize: { type: 'integer', minimum: 1, maximum: 200 },
+          status: { type: 'array', items: { type: 'string', enum: ['running', 'success', 'failed'] } },
+          judgmentStatus: {
+            type: 'array',
+            items: { type: 'string', enum: ['correct', 'incorrect', 'parse_error', 'judge_error'] },
+          },
+          isCorrect: { type: 'boolean' },
+          search: { type: 'string' },
+          sort: { type: 'string', enum: ['created_desc', 'latency_desc', 'tokens_desc'] },
+        },
+      },
+      handler: async (input, ctx) => {
+        const { projectId } = resolveMcpProjectContext(ctx);
+        const experimentId = experimentIdParamSchema.parse(input.experimentId);
+        const format = runResultExportFormatSchema.parse(input.format ?? 'csv');
+        const query = runResultListQuerySchema.parse({
+          page: input.page,
+          pageSize: input.pageSize,
+          status: input.status,
+          judgmentStatus: input.judgmentStatus,
+          isCorrect: input.isCorrect,
+          search: input.search,
+          sort: input.sort,
+        });
+        const file = await experimentService.exportExperimentPackage(
+          projectId,
+          experimentId,
+          format,
+          getMcpActor(ctx),
+          query,
+        );
+        const buffer = await streamToBuffer(file.stream);
+
+        return {
+          fileName: file.fileName,
+          contentType: file.contentType,
+          byteLength: buffer.byteLength,
+          format: file.detailFormat,
+          contentBase64: buffer.toString('base64'),
+        };
+      },
+    },
+    {
       name: 'experiment_delete_experiment',
       description: '物理删除实验；不会写 deleted_at 软删标记',
       inputSchema: {
@@ -137,4 +192,12 @@ export function createExperimentTools(experimentService: ExperimentService): Mcp
       },
     },
   ];
+}
+
+async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks);
 }

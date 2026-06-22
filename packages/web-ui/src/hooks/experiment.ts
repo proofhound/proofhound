@@ -4,6 +4,8 @@ import type {
   ExperimentControlActionDto,
   ExperimentExportFormatDto,
   ExperimentListQueryDto,
+  RunResultExportFormatDto,
+  RunResultListQueryDto,
 } from '@proofhound/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AUTO_REFRESH_INTERVAL_MS } from './use-auto-refresh';
@@ -16,6 +18,12 @@ interface ControlExperimentVariables {
 interface DownloadExperimentVariables extends ExperimentTransferOptions {
   experimentId?: string;
   format: ExperimentExportFormatDto;
+}
+
+interface DownloadExperimentPackageVariables extends ExperimentTransferOptions {
+  experimentId: string;
+  detailFormat: RunResultExportFormatDto;
+  query: RunResultListQueryDto;
 }
 
 export function useExperiments(projectId: string, query?: ExperimentListQueryDto) {
@@ -32,8 +40,7 @@ export function useExperiment(projectId: string, experimentId: string) {
     queryKey: ['experiments', projectId, experimentId],
     queryFn: () => experimentClient.getExperiment(projectId, experimentId),
     enabled: projectId.length > 0 && experimentId.length > 0,
-    refetchInterval: (query) =>
-      query.state.data?.status === 'running' ? AUTO_REFRESH_INTERVAL_MS : false,
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? AUTO_REFRESH_INTERVAL_MS : false),
     refetchIntervalInBackground: false,
   });
 }
@@ -81,5 +88,12 @@ export function useDownloadExperiment(projectId: string) {
       experimentId
         ? experimentClient.downloadExperiment(projectId, experimentId, format, { onProgress })
         : experimentClient.downloadExperiments(projectId, format, { onProgress }),
+  });
+}
+
+export function useDownloadExperimentPackage(projectId: string) {
+  return useMutation({
+    mutationFn: ({ experimentId, detailFormat, query, onProgress }: DownloadExperimentPackageVariables) =>
+      experimentClient.downloadExperimentPackage(projectId, experimentId, detailFormat, query, { onProgress }),
   });
 }

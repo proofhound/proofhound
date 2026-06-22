@@ -5,6 +5,8 @@ import type {
   ExperimentListQueryDto,
   ExperimentListResponseDto,
   ExperimentListItemDto,
+  RunResultExportFormatDto,
+  RunResultListQueryDto,
 } from '@proofhound/shared';
 import type { AxiosProgressEvent } from 'axios';
 import { httpClient } from './http';
@@ -29,6 +31,19 @@ function toTransferProgress(event: AxiosProgressEvent): ExperimentTransferProgre
     loadedBytes: event.loaded,
     totalBytes: typeof event.total === 'number' && Number.isFinite(event.total) ? event.total : null,
   };
+}
+
+function buildRunResultParams(query: RunResultListQueryDto): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    page: query.page,
+    pageSize: query.pageSize,
+    sort: query.sort,
+  };
+  if (query.status && query.status.length > 0) out['status'] = query.status.join(',');
+  if (query.judgmentStatus && query.judgmentStatus.length > 0) out['judgmentStatus'] = query.judgmentStatus.join(',');
+  if (typeof query.isCorrect === 'boolean') out['isCorrect'] = String(query.isCorrect);
+  if (query.search && query.search.length > 0) out['search'] = query.search;
+  return out;
 }
 
 function getFileNameFromDisposition(disposition: string | undefined, fallback: string) {
@@ -70,15 +85,11 @@ export const experimentClient = {
   createExperiment: (projectId: string, dto: CreateExperimentDto) =>
     httpClient.post<ExperimentListItemDto>(`/experiments`, dto).then((r) => r.data),
   listExperiments: (projectId: string, query?: ExperimentListQueryDto) =>
-    httpClient
-      .get<ExperimentListResponseDto>(`/experiments`, { params: query })
-      .then((r) => r.data),
+    httpClient.get<ExperimentListResponseDto>(`/experiments`, { params: query }).then((r) => r.data),
   getExperiment: (projectId: string, experimentId: string) =>
     httpClient.get<ExperimentListItemDto>(`/experiments/${experimentId}`).then((r) => r.data),
   controlExperiment: (projectId: string, experimentId: string, action: ExperimentControlActionDto) =>
-    httpClient
-      .post<ExperimentListItemDto>(`/experiments/${experimentId}/actions/${action}`)
-      .then((r) => r.data),
+    httpClient.post<ExperimentListItemDto>(`/experiments/${experimentId}/actions/${action}`).then((r) => r.data),
   downloadExperiments: (projectId: string, format: ExperimentExportFormatDto, options?: ExperimentTransferOptions) =>
     httpClient
       .get<Blob>(`/experiments/export`, {
@@ -104,6 +115,24 @@ export const experimentClient = {
           : undefined,
       })
       .then((r) => toDownloadResult(r.data, r.headers, `experiment-${experimentId}.${format}`)),
+  downloadExperimentPackage: (
+    projectId: string,
+    experimentId: string,
+    detailFormat: RunResultExportFormatDto,
+    query: RunResultListQueryDto,
+    options?: ExperimentTransferOptions,
+  ) =>
+    httpClient
+      .get<Blob>(`/experiments/${experimentId}/export-package`, {
+        params: { ...buildRunResultParams(query), format: detailFormat },
+        responseType: 'blob',
+        onDownloadProgress: options?.onProgress
+          ? (event) => options.onProgress?.(toTransferProgress(event))
+          : undefined,
+      })
+      .then((r) =>
+        toDownloadResult(r.data, r.headers, `experiment-${projectId.slice(0, 8)}-${experimentId}-${detailFormat}.zip`),
+      ),
   deleteExperiment: (projectId: string, experimentId: string) =>
     httpClient.delete<void>(`/experiments/${experimentId}`).then(() => undefined),
 };

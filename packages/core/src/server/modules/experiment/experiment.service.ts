@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { Readable } from 'node:stream';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   createExperimentSchema,
@@ -20,6 +21,8 @@ import {
   type ExperimentRunConfigDto,
   type ExperimentStatusDto,
   type PromptVariableTypeDto,
+  type RunResultExportFormatDto,
+  type RunResultListQueryDto,
 } from '@proofhound/shared';
 import { z } from 'zod';
 import { and, eq, sql } from 'drizzle-orm';
@@ -27,6 +30,7 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
+import { createZipStream } from '../../common/zip-stream';
 import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { isUniqueViolation } from '../../common/errors/db-error';
@@ -48,6 +52,13 @@ export interface ExperimentExportFile {
   byteLength: number;
   buffer: Buffer;
   format: ExperimentExportFormatDto;
+}
+
+export interface ExperimentExportPackageFile {
+  fileName: string;
+  contentType: string;
+  stream: Readable;
+  detailFormat: RunResultExportFormatDto;
 }
 
 type AuditSource = 'api' | 'mcp' | 'system';
@@ -170,7 +181,11 @@ export class ExperimentService {
     await this.repo.updateExperiment(projectId, experimentId, nextValues);
 
     if (parsedAction === 'resume' || parsedAction === 'retry') {
-      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, orgId, source: 'local' }, 'experiment');
+      await this.workflowAuth.assertCanStart(
+        toActorContext(actor),
+        { projectId, orgId, source: 'local' },
+        'experiment',
+      );
       try {
         if (parsedAction === 'resume') await this.launcher.resume(experimentId, orgId);
         else await this.launcher.retry(experimentId, orgId);
@@ -230,6 +245,34 @@ export class ExperimentService {
       contentType: format === 'csv' ? 'text/csv; charset=utf-8' : 'application/x-ndjson; charset=utf-8',
       fileName: this.getExportFileName(projectId, format, experimentId ? items[0]?.name : undefined),
       format,
+    };
+  }
+
+  async exportExperimentPackage(
+    projectId: string,
+    experimentId: string,
+    detailFormat: RunResultExportFormatDto,
+    actor: CurrentUserPayload,
+    query: RunResultListQueryDto,
+  ): Promise<ExperimentExportPackageFile> {
+    const summaryFile = await this.exportExperiments(projectId, 'csv', actor, experimentId);
+    const detailFile = await this.runResults.exportExperimentRunResults(
+      projectId,
+      experimentId,
+      actor,
+      detailFormat,
+      query,
+    );
+    const baseName = summaryFile.fileName.replace(/\.csv$/u, '') || `experiment-${experimentId}`;
+
+    return {
+      fileName: `${baseName}-${detailFormat}.zip`,
+      contentType: 'application/zip',
+      detailFormat,
+      stream: createZipStream([
+        { name: 'summary.csv', source: summaryFile.buffer },
+        { name: `run-results.${detailFormat}`, source: detailFile.stream },
+      ]),
     };
   }
 

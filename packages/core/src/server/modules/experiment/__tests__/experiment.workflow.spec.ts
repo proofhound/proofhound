@@ -221,7 +221,13 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
 describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
   // Drive runWorkflow(experimentId, orgId) through the real enqueueBatchImpl (loadRenderContext /
   // loadSampleDataByIds stubbed), capturing the LlmJobPayload handed to bullmq.enqueueLlmJob.
-  function buildEnqueueRegistrar() {
+  function buildEnqueueRegistrar(
+    options: {
+      judgmentRules?: unknown;
+      expectedField?: string;
+      sampleData?: Record<string, unknown>;
+    } = {},
+  ) {
     const enqueueLlmJob = vi.fn().mockResolvedValue(undefined);
     const db = {} as never;
     const bullmq = { enqueueLlmJob } as never;
@@ -247,11 +253,11 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
       body: 'hello',
       variables: [],
       outputSchema: null,
-      judgmentRules: null,
+      judgmentRules: options.judgmentRules ?? null,
       promptLanguage: 'en-US',
-      expectedField: 'label',
+      expectedField: options.expectedField ?? 'label',
     });
-    r['loadSampleDataByIds'] = vi.fn().mockResolvedValue([{ id: 's1', data: { label: 'bad' } }]);
+    r['loadSampleDataByIds'] = vi.fn().mockResolvedValue([{ id: 's1', data: options.sampleData ?? { label: 'bad' } }]);
 
     return { registrar, enqueueLlmJob };
   }
@@ -287,6 +293,34 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
 
     expect(enqueueLlmJob).toHaveBeenCalledTimes(1);
     expect(enqueueLlmJob.mock.calls[0]?.[0]?.judgment?.expectedOutput).toBe('bad');
+  });
+
+  it('canonical prompt expectedField 优先于数据集 expected 字段名', async () => {
+    const { registrar, enqueueLlmJob } = buildEnqueueRegistrar({
+      judgmentRules: {
+        rules: [{ decisionField: 'decision', expectedField: 'gold_label', operator: 'exact_match' }],
+      },
+      expectedField: 'label',
+      sampleData: { label: 'dataset-fallback', gold_label: 'prompt-rule-value' },
+    });
+
+    await (registrar as unknown as { runWorkflow: (id: string) => Promise<void> }).runWorkflow('exp-1');
+
+    expect(enqueueLlmJob).toHaveBeenCalledTimes(1);
+    expect(enqueueLlmJob.mock.calls[0]?.[0]?.judgment?.expectedOutput).toBe('prompt-rule-value');
+  });
+
+  it('legacy prompt expected_field 仍会被读取为 expectedOutput 字段来源', async () => {
+    const { registrar, enqueueLlmJob } = buildEnqueueRegistrar({
+      judgmentRules: { mode: 'exact_match', decision_field: 'decision', expected_field: 'legacy_expected' },
+      expectedField: 'label',
+      sampleData: { label: 'dataset-fallback', legacy_expected: 'legacy-rule-value' },
+    });
+
+    await (registrar as unknown as { runWorkflow: (id: string) => Promise<void> }).runWorkflow('exp-1');
+
+    expect(enqueueLlmJob).toHaveBeenCalledTimes(1);
+    expect(enqueueLlmJob.mock.calls[0]?.[0]?.judgment?.expectedOutput).toBe('legacy-rule-value');
   });
 });
 
