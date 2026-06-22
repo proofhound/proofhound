@@ -55,6 +55,8 @@ describe('run result labels', () => {
     expect(getRunResultChainStatus(runResult({ status: 'failed', isCorrect: false }))).toBe('failed');
     expect(getRunResultChainStatus(runResult({ judgmentStatus: 'parse_error', isCorrect: false }))).toBe('failed');
     expect(getRunResultChainStatus(runResult({ judgmentStatus: 'judge_error', isCorrect: false }))).toBe('failed');
+    expect(getRunResultChainStatus(runResult({ judgmentStatus: 'judge_error', expectedOutput: 'gold' }))).toBe('failed');
+    expect(getRunResultChainStatus(runResult({ judgmentStatus: 'judge_error', expectedOutput: null }))).toBe('success');
     expect(getRunResultChainStatus(runResult({ status: 'running' }))).toBe('running');
   });
 
@@ -69,6 +71,7 @@ describe('run result labels', () => {
 
   it('does not show a failure reason for normal incorrect judgments', () => {
     expect(formatRunResultFailureReason(runResult({ judgmentStatus: 'incorrect', isCorrect: false }), t)).toBeNull();
+    expect(formatRunResultFailureReason(runResult({ judgmentStatus: 'judge_error', expectedOutput: null }), t)).toBeNull();
   });
 
   it('formats failure reason as summary plus a detailed final stack line', () => {

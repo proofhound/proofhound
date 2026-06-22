@@ -67,6 +67,26 @@ function readRootAliases(source: Record<string, unknown>): NormalizedJudgmentRul
   };
 }
 
+function readExplicitDecisionField(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+
+  const merged = mergeLegacyConfig(value);
+  const rootValue = readStringAlias(merged, ['decisionField', 'decision_field', 'field']) ?? null;
+  const rawRules = Array.isArray(value['rules']) ? value['rules'] : merged['rules'];
+  if (Array.isArray(rawRules)) {
+    for (const rule of rawRules) {
+      if (!isRecord(rule)) continue;
+      const ruleMerged = mergeLegacyConfig(rule);
+      const ruleValue = readStringAlias(ruleMerged, ['decisionField', 'decision_field', 'field']);
+      if (ruleValue) return ruleValue;
+      if (rootValue && hasRuleSignal(ruleMerged)) return rootValue;
+    }
+    return rootValue;
+  }
+
+  return rootValue;
+}
+
 function normalizeRule(value: unknown, root?: NormalizedJudgmentRule): NormalizedJudgmentRule | null {
   if (!isRecord(value)) return null;
   const merged = mergeLegacyConfig(value);
@@ -104,7 +124,7 @@ export function normalizeJudgmentRules(value: unknown): { rules: NormalizedJudgm
 }
 
 export function readJudgmentDecisionField(rules: unknown, fallback = DEFAULT_DECISION_FIELD): string {
-  return normalizeJudgmentRules(rules)?.rules[0]?.decisionField ?? fallback;
+  return readExplicitDecisionField(rules) ?? fallback;
 }
 
 export function readJudgmentMode(rules: unknown): string {

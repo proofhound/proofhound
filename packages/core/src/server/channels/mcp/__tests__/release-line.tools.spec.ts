@@ -27,6 +27,7 @@ function serviceStub(): ReleaseLineService {
   return {
     updateInputRoute: vi.fn().mockResolvedValue({ ok: true }),
     updateRunConfig: vi.fn().mockResolvedValue({ ok: true }),
+    updateRetention: vi.fn().mockResolvedValue({ ok: true }),
   } as unknown as ReleaseLineService;
 }
 
@@ -99,5 +100,23 @@ describe('MCP release line tools — shape-sensitive validation', () => {
     expect(result.isError).toBe(true);
     expect((result.content[0] as { text: string }).text).toContain('invalid tool input');
     expect(service.updateRunConfig).not.toHaveBeenCalled();
+  });
+
+  it('release_line_update_retention: nullable retentionDays passes validation and calls the service', async () => {
+    const service = serviceStub();
+    const tools = createReleaseLineTools(service);
+
+    const result = await dispatchTool(
+      tools,
+      'release_line_update_retention',
+      {
+        releaseLineId: RELEASE_LINE_ID,
+        retentionDays: null,
+      },
+      context,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(service.updateRetention).toHaveBeenCalledWith(PROJECT_ID, RELEASE_LINE_ID, { retentionDays: null }, actor);
   });
 });

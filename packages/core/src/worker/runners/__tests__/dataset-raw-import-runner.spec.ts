@@ -188,4 +188,41 @@ describe('createDatasetRawImportRunner', () => {
     expect(repo.clearStaging).toHaveBeenCalledWith(IMPORT_ID);
     expect(storage.deleteObjects).toHaveBeenCalledWith([RAW_REF]);
   });
+
+  it('does not clear staging when another worker is already promoting the import', async () => {
+    const promoting = fakeImport({ status: 'importing', progress: { phase: 'offloading' }, receivedRows: 1 });
+    const { runner, repo, storage } = buildRunner({
+      repo: {
+        findImportById: vi.fn().mockResolvedValue(promoting),
+      },
+    });
+
+    const result = await runner({ projectId: PROJECT_ID, importId: IMPORT_ID, actorId: ACTOR_ID }, JOB_CONTEXT);
+
+    expect(result).toMatchObject({ importId: IMPORT_ID, status: 'importing', sampleCount: 1 });
+    expect(repo.markParsing).not.toHaveBeenCalled();
+    expect(repo.clearStaging).not.toHaveBeenCalled();
+    expect(storage.deleteObjects).not.toHaveBeenCalled();
+  });
+
+  it('does not treat markPromoting null as aborted when promotion is already in progress', async () => {
+    const promoting = fakeImport({ status: 'importing', progress: { phase: 'committing' }, receivedRows: 1 });
+    const { runner, repo, storage } = buildRunner({
+      repo: {
+        findImportById: vi
+          .fn()
+          .mockResolvedValueOnce(fakeImport())
+          .mockResolvedValueOnce(fakeImport({ status: 'importing' }))
+          .mockResolvedValue(promoting),
+        markPromoting: vi.fn().mockResolvedValue(null),
+      },
+    });
+
+    const result = await runner({ projectId: PROJECT_ID, importId: IMPORT_ID, actorId: ACTOR_ID }, JOB_CONTEXT);
+
+    expect(result).toMatchObject({ importId: IMPORT_ID, status: 'importing', sampleCount: 1 });
+    expect(repo.clearStaging).not.toHaveBeenCalled();
+    expect(repo.markFailed).not.toHaveBeenCalled();
+    expect(storage.deleteObjects).not.toHaveBeenCalled();
+  });
 });

@@ -5,8 +5,7 @@ import type { DatasetFieldMappingDto, DatasetImportSourceFormat } from '@proofho
 import type { DatasetRawImportJobPayload } from '@proofhound/orchestration-shared';
 import { buildDatasetFieldSchema } from '../../server/modules/dataset/dataset-field-schema.util';
 import { parseRawDatasetRows } from '../../server/modules/dataset/dataset-import-raw-parser';
-import type {
-  DatasetImportRepository} from '../../server/modules/dataset/dataset-import.repository';
+import type { DatasetImportRepository } from '../../server/modules/dataset/dataset-import.repository';
 import {
   DatasetImportAbortedError,
   DatasetImportEmptyError,
@@ -14,7 +13,7 @@ import {
   type BatchSampleRow,
   type DatasetImportRow,
 } from '../../server/modules/dataset/dataset-import.repository';
-import type { ObjectStorageProvider} from '../../server/common/contracts/object-storage.provider';
+import type { ObjectStorageProvider } from '../../server/common/contracts/object-storage.provider';
 import { type StoredObjectRef } from '../../server/common/contracts/object-storage.provider';
 import type { QuotaPolicyHook } from '../../server/common/contracts/quota-policy.hook';
 import { safeRecordUsageEvent, type UsageMeteringHook } from '../../server/common/contracts/usage-metering.hook';
@@ -41,6 +40,12 @@ export interface DatasetRawImportJobContext {
   attempt: number;
 }
 
+class DatasetImportPromotionInProgressError extends Error {
+  constructor(readonly row: DatasetImportRow) {
+    super('dataset_import_promotion_in_progress');
+  }
+}
+
 export function createDatasetRawImportRunner(deps: DatasetRawImportRunnerDependencies) {
   return async function runDatasetRawImportJob(
     input: DatasetRawImportJobPayload,
@@ -49,6 +54,14 @@ export function createDatasetRawImportRunner(deps: DatasetRawImportRunnerDepende
     const session = await deps.repo.findImportById(input.projectId, input.importId);
     if (!session) return { importId: input.importId, datasetId: null, sampleCount: 0, status: 'missing' };
     if (session.status === 'completed' || session.status === 'failed' || session.status === 'aborted') {
+      return {
+        importId: session.id,
+        datasetId: session.datasetId,
+        sampleCount: session.receivedRows,
+        status: session.status,
+      };
+    }
+    if (isPromotionPhase(session)) {
       return {
         importId: session.id,
         datasetId: session.datasetId,
@@ -97,6 +110,14 @@ export function createDatasetRawImportRunner(deps: DatasetRawImportRunnerDepende
         status: 'completed',
       };
     } catch (error) {
+      if (error instanceof DatasetImportPromotionInProgressError) {
+        return {
+          importId: input.importId,
+          datasetId: error.row.datasetId,
+          sampleCount: error.row.receivedRows,
+          status: error.row.status,
+        };
+      }
       const latest = await deps.repo.findImportById(input.projectId, input.importId);
       if (latest?.status === 'aborted' || error instanceof DatasetImportAbortedError) {
         await deps.repo.clearStaging(input.importId);
@@ -186,8 +207,10 @@ async function promoteStagedImport(
 ): Promise<{ datasetId: string; sampleCount: number }> {
   const promoting = await deps.repo.markPromoting(input.projectId, session.id);
   if (!promoting) {
-    await assertNotAborted(deps.repo, input.projectId, session.id);
-    throw new DatasetImportAbortedError();
+    const latest = await deps.repo.findImportById(input.projectId, session.id);
+    if (latest?.status === 'aborted') throw new DatasetImportAbortedError();
+    if (latest && isPromotionPhase(latest)) throw new DatasetImportPromotionInProgressError(latest);
+    throw new Error('dataset_import_not_promotable');
   }
   const sampleRows = await deps.repo.getSampleDataForInference(promoting.id, TYPE_INFERENCE_SAMPLE_LIMIT);
   const fieldSchema = buildDatasetFieldSchema(toFieldMappings(promoting), sampleRows);
@@ -222,6 +245,12 @@ async function assertNotAborted(repo: DatasetImportRepository, projectId: string
 
 function toFieldMappings(session: DatasetImportRow): DatasetFieldMappingDto[] {
   return Array.isArray(session.fieldMappings) ? (session.fieldMappings as DatasetFieldMappingDto[]) : [];
+}
+
+function isPromotionPhase(session: DatasetImportRow): boolean {
+  if (session.progress === null || typeof session.progress !== 'object' || Array.isArray(session.progress)) return false;
+  const phase = (session.progress as Record<string, unknown>)['phase'];
+  return phase === 'finalizing' || phase === 'offloading' || phase === 'committing';
 }
 
 function externalIdFieldName(fieldMappings: DatasetFieldMappingDto[]): string | null {

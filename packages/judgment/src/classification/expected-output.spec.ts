@@ -34,6 +34,18 @@ describe('exactMatchStrategy', () => {
     expect(out.judgmentStatus).toBe('judge_error');
     expect(out.decisionOutput).toBe('positive');
   });
+
+  it('falls back to the outputSchema judgment field when rules omit decisionField', () => {
+    const out = exactMatchStrategy.evaluate(
+      { sentiment: 'positive' },
+      {
+        outputSchema: { fields: [{ key: 'sentiment', value: 'positive 或 negative', isJudgment: true }] },
+        judgmentRules: { rules: [{ operator: 'exact_match' }] },
+        expectedOutput: 'positive',
+      },
+    );
+    expect(out).toEqual({ decisionOutput: 'positive', isCorrect: true, judgmentStatus: 'correct' });
+  });
 });
 
 describe('containsStrategy', () => {

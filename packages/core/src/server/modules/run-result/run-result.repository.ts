@@ -474,6 +474,7 @@ export class RunResultRepository {
           rr.cost_estimate,
           rr.attempt,
           rr.created_at,
+          to_char(rr.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at,
           rr.prompt_version_id,
           rr.model_id,
           rr.rendered_prompt,
@@ -572,7 +573,8 @@ export class RunResultRepository {
           rr.output_tokens,
           rr.cost_estimate,
           rr.attempt,
-          rr.created_at
+          rr.created_at,
+          to_char(rr.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_created_at
         FROM ph_runs.run_results rr
         JOIN ph_releases.release_line_events release_event
           ON release_event.id = rr.source_id
@@ -957,6 +959,7 @@ interface RunResultRowShape {
   cost_estimate: number | string | null;
   attempt: number | string;
   created_at: string | Date;
+  cursor_created_at?: string;
 }
 
 interface RunResultDetailRowShape extends RunResultRowShape {
@@ -1006,6 +1009,7 @@ interface ReleaseRunResultRowShape {
   cost_estimate: number | string | null;
   attempt: number | string;
   created_at: string | Date;
+  cursor_created_at?: string;
 }
 
 interface ReleaseRunResultExportRowShape extends ReleaseRunResultRowShape {
@@ -1057,7 +1061,7 @@ function toIsoString(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
-function nextCursorFromRows<T extends { id: string; created_at: string | Date }>(
+function nextCursorFromRows<T extends { id: string; created_at: string | Date; cursor_created_at?: string }>(
   rows: T[],
   limit: number,
 ): RunResultExportCursor | null {
@@ -1066,7 +1070,7 @@ function nextCursorFromRows<T extends { id: string; created_at: string | Date }>
   if (!last) return null;
   return {
     id: last.id,
-    createdAt: toIsoString(last.created_at),
+    createdAt: last.cursor_created_at ?? toIsoString(last.created_at),
   };
 }
 

@@ -435,6 +435,110 @@ describe('RunResultRepository', () => {
     });
   });
 
+  describe('export batches', () => {
+    it('uses the SQL microsecond timestamp alias for experiment export cursors', async () => {
+      const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      const repo = makeRepo(
+        fakeDb([
+          {
+            id,
+            project_id: '11111111-1111-4111-8111-111111111111',
+            source_id: '22222222-2222-4222-8222-222222222222',
+            sample_id: null,
+            external_id: null,
+            status: 'success',
+            judgment_status: 'correct',
+            is_correct: true,
+            decision_output: 'positive',
+            expected_output: 'positive',
+            sample_data: {},
+            dataset_field_schema: [],
+            input_preview: 'input',
+            output_preview: 'positive',
+            input_variables: {},
+            raw_response: '{"label":"positive"}',
+            parsed_output: { label: 'positive' },
+            payload_ref: null,
+            error_class: null,
+            error_message: null,
+            latency_ms: 10,
+            input_tokens: 1,
+            output_tokens: 1,
+            cost_estimate: 0,
+            attempt: 1,
+            created_at: '2026-05-19T10:00:00.123Z',
+            cursor_created_at: '2026-05-19T10:00:00.123456Z',
+            prompt_version_id: '33333333-3333-4333-8333-333333333333',
+            model_id: '44444444-4444-4444-8444-444444444444',
+            rendered_prompt: { messages: [] },
+            dbos_workflow_id: null,
+            bullmq_job_id: null,
+          },
+        ]),
+      );
+
+      const out = await repo.listExperimentExportBatch('22222222-2222-4222-8222-222222222222', defaultQuery, {
+        limit: 1,
+      });
+
+      expect(out.nextCursor).toEqual({ id, createdAt: '2026-05-19T10:00:00.123456Z' });
+      expect(out.rows[0]?.createdAt).toBe('2026-05-19T10:00:00.123Z');
+    });
+
+    it('uses the SQL microsecond timestamp alias for release export cursors', async () => {
+      const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+      const repo = makeRepo(
+        fakeDb([
+          {
+            id,
+            project_id: '11111111-1111-4111-8111-111111111111',
+            source: 'release',
+            source_id: '55555555-5555-4555-8555-555555555555',
+            release_event_id: '55555555-5555-4555-8555-555555555555',
+            release_version_id: '99999999-9999-4999-8999-999999999999',
+            release_version_kind: 'production',
+            release_version_production_number: 2,
+            release_version_target_production_number: 2,
+            release_version_candidate_number: null,
+            lane_type: 'production',
+            external_id: 'order-1',
+            prompt_name: 'risk-classifier',
+            prompt_version_id: '66666666-6666-4666-8666-666666666666',
+            prompt_version_number: 4,
+            model_id: '77777777-7777-4777-8777-777777777777',
+            model_name: 'gpt-test',
+            model_provider: 'openai',
+            status: 'success',
+            judgment_status: null,
+            is_correct: null,
+            decision_output: 'approve',
+            input_variables: { id: 'order-1' },
+            raw_response: '{"decision":"approve"}',
+            parsed_output: { decision: 'approve' },
+            payload_ref: null,
+            rendered_prompt: { messages: [] },
+            error_class: null,
+            error_message: null,
+            latency_ms: 11,
+            input_tokens: 2,
+            output_tokens: 3,
+            cost_estimate: '0.001',
+            attempt: 1,
+            created_at: '2026-05-21T10:00:00.987Z',
+            cursor_created_at: '2026-05-21T10:00:00.987654Z',
+          },
+        ]),
+      );
+
+      const out = await repo.listReleaseExportBatch('11111111-1111-4111-8111-111111111111', defaultReleaseQuery, {
+        limit: 1,
+      });
+
+      expect(out.nextCursor).toEqual({ id, createdAt: '2026-05-21T10:00:00.987654Z' });
+      expect(out.rows[0]?.createdAt).toBe('2026-05-21T10:00:00.987Z');
+    });
+  });
+
   describe('getDetailById', () => {
     it('returns null when no row is found', async () => {
       const repo = makeRepo(fakeDb([]));

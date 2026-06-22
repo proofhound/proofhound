@@ -226,20 +226,47 @@ export function normalizePromptJudgmentRules(value: unknown): PromptJudgmentRule
   return promptJudgmentRulesSchema.parse(value);
 }
 
+function readPromptJudgmentField(
+  value: unknown,
+  keys: string[],
+  fallback: string,
+): string {
+  const explicit = readExplicitPromptJudgmentField(value, keys);
+  return explicit ?? fallback;
+}
+
+function readExplicitPromptJudgmentField(value: unknown, keys: string[]): string | null {
+  if (!isRecord(value)) return null;
+
+  const merged = mergeLegacyConfig(value);
+  const rootValue = readStringAlias(merged, keys) ?? null;
+  const rawRules = Array.isArray(value['rules']) ? value['rules'] : merged['rules'];
+  if (Array.isArray(rawRules)) {
+    for (const rule of rawRules) {
+      if (!isRecord(rule)) continue;
+      const ruleMerged = mergeLegacyConfig(rule);
+      const ruleValue = readStringAlias(ruleMerged, keys);
+      if (ruleValue) return ruleValue;
+      if (rootValue && hasRuleSignal(ruleMerged)) return rootValue;
+    }
+    return rootValue;
+  }
+
+  return rootValue;
+}
+
 export function readPromptJudgmentExpectedField(
   value: unknown,
   fallback = DEFAULT_PROMPT_JUDGMENT_EXPECTED_FIELD,
 ): string {
-  const rules = normalizePromptJudgmentRules(value)?.rules ?? [];
-  return rules.find((rule) => rule.expectedField.trim().length > 0)?.expectedField ?? fallback;
+  return readPromptJudgmentField(value, ['expectedField', 'expected_field', 'value'], fallback);
 }
 
 export function readPromptJudgmentDecisionField(
   value: unknown,
   fallback = DEFAULT_PROMPT_JUDGMENT_DECISION_FIELD,
 ): string {
-  const rules = normalizePromptJudgmentRules(value)?.rules ?? [];
-  return rules.find((rule) => rule.decisionField.trim().length > 0)?.decisionField ?? fallback;
+  return readPromptJudgmentField(value, ['decisionField', 'decision_field', 'field'], fallback);
 }
 
 export const promptVersionSchema = z.object({

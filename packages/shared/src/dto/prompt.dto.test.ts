@@ -60,6 +60,15 @@ describe('prompt judgment rules normalization', () => {
     });
   });
 
+  it('uses caller fallbacks when rules have no explicit fields', () => {
+    const rules = { rules: [{ operator: 'exact_match' }] };
+    expect(readPromptJudgmentDecisionField(rules, 'sentiment')).toBe('sentiment');
+    expect(readPromptJudgmentExpectedField(rules, 'gold')).toBe('gold');
+    expect(normalizePromptJudgmentRules(rules)).toEqual({
+      rules: [{ decisionField: 'label', expectedField: 'expected_output', operator: 'exact_match' }],
+    });
+  });
+
   it('unwraps config.rules wrappers', () => {
     expect(
       normalizePromptJudgmentRules({

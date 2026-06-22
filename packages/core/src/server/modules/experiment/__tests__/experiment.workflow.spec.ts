@@ -310,6 +310,21 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
     expect(enqueueLlmJob.mock.calls[0]?.[0]?.judgment?.expectedOutput).toBe('prompt-rule-value');
   });
 
+  it('uses dataset expected field when prompt rule omits expectedField', async () => {
+    const { registrar, enqueueLlmJob } = buildEnqueueRegistrar({
+      judgmentRules: {
+        rules: [{ decisionField: 'decision', operator: 'exact_match' }],
+      },
+      expectedField: 'gold',
+      sampleData: { expected_output: 'legacy-default', gold: 'dataset-rule-value' },
+    });
+
+    await (registrar as unknown as { runWorkflow: (id: string) => Promise<void> }).runWorkflow('exp-1');
+
+    expect(enqueueLlmJob).toHaveBeenCalledTimes(1);
+    expect(enqueueLlmJob.mock.calls[0]?.[0]?.judgment?.expectedOutput).toBe('dataset-rule-value');
+  });
+
   it('legacy prompt expected_field 仍会被读取为 expectedOutput 字段来源', async () => {
     const { registrar, enqueueLlmJob } = buildEnqueueRegistrar({
       judgmentRules: { mode: 'exact_match', decision_field: 'decision', expected_field: 'legacy_expected' },
@@ -336,6 +351,11 @@ describe('readExpectedField', () => {
   it('falls back to the dataset expected field when rules are empty', () => {
     expect(readExpectedField({ rules: [] }, 'label')).toBe('label');
     expect(readExpectedField(null, 'label')).toBe('label');
+  });
+
+  it('falls back to the dataset expected field when rules omit expectedField', () => {
+    expect(readExpectedField({ rules: [{ decisionField: 'decision', operator: 'exact_match' }] }, 'gold')).toBe('gold');
+    expect(readExpectedField({ ruleName: 'exact_match' }, 'gold')).toBe('gold');
   });
 });
 

@@ -19,6 +19,7 @@ import {
   Play,
   Plus,
   RotateCcw,
+  Save,
   ScrollText,
   Search,
   SlidersHorizontal,
@@ -176,6 +177,7 @@ const RELEASE_RETENTION_LABEL_KEYS: Record<
   '365': 'productionReleases.new.retention.365',
   forever: 'productionReleases.new.retention.forever',
 };
+const RELEASE_SETTINGS_ACTION_BUTTON_CLASS = 'h-10 w-full px-4 sm:w-[152px]';
 type ResultReleaseVersionFilterOption = {
   id: string;
   label: string;
@@ -1370,27 +1372,14 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
             </div>
             <div className="space-y-4 p-4">
               <div className="rounded-md border bg-background p-4" data-testid="release-line-retention-settings">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-[13px] font-semibold">
-                      <Timer className="size-4 text-muted-foreground" />
-                      {t('releases.detail.retention.title')}
-                    </div>
-                    <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
-                      {t('releases.detail.retention.description')}
-                    </p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-[13px] font-semibold">
+                    <Timer className="size-4 text-muted-foreground" />
+                    {t('releases.detail.retention.title')}
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={saveRetention}
-                    disabled={!canEditRetention || !retentionDirty || updateRetentionMutation.isPending}
-                    data-testid="release-line-retention-save"
-                  >
-                    {updateRetentionMutation.isPending
-                      ? t('releases.detail.retention.saving')
-                      : t('releases.detail.retention.save')}
-                  </Button>
+                  <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
+                    {t('releases.detail.retention.description')}
+                  </p>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={t('releases.detail.retention.title')}>
                   {RELEASE_RETENTION_OPTIONS.map((option) => {
@@ -1428,6 +1417,21 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
                     {getApiErrorMessage(updateRetentionMutation.error) ?? t('releases.detail.retention.updateFailed')}
                   </p>
                 ) : null}
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={saveRetention}
+                    disabled={!canEditRetention || !retentionDirty || updateRetentionMutation.isPending}
+                    data-testid="release-line-retention-save"
+                    className={RELEASE_SETTINGS_ACTION_BUTTON_CLASS}
+                  >
+                    <Save className="size-3.5" aria-hidden="true" />
+                    {updateRetentionMutation.isPending
+                      ? t('releases.detail.retention.saving')
+                      : t('releases.detail.retention.save')}
+                  </Button>
+                </div>
               </div>
               <ReleaseRunResultCleanupSettings
                 projectId={projectId}
@@ -2364,7 +2368,7 @@ function ReleaseRunResultCleanupSettings({
         </p>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(280px,520px)_auto] lg:items-end">
+      <div className="mt-4 max-w-[560px] space-y-3">
         <div className="space-y-3">
           <div className="space-y-2">
             <label htmlFor="release-cleanup-version-filter" className="text-[12.5px] font-medium">
@@ -2405,7 +2409,13 @@ function ReleaseRunResultCleanupSettings({
             )}
           </div>
         </div>
+      </div>
 
+      {cleanupPreviewReady && cleanupPreview?.runResults === 0 ? (
+        <p className="mt-3 text-[12px] text-muted-foreground">{t('releases.detail.cleanup.empty')}</p>
+      ) : null}
+      {cleanupError ? <p className="mt-2 text-[12px] text-destructive">{cleanupError}</p> : null}
+      <div className="mt-4 flex justify-end">
         <Button
           type="button"
           size="sm"
@@ -2418,17 +2428,12 @@ function ReleaseRunResultCleanupSettings({
               : t('releases.detail.cleanup.versionRequired')
           }
           data-testid="release-run-result-delete-records"
-          className="h-10 w-full lg:w-auto"
+          className={RELEASE_SETTINGS_ACTION_BUTTON_CLASS}
         >
           <Trash2 className="size-3.5" aria-hidden="true" />
           {t('releases.detail.cleanup.delete')}
         </Button>
       </div>
-
-      {cleanupPreviewReady && cleanupPreview?.runResults === 0 ? (
-        <p className="mt-3 text-[12px] text-muted-foreground">{t('releases.detail.cleanup.empty')}</p>
-      ) : null}
-      {cleanupError ? <p className="mt-2 text-[12px] text-destructive">{cleanupError}</p> : null}
 
       <Dialog open={cleanupDialogOpen} onOpenChange={setCleanupDialogOpen}>
         <DialogContent data-testid="release-run-result-cleanup-dialog">

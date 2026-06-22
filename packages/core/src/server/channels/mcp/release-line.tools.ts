@@ -13,6 +13,7 @@ import {
   unarchiveReleaseLineInputSchema,
   updateReleaseLineInputRouteInputSchema,
   updateReleaseLineOutputRouteInputSchema,
+  updateReleaseLineRetentionInputSchema,
   updateReleaseLineRunConfigInputSchema,
   updateReleaseLineTrafficRatioInputSchema,
 } from '@proofhound/shared';
@@ -98,6 +99,24 @@ export function createReleaseLineTools(service: ReleaseLineService): McpToolDefi
         const releaseLineId = uuidParam.parse(input.releaseLineId);
         const body = updateReleaseLineTrafficRatioInputSchema.parse({ trafficRatio: input.trafficRatio });
         return service.updateTrafficRatio(projectId, releaseLineId, body, getMcpActor(ctx));
+      },
+    },
+    {
+      name: 'release_line_update_retention',
+      description: '更新发布线当前正式发布 lane 的运行结果保留天数；retentionDays=null 表示永久保留',
+      inputSchema: {
+        type: 'object',
+        required: ['releaseLineId', 'retentionDays'],
+        properties: {
+          releaseLineId: { type: 'string', format: 'uuid' },
+          retentionDays: { type: ['number', 'null'], minimum: 1 },
+        },
+      },
+      handler: async (input, ctx) => {
+        const { projectId } = resolveMcpProjectContext(ctx);
+        const releaseLineId = uuidParam.parse(input.releaseLineId);
+        const body = updateReleaseLineRetentionInputSchema.parse({ retentionDays: input.retentionDays });
+        return service.updateRetention(projectId, releaseLineId, body, getMcpActor(ctx));
       },
     },
     {

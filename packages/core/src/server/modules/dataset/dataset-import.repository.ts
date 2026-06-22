@@ -177,7 +177,16 @@ export class DatasetImportRepository {
           })}::jsonb`,
           updatedAt: new Date(),
         })
-        .where(eq(datasetImports.id, importId))
+        .where(
+          and(
+            eq(datasetImports.id, importId),
+            sql`${datasetImports.status} <> 'aborted'`,
+            sql`COALESCE(${datasetImports.progress}->>'phase', ${datasetImports.status}) NOT IN (${sql.join(
+              PROMOTION_PHASES.map((phase) => sql`${phase}`),
+              sql`, `,
+            )})`,
+          ),
+        )
         .returning({ receivedRows: datasetImports.receivedRows });
       return updated?.receivedRows ?? nextReceivedRows;
     });
@@ -478,6 +487,10 @@ export class DatasetImportRepository {
           eq(datasetImports.projectId, projectId),
           eq(datasetImports.id, importId),
           sql`${datasetImports.status} IN ('uploaded', 'queued', 'parsing', 'importing')`,
+          sql`COALESCE(${datasetImports.progress}->>'phase', ${datasetImports.status}) NOT IN (${sql.join(
+            PROMOTION_PHASES.map((phase) => sql`${phase}`),
+            sql`, `,
+          )})`,
         ),
       )
       .returning();
@@ -537,15 +550,23 @@ export class DatasetImportRepository {
   }
 
   async updateProgress(projectId: string, importId: string, progress: DatasetImportProgressPatch): Promise<void> {
+    const patch = sanitizeProgressPatch(progress);
+    const patchKeys = Object.keys(patch);
+    const canUpdateAborted =
+      patch['phase'] === 'aborted' || (patchKeys.length > 0 && patchKeys.every((key) => key === 'cleanupPending'));
     await this.db
       .update(datasetImports)
       .set({
-        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify(
-          sanitizeProgressPatch(progress),
-        )}::jsonb`,
+        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
         updatedAt: new Date(),
       })
-      .where(and(eq(datasetImports.projectId, projectId), eq(datasetImports.id, importId)));
+      .where(
+        and(
+          eq(datasetImports.projectId, projectId),
+          eq(datasetImports.id, importId),
+          canUpdateAborted ? sql`TRUE` : sql`${datasetImports.status} <> 'aborted'`,
+        ),
+      );
   }
 }
 

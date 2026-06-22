@@ -1,4 +1,4 @@
-import type { RunResultJudgmentStatusDto, RunResultStatusDto } from '@proofhound/shared';
+import { isRunResultFailure, type RunResultJudgmentStatusDto, type RunResultStatusDto } from '@proofhound/shared';
 import type { TranslationKey } from '../../i18n';
 
 export type BinaryRunResultJudgmentStatus = Extract<RunResultJudgmentStatusDto, 'correct' | 'incorrect'>;
@@ -8,6 +8,7 @@ export interface RunResultLabelSource {
   status: RunResultStatusDto;
   judgmentStatus: RunResultJudgmentStatusDto | null;
   isCorrect: boolean | null;
+  expectedOutput?: string | null;
   errorClass: string | null;
   errorMessage: string | null;
 }
@@ -62,17 +63,10 @@ export function getRunResultStatusLabelKey(status: RunResultStatusDto): Translat
 }
 
 export function getRunResultChainStatus(
-  runResult: Pick<RunResultLabelSource, 'status' | 'judgmentStatus'>,
+  runResult: Pick<RunResultLabelSource, 'status' | 'judgmentStatus' | 'expectedOutput'>,
 ): RunResultChainStatus {
   if (runResult.status === 'running') return 'running';
-  if (
-    runResult.status === 'failed' ||
-    runResult.judgmentStatus === 'parse_error' ||
-    runResult.judgmentStatus === 'judge_error'
-  ) {
-    return 'failed';
-  }
-  return 'success';
+  return isRunResultFailure(runResult.status, runResult.judgmentStatus, runResult.expectedOutput) ? 'failed' : 'success';
 }
 
 export function getRunResultChainStatusLabelKey(status: RunResultChainStatus): TranslationKey {
@@ -96,8 +90,9 @@ export function getRunResultJudgmentLabelKey(
 }
 
 export function getRunResultFailureLabelKey(
-  runResult: Pick<RunResultLabelSource, 'status' | 'judgmentStatus'>,
+  runResult: Pick<RunResultLabelSource, 'status' | 'judgmentStatus' | 'expectedOutput'>,
 ): TranslationKey | null {
+  if (!isRunResultFailure(runResult.status, runResult.judgmentStatus, runResult.expectedOutput)) return null;
   if (runResult.status === 'failed') return RUN_RESULT_STATUS_LABEL_KEYS[runResult.status];
   return runResult.judgmentStatus ? (RUN_RESULT_JUDGMENT_FAILURE_LABEL_KEYS[runResult.judgmentStatus] ?? null) : null;
 }
