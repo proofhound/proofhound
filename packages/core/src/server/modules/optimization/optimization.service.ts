@@ -1432,7 +1432,7 @@ function deriveRoundStatusFromSteps(
     // When there is no round_steps data, fall back to the original logic: based on the status of the experiments row
     if (experimentStatus === 'success') return 'success';
     if (experimentStatus === 'failed') return 'failed';
-    if (experimentStatus === 'stopped' || experimentStatus === 'cancelled') return 'paused';
+    if (experimentStatus === 'stopped') return 'paused';
     return 'running';
   }
   if (steps.some((s) => s.status === 'running')) return 'running';
@@ -1451,7 +1451,7 @@ function deriveDatasetBaselineStatus(
   if (!experimentStatus) return 'running';
   if (experimentStatus === 'success') return 'success';
   if (experimentStatus === 'failed') return 'failed';
-  if (experimentStatus === 'stopped' || experimentStatus === 'cancelled') return 'paused';
+  if (experimentStatus === 'stopped') return 'paused';
   return 'running';
 }
 

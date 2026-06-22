@@ -119,7 +119,7 @@ export async function seedExperiment(
     datasetId,
     modelId,
     // experiments have no 'pending' state — submission enters 'running' directly
-    // (experiments_status_check allows running/success/failed/stopped/cancelled).
+    // (experiments_status_check allows running/success/failed/stopped).
     status: 'running',
     totalSamples: sampleCount,
     runConfig,

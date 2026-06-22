@@ -33,7 +33,7 @@ import { useControlExperiment, useDeleteExperiment, useExperiments } from '../..
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage } from '../../lib';
-import { type ExperimentStatus, type ExperimentSummary } from './experiment-view-model';
+import { normalizeExperimentStatus, type ExperimentStatus, type ExperimentSummary } from './experiment-view-model';
 import { ChipFilter } from './experiment-ui';
 import { ExperimentsComparisonView } from './experiments-comparison-view';
 import { ExperimentsTable } from './experiments-table';
@@ -52,7 +52,6 @@ const STATUS_FILTERS: Array<{ key: ExperimentStatus; labelKey: TranslationKey }>
   { key: 'success', labelKey: 'experiments.status.success' },
   { key: 'failed', labelKey: 'experiments.status.failed' },
   { key: 'stopped', labelKey: 'experiments.status.stopped' },
-  { key: 'cancelled', labelKey: 'experiments.status.cancelled' },
 ];
 
 const SORT_LABEL_KEYS: Record<'accuracy' | 'updated' | 'duration', TranslationKey> = {
@@ -155,6 +154,7 @@ function toExperimentSummary(
   const ownerHandle = experiment.createdByUsername
     ? `@${experiment.createdByUsername}`
     : (experiment.createdByDisplayName ?? '—');
+  const status = normalizeExperimentStatus(experiment.status);
 
   return {
     id: experiment.id,
@@ -177,7 +177,7 @@ function toExperimentSummary(
     datasetHasImages: experiment.datasetHasImages,
     modelName: experiment.modelName,
     modelVariant: experiment.modelVariant,
-    status: experiment.status,
+    status,
     progressDone: experiment.processedSamples,
     progressTotal: experiment.totalSamples,
     elapsedLabel: formatDuration(durationSeconds),

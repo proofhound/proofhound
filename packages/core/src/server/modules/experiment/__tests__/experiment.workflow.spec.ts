@@ -2,7 +2,7 @@
 //   - all samples failed → finalize('failed', 'all_samples_failed')
 //   - partial failure   → finalize('success')
 //   - all succeed       → finalize('success')
-//   - control_state=stop / cancel → finalize with the matching terminal state
+//   - control_state=stop / legacy cancel → finalize(stopped)
 //
 // Mock @dbos-inc/dbos-sdk: registerStep/registerWorkflow degrade to identity, sleepSeconds is a noop,
 // so runImpl's this.xxxStep(...) calls the matching private impl directly; then use vi.spyOn to swap the private impl
@@ -145,7 +145,7 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
     expect(finalize).toHaveBeenCalledWith('exp-1', 'stopped');
   });
 
-  it('control_state=cancel → finalize(cancelled)', async () => {
+  it('legacy control_state=cancel → finalize(stopped)', async () => {
     const { registrar, finalize } = buildRegistrar();
     const r = registrar as unknown as Record<string, unknown>;
     r['loadPlanStep'] = vi.fn().mockResolvedValue({ ...PLAN, totalSamples: 2, batchSize: 1 });
@@ -156,7 +156,7 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
 
     await (registrar as unknown as { runWorkflow: (id: string) => Promise<void> }).runWorkflow('exp-1');
 
-    expect(finalize).toHaveBeenCalledWith('exp-1', 'cancelled');
+    expect(finalize).toHaveBeenCalledWith('exp-1', 'stopped');
   });
 
   it('poll 内返回 control=stop → finalize(stopped) 不再 enqueue 下一 batch', async () => {
@@ -175,7 +175,7 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
     expect(finalize).toHaveBeenCalledWith('exp-1', 'stopped');
   });
 
-  it('poll 内返回 control=cancel → finalize(cancelled)', async () => {
+  it('poll 内返回 legacy control=cancel → finalize(stopped)', async () => {
     const { registrar, finalize } = buildRegistrar();
     const r = registrar as unknown as Record<string, unknown>;
     r['loadPlanStep'] = vi.fn().mockResolvedValue({ ...PLAN, totalSamples: 2, batchSize: 1 });
@@ -188,7 +188,7 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
 
     await (registrar as unknown as { runWorkflow: (id: string) => Promise<void> }).runWorkflow('exp-1');
 
-    expect(finalize).toHaveBeenCalledWith('exp-1', 'cancelled');
+    expect(finalize).toHaveBeenCalledWith('exp-1', 'stopped');
   });
 
   it('prompt_version 未冻结 → finalize(failed, prompt_version_not_frozen)', async () => {

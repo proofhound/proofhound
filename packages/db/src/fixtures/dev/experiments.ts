@@ -25,10 +25,10 @@ export type DevExperimentFixture = {
   modelId: string;
   optimizationId: string | null;
   roundIndex: number | null;
-  status: 'running' | 'success' | 'failed' | 'stopped' | 'cancelled';
+  status: 'running' | 'success' | 'failed' | 'stopped';
   runConfig: Record<string, unknown>;
   dbosWorkflowId: string | null;
-  controlState: 'stop' | 'resume' | 'cancel' | null;
+  controlState: 'stop' | 'resume' | null;
   totalSamples: number;
   processedSamples: number;
   failedSamples: number;
