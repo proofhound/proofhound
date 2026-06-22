@@ -221,12 +221,12 @@ export function ExperimentsTable({
                   <span className="block truncate font-mono text-[12.5px] text-foreground">{experiment.modelName}</span>
                 </TableCell>
                 <TableCell column="status">
-                  <ExperimentStatusBadge status={experiment.status} />
+                  <ExperimentStatusBadge status={experiment.displayStatus} />
                 </TableCell>
                 <TableCell column="progress">
                   <div className="flex min-w-0 flex-col gap-1.5">
                     <ProgressBar
-                      status={experiment.status}
+                      status={experiment.displayStatus}
                       percent={percent}
                       label={progressLabel(experiment, percent)}
                     />

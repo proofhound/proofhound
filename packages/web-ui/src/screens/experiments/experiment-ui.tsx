@@ -3,10 +3,21 @@
 import { Check } from 'lucide-react';
 import { Progress, formatProgressNumber, cn } from '@proofhound/ui';
 import { useI18n } from '../../i18n';
-import { EXPERIMENT_STATUS_LABEL_KEYS, EXPERIMENT_STATUS_TONE, type ExperimentStatus } from './experiment-view-model';
+import {
+  EXPERIMENT_STATUS_LABEL_KEYS,
+  EXPERIMENT_STATUS_TONE,
+  type ExperimentDisplayStatus,
+  type ExperimentStatus,
+} from './experiment-view-model';
 import { experimentTone } from './experiment-theme';
 
-export function ExperimentStatusBadge({ status, compact = false }: { status: ExperimentStatus; compact?: boolean }) {
+export function ExperimentStatusBadge({
+  status,
+  compact = false,
+}: {
+  status: ExperimentDisplayStatus;
+  compact?: boolean;
+}) {
   const { t } = useI18n();
   const tone = EXPERIMENT_STATUS_TONE[status];
 
@@ -59,7 +70,7 @@ export function ProgressBar({
   percent,
   label,
 }: {
-  status: ExperimentStatus;
+  status: ExperimentDisplayStatus;
   percent: number;
   label: string;
   size?: 'sm' | 'md';

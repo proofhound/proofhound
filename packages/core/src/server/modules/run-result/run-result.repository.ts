@@ -141,6 +141,27 @@ export class RunResultRepository {
     };
   }
 
+  async findBatchTerminalIds(experimentId: string, runResultIds: string[]): Promise<string[]> {
+    if (runResultIds.length === 0) return [];
+    const ids = sql.join(
+      runResultIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+    const rows = await this.db.execute<{ id: string }>(sql`
+      SELECT id::text AS id
+      FROM ph_runs.run_results
+      WHERE source = 'experiment'
+        AND source_id = ${experimentId}::uuid
+        AND id IN (${ids})
+    `);
+
+    const list: Array<Record<string, unknown>> = Array.isArray(rows)
+      ? (rows as Array<Record<string, unknown>>)
+      : ((rows as { rows?: Array<Record<string, unknown>> }).rows ?? []);
+
+    return list.map((row) => String(row['id']));
+  }
+
   async findAccessibleExperiment(
     projectId: string,
     experimentId: string,

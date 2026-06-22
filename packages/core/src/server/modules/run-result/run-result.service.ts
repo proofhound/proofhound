@@ -31,6 +31,10 @@ export class RunResultService {
     return this.repo.countBatchTerminal(experimentId, runResultIds);
   }
 
+  findBatchTerminalIds(experimentId: string, runResultIds: string[]): Promise<string[]> {
+    return this.repo.findBatchTerminalIds(experimentId, runResultIds);
+  }
+
   async listExperimentRunResults(
     projectId: string,
     experimentId: string,

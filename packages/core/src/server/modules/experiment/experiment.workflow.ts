@@ -5,7 +5,9 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { createLogger } from '@proofhound/logger';
 import type { LlmJobPayload } from '@proofhound/orchestration-shared';
+import { readPromptJudgmentExpectedField } from '@proofhound/shared';
 import type {
+  DatasetFieldSchemaDto,
   ExperimentMetricsDto,
   PromptLanguageDto,
   PromptOutputSchemaDto,
@@ -14,7 +16,12 @@ import type {
 import { and, asc, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import { BullmqService } from '../../infrastructure/orchestration/bullmq.service';
+import { DrizzleRunResultWriter } from '../../infrastructure/llm/run-result-writer';
+import {
+  BullmqService,
+  type CleanupStoppedLlmJobsResult,
+  type StoppedLlmTerminalJob,
+} from '../../infrastructure/orchestration/bullmq.service';
 import { type DatasetSamplePayloadRef, DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
 import { RunResultCompactor } from '../run-result/run-result-compactor';
 import { RunResultService } from '../run-result/run-result.service';
@@ -96,6 +103,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     private readonly runResults: RunResultService,
     private readonly compactor: RunResultCompactor,
     private readonly datasetSampleReader: DatasetSamplePayloadReader,
+    private readonly runResultWriter: DrizzleRunResultWriter,
   ) {
     super('experiment-workflow');
     this.loadPlanStep = DBOS.registerStep(this.loadPlanImpl.bind(this), { name: 'experiment.loadPlan' });
@@ -184,8 +192,8 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
           },
           'workflow_batch_done',
         );
-        // Control signals observed inside poll: already-enqueued LLM jobs are not aborted (the worker has no abort channel),
-        // but the workflow terminates immediately at the batch boundary and stops dispatching new batches.
+        // Control signals observed inside poll remove queued-but-not-started LLM jobs and then wait for already-started
+        // jobs in the batch to write terminal run_results before stopping at the batch boundary.
         if (counts.control === 'stop' || counts.control === 'cancel') {
           await this.finalizeStep(experimentId, 'stopped');
           return;
@@ -290,7 +298,11 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     this.logger.debug({ experimentId }, 'step_clear_resume_done');
   }
 
-  private async loadSampleIdBatchImpl(datasetId: string, cursorId: string | null, batchSize: number): Promise<string[]> {
+  private async loadSampleIdBatchImpl(
+    datasetId: string,
+    cursorId: string | null,
+    batchSize: number,
+  ): Promise<string[]> {
     // Keyset pagination by id: a dataset's samples share created_at (NOW() at insert/promote time), so id alone is a
     // complete, stable total order. Avoids OFFSET's O(n^2) rescans on large datasets.
     const condition =
@@ -310,7 +322,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
   private async enqueueBatchImpl(experimentId: string, sampleIds: string[], orgId?: string): Promise<string[]> {
     const renderContext = await this.loadRenderContext(experimentId);
     const samples = await this.loadSampleDataByIds(sampleIds);
-    const expectedField = readExpectedField(renderContext.judgmentRules);
+    const expectedField = readExpectedField(renderContext.judgmentRules, renderContext.expectedField);
     // Inside the step we call DBOS.workflowID to capture the current workflow id, and pass it along in the payload to the worker,
     // so that LLM call logs and ph_runs.run_results.dbos_workflow_id can be threaded by workflow (SPEC 05 §5.6)
     const dbosWorkflowId = DBOS.workflowID;
@@ -365,19 +377,57 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
   ): Promise<{ terminalCount: number; failedCount: number; control: 'stop' | 'cancel' | null }> {
     if (runResultIds.length === 0) return { terminalCount: 0, failedCount: 0, control: null };
 
+    let pendingRunResultIds = [...runResultIds];
+    let stopControl: 'stop' | 'cancel' | null = null;
     const timeoutSec = batchPollTimeoutSec(runResultIds.length);
     let pollIndex = 0;
     const start = Date.now();
     while (Date.now() - start < timeoutSec * 1000) {
-      const counts = await this.runResults.countBatchTerminal(experimentId, runResultIds);
-      this.logger.debug({ experimentId, pollIndex, expected: runResultIds.length, ...counts }, 'step_poll_batch_tick');
-      if (counts.terminalCount >= runResultIds.length) return { ...counts, control: null };
+      const counts = await this.runResults.countBatchTerminal(experimentId, pendingRunResultIds);
+      this.logger.debug(
+        { experimentId, pollIndex, expected: pendingRunResultIds.length, ...counts, control: stopControl },
+        'step_poll_batch_tick',
+      );
+      if (counts.terminalCount >= pendingRunResultIds.length) return { ...counts, control: stopControl };
 
-      // Re-read control_state every poll round, so that under large-batch + slow-model scenarios, a user who clicks stop does not have to wait for the whole batch to finish
-      const controlState = await this.readControlStateImpl(experimentId);
-      if (controlState === 'stop' || controlState === 'cancel') {
-        this.logger.debug({ experimentId, controlState }, 'step_poll_batch_control_interrupt');
-        return { ...counts, control: controlState };
+      if (stopControl === null) {
+        // Re-read control_state every poll round, so that under large-batch + slow-model scenarios, a user who clicks stop does not have to wait for the whole batch to finish
+        const controlState = await this.readControlStateImpl(experimentId);
+        if (controlState === 'stop' || controlState === 'cancel') {
+          stopControl = controlState;
+        }
+      }
+
+      if (stopControl !== null) {
+        const cleanup = await this.cleanupStoppedBatchJobs(experimentId, pendingRunResultIds);
+        if (cleanup.droppedJobIds.length > 0) {
+          const dropped = new Set(cleanup.droppedJobIds);
+          pendingRunResultIds = pendingRunResultIds.filter((id) => !dropped.has(id));
+        }
+        this.logger.debug(
+          {
+            experimentId,
+            controlState: stopControl,
+            expectedBeforeRemoval: runResultIds.length,
+            expectedAfterRemoval: pendingRunResultIds.length,
+            removedQueuedJobs: cleanup.cleanup.removed,
+            skippedJobs: cleanup.cleanup.skipped,
+            missingJobs: cleanup.cleanup.missing,
+            failedRemovals: cleanup.cleanup.failed,
+            terminalJobsReconciled: cleanup.reconciledTerminalJobIds.length,
+            terminalJobsRemoved: cleanup.cleanup.terminalRemoved,
+            terminalJobRemoveFailures: cleanup.cleanup.terminalRemoveFailed,
+            invalidTerminalPayloads: cleanup.cleanup.invalidTerminalPayloads,
+            states: cleanup.cleanup.states,
+          },
+          'step_poll_batch_control_cleanup',
+        );
+        if (pendingRunResultIds.length === 0) return { terminalCount: 0, failedCount: 0, control: stopControl };
+
+        const postRemovalCounts = await this.runResults.countBatchTerminal(experimentId, pendingRunResultIds);
+        if (postRemovalCounts.terminalCount >= pendingRunResultIds.length) {
+          return { ...postRemovalCounts, control: stopControl };
+        }
       }
 
       const sleepSec = POLL_SLEEP_SCHEDULE_SEC[Math.min(pollIndex, POLL_SLEEP_SCHEDULE_SEC.length - 1)] ?? 5;
@@ -385,11 +435,84 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
       await DBOS.sleepSeconds(sleepSec);
     }
     this.logger.debug(
-      { experimentId, pollIndex, batchSize: runResultIds.length, timeoutSec },
+      {
+        experimentId,
+        pollIndex,
+        batchSize: pendingRunResultIds.length,
+        originalBatchSize: runResultIds.length,
+        timeoutSec,
+      },
       'step_poll_batch_timeout',
     );
-    const finalCounts = await this.runResults.countBatchTerminal(experimentId, runResultIds);
-    return { ...finalCounts, control: null };
+    const finalCounts = await this.runResults.countBatchTerminal(experimentId, pendingRunResultIds);
+    return { ...finalCounts, control: stopControl };
+  }
+
+  private async cleanupStoppedBatchJobs(
+    experimentId: string,
+    pendingRunResultIds: string[],
+  ): Promise<{
+    cleanup: CleanupStoppedLlmJobsResult;
+    droppedJobIds: string[];
+    reconciledTerminalJobIds: string[];
+  }> {
+    const existingTerminalIds = new Set(await this.runResults.findBatchTerminalIds(experimentId, pendingRunResultIds));
+    const idsWithoutRunResults = pendingRunResultIds.filter((id) => !existingTerminalIds.has(id));
+    const cleanup = await this.bullmq.cleanupStoppedLlmJobs(idsWithoutRunResults);
+    const reconciledTerminalJobIds: string[] = [];
+
+    for (const terminalJob of cleanup.terminalJobs) {
+      await this.writeMissingTerminalRunResult(terminalJob);
+      reconciledTerminalJobIds.push(terminalJob.jobId);
+    }
+
+    return {
+      cleanup,
+      droppedJobIds: [...cleanup.removedJobIds, ...cleanup.missingJobIds, ...cleanup.invalidTerminalJobIds],
+      reconciledTerminalJobIds,
+    };
+  }
+
+  private async writeMissingTerminalRunResult(terminalJob: StoppedLlmTerminalJob): Promise<void> {
+    const payload = terminalJob.payload;
+    const runResultId = payload.runResultId ?? terminalJob.jobId;
+    const errorClass = terminalJob.state === 'failed' ? 'QueueJobFailed' : 'QueueResultMissing';
+    const fallbackMessage =
+      terminalJob.state === 'failed'
+        ? 'BullMQ job failed without a persisted run_result'
+        : 'BullMQ job completed without a persisted run_result';
+    const errorMessage = (terminalJob.failedReason || fallbackMessage).slice(0, 2000);
+
+    await this.runResultWriter.writeRunResult({
+      id: runResultId,
+      projectId: payload.projectId,
+      source: payload.source,
+      sourceId: payload.sourceId,
+      releaseVersionId: payload.releaseVersionId ?? null,
+      promptVersionId: payload.promptVersionId,
+      modelId: payload.modelId,
+      sampleId: payload.sampleId ?? null,
+      externalId: payload.externalId ?? null,
+      renderedPrompt: payload.renderedPrompt,
+      inputVariables: payload.inputVariables,
+      rawResponse: null,
+      parsedOutput: null,
+      status: 'failed',
+      errorClass,
+      errorMessage,
+      latencyMs: null,
+      inputTokens: null,
+      outputTokens: null,
+      costEstimate: null,
+      attempt: terminalJob.attemptsMade ?? 1,
+      dbosWorkflowId: payload.dbosWorkflowId ?? null,
+      bullmqJobId: terminalJob.jobId,
+      webhookTokenId: payload.webhookTokenId ?? null,
+    });
+    this.logger.warn(
+      { runResultId, bullmqJobId: terminalJob.jobId, queueState: terminalJob.state, errorClass },
+      'experiment_missing_terminal_run_result_reconciled',
+    );
   }
 
   private async aggregateMetricsImpl(experimentId: string): Promise<void> {
@@ -427,10 +550,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
         );
       }
     } catch (error) {
-      this.logger.error(
-        { experimentId, error: (error as Error).message },
-        'step_compact_run_results_failed',
-      );
+      this.logger.error({ experimentId, error: (error as Error).message }, 'step_compact_run_results_failed');
     }
   }
 
@@ -469,10 +589,12 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
         judgmentRules: promptVersions.judgmentRules,
         promptLanguage: promptVersions.promptLanguage,
         modelProviderId: models.providerModelId,
+        datasetFieldSchema: datasets.fieldSchema,
       })
       .from(experiments)
       .innerJoin(promptVersions, eq(promptVersions.id, experiments.promptVersionId))
       .innerJoin(models, eq(models.id, experiments.modelId))
+      .innerJoin(datasets, eq(datasets.id, experiments.datasetId))
       .where(eq(experiments.id, experimentId))
       .limit(1);
     const row = rows[0];
@@ -488,6 +610,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
       outputSchema: row.outputSchema as PromptOutputSchemaDto,
       judgmentRules: row.judgmentRules ?? null,
       promptLanguage: row.promptLanguage as PromptLanguageDto,
+      expectedField: readExpectedFieldFromDatasetSchema(row.datasetFieldSchema as DatasetFieldSchemaDto[] | null),
     };
   }
 
@@ -508,24 +631,14 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
   }
 }
 
-export function readExpectedField(rules: unknown): string {
-  if (rules && typeof rules === 'object') {
-    const record = rules as Record<string, unknown>;
-    const f = record['expected_field'] ?? record['expectedField'];
-    if (typeof f === 'string' && f.length > 0) return f;
-    const rawRules = record['rules'];
-    if (Array.isArray(rawRules)) {
-      for (const rule of rawRules) {
-        if (!rule || typeof rule !== 'object' || Array.isArray(rule)) continue;
-        const nested =
-          (rule as Record<string, unknown>)['expected_field'] ??
-          (rule as Record<string, unknown>)['expectedField'] ??
-          (rule as Record<string, unknown>)['value'];
-        if (typeof nested === 'string' && nested.length > 0) return nested;
-      }
-    }
-  }
-  return 'expected_output';
+function readExpectedFieldFromDatasetSchema(
+  fieldSchema: DatasetFieldSchemaDto[] | null | undefined,
+): string | undefined {
+  return fieldSchema?.find((field) => field.role === 'expected_output')?.name;
+}
+
+export function readExpectedField(rules: unknown, fallback = 'expected_output'): string {
+  return readPromptJudgmentExpectedField(rules, fallback);
 }
 
 function pickInference(runConfig: Record<string, unknown>): LlmJobPayload['inference'] {
