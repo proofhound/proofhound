@@ -130,13 +130,11 @@ function getPromptQuickAddGroups(experiments: ExperimentSummary[]): QuickAddGrou
   const groups = new Map<string, QuickAddGroup>();
   for (const experiment of experiments) {
     const key = experiment.promptId ?? `prompt:${experiment.promptName}`;
-    const group =
-      groups.get(key) ??
-      {
-        key,
-        label: experiment.promptName,
-        experimentIds: [],
-      };
+    const group = groups.get(key) ?? {
+      key,
+      label: experiment.promptName,
+      experimentIds: [],
+    };
     addUniqueExperimentId(group, experiment.id);
     groups.set(key, group);
   }
@@ -147,14 +145,12 @@ function getDatasetQuickAddGroups(experiments: ExperimentSummary[], sampleSuffix
   const groups = new Map<string, QuickAddGroup>();
   for (const experiment of experiments) {
     const key = experiment.datasetId ?? `dataset:${experiment.datasetName}`;
-    const group =
-      groups.get(key) ??
-      {
-        key,
-        label: experiment.datasetName,
-        meta: `${formatNumber(experiment.datasetSamples)} ${sampleSuffix}`,
-        experimentIds: [],
-      };
+    const group = groups.get(key) ?? {
+      key,
+      label: experiment.datasetName,
+      meta: `${formatNumber(experiment.datasetSamples)} ${sampleSuffix}`,
+      experimentIds: [],
+    };
     addUniqueExperimentId(group, experiment.id);
     groups.set(key, group);
   }
@@ -256,7 +252,7 @@ function ComparisonTable({
                   </div>
                 </TableCell>
                 <TableCell column="status">
-                  <ExperimentStatusBadge status={experiment.status} compact />
+                  <ExperimentStatusBadge status={experiment.displayStatus} compact />
                 </TableCell>
                 <TableCell column="quality">
                   <span className="font-mono text-[12px] tabular-nums">
@@ -329,9 +325,7 @@ function MetricBars({
               key={`${metricKey}-${experiment.id}`}
               className="grid min-h-8 grid-cols-[minmax(88px,148px)_minmax(0,1fr)_minmax(56px,auto)] items-center gap-2"
             >
-              <div className="min-w-0 truncate font-mono text-[11.5px] text-muted-foreground">
-                {experiment.name}
-              </div>
+              <div className="min-w-0 truncate font-mono text-[11.5px] text-muted-foreground">{experiment.name}</div>
               <div className="h-2.5 min-w-0 rounded-full bg-muted">
                 <div
                   className={cn('h-2.5 rounded-full', value === undefined && 'opacity-0')}
@@ -624,11 +618,7 @@ export function ExperimentsComparisonView({
         </div>
       </div>
 
-      <ComparisonTable
-        experiments={selectedExperiments}
-        onRemove={removeExperiment}
-        onRowClick={onRowClick}
-      />
+      <ComparisonTable experiments={selectedExperiments} onRemove={removeExperiment} onRowClick={onRowClick} />
 
       {selectedExperiments.length > 0 ? (
         <div className="grid gap-5 border-t p-4 xl:grid-cols-2">

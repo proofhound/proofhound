@@ -32,7 +32,9 @@ import { DatasetSamplePayloadReader } from '../../dataset/dataset-sample-payload
 import { describe, expect, it, vi } from 'vitest';
 
 // Object storage disabled → the dataset-sample reader is a pure inline pass-through.
-const datasetSampleReader = new DatasetSamplePayloadReader({ isEnabled: () => false } as unknown as ObjectStorageProvider);
+const datasetSampleReader = new DatasetSamplePayloadReader({
+  isEnabled: () => false,
+} as unknown as ObjectStorageProvider);
 
 const PLAN: ExperimentPlan = {
   experimentId: 'exp-1',
@@ -52,7 +54,15 @@ function buildRegistrar() {
   const bullmq = {} as never;
   const runResults = {} as never;
   const compactor = {} as never;
-  const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, compactor, datasetSampleReader);
+  const runResultWriter = {} as never;
+  const registrar = new ExperimentWorkflowRegistrar(
+    db,
+    bullmq,
+    runResults,
+    compactor,
+    datasetSampleReader,
+    runResultWriter,
+  );
 
   const finalize = vi.fn().mockResolvedValue(undefined);
   const markStarted = vi.fn().mockResolvedValue(undefined);
@@ -218,6 +228,158 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
   });
 });
 
+describe('ExperimentWorkflow.pollUntilBatchDoneImpl — stop 清理队列', () => {
+  function buildPollRegistrar(options: {
+    terminalCounts: Array<{ terminalCount: number; failedCount: number }>;
+    removedJobIds: string[];
+    terminalJobs?: Array<Record<string, unknown>>;
+    existingTerminalIds?: string[];
+    controlState?: 'stop' | 'cancel';
+  }) {
+    const cleanupStoppedLlmJobs = vi.fn().mockResolvedValue({
+      requested: 0,
+      removed: options.removedJobIds.length,
+      skipped: 0,
+      missing: 0,
+      failed: 0,
+      removedJobIds: options.removedJobIds,
+      missingJobIds: [],
+      terminalJobs: options.terminalJobs ?? [],
+      terminalRemoved: options.terminalJobs?.length ?? 0,
+      terminalRemoveFailed: 0,
+      invalidTerminalPayloads: 0,
+      invalidTerminalJobIds: [],
+      states: options.removedJobIds.length > 0 ? { waiting: options.removedJobIds.length } : {},
+    });
+    const db = {} as never;
+    const bullmq = { cleanupStoppedLlmJobs } as never;
+    const runResults = {
+      countBatchTerminal: vi.fn(),
+      findBatchTerminalIds: vi.fn().mockResolvedValue(options.existingTerminalIds ?? []),
+    };
+    for (const counts of options.terminalCounts) {
+      runResults.countBatchTerminal.mockResolvedValueOnce(counts);
+    }
+    const compactor = {} as never;
+    const runResultWriter = { writeRunResult: vi.fn().mockResolvedValue(undefined) };
+    const registrar = new ExperimentWorkflowRegistrar(
+      db,
+      bullmq,
+      runResults as never,
+      compactor,
+      datasetSampleReader,
+      runResultWriter as never,
+    );
+    const r = registrar as unknown as Record<string, unknown>;
+    r['readControlStateImpl'] = vi.fn().mockResolvedValue(options.controlState ?? 'stop');
+
+    return {
+      registrar,
+      cleanupStoppedLlmJobs,
+      countBatchTerminal: runResults.countBatchTerminal,
+      findBatchTerminalIds: runResults.findBatchTerminalIds,
+      writeRunResult: runResultWriter.writeRunResult,
+    };
+  }
+
+  it('stop 时移除尚未开始的 job，并只等待剩余 job 终态', async () => {
+    const { registrar, cleanupStoppedLlmJobs, countBatchTerminal } = buildPollRegistrar({
+      terminalCounts: [
+        { terminalCount: 0, failedCount: 0 },
+        { terminalCount: 1, failedCount: 0 },
+      ],
+      removedJobIds: ['rr2'],
+    });
+
+    const result = await (
+      registrar as unknown as {
+        pollUntilBatchDoneImpl: (
+          experimentId: string,
+          runResultIds: string[],
+        ) => Promise<{ terminalCount: number; failedCount: number; control: 'stop' | 'cancel' | null }>;
+      }
+    ).pollUntilBatchDoneImpl('exp-1', ['rr1', 'rr2']);
+
+    expect(cleanupStoppedLlmJobs).toHaveBeenCalledWith(['rr1', 'rr2']);
+    expect(countBatchTerminal).toHaveBeenNthCalledWith(1, 'exp-1', ['rr1', 'rr2']);
+    expect(countBatchTerminal).toHaveBeenNthCalledWith(2, 'exp-1', ['rr1']);
+    expect(result).toEqual({ terminalCount: 1, failedCount: 0, control: 'stop' });
+  });
+
+  it('stop 时如果整批都还没开始，移除后直接停止等待', async () => {
+    const { registrar, cleanupStoppedLlmJobs, countBatchTerminal } = buildPollRegistrar({
+      terminalCounts: [{ terminalCount: 0, failedCount: 0 }],
+      removedJobIds: ['rr1', 'rr2'],
+    });
+
+    const result = await (
+      registrar as unknown as {
+        pollUntilBatchDoneImpl: (
+          experimentId: string,
+          runResultIds: string[],
+        ) => Promise<{ terminalCount: number; failedCount: number; control: 'stop' | 'cancel' | null }>;
+      }
+    ).pollUntilBatchDoneImpl('exp-1', ['rr1', 'rr2']);
+
+    expect(cleanupStoppedLlmJobs).toHaveBeenCalledWith(['rr1', 'rr2']);
+    expect(countBatchTerminal).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ terminalCount: 0, failedCount: 0, control: 'stop' });
+  });
+
+  it('stop 时补写队列终态但缺失的 failed run_result，避免等到 poll timeout', async () => {
+    const terminalJob = {
+      jobId: 'rr1',
+      state: 'failed',
+      failedReason: 'model is not available',
+      attemptsMade: 5,
+      payload: {
+        projectId: 'prj-1',
+        source: 'experiment',
+        sourceId: 'exp-1',
+        promptVersionId: 'pv-1',
+        modelId: 'm-1',
+        runResultId: 'rr1',
+        sampleId: 's1',
+        renderedPrompt: { prompt: 'hello' },
+        inputVariables: { text: 'hello' },
+      },
+    };
+    const { registrar, cleanupStoppedLlmJobs, countBatchTerminal, writeRunResult } = buildPollRegistrar({
+      terminalCounts: [
+        { terminalCount: 0, failedCount: 0 },
+        { terminalCount: 1, failedCount: 1 },
+      ],
+      removedJobIds: [],
+      terminalJobs: [terminalJob],
+    });
+
+    const result = await (
+      registrar as unknown as {
+        pollUntilBatchDoneImpl: (
+          experimentId: string,
+          runResultIds: string[],
+        ) => Promise<{ terminalCount: number; failedCount: number; control: 'stop' | 'cancel' | null }>;
+      }
+    ).pollUntilBatchDoneImpl('exp-1', ['rr1']);
+
+    expect(cleanupStoppedLlmJobs).toHaveBeenCalledWith(['rr1']);
+    expect(writeRunResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'rr1',
+        source: 'experiment',
+        sourceId: 'exp-1',
+        status: 'failed',
+        errorClass: 'QueueJobFailed',
+        errorMessage: 'model is not available',
+        attempt: 5,
+        bullmqJobId: 'rr1',
+      }),
+    );
+    expect(countBatchTerminal).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ terminalCount: 1, failedCount: 1, control: 'stop' });
+  });
+});
+
 describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
   // Drive runWorkflow(experimentId, orgId) through the real enqueueBatchImpl (loadRenderContext /
   // loadSampleDataByIds stubbed), capturing the LlmJobPayload handed to bullmq.enqueueLlmJob.
@@ -233,7 +395,15 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
     const bullmq = { enqueueLlmJob } as never;
     const runResults = {} as never;
     const compactor = {} as never;
-    const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, compactor, datasetSampleReader);
+    const runResultWriter = {} as never;
+    const registrar = new ExperimentWorkflowRegistrar(
+      db,
+      bullmq,
+      runResults,
+      compactor,
+      datasetSampleReader,
+      runResultWriter,
+    );
 
     const r = registrar as unknown as Record<string, unknown>;
     r['finalizeStep'] = vi.fn().mockResolvedValue(undefined);

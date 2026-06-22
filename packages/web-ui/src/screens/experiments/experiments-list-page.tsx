@@ -33,7 +33,12 @@ import { useControlExperiment, useDeleteExperiment, useExperiments } from '../..
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage } from '../../lib';
-import { normalizeExperimentStatus, type ExperimentStatus, type ExperimentSummary } from './experiment-view-model';
+import {
+  deriveExperimentDisplayStatus,
+  normalizeExperimentStatus,
+  type ExperimentStatus,
+  type ExperimentSummary,
+} from './experiment-view-model';
 import { ChipFilter } from './experiment-ui';
 import { ExperimentsComparisonView } from './experiments-comparison-view';
 import { ExperimentsTable } from './experiments-table';
@@ -155,6 +160,7 @@ function toExperimentSummary(
     ? `@${experiment.createdByUsername}`
     : (experiment.createdByDisplayName ?? '—');
   const status = normalizeExperimentStatus(experiment.status);
+  const displayStatus = deriveExperimentDisplayStatus(experiment.status, experiment.controlState);
 
   return {
     id: experiment.id,
@@ -178,6 +184,8 @@ function toExperimentSummary(
     modelName: experiment.modelName,
     modelVariant: experiment.modelVariant,
     status,
+    controlState: experiment.controlState,
+    displayStatus,
     progressDone: experiment.processedSamples,
     progressTotal: experiment.totalSamples,
     elapsedLabel: formatDuration(durationSeconds),

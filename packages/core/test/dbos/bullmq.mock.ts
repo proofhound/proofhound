@@ -18,6 +18,25 @@ export interface EnqueueCall {
   runResultId: string;
 }
 
+export interface RemoveQueuedLlmJobsResult {
+  requested: number;
+  removed: number;
+  skipped: number;
+  missing: number;
+  failed: number;
+  removedJobIds: string[];
+  states: Record<string, number>;
+}
+
+export interface CleanupStoppedLlmJobsResult extends RemoveQueuedLlmJobsResult {
+  missingJobIds: string[];
+  terminalJobs: [];
+  terminalRemoved: number;
+  terminalRemoveFailed: number;
+  invalidTerminalPayloads: number;
+  invalidTerminalJobIds: string[];
+}
+
 export class MockBullmqService {
   private behavior: MockBullmqBehavior = 'all_success';
   private calls: EnqueueCall[] = [];
@@ -82,5 +101,35 @@ export class MockBullmqService {
     `);
 
     return rrId;
+  }
+
+  async removeQueuedLlmJobs(jobIds: readonly string[]): Promise<RemoveQueuedLlmJobsResult> {
+    return {
+      requested: new Set(jobIds).size,
+      removed: 0,
+      skipped: 0,
+      missing: 0,
+      failed: 0,
+      removedJobIds: [],
+      states: {},
+    };
+  }
+
+  async cleanupStoppedLlmJobs(jobIds: readonly string[]): Promise<CleanupStoppedLlmJobsResult> {
+    return {
+      requested: new Set(jobIds).size,
+      removed: 0,
+      skipped: 0,
+      missing: 0,
+      failed: 0,
+      removedJobIds: [],
+      missingJobIds: [],
+      terminalJobs: [],
+      terminalRemoved: 0,
+      terminalRemoveFailed: 0,
+      invalidTerminalPayloads: 0,
+      invalidTerminalJobIds: [],
+      states: {},
+    };
   }
 }

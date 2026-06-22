@@ -63,7 +63,11 @@ import { useDelayedLoading } from '../../hooks';
 import { useExperimentRunResults } from '../../hooks';
 import { experimentTone } from './experiment-theme';
 import { buildRepeatExperimentHref } from './experiment-repeat-href';
-import { derivePromptModalityKinds, normalizeExperimentStatus } from './experiment-view-model';
+import {
+  deriveExperimentDisplayStatus,
+  derivePromptModalityKinds,
+  normalizeExperimentStatus,
+} from './experiment-view-model';
 import { ExperimentStatusBadge, formatNumber } from './experiment-ui';
 import type { DatasetFieldRole } from '../datasets/dataset-types';
 import { RolePill } from '../datasets/dataset-ui';
@@ -947,7 +951,7 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
     );
   }
 
-  const normalizedStatus = normalizeExperimentStatus(detail.status);
+  const displayStatus = deriveExperimentDisplayStatus(detail.status, detail.controlState);
   const buttons = deriveControlButtons(detail.status, detail.controlState);
   const inProgressAction = controlExperiment.isPending ? controlExperiment.variables?.action : null;
   const inProgressDownload = downloadExperimentPackage.isPending;
@@ -1015,7 +1019,7 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
               <h1 className="flex flex-wrap items-center gap-2 text-[24px] font-semibold tracking-tight">
                 <span className="font-mono">{detail.name}</span>
                 <span data-testid="experiment-detail-status-badge">
-                  <ExperimentStatusBadge status={normalizedStatus} />
+                  <ExperimentStatusBadge status={displayStatus} />
                 </span>
               </h1>
             </div>

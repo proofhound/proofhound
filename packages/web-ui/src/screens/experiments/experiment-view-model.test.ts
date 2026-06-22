@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   EXPERIMENT_OVERALL_QUALITY_DIMENSION,
+  deriveExperimentDisplayStatus,
   derivePromptModalityKinds,
   getExperimentComparisonClassLabels,
   getExperimentComparisonMetricDomainMax,
@@ -9,6 +10,15 @@ import {
   hasImagePromptVariable,
   type ExperimentSummary,
 } from './experiment-view-model';
+
+describe('deriveExperimentDisplayStatus', () => {
+  it('shows running experiments with stop control as stopping', () => {
+    expect(deriveExperimentDisplayStatus('running', 'stop')).toBe('stopping');
+    expect(deriveExperimentDisplayStatus('running', null)).toBe('running');
+    expect(deriveExperimentDisplayStatus('success', 'stop')).toBe('success');
+    expect(deriveExperimentDisplayStatus('cancelled', 'stop')).toBe('stopped');
+  });
+});
 
 describe('derivePromptModalityKinds', () => {
   it('returns text → image → number order regardless of input order', () => {
