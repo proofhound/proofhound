@@ -177,7 +177,6 @@ const RELEASE_RETENTION_LABEL_KEYS: Record<
   '365': 'productionReleases.new.retention.365',
   forever: 'productionReleases.new.retention.forever',
 };
-const RELEASE_SETTINGS_ACTION_BUTTON_CLASS = 'h-10 w-full px-4 sm:w-[152px]';
 type ResultReleaseVersionFilterOption = {
   id: string;
   label: string;
@@ -1365,23 +1364,47 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
           />
         ) : null}
         {tab === 'settings' ? (
-          <section className="rounded-lg border bg-card" data-testid="release-line-settings-tab">
+          <section className="mx-auto max-w-4xl rounded-lg border bg-card" data-testid="release-line-settings-tab">
             <div className="border-b px-4 py-3">
               <div className="text-[13px] font-semibold">{t('releases.detail.settings.title')}</div>
               <p className="mt-1 text-[12px] text-muted-foreground">{t('releases.detail.settings.description')}</p>
             </div>
             <div className="space-y-4 p-4">
-              <div className="rounded-md border bg-background p-4" data-testid="release-line-retention-settings">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-[13px] font-semibold">
-                    <Timer className="size-4 text-muted-foreground" />
-                    {t('releases.detail.retention.title')}
-                  </div>
-                  <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
-                    {t('releases.detail.retention.description')}
-                  </p>
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={t('releases.detail.retention.title')}>
+              <ReleaseSettingsCard
+                dataTestId="release-line-retention-settings"
+                icon={<Timer className="size-4" />}
+                title={t('releases.detail.retention.title')}
+                description={t('releases.detail.retention.description')}
+                footer={{
+                  note: updateRetentionMutation.isError ? (
+                    <span className="text-destructive">
+                      {getApiErrorMessage(updateRetentionMutation.error) ??
+                        t('releases.detail.retention.updateFailed')}
+                    </span>
+                  ) : canEditRetention ? (
+                    formatTemplate(t('releases.detail.retention.current'), {
+                      value: t(RELEASE_RETENTION_LABEL_KEYS[currentRetentionOption]),
+                    })
+                  ) : (
+                    t('releases.detail.retention.noProduction')
+                  ),
+                  action: (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={saveRetention}
+                      disabled={!canEditRetention || !retentionDirty || updateRetentionMutation.isPending}
+                      data-testid="release-line-retention-save"
+                    >
+                      <Save className="size-3.5" aria-hidden="true" />
+                      {updateRetentionMutation.isPending
+                        ? t('releases.detail.retention.saving')
+                        : t('releases.detail.retention.save')}
+                    </Button>
+                  ),
+                }}
+              >
+                <div className="flex flex-wrap gap-2" role="group" aria-label={t('releases.detail.retention.title')}>
                   {RELEASE_RETENTION_OPTIONS.map((option) => {
                     const selected = option === retentionDraft;
                     return (
@@ -1405,59 +1428,32 @@ export function ReleaseLineDetailPage({ projectId, releaseLineId }: { projectId:
                     );
                   })}
                 </div>
-                <p className="mt-3 text-[12px] text-muted-foreground">
-                  {canEditRetention
-                    ? formatTemplate(t('releases.detail.retention.current'), {
-                        value: t(RELEASE_RETENTION_LABEL_KEYS[currentRetentionOption]),
-                      })
-                    : t('releases.detail.retention.noProduction')}
-                </p>
-                {updateRetentionMutation.isError ? (
-                  <p className="mt-2 text-[12px] text-destructive">
-                    {getApiErrorMessage(updateRetentionMutation.error) ?? t('releases.detail.retention.updateFailed')}
-                  </p>
-                ) : null}
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={saveRetention}
-                    disabled={!canEditRetention || !retentionDirty || updateRetentionMutation.isPending}
-                    data-testid="release-line-retention-save"
-                    className={RELEASE_SETTINGS_ACTION_BUTTON_CLASS}
-                  >
-                    <Save className="size-3.5" aria-hidden="true" />
-                    {updateRetentionMutation.isPending
-                      ? t('releases.detail.retention.saving')
-                      : t('releases.detail.retention.save')}
-                  </Button>
-                </div>
-              </div>
+              </ReleaseSettingsCard>
               <ReleaseRunResultCleanupSettings
                 projectId={projectId}
                 line={line}
                 releaseEvents={releaseLineEventsQuery.data?.data ?? []}
               />
-              <div className="flex flex-col gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-[13px] font-semibold text-destructive">
-                    <AlertTriangle className="size-4" />
-                    {t('releases.detail.delete.dangerTitle')}
-                  </div>
-                  <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
-                    {t('releases.detail.delete.description')}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={openDeleteDialog}
-                  data-testid="release-line-delete-open"
-                >
-                  <Trash2 className="size-4" />
-                  {t('releases.detail.delete.open')}
-                </Button>
-              </div>
+              <ReleaseSettingsCard
+                tone="danger"
+                icon={<AlertTriangle className="size-4" />}
+                title={t('releases.detail.delete.dangerTitle')}
+                description={t('releases.detail.delete.description')}
+                footer={{
+                  action: (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={openDeleteDialog}
+                      data-testid="release-line-delete-open"
+                    >
+                      <Trash2 className="size-3.5" />
+                      {t('releases.detail.delete.open')}
+                    </Button>
+                  ),
+                }}
+              />
             </div>
           </section>
         ) : null}
@@ -2357,18 +2353,40 @@ function ReleaseRunResultCleanupSettings({
         : t('releases.detail.cleanup.versionHelp');
 
   return (
-    <div className="rounded-md border bg-background p-4" data-testid="release-run-result-cleanup-settings">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2 text-[13px] font-semibold">
-          <Trash2 className="size-4 text-muted-foreground" />
-          {t('releases.detail.cleanup.title')}
-        </div>
-        <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
-          {t('releases.detail.cleanup.description')}
-        </p>
-      </div>
-
-      <div className="mt-4 max-w-[560px] space-y-3">
+    <>
+      <ReleaseSettingsCard
+        dataTestId="release-run-result-cleanup-settings"
+        icon={<Trash2 className="size-4" />}
+        title={t('releases.detail.cleanup.title')}
+        description={t('releases.detail.cleanup.description')}
+        footer={{
+          note: cleanupError ? (
+            <span className="text-destructive">{cleanupError}</span>
+          ) : cleanupPreviewReady && cleanupPreview?.runResults === 0 ? (
+            t('releases.detail.cleanup.empty')
+          ) : selectedReleaseVersion && cleanupPreviewReady ? (
+            formatTemplate(t('releases.detail.cleanup.versionSummary'), { version: selectedReleaseVersion.label })
+          ) : null,
+          action: (
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              onClick={handleOpenCleanupDialog}
+              disabled={cleanupActionDisabled}
+              title={
+                selectedReleaseVersion
+                  ? t('releases.detail.cleanup.delete')
+                  : t('releases.detail.cleanup.versionRequired')
+              }
+              data-testid="release-run-result-delete-records"
+            >
+              <Trash2 className="size-3.5" aria-hidden="true" />
+              {t('releases.detail.cleanup.delete')}
+            </Button>
+          ),
+        }}
+      >
         <div className="space-y-3">
           <div className="space-y-2">
             <label htmlFor="release-cleanup-version-filter" className="text-[12.5px] font-medium">
@@ -2409,31 +2427,7 @@ function ReleaseRunResultCleanupSettings({
             )}
           </div>
         </div>
-      </div>
-
-      {cleanupPreviewReady && cleanupPreview?.runResults === 0 ? (
-        <p className="mt-3 text-[12px] text-muted-foreground">{t('releases.detail.cleanup.empty')}</p>
-      ) : null}
-      {cleanupError ? <p className="mt-2 text-[12px] text-destructive">{cleanupError}</p> : null}
-      <div className="mt-4 flex justify-end">
-        <Button
-          type="button"
-          size="sm"
-          variant="destructive"
-          onClick={handleOpenCleanupDialog}
-          disabled={cleanupActionDisabled}
-          title={
-            selectedReleaseVersion
-              ? t('releases.detail.cleanup.delete')
-              : t('releases.detail.cleanup.versionRequired')
-          }
-          data-testid="release-run-result-delete-records"
-          className={RELEASE_SETTINGS_ACTION_BUTTON_CLASS}
-        >
-          <Trash2 className="size-3.5" aria-hidden="true" />
-          {t('releases.detail.cleanup.delete')}
-        </Button>
-      </div>
+      </ReleaseSettingsCard>
 
       <Dialog open={cleanupDialogOpen} onOpenChange={setCleanupDialogOpen}>
         <DialogContent data-testid="release-run-result-cleanup-dialog">
@@ -2485,6 +2479,64 @@ function ReleaseRunResultCleanupSettings({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+function ReleaseSettingsCard({
+  icon,
+  title,
+  description,
+  tone = 'default',
+  dataTestId,
+  children,
+  footer,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  tone?: 'default' | 'danger';
+  dataTestId?: string;
+  children?: ReactNode;
+  footer?: { note?: ReactNode; action: ReactNode };
+}) {
+  const danger = tone === 'danger';
+  return (
+    <div
+      className={cn(
+        'overflow-hidden rounded-md border bg-background',
+        danger && 'border-destructive/30 bg-destructive/5',
+      )}
+      data-testid={dataTestId}
+    >
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          <div
+            className={cn(
+              'mt-0.5 shrink-0 rounded-md border bg-muted/50 p-2 text-muted-foreground',
+              danger && 'border-destructive/30 bg-destructive/10 text-destructive',
+            )}
+          >
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <div className={cn('text-[13px] font-semibold', danger && 'text-destructive')}>{title}</div>
+            <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{description}</p>
+          </div>
+        </div>
+        {children ? <div className="mt-4">{children}</div> : null}
+      </div>
+      {footer ? (
+        <div
+          className={cn(
+            'flex items-center justify-between gap-4 border-t bg-muted/20 px-4 py-3',
+            danger && 'border-destructive/30 bg-destructive/10',
+          )}
+        >
+          <div className="min-w-0 flex-1 text-[12px] leading-relaxed text-muted-foreground">{footer.note}</div>
+          <div className="shrink-0">{footer.action}</div>
+        </div>
+      ) : null}
     </div>
   );
 }
