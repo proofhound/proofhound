@@ -32,9 +32,9 @@ test('creates an experiment via the UI and it runs to success against the fake L
     await expect(page.getByTestId('experiment-detail-status-badge')).toContainText(/success/i, { timeout: 90_000 });
     const samplesTable = page.getByTestId('experiment-samples');
     await expect(samplesTable).toBeVisible();
-    await expect(samplesTable.getByText(/^(Expected|期望输出)$/u)).toBeVisible();
-    await expect(samplesTable.getByText(/Success|是否成功/u)).toBeVisible();
-    await expect(samplesTable.getByText(/Failure reason|失败原因/u)).toBeVisible();
+    await expect(samplesTable.getByRole('columnheader', { name: /Expected|期望输出/u })).toBeVisible();
+    await expect(samplesTable.getByRole('columnheader', { name: /^(Success|是否成功)$/u })).toBeVisible();
+    await expect(samplesTable.getByRole('columnheader', { name: /^(Failure reason|失败原因)$/u })).toBeVisible();
     await expect(samplesTable.getByText(/Correct|正确/u).first()).toBeVisible();
 
     const resultsResponse = await request.get(`${SERVER_URL}/experiments/${experimentId}/run-results`, {
