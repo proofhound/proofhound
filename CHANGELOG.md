@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.18](https://github.com/proofhound/proofhound/compare/v0.1.17...v0.1.18) (2026-06-23)
+
+
+### Features
+
+* improve dataset imports and run-result cleanup ([292f343](https://github.com/proofhound/proofhound/commit/292f3438ffcbcff8318462552a57c76b57cca553))
+
 ## [0.1.17](https://github.com/proofhound/proofhound/compare/v0.1.16...v0.1.17) (2026-06-22)
 
 
