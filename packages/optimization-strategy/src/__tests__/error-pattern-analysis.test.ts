@@ -1006,6 +1006,7 @@ describe('generateNextVersion', () => {
 describe('optimization run_results 持久化(SPEC 25 §11.2)', () => {
   const runResultMeta = {
     projectId: '00000000-0000-4000-8000-000000000001',
+    orgId: '00000000-0000-4000-8000-000000000099',
     sourceId: '00000000-0000-4000-8000-0000000000a1',
     promptVersionId: 'pv_001',
     modelId: 'model_analysis_001',
@@ -1043,6 +1044,7 @@ describe('optimization run_results 持久化(SPEC 25 §11.2)', () => {
       source: 'optimization_analysis',
       sourceId: runResultMeta.sourceId,
       projectId: runResultMeta.projectId,
+      orgId: runResultMeta.orgId,
       promptVersionId: runResultMeta.promptVersionId,
       modelId: runResultMeta.modelId,
       dbosWorkflowId: runResultMeta.dbosWorkflowId,

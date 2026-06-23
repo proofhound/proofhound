@@ -10,6 +10,7 @@ export * from './model-probe-status';
 export * from './prompt-language-select';
 export * from './prompt-version-picker-row';
 export * from './prompt-version-status-badge';
+export * from './runtime-concurrency-info';
 export * from './time-zone-preference-menu';
 // features re-exported for convenience
 export * from '../features/model-quick-fill/model-preset-quick-fill';

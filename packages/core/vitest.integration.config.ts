@@ -27,7 +27,7 @@ export default defineConfig({
     ...ciReporterConfig(),
     globals: true,
     environment: 'node',
-    include: ['test/dbos/**/*.spec.ts'],
+    include: ['test/dbos/**/*.spec.ts', 'src/**/*.integration.spec.ts'],
     exclude: ['test/e2e/**', 'node_modules/**', 'dist/**'],
     pool: 'forks',
     forks: { singleFork: true },

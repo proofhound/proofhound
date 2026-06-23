@@ -1,6 +1,6 @@
 import { RateLimitExceededError } from '@proofhound/limiter';
 import { DelayedError } from 'bullmq';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { LlmConsumer } from '../llm.consumer';
 import { LocalLimiterKeyStrategy } from '../../../server/common/contracts/limiter-key.strategy';
 import { LocalQuotaPolicyHook } from '../../../server/common/contracts/quota-policy.hook';
@@ -13,10 +13,12 @@ const validUuid = (suffix: string) => `a1b2c3d4-e5f6-4789-a012-3456789${suffix}`
 
 function buildJob(overrides: Partial<Record<string, unknown>> = {}) {
   const moveToDelayed = vi.fn<(when: number, token?: string) => Promise<void>>(async () => undefined);
+  const updateData = vi.fn<(data: unknown) => Promise<void>>(async () => undefined);
   return {
     id: 'job-1',
     attemptsMade: 0,
     moveToDelayed,
+    updateData,
     data: {
       projectId: validUuid('01111'),
       source: 'experiment' as const,
@@ -29,6 +31,16 @@ function buildJob(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function successResult() {
+  return {
+    runResultId: validUuid('05555'),
+    content: 'ok',
+    usage: { inputTokens: 1, outputTokens: 1 },
+    costEstimate: 0,
+    durationMs: 1,
+  };
+}
+
 function fakeRedis() {
   return {
     ttl: vi.fn().mockResolvedValue(-2),
@@ -36,7 +48,102 @@ function fakeRedis() {
   };
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
 describe('LlmConsumer.process — RateLimitExceededError handling', () => {
+  it('releases an admission reservation after processing an admitted job', async () => {
+    const runMock = vi.fn(async () => successResult());
+    vi.spyOn(llmRunnerModule, 'createLlmRunner').mockReturnValue(runMock);
+    const admissionStore = {
+      defaultLeaseTtlMs: 600_000,
+      extendConcurrencyReservation: vi.fn(async () => true),
+      releaseConcurrencyReservation: vi.fn(async () => undefined),
+    };
+    const consumer = new LlmConsumer(
+      {} as never,
+      {} as never,
+      {} as never,
+      fakeRedis() as never,
+      new LocalLimiterKeyStrategy(),
+      new LocalQuotaPolicyHook(),
+      new LocalRuntimeLimitsProvider(),
+      new NoopUsageMeteringHook(),
+      admissionStore as never,
+    );
+
+    await consumer.process(
+      buildJob({
+        data: {
+          ...buildJob().data,
+          admission: {
+            fairnessKey: 'model:test',
+            reservationId: '00000000-0000-4000-8000-000000000007',
+          },
+        },
+      }) as never,
+    );
+
+    expect(admissionStore.releaseConcurrencyReservation).toHaveBeenCalledWith({
+      fairnessKey: 'model:test',
+      reservationId: '00000000-0000-4000-8000-000000000007',
+    });
+  });
+
+  it('extends an admission reservation while an admitted job is running', async () => {
+    vi.useFakeTimers();
+    let finishRun!: (result: ReturnType<typeof successResult>) => void;
+    const runPromise = new Promise<ReturnType<typeof successResult>>((resolve) => {
+      finishRun = resolve;
+    });
+    vi.spyOn(llmRunnerModule, 'createLlmRunner').mockReturnValue(vi.fn(() => runPromise));
+    const admissionStore = {
+      defaultLeaseTtlMs: 3_000,
+      extendConcurrencyReservation: vi.fn(async () => true),
+      releaseConcurrencyReservation: vi.fn(async () => undefined),
+    };
+    const consumer = new LlmConsumer(
+      {} as never,
+      {} as never,
+      {} as never,
+      fakeRedis() as never,
+      new LocalLimiterKeyStrategy(),
+      new LocalQuotaPolicyHook(),
+      new LocalRuntimeLimitsProvider(),
+      new NoopUsageMeteringHook(),
+      admissionStore as never,
+    );
+    const job = buildJob({
+      data: {
+        ...buildJob().data,
+        admission: {
+          fairnessKey: 'model:test',
+          reservationId: '00000000-0000-4000-8000-000000000007',
+        },
+      },
+    });
+
+    const processPromise = consumer.process(job as never);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(admissionStore.extendConcurrencyReservation).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(admissionStore.extendConcurrencyReservation).toHaveBeenCalledWith({
+      fairnessKey: 'model:test',
+      reservationId: '00000000-0000-4000-8000-000000000007',
+    });
+
+    finishRun(successResult());
+    await processPromise;
+    const heartbeatCount = admissionStore.extendConcurrencyReservation.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(admissionStore.extendConcurrencyReservation).toHaveBeenCalledTimes(heartbeatCount);
+    expect(admissionStore.releaseConcurrencyReservation).toHaveBeenCalledTimes(1);
+  });
+
   it('moves the job to delayed and throws DelayedError when limiter rejects', async () => {
     const runMock = vi.fn(async () => {
       throw new RateLimitExceededError('rpm', 1500);
@@ -82,6 +189,48 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
         }),
       }),
     );
+  });
+
+  it('strips stale admission metadata before delaying an admitted rate-limited job', async () => {
+    vi.spyOn(llmRunnerModule, 'createLlmRunner').mockReturnValue(async () => {
+      throw new RateLimitExceededError('rpm', 1500);
+    });
+    const admissionStore = {
+      defaultLeaseTtlMs: 600_000,
+      extendConcurrencyReservation: vi.fn(async () => true),
+      releaseConcurrencyReservation: vi.fn(async () => undefined),
+    };
+    const consumer = new LlmConsumer(
+      {} as never,
+      {} as never,
+      {} as never,
+      fakeRedis() as never,
+      new LocalLimiterKeyStrategy(),
+      new LocalQuotaPolicyHook(),
+      new LocalRuntimeLimitsProvider(),
+      new NoopUsageMeteringHook(),
+      admissionStore as never,
+    );
+    const job = buildJob({
+      data: {
+        ...buildJob().data,
+        admission: {
+          fairnessKey: 'model:test',
+          reservationId: '00000000-0000-4000-8000-000000000007',
+        },
+      },
+    });
+
+    await expect(consumer.process(job as never, 'tok-1')).rejects.toBeInstanceOf(DelayedError);
+
+    expect(job.updateData).toHaveBeenCalledTimes(1);
+    const retryPayload = job.updateData.mock.calls[0]![0] as Record<string, unknown>;
+    expect(retryPayload).not.toHaveProperty('admission');
+    expect(job.moveToDelayed).toHaveBeenCalledTimes(1);
+    expect(admissionStore.releaseConcurrencyReservation).toHaveBeenCalledWith({
+      fairnessKey: 'model:test',
+      reservationId: '00000000-0000-4000-8000-000000000007',
+    });
   });
 
   it('uses a 1s floor when retryAfterMs is smaller', async () => {

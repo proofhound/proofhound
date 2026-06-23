@@ -23,6 +23,7 @@ import {
 } from '@proofhound/shared';
 import {
   AlertTriangle,
+  ArrowLeft,
   Cable,
   Check,
   Copy,
@@ -62,6 +63,7 @@ import {
   JsonObjectTextarea,
   ModelContextWindowInput,
   ModelProbeStatus,
+  RuntimeConcurrencyInfoIcon,
   type ModelProbeFeedback,
   ModelPresetQuickFill,
   type ModelQuickFillDraft,
@@ -76,6 +78,7 @@ import {
   getProviderTypeLabel,
   isProjectNameTaken,
 } from '../../lib';
+import { positiveRuntimeLimit, useRuntimeLimits } from '../../providers';
 import {
   useCreateProjectModel,
   useDateTimeFormatter,
@@ -83,6 +86,7 @@ import {
   useProbeProjectModel,
   useProbeDraftProjectModel,
   useDeleteProjectModel,
+  useDuplicateProjectModel,
   useProjectModels,
   useProjectModel,
   useProjectModelReferences,
@@ -91,6 +95,11 @@ import {
 } from '../../hooks';
 import type { TranslationKey } from '../../i18n';
 import { dtoToProjectModel } from './project-model-adapter';
+import {
+  applyRuntimeConcurrencyCapToModel,
+  clampRuntimeConcurrencyInputText,
+  runtimeConcurrencyCreateDefaultValue,
+} from './model-runtime-limits';
 import {
   getProjectModelSource,
   isProjectModelEditable,
@@ -211,6 +220,8 @@ function FieldInput({
   readOnly = false,
   type = 'text',
   min,
+  max,
+  clampMax,
   step,
   inputMode,
   onChange,
@@ -224,6 +235,8 @@ function FieldInput({
   readOnly?: boolean;
   type?: InputHTMLAttributes<HTMLInputElement>['type'];
   min?: InputHTMLAttributes<HTMLInputElement>['min'];
+  max?: InputHTMLAttributes<HTMLInputElement>['max'];
+  clampMax?: number | null;
   step?: InputHTMLAttributes<HTMLInputElement>['step'];
   inputMode?: InputHTMLAttributes<HTMLInputElement>['inputMode'];
   onChange?: (value: string) => void;
@@ -239,9 +252,27 @@ function FieldInput({
         disabled={disabled}
         readOnly={readOnly}
         min={min}
+        max={max}
         step={step}
         inputMode={inputMode}
-        onChange={onChange ? (event) => onChange(event.target.value) : undefined}
+        onChange={
+          onChange || clampMax !== undefined
+            ? (event) => {
+                const nextValue = clampRuntimeConcurrencyInputText(event.target.value, clampMax);
+                if (nextValue !== event.target.value) event.target.value = nextValue;
+                onChange?.(nextValue);
+              }
+            : undefined
+        }
+        onBlur={
+          clampMax !== undefined
+            ? (event) => {
+                const nextValue = clampRuntimeConcurrencyInputText(event.currentTarget.value, clampMax);
+                if (nextValue !== event.currentTarget.value) event.currentTarget.value = nextValue;
+                onChange?.(nextValue);
+              }
+            : undefined
+        }
         data-testid={testId}
         className={cn('h-9 text-sm', suffix && 'pr-20', readOnly && 'bg-muted/50 text-muted-foreground')}
       />
@@ -259,20 +290,25 @@ function Field({
   required,
   help,
   error,
+  labelAccessory,
   children,
 }: {
   label: string;
   required?: boolean;
   help?: string;
   error?: string | null;
+  labelAccessory?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div>
-      <Label className="mb-1.5 block text-xs font-medium">
-        {label}
-        {required && <span className="text-destructive">*</span>}
-      </Label>
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <Label className="block text-xs font-medium">
+          {label}
+          {required && <span className="text-destructive">*</span>}
+        </Label>
+        {labelAccessory}
+      </div>
       {children}
       {error ? (
         <div className="mt-1.5 text-[11.5px] leading-relaxed text-destructive">{error}</div>
@@ -503,12 +539,24 @@ function CredentialSection({
   const [apiKeyCopied, setApiKeyCopied] = useState(false);
   const [apiKeyValue, setApiKeyValue] = useState(() => initialApiKey ?? (isNew ? '' : model.apiKey));
 
-  const copyApiKey = async () => {
-    if (!apiKeyVisible || !apiKeyValue) return;
-
-    await navigator.clipboard?.writeText(apiKeyValue);
+  const writeApiKeyToClipboard = async (value: string) => {
+    await navigator.clipboard?.writeText(value);
     setApiKeyCopied(true);
     window.setTimeout(() => setApiKeyCopied(false), 1800);
+  };
+
+  const copyApiKey = () => {
+    if (apiKeyValue) {
+      void writeApiKeyToClipboard(apiKeyValue);
+      return;
+    }
+    if (isNew || !model.id) return;
+    revealMutation.mutate(model.id, {
+      onSuccess: (result) => {
+        setApiKeyValue(result.apiKey);
+        void writeApiKeyToClipboard(result.apiKey);
+      },
+    });
   };
 
   const toggleReveal = () => {
@@ -551,32 +599,38 @@ function CredentialSection({
     >
       <Field label="API Key" required={isNew} help={t('models.form.apiKeyHelp')}>
         <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-background px-3 text-sm">
-          <input
-            name="apiKey"
-            type={apiKeyVisible ? 'text' : 'password'}
-            value={apiKeyValue}
-            onChange={(event) => {
-              setApiKeyValue(event.target.value);
-              if (!isNew) onApiKeyEdited?.();
-            }}
-            readOnly={readOnly}
-            placeholder="sk-..."
-            data-testid={isNew ? 'model-new-api-key' : undefined}
-            className={cn(
-              'min-w-0 flex-1 bg-transparent font-mono outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed',
-              readOnly && 'text-muted-foreground',
-            )}
-          />
-          {apiKeyVisible && (
+          {!apiKeyVisible && !isNew ? (
+            <span className="min-w-0 flex-1 truncate font-mono text-sm text-muted-foreground" aria-hidden="true">
+              ••••••••••••••••
+            </span>
+          ) : (
+            <input
+              name="apiKey"
+              type={apiKeyVisible ? 'text' : 'password'}
+              value={apiKeyValue}
+              onChange={(event) => {
+                setApiKeyValue(event.target.value);
+                if (!isNew) onApiKeyEdited?.();
+              }}
+              readOnly={readOnly}
+              placeholder="sk-..."
+              data-testid={isNew ? 'model-new-api-key' : undefined}
+              className={cn(
+                'min-w-0 flex-1 bg-transparent font-mono outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed',
+                readOnly && 'text-muted-foreground',
+              )}
+            />
+          )}
+          {(apiKeyVisible || !isNew) && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="ml-auto h-7 px-2 text-xs"
               aria-label={t('models.form.copyKey')}
-              disabled={!apiKeyValue}
+              disabled={revealMutation.isPending || (isNew && !apiKeyValue) || (!isNew && !model.id)}
               onClick={() => {
-                void copyApiKey();
+                copyApiKey();
               }}
             >
               <Copy className="size-3.5" />
@@ -757,17 +811,26 @@ function QuotaSection({
   useDefaults,
   model,
   readOnly,
+  runtimeConcurrencyCap,
 }: {
   mode: FormMode;
   useDefaults: boolean;
   model: ProjectModel;
   readOnly: boolean;
+  runtimeConcurrencyCap?: number | null;
 }) {
   const { t } = useI18n();
   const isEdit = mode === 'edit';
   const isNew = mode === 'new';
   const [autoConcurrency, setAutoConcurrency] = useState(useDefaults ? model.autoConcurrency : true);
   const usageSummary = `${t('models.form.realtimeUsage')}: ${model.rpm.usage}% / ${model.tpm.usage}% / ${model.concurrency.usage}%`;
+  const concurrencyInputLimit = runtimeConcurrencyCap ?? MODEL_MAX_CONCURRENCY_LIMIT;
+  const defaultConcurrencyLimit = cappedIntegerInputValue(
+    model.concurrency.limitInput ?? toIntegerInputValue(model.concurrency.limit),
+    runtimeConcurrencyCap,
+  );
+  const createDefaultConcurrencyLimit = runtimeConcurrencyCreateDefaultValue(runtimeConcurrencyCap);
+  const concurrencyPlaceholder = createDefaultConcurrencyLimit ?? String(MODEL_DEFAULT_CONCURRENCY_LIMIT);
 
   return (
     <Section
@@ -808,13 +871,17 @@ function QuotaSection({
         <Field
           label={autoConcurrency ? t('models.form.concurrencyCeiling') : t('models.form.concurrencyLimit')}
           help={autoConcurrency ? t('models.form.autoConcurrencyHelp') : t('models.form.concurrencyLimitHelp')}
+          labelAccessory={<RuntimeConcurrencyInfoIcon />}
         >
           <FieldInput
             name="concurrencyLimit"
-            defaultValue={
-              useDefaults ? (model.concurrency.limitInput ?? toIntegerInputValue(model.concurrency.limit)) : undefined
-            }
-            placeholder={String(MODEL_DEFAULT_CONCURRENCY_LIMIT)}
+            defaultValue={useDefaults ? defaultConcurrencyLimit : createDefaultConcurrencyLimit}
+            placeholder={concurrencyPlaceholder}
+            type="number"
+            min={1}
+            max={concurrencyInputLimit}
+            clampMax={runtimeConcurrencyCap}
+            step={1}
             suffix="in-flight"
             readOnly={readOnly}
           />
@@ -940,10 +1007,13 @@ function rateLimitFromForm(form: FormData, key: string) {
   return Number.isInteger(value) && (value === MODEL_UNLIMITED_RATE_LIMIT || value > 0) ? value : null;
 }
 
-function concurrencyLimitFromForm(form: FormData, key: string) {
+function concurrencyLimitFromForm(form: FormData, key: string, runtimeCap?: number | null) {
   const raw = String(form.get(key) ?? '').trim();
   const value = raw ? Number(raw) : MODEL_DEFAULT_CONCURRENCY_LIMIT;
-  return Number.isInteger(value) && value > 0 && value <= MODEL_MAX_CONCURRENCY_LIMIT ? value : null;
+  if (!Number.isInteger(value) || value <= 0) return null;
+  const cap = positiveRuntimeLimit(runtimeCap);
+  if (cap !== null) return Math.min(value, cap);
+  return value <= MODEL_MAX_CONCURRENCY_LIMIT ? value : null;
 }
 
 function nonnegativeNumberFromForm(form: FormData, key: string) {
@@ -961,6 +1031,14 @@ function normalizedNumberSignature(raw: string | undefined) {
   if (!trimmed) return '';
   const value = Number(trimmed);
   return Number.isFinite(value) ? value : trimmed;
+}
+
+function cappedIntegerInputValue(raw: string | undefined, runtimeCap?: number | null) {
+  const cap = positiveRuntimeLimit(runtimeCap);
+  if (cap === null) return raw;
+  const value = Number(String(raw ?? '').trim());
+  if (!Number.isInteger(value) || value <= 0) return raw;
+  return String(Math.min(value, cap));
 }
 
 function normalizedJsonSignature(raw: string | undefined) {
@@ -1032,6 +1110,7 @@ function projectEditSignatureFromForm(form: HTMLFormElement, apiKeyEdited: boole
 function readProjectModelCreatePayload(
   form: HTMLFormElement,
   intent: NewModelSubmitIntent,
+  runtimeConcurrencyCap?: number | null,
 ): { ok: true; body: CreateProjectModelDto } | { ok: false; error: 'required' | 'number' | 'json' } {
   const data = new FormData(form);
   const name = textFromForm(data, 'name');
@@ -1042,7 +1121,7 @@ function readProjectModelCreatePayload(
   const contextWindowTokens = positiveIntegerFromForm(data, 'contextWindowTokens');
   const rpmLimit = rateLimitFromForm(data, 'rpmLimit');
   const tpmLimit = rateLimitFromForm(data, 'tpmLimit');
-  const concurrencyLimit = concurrencyLimitFromForm(data, 'concurrencyLimit');
+  const concurrencyLimit = concurrencyLimitFromForm(data, 'concurrencyLimit', runtimeConcurrencyCap);
   const inputPrice = nonnegativeNumberFromForm(data, 'inputPrice');
   const outputPrice = nonnegativeNumberFromForm(data, 'outputPrice');
   const extraBody = jsonObjectFromForm(data, 'extraBody');
@@ -1107,6 +1186,7 @@ function projectModelCreateConnectivitySignature(body: CreateProjectModelDto) {
 function readProjectModelUpdatePayload(
   form: HTMLFormElement,
   includeApiKey: boolean,
+  runtimeConcurrencyCap?: number | null,
 ): { ok: true; body: UpdateProjectModelDto } | { ok: false; error: 'required' | 'number' | 'json' } {
   const data = new FormData(form);
   const name = textFromForm(data, 'name');
@@ -1116,7 +1196,7 @@ function readProjectModelUpdatePayload(
   const contextWindowTokens = positiveIntegerFromForm(data, 'contextWindowTokens');
   const rpmLimit = rateLimitFromForm(data, 'rpmLimit');
   const tpmLimit = rateLimitFromForm(data, 'tpmLimit');
-  const concurrencyLimit = concurrencyLimitFromForm(data, 'concurrencyLimit');
+  const concurrencyLimit = concurrencyLimitFromForm(data, 'concurrencyLimit', runtimeConcurrencyCap);
   const inputPrice = nonnegativeNumberFromForm(data, 'inputPrice');
   const outputPrice = nonnegativeNumberFromForm(data, 'outputPrice');
   const extraBody = jsonObjectFromForm(data, 'extraBody');
@@ -1488,6 +1568,8 @@ export function ModelFormPage({
   copyFromId?: string;
 }) {
   const { t } = useI18n();
+  const runtimeLimits = useRuntimeLimits();
+  const runtimeConcurrencyCap = positiveRuntimeLimit(runtimeLimits.concurrency?.max);
   const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
   const isNew = mode === 'new';
@@ -1504,6 +1586,7 @@ export function ModelFormPage({
   const createMutation = useCreateProjectModel(projectId);
   const updateMutation = useUpdateProjectModel(projectId);
   const deleteMutation = useDeleteProjectModel(projectId);
+  const duplicateMutation = useDuplicateProjectModel(projectId);
   const newModelFormRef = useRef<HTMLFormElement | null>(null);
   const editModelFormRef = useRef<HTMLFormElement | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -1535,7 +1618,11 @@ export function ModelFormPage({
     [isNew, quickFillDraft],
   );
   const projectModels = useMemo(() => projectModelsQuery.data?.data ?? [], [projectModelsQuery.data]);
-  const model: ProjectModel = quickFillModel ?? copySource ?? fetchedModel ?? PROJECT_MODEL_FALLBACK;
+  const rawModel: ProjectModel = quickFillModel ?? copySource ?? fetchedModel ?? PROJECT_MODEL_FALLBACK;
+  const model = useMemo(
+    () => applyRuntimeConcurrencyCapToModel(rawModel, runtimeConcurrencyCap),
+    [rawModel, runtimeConcurrencyCap],
+  );
   const useDefaults = !isNew || !!copySource || !!quickFillModel;
   const liveModel = model;
   const isEditable = isNew || isProjectModelEditable(model);
@@ -1599,7 +1686,7 @@ export function ModelFormPage({
   const handleEditSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (readOnly || !model.id || !editDirty || updateMutation.isPending) return;
-    const result = readProjectModelUpdatePayload(event.currentTarget, apiKeyEdited);
+    const result = readProjectModelUpdatePayload(event.currentTarget, apiKeyEdited, runtimeConcurrencyCap);
     if (!result.ok) {
       setSubmitError(
         result.error === 'required'
@@ -1661,6 +1748,14 @@ export function ModelFormPage({
     );
   };
 
+  const duplicateModel = () => {
+    if (!model.id || duplicateMutation.isPending) return;
+    duplicateMutation.mutate(model.id, {
+      onSuccess: (created) => router.push(`/models/${created.id}/edit`),
+      onError: (error) => setSubmitError((error as Error).message),
+    });
+  };
+
   const testConnectivity = () => {
     if (!model.id) return;
     const startedAt = Date.now();
@@ -1685,12 +1780,12 @@ export function ModelFormPage({
 
   const refreshDraftProbeFreshness = useCallback(() => {
     if (!isNew || !draftProbeRecord || !newModelFormRef.current) return;
-    const result = readProjectModelCreatePayload(newModelFormRef.current, 'enable');
+    const result = readProjectModelCreatePayload(newModelFormRef.current, 'enable', runtimeConcurrencyCap);
     if (!result.ok || projectModelCreateConnectivitySignature(result.body) !== draftProbeRecord.signature) {
       setDraftProbeFeedback(null);
       setDraftProbeRecord(null);
     }
-  }, [draftProbeRecord, isNew]);
+  }, [draftProbeRecord, isNew, runtimeConcurrencyCap]);
 
   const testDraftConnectivity = () => {
     if (!newModelFormRef.current) return;
@@ -1704,7 +1799,7 @@ export function ModelFormPage({
     const contextWindowTokens = positiveIntegerFromForm(form, 'contextWindowTokens');
     const rpmLimit = rateLimitFromForm(form, 'rpmLimit');
     const tpmLimit = rateLimitFromForm(form, 'tpmLimit');
-    const concurrencyLimit = concurrencyLimitFromForm(form, 'concurrencyLimit');
+    const concurrencyLimit = concurrencyLimitFromForm(form, 'concurrencyLimit', runtimeConcurrencyCap);
     const inputPrice = nonnegativeNumberFromForm(form, 'inputPrice');
     const outputPrice = nonnegativeNumberFromForm(form, 'outputPrice');
     const extraBody = jsonObjectFromForm(form, 'extraBody');
@@ -1758,7 +1853,7 @@ export function ModelFormPage({
     draftProbeMutation.mutate(draftBody, {
       onSuccess: (result) => {
         const currentResult = newModelFormRef.current
-          ? readProjectModelCreatePayload(newModelFormRef.current, 'enable')
+          ? readProjectModelCreatePayload(newModelFormRef.current, 'enable', runtimeConcurrencyCap)
           : null;
         if (!currentResult?.ok || projectModelCreateConnectivitySignature(currentResult.body) !== draftSignature) {
           return;
@@ -1792,7 +1887,7 @@ export function ModelFormPage({
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
     const intent =
       submitter instanceof HTMLElement && submitter.dataset.modelSubmitIntent === 'draft' ? 'draft' : 'enable';
-    const result = readProjectModelCreatePayload(event.currentTarget, intent);
+    const result = readProjectModelCreatePayload(event.currentTarget, intent, runtimeConcurrencyCap);
     if (!result.ok) {
       setSubmitError(
         result.error === 'required'
@@ -1877,14 +1972,28 @@ export function ModelFormPage({
           <div className="flex flex-col items-start gap-2 xl:items-end">
             <div className="flex flex-wrap items-center gap-2">
               <Button asChild variant="outline" size="sm" className="h-9">
-                <Link href={`/models`}>{isNew ? t('common.cancel') : t('common.back')}</Link>
+                <Link href={`/models`}>
+                  {!isNew && <ArrowLeft className="size-4" />}
+                  {isNew ? t('common.cancel') : t('common.back')}
+                </Link>
               </Button>
               {!isNew && isEditable && model.id && (
-                <Button asChild variant="outline" size="sm" className="h-9" title={t('models.action.copyHelp')}>
-                  <Link href={`/models/new?copyFrom=${model.id}`} aria-label={t('models.action.copy')}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  title={t('models.action.copyHelp')}
+                  aria-label={t('models.action.copy')}
+                  disabled={duplicateMutation.isPending}
+                  onClick={duplicateModel}
+                >
+                  {duplicateMutation.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
                     <CopyPlus className="size-4" />
-                    {t('models.action.copy')}
-                  </Link>
+                  )}
+                  {t('models.action.copy')}
                 </Button>
               )}
               <Button
@@ -2006,7 +2115,13 @@ export function ModelFormPage({
               initialApiKey={newApiKeySeed}
             />
             <CapabilitiesSection mode={mode} useDefaults={useDefaults} model={model} readOnly={readOnly} />
-            <QuotaSection mode={mode} useDefaults={useDefaults} model={liveModel} readOnly={readOnly} />
+            <QuotaSection
+              mode={mode}
+              useDefaults={useDefaults}
+              model={liveModel}
+              readOnly={readOnly}
+              runtimeConcurrencyCap={runtimeConcurrencyCap}
+            />
             <PricingSection useDefaults={useDefaults} model={model} readOnly={readOnly} />
             <TestConnectivitySection
               feedback={draftProbeFeedback}
@@ -2059,7 +2174,13 @@ export function ModelFormPage({
                 readOnly={readOnly}
                 onDraftChange={scheduleEditDirtyRefresh}
               />
-              <QuotaSection mode={mode} useDefaults={useDefaults} model={liveModel} readOnly={readOnly} />
+              <QuotaSection
+                mode={mode}
+                useDefaults={useDefaults}
+                model={liveModel}
+                readOnly={readOnly}
+                runtimeConcurrencyCap={runtimeConcurrencyCap}
+              />
               <PricingSection useDefaults={useDefaults} model={model} readOnly={readOnly} />
             </div>
             <aside className="space-y-4">

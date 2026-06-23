@@ -361,6 +361,51 @@ describe('runLlmJob — usage metering job lifecycle', () => {
   });
 });
 
+describe('runLlmJob — admission pre-reserved concurrency', () => {
+  it('passes preReservedConcurrency to invokeLLM for admitted queue jobs', async () => {
+    invokeLLMMock.mockResolvedValue({
+      content: '{"ok":true}',
+      parsed: { ok: true },
+      decisionOutput: null,
+      isCorrect: null,
+      judgmentStatus: null,
+      usage: { inputTokens: 1, outputTokens: 1 },
+      costEstimate: 0,
+      durationMs: 1,
+    });
+    const runLlmJob = createLlmRunner({
+      db: fakeDb(activeModel),
+      limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
+      limiterKeyStrategy: new LocalLimiterKeyStrategy(),
+      quotaPolicy: new LocalQuotaPolicyHook(),
+      usageMetering: new NoopUsageMeteringHook(),
+      logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+      modelSecretResolver: createModelSecretResolver({ encryptionKey: ENCRYPTION_KEY }),
+      runtimeLimitsProvider: new LocalRuntimeLimitsProvider(),
+    });
+
+    await runLlmJob(
+      {
+        projectId: '22222222-2222-4222-8222-222222222222',
+        source: 'experiment',
+        sourceId: '33333333-3333-4333-8333-333333333333',
+        promptVersionId: '44444444-4444-4444-8444-444444444444',
+        modelId: activeModel.id,
+        runResultId: '11111111-1111-4111-8111-111111111111',
+        renderedPrompt: { prompt: 'hi' },
+        admission: {
+          fairnessKey: `model:${activeModel.id}`,
+          reservationId: '99999999-9999-4999-8999-999999999999',
+        },
+      } as never,
+      { bullmqJobId: 'job-admitted', bullmqQueue: 'llm', attempt: 1 },
+    );
+
+    const lastCall = invokeLLMMock.mock.calls.at(-1)!;
+    expect(lastCall[0].preReservedConcurrency).toBe(true);
+  });
+});
+
 function fakeDb(row: typeof activeModel | undefined): DbClient {
   return {
     select: () => ({

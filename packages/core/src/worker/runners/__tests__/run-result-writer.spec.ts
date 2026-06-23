@@ -78,6 +78,39 @@ describe('DrizzleRunResultWriter', () => {
     expect(query!.params).toContain('99999999-9999-4999-8999-999999999999');
   });
 
+  it('passes orgId into storage quota checks when the run_result carries SaaS project context', async () => {
+    const db = {
+      execute: vi.fn(async () => []),
+    };
+    const quotaPolicy = createSpyQuotaPolicy();
+    const writer = new DrizzleRunResultWriter(db as never, quotaPolicy);
+
+    await writer.writeRunResult({
+      id: '11111111-1111-4111-8111-111111111111',
+      projectId: '22222222-2222-4222-8222-222222222222',
+      orgId: '99999999-9999-4999-8999-999999999999',
+      source: 'experiment',
+      sourceId: '33333333-3333-4333-8333-333333333333',
+      promptVersionId: '44444444-4444-4444-8444-444444444444',
+      modelId: '55555555-5555-4555-8555-555555555555',
+      renderedPrompt: { prompt: 'hello' },
+      status: 'failed',
+      errorClass: 'QueueJobFailed',
+      errorMessage: 'model is not available',
+      attempt: 5,
+    });
+
+    expect(quotaPolicy.assertCanStore).toHaveBeenCalledWith({
+      bytes: expect.any(Number),
+      project: {
+        projectId: '22222222-2222-4222-8222-222222222222',
+        orgId: '99999999-9999-4999-8999-999999999999',
+        source: 'local',
+      },
+      source: 'run_result',
+    });
+  });
+
   it('writes webhook_token_id as null for non-webhook entries (HTTP / MCP / internal)', async () => {
     let query: Query | null = null;
     const db = {

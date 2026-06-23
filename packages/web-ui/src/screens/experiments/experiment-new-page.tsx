@@ -4,10 +4,21 @@ import { Link } from '../../components/navigation/link';
 import { useRouter } from '../../hooks/use-router';
 import { useMemo, useState } from 'react';
 import type { CreateExperimentDto, PromptListItemDto } from '@proofhound/shared';
-import { AlertTriangle, Calculator, Check, ChevronDown, Link2, Loader2, Play, Search, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Calculator,
+  Check,
+  ChevronDown,
+  Link2,
+  Loader2,
+  Play,
+  Search,
+  X,
+} from 'lucide-react';
 import { Button, Input, cn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { PromptVersionPickerRow, PromptVersionPickerTag } from '../../components';
+import { PromptVersionPickerRow, PromptVersionPickerTag, RuntimeConcurrencyInfoIcon } from '../../components';
 import { useDatasets } from '../../hooks';
 import { useCreateExperiment, useExperiments } from '../../hooks';
 import { useDateTimeFormatter } from '../../hooks';
@@ -16,6 +27,7 @@ import { usePrompt, usePrompts } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage, isProjectNameTaken } from '../../lib';
+import { capConcurrencyValue, resolveEffectiveConcurrencyLimit, useRuntimeLimits } from '../../providers';
 import type { PromptVariableType } from '../prompts/prompt-model';
 import { renderPromptPreviewParts } from '../prompts/prompt-preview-parts';
 import { VARIABLE_TONE_CLASSES } from '../prompts/prompt-ui';
@@ -38,6 +50,7 @@ import {
   validateDatasetVariableCoverage,
   type EncodingMode,
 } from './experiment-option-adapter';
+import { isExperimentReadinessChecking } from './experiment-new-readiness';
 
 interface ExperimentNewPageProps {
   projectId: string;
@@ -495,12 +508,21 @@ function EncodingOption({
   );
 }
 
-function CheckItem({ state, title, detail }: { state: 'ok' | 'warn' | 'error'; title: string; detail: string }) {
+function CheckItem({
+  state,
+  title,
+  detail,
+}: {
+  state: 'ok' | 'warn' | 'error' | 'pending';
+  title: string;
+  detail: string;
+}) {
   return (
     <div
       role={state === 'error' ? 'alert' : undefined}
       className={cn(
         'flex items-start gap-2.5 rounded-md border-l-2 px-3 py-2 text-[12px]',
+        state === 'pending' && 'border-border bg-muted text-muted-foreground',
         state === 'ok' &&
           cn(
             experimentTone.positive.border,
@@ -517,6 +539,7 @@ function CheckItem({ state, title, detail }: { state: 'ok' | 'warn' | 'error'; t
       )}
     >
       <span className="mt-0.5 inline-flex size-4 flex-none items-center justify-center rounded-full border bg-background text-current">
+        {state === 'pending' && <Loader2 className="size-3 animate-spin" />}
         {state === 'ok' && <Check className="size-3" />}
         {state === 'warn' && <AlertTriangle className="size-3" />}
         {state === 'error' && <X className="size-3" />}
@@ -547,6 +570,7 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
     initialImageEncoding,
   } = props;
   const { t } = useI18n();
+  const runtimeLimits = useRuntimeLimits();
   const { formatDateTime } = useDateTimeFormatter();
   const router = useRouter();
   const promptsQuery = usePrompts(projectId);
@@ -575,7 +599,9 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
   const [datasetTouched, setDatasetTouched] = useState(Boolean(initialDatasetId));
   const [selectedModelId, setSelectedModelId] = useState(initialModelId ?? '');
   const [showPromptPreview, setShowPromptPreview] = useState(false);
-  const [concurrency, setConcurrency] = useState(parsePositiveInteger(initialConcurrency, 24));
+  const [concurrency, setConcurrency] = useState(() =>
+    capConcurrencyValue(parsePositiveInteger(initialConcurrency, 24), runtimeLimits.concurrency?.max),
+  );
   const [rpm, setRpm] = useState(parsePositiveIntegerText(initialRpmLimit, ''));
   const [tpm, setTpm] = useState(parsePositiveIntegerText(initialTpmLimit, ''));
   const [temperature, setTemperature] = useState(parseTemperature(initialTemperature));
@@ -627,6 +653,10 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
     () => compatibleModels.find((option) => option.id === selectedModelId) ?? null,
     [compatibleModels, selectedModelId],
   );
+  const effectiveConcurrencyLimit = resolveEffectiveConcurrencyLimit(selectedModel?.concurrencyLimit, runtimeLimits);
+  const concurrencyInputMax = effectiveConcurrencyLimit ?? 50;
+  const effectiveConcurrency = capConcurrencyValue(concurrency, effectiveConcurrencyLimit);
+  const recommendedConcurrency = Math.min(30, effectiveConcurrencyLimit ?? selectedModel?.concurrencyLimit ?? 30);
   const defaultDatasetForPrompt = useMemo(
     () =>
       selectedPrompt?.defaultDatasetId
@@ -705,16 +735,24 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
     if (selectedModel) {
       const switched = Boolean(previous) && previous!.id !== selectedModel.id;
       if (switched) {
-        setConcurrency(Math.min(30, selectedModel.concurrencyLimit));
+        setConcurrency(capConcurrencyValue(Math.min(30, selectedModel.concurrencyLimit), effectiveConcurrencyLimit));
         setRpm(String(selectedModel.rpmLimit));
         setTpm(String(selectedModel.tpmLimit));
       } else {
-        if (concurrency > selectedModel.concurrencyLimit) {
-          setConcurrency(selectedModel.concurrencyLimit);
+        if (effectiveConcurrencyLimit !== null && concurrency > effectiveConcurrencyLimit) {
+          setConcurrency(effectiveConcurrencyLimit);
         }
         if (!rpm) setRpm(String(selectedModel.rpmLimit));
         if (!tpm) setTpm(String(selectedModel.tpmLimit));
       }
+    }
+  }
+
+  const [prevEffectiveConcurrencyLimitRef, setPrevEffectiveConcurrencyLimitRef] = useState(effectiveConcurrencyLimit);
+  if (prevEffectiveConcurrencyLimitRef !== effectiveConcurrencyLimit) {
+    setPrevEffectiveConcurrencyLimitRef(effectiveConcurrencyLimit);
+    if (effectiveConcurrencyLimit !== null && concurrency > effectiveConcurrencyLimit) {
+      setConcurrency(effectiveConcurrencyLimit);
     }
   }
 
@@ -778,13 +816,26 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
     selectedDataset && selectedModel
       ? estimateExperimentRun({
           totalSamples: selectedDataset.sampleCount,
-          concurrency,
+          concurrency: effectiveConcurrency,
           rpmLimit: rpmValue ?? -1,
           inputPricePerMillion: selectedModel.inputPricePerMillion,
           outputPricePerMillion: selectedModel.outputPricePerMillion,
         })
       : null;
   const experimentNameTaken = useMemo(() => isProjectNameTaken(name, experiments), [experiments, name]);
+  const readinessChecking = isExperimentReadinessChecking({
+    dependenciesLoading:
+      promptsQuery.isLoading || datasetsQuery.isLoading || modelsQuery.isLoading || experimentsQuery.isLoading,
+    promptDetailLoading: promptDetailQuery.isLoading,
+    promptsCount: prompts.length,
+    promptVersionsCount: promptVersions.length,
+    datasetsCount: datasets.length,
+    compatibleModelsCount: compatibleModels.length,
+    selectedPromptSummary,
+    selectedPrompt,
+    selectedDataset,
+    selectedModel,
+  });
   const blockingCount =
     (datasetCoverage && !datasetCoverage.ok ? 1 : 0) +
     (visionUnsupported ? 1 : 0) +
@@ -818,7 +869,7 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
       modelId: selectedModel.id,
       runConfig: {
         description: description.trim() || null,
-        concurrency,
+        concurrency: effectiveConcurrency,
         rpmLimit: rpmValue,
         tpmLimit: tpmValue,
         temperature: normalizeTemperature(temperature),
@@ -845,7 +896,8 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
     <Main className="gap-0 bg-muted/35 p-0">
       <div className="mx-auto w-full max-w-[1760px] px-4 py-6 sm:px-6 lg:px-8" data-testid="experiment-new-page">
         <div className="mb-4 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
-          <Link href={`/experiments`} className="hover:text-foreground">
+          <Link href={`/experiments`} className="inline-flex items-center gap-1 hover:text-foreground">
+            <ArrowLeft className="size-3.5" />
             {t('experiments.new.backToList')}
           </Link>
         </div>
@@ -1128,18 +1180,23 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
               <div className="space-y-5 p-5">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div className="space-y-1.5">
-                    <label className="block text-[12.5px] font-medium">{t('experiments.new.params.concurrency')}</label>
+                    <div className="flex items-center gap-1.5">
+                      <label className="block text-[12.5px] font-medium">
+                        {t('experiments.new.params.concurrency')}
+                      </label>
+                      <RuntimeConcurrencyInfoIcon />
+                    </div>
                     <SliderRow
                       value={concurrency}
                       min={1}
-                      max={50}
+                      max={concurrencyInputMax}
                       ariaLabel={t('experiments.new.params.concurrency')}
-                      onChange={setConcurrency}
+                      onChange={(next) => setConcurrency(capConcurrencyValue(next, effectiveConcurrencyLimit))}
                     />
                     <div className="text-[11px] text-muted-foreground">
                       {formatTemplate(t('experiments.new.params.concurrencyHelp'), {
                         limit: selectedModel ? formatModelLimit(selectedModel.concurrencyLimit) : '—',
-                        recommend: selectedModel ? Math.min(30, selectedModel.concurrencyLimit) : 30,
+                        recommend: recommendedConcurrency,
                       })}
                     </div>
                   </div>
@@ -1340,80 +1397,101 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
               <div className="mb-3 flex items-center justify-between border-b pb-3 text-[12px] text-muted-foreground">
                 <span>{t('experiments.new.check.preSubmit')}</span>
                 <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]',
-                      experimentTone.positive.pill,
-                    )}
-                  >
-                    {formatTemplate(t('experiments.new.check.passed'), { count: passedCount })}
-                  </span>
-                  {warningCount > 0 && (
+                  {readinessChecking ? (
                     <span
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]',
-                        experimentTone.warning.pill,
-                      )}
+                      className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
                     >
-                      {formatTemplate(t('experiments.new.check.warning'), { count: warningCount })}
+                      <Loader2 className="size-3 animate-spin" />
+                      {t('experiments.new.check.checking')}
                     </span>
-                  )}
-                  {blockingCount > 0 && (
-                    <span
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]',
-                        experimentTone.danger.pill,
+                  ) : (
+                    <>
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]',
+                          experimentTone.positive.pill,
+                        )}
+                      >
+                        {formatTemplate(t('experiments.new.check.passed'), { count: passedCount })}
+                      </span>
+                      {warningCount > 0 && (
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]',
+                            experimentTone.warning.pill,
+                          )}
+                        >
+                          {formatTemplate(t('experiments.new.check.warning'), { count: warningCount })}
+                        </span>
                       )}
-                    >
-                      {formatTemplate(t('experiments.new.check.blocked'), { count: blockingCount })}
-                    </span>
+                      {blockingCount > 0 && (
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]',
+                            experimentTone.danger.pill,
+                          )}
+                        >
+                          {formatTemplate(t('experiments.new.check.blocked'), { count: blockingCount })}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
               <div className="space-y-2">
-                <CheckItem
-                  state={datasetCoverage?.ok ? 'ok' : 'error'}
-                  title={
-                    datasetCoverage?.ok
-                      ? t('experiments.new.check.varsCoverTitle')
-                      : t('experiments.new.check.varsMissingTitle')
-                  }
-                  detail={
-                    datasetCoverage?.ok
-                      ? formatTemplate(t('experiments.new.check.varsCoverDetail'), {
-                          vars: datasetCoverage.coveredVariables.join(' · ') || '—',
-                        })
-                      : formatTemplate(t('experiments.new.check.varsMissingDetail'), {
-                          vars: datasetCoverage?.missingVariables.join(' · ') || '—',
-                        })
-                  }
-                />
-                <CheckItem
-                  state={visionUnsupported ? 'error' : 'ok'}
-                  title={
-                    visionUnsupported
-                      ? t('experiments.new.check.visionUnsupportedTitle')
-                      : t('experiments.new.check.judgeAlignTitle')
-                  }
-                  detail={
-                    visionUnsupported
-                      ? formatTemplate(t('experiments.new.check.visionUnsupportedDetail'), {
-                          model: selectedModel?.name ?? '—',
-                        })
-                      : formatTemplate(t('experiments.new.check.judgeAlignDetail'), {
-                          field: selectedDataset?.expectedField ?? '—',
-                        })
-                  }
-                />
-                <CheckItem
-                  state={runParamsComplete ? 'ok' : 'error'}
-                  title={t('experiments.new.steps.runparams')}
-                  detail={
-                    runParamsComplete
-                      ? formatTemplate(t('experiments.new.steps.runparamsDone'), { temperature, concurrency })
-                      : t('common.formError.invalidNumber')
-                  }
-                />
+                {readinessChecking ? (
+                  <CheckItem
+                    state="pending"
+                    title={t('experiments.new.check.loadingTitle')}
+                    detail={t('experiments.new.check.loadingDetail')}
+                  />
+                ) : (
+                  <>
+                    <CheckItem
+                      state={datasetCoverage?.ok ? 'ok' : 'error'}
+                      title={
+                        datasetCoverage?.ok
+                          ? t('experiments.new.check.varsCoverTitle')
+                          : t('experiments.new.check.varsMissingTitle')
+                      }
+                      detail={
+                        datasetCoverage?.ok
+                          ? formatTemplate(t('experiments.new.check.varsCoverDetail'), {
+                              vars: datasetCoverage.coveredVariables.join(' · ') || '—',
+                            })
+                          : formatTemplate(t('experiments.new.check.varsMissingDetail'), {
+                              vars: datasetCoverage?.missingVariables.join(' · ') || '—',
+                            })
+                      }
+                    />
+                    <CheckItem
+                      state={visionUnsupported ? 'error' : 'ok'}
+                      title={
+                        visionUnsupported
+                          ? t('experiments.new.check.visionUnsupportedTitle')
+                          : t('experiments.new.check.judgeAlignTitle')
+                      }
+                      detail={
+                        visionUnsupported
+                          ? formatTemplate(t('experiments.new.check.visionUnsupportedDetail'), {
+                              model: selectedModel?.name ?? '—',
+                            })
+                          : formatTemplate(t('experiments.new.check.judgeAlignDetail'), {
+                              field: selectedDataset?.expectedField ?? '—',
+                            })
+                      }
+                    />
+                    <CheckItem
+                      state={runParamsComplete ? 'ok' : 'error'}
+                      title={t('experiments.new.steps.runparams')}
+                      detail={
+                        runParamsComplete
+                          ? formatTemplate(t('experiments.new.steps.runparamsDone'), { temperature, concurrency })
+                          : t('common.formError.invalidNumber')
+                      }
+                    />
+                  </>
+                )}
               </div>
               <div className="mt-4 flex gap-2">
                 <Button

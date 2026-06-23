@@ -48,6 +48,13 @@ export const llmJudgmentContextSchema = z.object({
 });
 export type LlmJudgmentContext = z.infer<typeof llmJudgmentContextSchema>;
 
+const llmAdmissionContextSchema = z.object({
+  fairnessKey: z.string().min(1),
+  reservationId: z.string().uuid(),
+  leaseExpiresAt: z.string().optional(),
+  concurrencyLimit: z.number().int().positive().optional(),
+});
+
 export const llmJobPayloadSchema = z.object({
   projectId: z.string().uuid(),
   // SaaS-only org attribution: injected by the enqueue side (launcher → workflow → step / release runner)
@@ -78,6 +85,8 @@ export const llmJobPayloadSchema = z.object({
   retry: runtimeRetrySchema.optional(),
   judgment: llmJudgmentContextSchema.optional(),
   webhookAsyncCall: webhookAsyncCallContextSchema.optional(),
+  // Internal queue-admission metadata: set only after the pending dispatcher has reserved a ready slot.
+  admission: llmAdmissionContextSchema.optional(),
 });
 
 export type LlmJobPayload = z.infer<typeof llmJobPayloadSchema>;

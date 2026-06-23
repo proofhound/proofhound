@@ -57,6 +57,7 @@ import { DEFAULT_PROMPT_LANGUAGE, type PromptLanguageDto } from '@proofhound/sha
 // intermediate confusion / regression batch calls are implementation details; they only go through application logs and do not write run_results.
 export interface OptimizationRunResultMeta {
   projectId: string;
+  orgId?: string | null;
   sourceId: string;
   promptVersionId: string;
   modelId: string;
@@ -649,6 +650,7 @@ export function buildRunResultForCall(input: {
   return {
     id: input.runResultId,
     projectId: input.meta.projectId,
+    orgId: input.meta.orgId ?? null,
     source: input.source,
     sourceId: input.meta.sourceId,
     promptVersionId: input.meta.promptVersionId,

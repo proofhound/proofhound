@@ -20,6 +20,7 @@ import { DrizzleRunResultWriter } from '../../infrastructure/llm/run-result-writ
 import {
   BullmqService,
   type CleanupStoppedLlmJobsResult,
+  type FindTerminalLlmJobsResult,
   type StoppedLlmTerminalJob,
 } from '../../infrastructure/orchestration/bullmq.service';
 import { DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
@@ -385,6 +386,30 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
       );
       if (counts.terminalCount >= pendingRunResultIds.length) return { ...counts, control: stopControl };
 
+      const reconciliation = await this.reconcileTerminalBatchJobs(experimentId, pendingRunResultIds);
+      if (
+        reconciliation.reconciledTerminalJobIds.length > 0 ||
+        reconciliation.terminal.invalidTerminalPayloads > 0 ||
+        reconciliation.terminal.missing > 0
+      ) {
+        this.logger.debug(
+          {
+            experimentId,
+            reconciledTerminalJobs: reconciliation.reconciledTerminalJobIds.length,
+            missingJobs: reconciliation.terminal.missing,
+            invalidTerminalPayloads: reconciliation.terminal.invalidTerminalPayloads,
+            states: reconciliation.terminal.states,
+          },
+          'step_poll_batch_terminal_reconciliation',
+        );
+      }
+      if (reconciliation.reconciledTerminalJobIds.length > 0) {
+        const postReconciliationCounts = await this.runResults.countBatchTerminal(experimentId, pendingRunResultIds);
+        if (postReconciliationCounts.terminalCount >= pendingRunResultIds.length) {
+          return { ...postReconciliationCounts, control: stopControl };
+        }
+      }
+
       if (stopControl === null) {
         // Re-read control_state every poll round, so that under large-batch + slow-model scenarios, a user who clicks stop does not have to wait for the whole batch to finish
         const controlState = await this.readControlStateImpl(experimentId);
@@ -443,6 +468,26 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     return { ...finalCounts, control: stopControl };
   }
 
+  private async reconcileTerminalBatchJobs(
+    experimentId: string,
+    pendingRunResultIds: string[],
+  ): Promise<{
+    terminal: FindTerminalLlmJobsResult;
+    reconciledTerminalJobIds: string[];
+  }> {
+    const existingTerminalIds = new Set(await this.runResults.findBatchTerminalIds(experimentId, pendingRunResultIds));
+    const idsWithoutRunResults = pendingRunResultIds.filter((id) => !existingTerminalIds.has(id));
+    const terminal = await this.bullmq.findTerminalLlmJobs(idsWithoutRunResults);
+    const reconciledTerminalJobIds: string[] = [];
+
+    for (const terminalJob of terminal.terminalJobs) {
+      await this.writeMissingTerminalRunResult(terminalJob);
+      reconciledTerminalJobIds.push(terminalJob.jobId);
+    }
+
+    return { terminal, reconciledTerminalJobIds };
+  }
+
   private async cleanupStoppedBatchJobs(
     experimentId: string,
     pendingRunResultIds: string[],
@@ -481,6 +526,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     await this.runResultWriter.writeRunResult({
       id: runResultId,
       projectId: payload.projectId,
+      orgId: payload.orgId ?? null,
       source: payload.source,
       sourceId: payload.sourceId,
       releaseVersionId: payload.releaseVersionId ?? null,

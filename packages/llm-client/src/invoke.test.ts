@@ -154,6 +154,56 @@ describe('invokeLLM', () => {
     );
   });
 
+  it('records RPM/TPM but skips limiter concurrency release when concurrency is pre-reserved', async () => {
+    const adapter: LLMAdapter = {
+      providerType: 'fake',
+      async invoke() {
+        return {
+          content: 'ok',
+          rawResponse: { id: 'resp-1' },
+          finishReason: 'stop',
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    };
+    const limiter = {
+      acquire: vi.fn(async () => ({ effectiveConcurrency: 2, backoffFactor: 1, latencyEwmaMs: 1000 })),
+      release: vi.fn(async () => undefined),
+    };
+
+    await invokeLLM(
+      { ...baseArgs(), preReservedConcurrency: true },
+      { limiter, logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() }, adapters: [adapter] },
+    );
+
+    expect(limiter.acquire).toHaveBeenCalledWith(expect.objectContaining({ reserveConcurrency: false }));
+    expect(limiter.release).not.toHaveBeenCalled();
+  });
+
+  it('does not release limiter concurrency when a pre-reserved RPM/TPM acquire is rejected', async () => {
+    const adapter: LLMAdapter = {
+      providerType: 'fake',
+      invoke: vi.fn(),
+    };
+    const limiter = {
+      acquire: vi.fn(async () => {
+        throw new RateLimitExceededError('rpm', 1500);
+      }),
+      release: vi.fn(async () => undefined),
+    };
+
+    await expect(
+      invokeLLM(
+        { ...baseArgs(), preReservedConcurrency: true },
+        { limiter, logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn() }, adapters: [adapter] },
+      ),
+    ).rejects.toMatchObject({ reason: 'rpm' });
+
+    expect(limiter.acquire).toHaveBeenCalledWith(expect.objectContaining({ reserveConcurrency: false }));
+    expect(adapter.invoke).not.toHaveBeenCalled();
+    expect(limiter.release).not.toHaveBeenCalled();
+  });
+
   it('passes roundIndex from RunResultContext through to writeRunResult (optimization path)', async () => {
     // Optimization LLM calls must pass roundIndex through to the run_results row; otherwise the detail page's
     // listOptimizationLlmRunResults isNotNull(round_index) filter drops the whole row.
@@ -172,7 +222,12 @@ describe('invokeLLM', () => {
     const logger = { info: vi.fn(), error: vi.fn() };
     const writeRunResult = vi.fn(async () => undefined);
     const args = baseArgs();
-    args.runResult = { ...runResult, source: 'optimization_analysis' as const, roundIndex: 3 };
+    args.runResult = {
+      ...runResult,
+      orgId: '99999999-9999-4999-8999-999999999999',
+      source: 'optimization_analysis' as const,
+      roundIndex: 3,
+    };
 
     await invokeLLM(args, {
       limiter,
@@ -184,6 +239,7 @@ describe('invokeLLM', () => {
     expect(writeRunResult).toHaveBeenCalledWith(
       expect.objectContaining({
         id: runResult.id,
+        orgId: '99999999-9999-4999-8999-999999999999',
         source: 'optimization_analysis',
         roundIndex: 3,
       }),

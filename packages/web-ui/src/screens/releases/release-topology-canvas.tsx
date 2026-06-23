@@ -70,9 +70,11 @@ import {
   TooltipTrigger,
   cn,
 } from '@proofhound/ui';
+import { RuntimeConcurrencyInfoIcon } from '../../components';
 import { useDateTimeFormatter } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage } from '../../lib';
+import { capConcurrencyValue, resolveEffectiveConcurrencyLimit, useRuntimeLimits } from '../../providers';
 import type { ReleaseLineView } from '../../lib';
 import {
   FieldMappingTable,
@@ -2504,6 +2506,7 @@ type RuntimeModelOption = {
   status: ProjectModelListItemDto['status'] | 'unknown';
   rpmLimit: number | null;
   tpmLimit: number | null;
+  concurrencyLimit: number | null;
 };
 
 function numberText(value: unknown) {
@@ -2537,6 +2540,7 @@ function buildRunConfigUpdate(
   draft: RunConfigDraft,
   recordMode?: ReleaseLineRecordModeDto,
   recordCategories?: string[],
+  concurrencyCap?: number | null,
 ): UpdateReleaseLineRunConfigInputDto | null {
   const rpmLimit = parsePositiveInteger(draft.rpmLimit);
   const tpmLimit = parsePositiveInteger(draft.tpmLimit);
@@ -2549,7 +2553,7 @@ function buildRunConfigUpdate(
   const baseRunConfig = {
     rpmLimit,
     tpmLimit,
-    concurrency,
+    concurrency: capConcurrencyValue(concurrency, concurrencyCap),
     temperature,
   };
 
@@ -2595,6 +2599,7 @@ function modelOptionFromProjectModel(model: ProjectModelListItemDto): RuntimeMod
     status: model.status,
     rpmLimit: model.rpm.limit,
     tpmLimit: model.tpm.limit,
+    concurrencyLimit: model.concurrency.limit,
   };
 }
 
@@ -2615,6 +2620,7 @@ function buildRuntimeModelOptions(
       status: 'unknown',
       rpmLimit: null,
       tpmLimit: null,
+      concurrencyLimit: null,
     });
   }
   return options;
@@ -2665,16 +2671,32 @@ function RuntimeConfigEditor({
   );
   const [draft, setDraft] = useState<RunConfigDraft>(() => runConfigDraftFromRecord(config, currentModelId));
   const [error, setError] = useState<string | null>(null);
+  const runtimeLimits = useRuntimeLimits();
+  const selectedModel = modelOptions.find((model) => model.id === draft.modelId) ?? null;
+  const effectiveConcurrencyLimit = resolveEffectiveConcurrencyLimit(selectedModel?.concurrencyLimit, runtimeLimits);
+  const draftConcurrencyValue = parsePositiveInteger(draft.concurrency);
+  if (
+    effectiveConcurrencyLimit !== null &&
+    draftConcurrencyValue !== null &&
+    draftConcurrencyValue > effectiveConcurrencyLimit
+  ) {
+    setDraft((current) => ({ ...current, concurrency: String(effectiveConcurrencyLimit) }));
+  }
   const initialSignature = runConfigSignature(
-    buildRunConfigUpdate(laneType, runConfigDraftFromRecord(config, currentModelId), recordMode),
+    buildRunConfigUpdate(
+      laneType,
+      runConfigDraftFromRecord(config, currentModelId),
+      recordMode,
+      undefined,
+      effectiveConcurrencyLimit,
+    ),
   );
   const [savedSignature, setSavedSignature] = useState(initialSignature);
-  const nextUpdate = buildRunConfigUpdate(laneType, draft, recordMode);
+  const nextUpdate = buildRunConfigUpdate(laneType, draft, recordMode, undefined, effectiveConcurrencyLimit);
   const nextSignature = runConfigSignature(nextUpdate);
   const hasDraftChange = nextSignature !== savedSignature;
   const showSave = canEdit && Boolean(onUpdateRunConfig) && hasDraftChange;
   const canSubmit = showSave && !pending;
-  const selectedModel = modelOptions.find((model) => model.id === draft.modelId) ?? null;
   const rpmModelLimit = selectedModel ? labels.modelLimit(formatModelLimitValue(selectedModel.rpmLimit, labels)) : '—';
   const tpmModelLimit = selectedModel ? labels.modelLimit(formatModelLimitValue(selectedModel.tpmLimit, labels)) : '—';
 
@@ -2763,9 +2785,19 @@ function RuntimeConfigEditor({
             label={labels.concurrency}
             value={draft.concurrency}
             min={1}
+            max={effectiveConcurrencyLimit ?? undefined}
             step={1}
             disabled={!canEdit || pending}
-            onChange={(value) => setField('concurrency', value)}
+            labelAccessory={<RuntimeConcurrencyInfoIcon />}
+            onChange={(value) => {
+              const parsed = parsePositiveInteger(value);
+              setField(
+                'concurrency',
+                parsed === null || effectiveConcurrencyLimit === null
+                  ? value
+                  : String(capConcurrencyValue(parsed, effectiveConcurrencyLimit)),
+              );
+            }}
             onCommit={saveRunConfig}
           />
           <RuntimeNumberField
@@ -2788,6 +2820,7 @@ function RuntimeConfigEditor({
 function RuntimeNumberField({
   label,
   hint,
+  labelAccessory,
   value,
   min,
   max,
@@ -2798,6 +2831,7 @@ function RuntimeNumberField({
 }: {
   label: string;
   hint?: string;
+  labelAccessory?: ReactNode;
   value: string;
   min: number;
   max?: number;
@@ -2809,7 +2843,10 @@ function RuntimeNumberField({
   return (
     <label className="rounded-md border bg-muted/40 px-3 py-2">
       <span className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+        <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+          {label}
+          {labelAccessory}
+        </span>
         {hint ? <span className="truncate text-right text-[10.5px] text-muted-foreground">{hint}</span> : null}
       </span>
       <Input
@@ -3004,6 +3041,8 @@ function RecordModeMetadataCard({
   const initialRecordCategories = initialMode === 'selected_categories' ? initialCategories : [];
   const [savedSignature, setSavedSignature] = useState(recordSettingsSignature(initialMode, initialRecordCategories));
   const [error, setError] = useState<string | null>(null);
+  const runtimeLimits = useRuntimeLimits();
+  const effectiveConcurrencyLimit = resolveEffectiveConcurrencyLimit(null, runtimeLimits);
   const normalizedDraftCategories = normalizeRecordCategories(draftRecordCategories, recordCategoryOptions);
   const draftRecordMode = recordModeFromDraftCategories(normalizedDraftCategories, recordCategoryOptions);
   const draftRecordCategoriesForSave = draftRecordMode === 'selected_categories' ? normalizedDraftCategories : [];
@@ -3012,6 +3051,7 @@ function RecordModeMetadataCard({
     runConfigDraftFromRecord(config, modelId),
     draftRecordMode,
     draftRecordCategoriesForSave,
+    effectiveConcurrencyLimit,
   );
   const nextSignature = recordSettingsSignature(draftRecordMode, draftRecordCategoriesForSave);
   const hasRecordModeDraft = nextSignature !== savedSignature;

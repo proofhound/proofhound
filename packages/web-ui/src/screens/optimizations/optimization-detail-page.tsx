@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowDownNarrowWide,
+  ArrowLeft,
   ArrowUpNarrowWide,
   Ban,
   Check,
@@ -2582,7 +2583,8 @@ export function OptimizationDetailPage({
     <Main className="gap-0 bg-muted/35 p-0">
       <div className="mx-auto w-full max-w-[1760px] px-4 py-6 sm:px-6 lg:px-8" data-testid="optimization-detail-page">
         <div className="mb-4 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
-          <Link href={`/optimizations`} className="hover:text-foreground">
+          <Link href={`/optimizations`} className="inline-flex items-center gap-1 hover:text-foreground">
+            <ArrowLeft className="size-3.5" />
             {t('optimizations.detail.backToList')}
           </Link>
         </div>

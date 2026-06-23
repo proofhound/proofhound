@@ -44,9 +44,12 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
     const bullmqJobId = record.bullmqJobId ?? null;
     const roundIndex = record.roundIndex ?? null;
     const releaseVersionId = record.releaseVersionId ?? null;
+    const project = record.orgId
+      ? { projectId: record.projectId, orgId: record.orgId, source: 'local' as const }
+      : { projectId: record.projectId, source: 'local' as const };
     await this.quotaPolicy.assertCanStore({
       bytes: estimateRunResultBytes(record),
-      project: { projectId: record.projectId, source: 'local' },
+      project,
       source: 'run_result',
     });
 

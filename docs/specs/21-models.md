@@ -101,7 +101,7 @@ The adjustment strategy is **hybrid**, with state maintained centrally by Redis 
 
 The system does not force the configured RPM/TPM to be saturated, only "up to at most"; the configured value is always the upper bound. The effective value and the backoff state are visible to the user (the concurrency usage in the list / details shows `effective / limit`, and the application log records the derivation process).
 
-Note: what is adjusted here is the **limiter-key-dimension global in-flight concurrency** (shared across all worker processes / all entries that resolve to the same key; OSS default key remains `model:<modelId>`), which is a separate gate from the worker process's own BullMQ pull concurrency (see [03 §7](03-orchestration.md#7-division-of-responsibilities)).
+Note: what is adjusted here is the **limiter-key-dimension global in-flight concurrency** (shared across all worker processes / all entries that resolve to the same key; OSS default key remains `model:<modelId>`), which is a separate gate from the worker process's own BullMQ pull concurrency (see [03 §7](03-orchestration.md#7-division-of-responsibilities)). For queued LLM work, the pending/ready dispatcher uses the same effective value as the admission ceiling before a job enters the BullMQ ready queue. Once admitted, the worker treats that admission lease as the concurrency reservation and calls the Redis limiter only for final call-time RPM / TPM accounting/checks; direct non-admitted calls continue to reserve concurrency in the limiter.
 
 ## 7. Unit Price and Cost Estimation
 

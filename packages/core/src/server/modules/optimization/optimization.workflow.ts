@@ -562,7 +562,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       return { kind: 'exit' };
     }
 
-    const reloaded = await this.loadConfigStep(optimizationId);
+    const reloaded = await this.loadConfigStep(optimizationId, snapshot.orgId);
     if (!reloaded.ok) {
       return { kind: 'fatal', errorMessage: reloaded.reason ?? 'baseline_snapshot_reload_failed' };
     }
@@ -891,6 +891,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
               strategyConfig,
               runResultMeta: {
                 projectId: ctx.projectId,
+                orgId: orgId ?? null,
                 sourceId: optimizationId,
                 promptVersionId: versionId,
                 modelId: analysisModel.id,
@@ -1334,6 +1335,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     const dbosWorkflowId = DBOS.workflowID ?? null;
     const analysisRunResultMeta = {
       projectId: snapshot.projectId,
+      orgId: snapshot.orgId ?? null,
       sourceId: optimizationId,
       promptVersionId: analysisVersion.id,
       modelId: snapshot.analysisModel.id,
@@ -1343,6 +1345,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     };
     const generateRunResultMeta = {
       projectId: snapshot.projectId,
+      orgId: snapshot.orgId ?? null,
       sourceId: optimizationId,
       promptVersionId: baseVersionForRound.id,
       modelId: snapshot.analysisModel.id,

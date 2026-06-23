@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  ArrowLeft,
   ChevronDown,
   Copy,
   CopyPlus,
@@ -1009,7 +1010,8 @@ export function ExperimentDetailPage({ projectId, experimentId }: { projectId: s
       <TooltipProvider>
         <div className="mx-auto w-full max-w-[1760px] px-4 py-6 sm:px-6 lg:px-8" data-testid="experiment-detail-page">
           <div className="mb-4 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
-            <Link href={`/experiments`} className="hover:text-foreground">
+            <Link href={`/experiments`} className="inline-flex items-center gap-1 hover:text-foreground">
+              <ArrowLeft className="size-3.5" />
               {t('experiments.new.backToList')}
             </Link>
           </div>

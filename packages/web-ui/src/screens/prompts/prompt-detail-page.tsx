@@ -11,7 +11,6 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useRouter } from '../../hooks/use-router';
 import {
   ArrowLeft,
-  BarChart3,
   CheckCircle2,
   Copy,
   Database,
@@ -39,9 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
-  PlatformLoaderOverlay,
   DetailPageSkeleton,
-  Skeleton,
   TableActionRow,
   Tooltip,
   TooltipContent,
@@ -61,7 +58,6 @@ import {
   useDeletePromptDraftVersion,
   useDateTimeFormatter,
   usePrompt,
-  usePromptMetrics,
   usePromptVersionDeleteImpact,
   useUpdatePrompt,
   useUpdatePromptDraftVersion,
@@ -112,6 +108,7 @@ const TAB_LABEL_KEYS: Record<DetailTab, TranslationKey> = {
   versions: 'prompts.detail.tab.versions',
   metrics: 'prompts.detail.tab.metrics',
 };
+const VISIBLE_DETAIL_TABS = ['versions'] as const satisfies readonly DetailTab[];
 
 const PROMPT_MAIN_TAB_LABEL_KEYS: Record<PromptMainTab, TranslationKey> = {
   prompt: 'prompts.detail.subtab.prompt',
@@ -119,7 +116,8 @@ const PROMPT_MAIN_TAB_LABEL_KEYS: Record<PromptMainTab, TranslationKey> = {
 };
 
 function resolveDetailTab(value: string | null): DetailTab {
-  return value === 'metrics' ? 'metrics' : 'versions';
+  void value;
+  return 'versions';
 }
 
 function resolvePromptMainTab(value: string | null): PromptMainTab {
@@ -1392,153 +1390,6 @@ function ActiveVersionLabels({
   );
 }
 
-function formatMetricNumber(value: number) {
-  return value.toLocaleString();
-}
-
-function formatMetricMs(value: number | null) {
-  if (value === null) return '-';
-  return `${Math.round(value).toLocaleString()} ms`;
-}
-
-function formatMetricCost(value: number) {
-  return `$${value.toFixed(4)}`;
-}
-
-function formatMetricPercent(value: number | null) {
-  if (value === null) return '-';
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function MetricSummaryCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="rounded-lg border bg-card px-4 py-3">
-      <div className="text-[11.5px] font-medium text-muted-foreground">{label}</div>
-      <div className="mt-2 font-mono text-xl font-semibold leading-none">{value}</div>
-      {sub && <div className="mt-2 text-[11px] text-muted-foreground">{sub}</div>}
-    </div>
-  );
-}
-
-function PromptMetricsTab({ projectId, promptId }: { projectId: string; promptId: string }) {
-  const { t } = useI18n();
-  const { formatDateTime } = useDateTimeFormatter();
-  const metricsQuery = usePromptMetrics(projectId, promptId);
-  const metrics = metricsQuery.data;
-
-  const metricsLoading = useDelayedLoading(metricsQuery.isLoading);
-  if (metricsLoading) {
-    return (
-      <div className="relative min-h-[420px]" data-testid="prompt-metrics-tab" aria-busy="true">
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} className="h-24 rounded-lg" />
-            ))}
-          </div>
-          <Skeleton className="h-64 rounded-lg" />
-        </div>
-        <PlatformLoaderOverlay placement="container" />
-      </div>
-    );
-  }
-
-  if (!metrics) {
-    return (
-      <div className="rounded-lg border bg-card p-8 text-center text-sm text-muted-foreground">
-        {t('prompts.metrics.empty')}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4" data-testid="prompt-metrics-tab">
-      <div className="flex items-center gap-2 text-sm font-semibold">
-        <BarChart3 className="size-4 text-muted-foreground" />
-        {t('prompts.detail.tab.metrics')}
-      </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricSummaryCard
-          label={t('prompts.metrics.totalRuns')}
-          value={formatMetricNumber(metrics.totals.runCount)}
-          sub={`${t('prompts.metrics.success')} ${formatMetricNumber(metrics.totals.successCount)} · ${t(
-            'prompts.metrics.errors',
-          )} ${formatMetricNumber(metrics.totals.errorCount)}`}
-        />
-        <MetricSummaryCard
-          label={t('prompts.metrics.totalTokens')}
-          value={formatMetricNumber(metrics.totals.totalInputTokens + metrics.totals.totalOutputTokens)}
-          sub={`${t('prompts.metrics.inputTokens')} ${formatMetricNumber(
-            metrics.totals.totalInputTokens,
-          )} · ${t('prompts.metrics.outputTokens')} ${formatMetricNumber(metrics.totals.totalOutputTokens)}`}
-        />
-        <MetricSummaryCard
-          label={t('prompts.metrics.totalCost')}
-          value={formatMetricCost(metrics.totals.totalCostEstimate)}
-        />
-        <MetricSummaryCard
-          label={t('prompts.metrics.versionsWithRuns')}
-          value={formatMetricNumber(metrics.versions.filter((version) => version.runCount > 0).length)}
-          sub={`${formatMetricNumber(metrics.versions.length)} ${t('prompts.detail.versionTotalSuffix')}`}
-        />
-      </div>
-
-      <section className="overflow-hidden rounded-lg border bg-card" aria-label={t('prompts.detail.tab.metrics')}>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1040px] text-sm">
-            <thead>
-              <tr className="border-b bg-muted/60 text-left text-xs font-medium text-muted-foreground">
-                <th className="px-3 py-3">{t('prompts.detail.version')}</th>
-                <th className="w-44 px-3 py-3">{t('prompts.detail.labels')}</th>
-                <th className="w-28 px-3 py-3">{t('prompts.table.status')}</th>
-                <th className="w-24 px-3 py-3 text-right">{t('prompts.metrics.runs')}</th>
-                <th className="w-24 px-3 py-3 text-right">{t('prompts.metrics.accuracy')}</th>
-                <th className="w-32 px-3 py-3 text-right">{t('prompts.metrics.medianLatency')}</th>
-                <th className="w-32 px-3 py-3 text-right">{t('prompts.metrics.medianTokens')}</th>
-                <th className="w-28 px-3 py-3 text-right">{t('prompts.metrics.cost')}</th>
-                <th className="w-36 px-3 py-3">{t('prompts.metrics.lastRun')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metrics.versions.map((version) => (
-                <tr key={version.promptVersionId} className="border-b last:border-b-0">
-                  <td className="px-3 py-3 font-mono font-semibold">v{version.versionNumber}</td>
-                  <td className="px-3 py-3">
-                    <div className="flex flex-wrap items-center gap-1">
-                      {version.labels.length > 0 ? (
-                        version.labels.map((label) => <VersionLabelPill key={label.name} label={label} />)
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3">
-                    <StatusBadge status={version.status} compact />
-                  </td>
-                  <td className="px-3 py-3 text-right font-mono">{formatMetricNumber(version.runCount)}</td>
-                  <td className="px-3 py-3 text-right font-mono">{formatMetricPercent(version.accuracy)}</td>
-                  <td className="px-3 py-3 text-right font-mono">{formatMetricMs(version.medianLatencyMs)}</td>
-                  <td className="px-3 py-3 text-right font-mono">
-                    {version.medianInputTokens === null && version.medianOutputTokens === null
-                      ? '-'
-                      : `${Math.round(version.medianInputTokens ?? 0)} / ${Math.round(
-                          version.medianOutputTokens ?? 0,
-                        )}`}
-                  </td>
-                  <td className="px-3 py-3 text-right font-mono">{formatMetricCost(version.totalCostEstimate)}</td>
-                  <td className="px-3 py-3 font-mono text-[11.5px] text-muted-foreground">
-                    {formatDateTime(version.lastRunAt)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 export function PromptDetailPage({ projectId, promptId }: { projectId: string; promptId: string }) {
   const { t } = useI18n();
   const { formatDateTime } = useDateTimeFormatter();
@@ -2332,7 +2183,7 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
         </div>
 
         <div className="mb-5 mt-3 flex items-end gap-1 border-b">
-          {(Object.keys(TAB_LABEL_KEYS) as DetailTab[]).map((tab) => (
+          {VISIBLE_DETAIL_TABS.map((tab) => (
             <button
               key={tab}
               type="button"
@@ -2503,7 +2354,6 @@ export function PromptDetailPage({ projectId, promptId }: { projectId: string; p
             </section>
           </div>
         )}
-        {activeTab === 'metrics' && <PromptMetricsTab projectId={projectId} promptId={prompt.id} />}
       </div>
       <Dialog open={unsavedDialogOpen} onOpenChange={(open) => !open && closeUnsavedDialog()}>
         <DialogContent>

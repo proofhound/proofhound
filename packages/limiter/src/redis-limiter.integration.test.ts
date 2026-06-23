@@ -5,7 +5,7 @@ import { RateLimitExceededError } from './types';
 
 // Integration test: skipped by default; enabled when REDIS_TEST_URL is set
 // Locally: docker compose -f dev/docker-compose.yml up -d redis
-//      REDIS_TEST_URL=redis://localhost:6379 pnpm --filter @proofhound/limiter test:integration
+//      REDIS_TEST_URL=redis://localhost:6379/15 pnpm --filter @proofhound/limiter test:integration
 const REDIS_URL = process.env['REDIS_TEST_URL'];
 const describeIf = REDIS_URL ? describe : describe.skip;
 
@@ -135,6 +135,18 @@ describeIf('RedisLimiter (integration, real Redis)', () => {
     expect(usage.tpmUsed).toBe(50);
     expect(usage.concurrencyInUse).toBe(2);
     expect(usage.windowMs).toBe(1_000);
+  });
+
+  it('can record RPM/TPM without reserving limiter concurrency', async () => {
+    const limits = { rpmLimit: 100, tpmLimit: 1_000_000, concurrencyLimit: 1 };
+
+    await limiter.acquire({ key: 'm8', estimatedTokens: 25, limits, reserveConcurrency: false, timeoutMs: 0 });
+    await limiter.acquire({ key: 'm8', estimatedTokens: 25, limits, reserveConcurrency: false, timeoutMs: 0 });
+
+    const usage = await limiter.getUsage('m8');
+    expect(usage.rpmUsed).toBe(2);
+    expect(usage.tpmUsed).toBe(50);
+    expect(usage.concurrencyInUse).toBe(0);
   });
 
   it('getUsage prunes expired RPM and TPM entries', async () => {

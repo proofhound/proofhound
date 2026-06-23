@@ -163,6 +163,7 @@ local request_member = ARGV[7]
 local auto_concurrency = tonumber(ARGV[8])
 local autostate_ttl_ms = tonumber(ARGV[9])
 local default_latency_ms = tonumber(ARGV[10])
+local reserve_concurrency = tonumber(ARGV[11])
 local ttl_ms = window_ms * 2
 
 local now = redis.call('TIME')
@@ -211,7 +212,7 @@ if tpm_limit > 0 and tpm + requested_tokens > tpm_limit then
   return {0, retry_after_ms, 'tpm', effective, bf_out, lat_out}
 end
 
-if effective > 0 and concurrency + 1 > effective then
+if reserve_concurrency == 1 and effective > 0 and concurrency + 1 > effective then
   return {0, 250, 'concurrency', effective, bf_out, lat_out}
 end
 
@@ -228,16 +229,18 @@ else
   redis.call('DEL', tpm_total_key)
 end
 
-local concurrency_after = tonumber(redis.call('INCR', concurrency_key) or '0')
-redis.call('PEXPIRE', concurrency_key, concurrency_ttl_ms)
+if reserve_concurrency == 1 then
+  local concurrency_after = tonumber(redis.call('INCR', concurrency_key) or '0')
+  redis.call('PEXPIRE', concurrency_key, concurrency_ttl_ms)
 
-local minute_epoch_ms = math.floor(now_ms / 60000) * 60000
-local concurrency_peak_key = concurrency_peak_base_key .. ':' .. minute_epoch_ms
-local concurrency_peak = tonumber(redis.call('GET', concurrency_peak_key) or '0')
-if concurrency_after > concurrency_peak then
-  redis.call('SET', concurrency_peak_key, concurrency_after, 'PX', ttl_ms)
-else
-  redis.call('PEXPIRE', concurrency_peak_key, ttl_ms)
+  local minute_epoch_ms = math.floor(now_ms / 60000) * 60000
+  local concurrency_peak_key = concurrency_peak_base_key .. ':' .. minute_epoch_ms
+  local concurrency_peak = tonumber(redis.call('GET', concurrency_peak_key) or '0')
+  if concurrency_after > concurrency_peak then
+    redis.call('SET', concurrency_peak_key, concurrency_after, 'PX', ttl_ms)
+  else
+    redis.call('PEXPIRE', concurrency_peak_key, ttl_ms)
+  end
 end
 
 if auto_concurrency == 1 then
@@ -410,6 +413,7 @@ export class RedisLimiter implements RateLimiter {
         autoConcurrency ? 1 : 0,
         this.autostateTtlMs,
         this.defaultLatencyMs,
+        args.reserveConcurrency === false ? 0 : 1,
       );
       const [acquired, retryAfterMs, reason, effective, bfOut, latOut] = normalizeAcquireResult(result);
 

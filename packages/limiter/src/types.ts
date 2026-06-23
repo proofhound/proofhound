@@ -13,6 +13,10 @@ export interface AcquireArgs {
   // When true, concurrencyLimit is treated as a ceiling and the effective concurrency
   // is auto-derived (Little's Law + AIMD backoff). See docs/specs/21-models.md §6.1
   autoConcurrency?: boolean;
+  // False means the caller already holds an external admission/concurrency lease.
+  // The limiter still records RPM/TPM events and returns the effective concurrency snapshot,
+  // but it does not check/increment/release its own concurrency counter.
+  reserveConcurrency?: boolean;
   timeoutMs?: number;
   pollIntervalMs?: number;
 }

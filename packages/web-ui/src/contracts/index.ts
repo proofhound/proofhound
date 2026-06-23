@@ -3,6 +3,7 @@ import { LocalAuthSource, type AuthSource } from '@proofhound/api-client';
 import type { Language } from '../i18n';
 import type { DisplayPreferencesContract } from '../providers/display-preferences-provider';
 import type { ResolveHref } from '../providers/navigation-provider';
+import type { RuntimeLimitsUiContract } from '../providers/runtime-limits-provider';
 
 export interface WebContracts {
   authSource: AuthSource;
@@ -10,6 +11,7 @@ export interface WebContracts {
   baseUrl?: string;
   i18nExtend?: Partial<Record<Language, Record<string, string>>>;
   displayPreferences?: DisplayPreferencesContract;
+  runtimeLimits?: RuntimeLimitsUiContract;
   // Rewrites in-app hrefs to the hosting shell's real routes. OSS omits it
   // (identity). SaaS injects a resolver that scopes flat product paths to
   // `/app/org/:orgId/project/:projectId/...`.

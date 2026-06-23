@@ -30,6 +30,39 @@ jobs:
       - run: pnpm run build
       - run: pnpm run packages:pack:check
 
+  # Real Redis coverage for Lua scripts and the LLM pending/ready admission dispatcher.
+  redis-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run limiter Redis integration tests
+        env:
+          REDIS_TEST_URL: redis://localhost:6379/15
+        run: pnpm --filter @proofhound/limiter test:integration
+
+      - name: Run LLM admission Redis integration tests
+        env:
+          REDIS_TEST_URL: redis://localhost:6379/14
+        run: pnpm --filter @proofhound/core exec vitest run --config ./vitest.integration.config.ts src/shared/llm-admission/__tests__/llm-admission.store.integration.spec.ts
+
   # Functional end-to-end suite against a real server/worker/webhook + ephemeral Postgres/Redis,
   # with the LLM faked (Playwright starts the fake server + the web dev server itself).
   e2e:

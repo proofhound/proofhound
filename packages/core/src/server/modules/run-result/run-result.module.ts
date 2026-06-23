@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../../shared/database/database.module';
+import { DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
 import { RunResultCompactionSweeper } from './run-result-compaction-sweeper';
 import {
   DrizzleRunResultCompactionStore,
@@ -18,6 +19,7 @@ import { RunResultService } from './run-result.service';
   providers: [
     RunResultRepository,
     RunResultService,
+    DatasetSamplePayloadReader,
     RunResultPayloadReader,
     RunResultCompactor,
     RunResultCompactionSweeper,

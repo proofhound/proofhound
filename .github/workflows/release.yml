@@ -132,6 +132,16 @@ jobs:
     if: needs.plan.outputs.check == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     concurrency:
       group: release-checks
       cancel-in-progress: false
@@ -185,6 +195,10 @@ jobs:
       - name: Start test summary
         run: echo "### Unit tests by package" >> "$GITHUB_STEP_SUMMARY"
       - run: pnpm run verify
+      - name: Run Redis integration tests
+        run: |
+          REDIS_TEST_URL=redis://localhost:6379/15 pnpm --filter @proofhound/limiter test:integration
+          REDIS_TEST_URL=redis://localhost:6379/14 pnpm --filter @proofhound/core exec vitest run --config ./vitest.integration.config.ts src/shared/llm-admission/__tests__/llm-admission.store.integration.spec.ts
       - run: pnpm run build
       - run: pnpm run packages:pack:check
       - run: pnpm run packages:pack

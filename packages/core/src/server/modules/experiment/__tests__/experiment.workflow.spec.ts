@@ -233,8 +233,9 @@ describe('ExperimentWorkflow.pollUntilBatchDoneImpl — stop 清理队列', () =
     terminalCounts: Array<{ terminalCount: number; failedCount: number }>;
     removedJobIds: string[];
     terminalJobs?: Array<Record<string, unknown>>;
+    reconcileTerminalJobs?: Array<Record<string, unknown>>;
     existingTerminalIds?: string[];
-    controlState?: 'stop' | 'cancel';
+    controlState?: 'stop' | 'cancel' | null;
   }) {
     const cleanupStoppedLlmJobs = vi.fn().mockResolvedValue({
       requested: 0,
@@ -251,8 +252,17 @@ describe('ExperimentWorkflow.pollUntilBatchDoneImpl — stop 清理队列', () =
       invalidTerminalJobIds: [],
       states: options.removedJobIds.length > 0 ? { waiting: options.removedJobIds.length } : {},
     });
+    const findTerminalLlmJobs = vi.fn().mockResolvedValue({
+      requested: options.reconcileTerminalJobs?.length ?? 0,
+      missing: 0,
+      skipped: 0,
+      terminalJobs: options.reconcileTerminalJobs ?? [],
+      invalidTerminalPayloads: 0,
+      invalidTerminalJobIds: [],
+      states: options.reconcileTerminalJobs?.length ? { failed: options.reconcileTerminalJobs.length } : {},
+    });
     const db = {} as never;
-    const bullmq = { cleanupStoppedLlmJobs } as never;
+    const bullmq = { cleanupStoppedLlmJobs, findTerminalLlmJobs } as never;
     const runResults = {
       countBatchTerminal: vi.fn(),
       findBatchTerminalIds: vi.fn().mockResolvedValue(options.existingTerminalIds ?? []),
@@ -271,11 +281,14 @@ describe('ExperimentWorkflow.pollUntilBatchDoneImpl — stop 清理队列', () =
       runResultWriter as never,
     );
     const r = registrar as unknown as Record<string, unknown>;
-    r['readControlStateImpl'] = vi.fn().mockResolvedValue(options.controlState ?? 'stop');
+    r['readControlStateImpl'] = vi
+      .fn()
+      .mockResolvedValue(Object.prototype.hasOwnProperty.call(options, 'controlState') ? options.controlState : 'stop');
 
     return {
       registrar,
       cleanupStoppedLlmJobs,
+      findTerminalLlmJobs,
       countBatchTerminal: runResults.countBatchTerminal,
       findBatchTerminalIds: runResults.findBatchTerminalIds,
       writeRunResult: runResultWriter.writeRunResult,
@@ -377,6 +390,65 @@ describe('ExperimentWorkflow.pollUntilBatchDoneImpl — stop 清理队列', () =
     );
     expect(countBatchTerminal).toHaveBeenCalledTimes(2);
     expect(result).toEqual({ terminalCount: 1, failedCount: 1, control: 'stop' });
+  });
+
+  it('正常运行时补写 BullMQ 已失败但缺失的 run_result，避免卡在进度百分比', async () => {
+    const terminalJob = {
+      jobId: 'rr1',
+      state: 'failed',
+      failedReason: 'model is not available: m-1',
+      attemptsMade: 5,
+      payload: {
+        projectId: 'prj-1',
+        orgId: 'org-1',
+        source: 'experiment',
+        sourceId: 'exp-1',
+        promptVersionId: 'pv-1',
+        modelId: 'm-1',
+        runResultId: 'rr1',
+        sampleId: 's1',
+        renderedPrompt: { prompt: 'hello' },
+        inputVariables: { text: 'hello' },
+      },
+    };
+    const { registrar, cleanupStoppedLlmJobs, findTerminalLlmJobs, countBatchTerminal, writeRunResult } =
+      buildPollRegistrar({
+        terminalCounts: [
+          { terminalCount: 0, failedCount: 0 },
+          { terminalCount: 1, failedCount: 1 },
+        ],
+        removedJobIds: [],
+        reconcileTerminalJobs: [terminalJob],
+        controlState: null,
+      });
+
+    const result = await (
+      registrar as unknown as {
+        pollUntilBatchDoneImpl: (
+          experimentId: string,
+          runResultIds: string[],
+        ) => Promise<{ terminalCount: number; failedCount: number; control: 'stop' | 'cancel' | null }>;
+      }
+    ).pollUntilBatchDoneImpl('exp-1', ['rr1']);
+
+    expect(findTerminalLlmJobs).toHaveBeenCalledWith(['rr1']);
+    expect(cleanupStoppedLlmJobs).not.toHaveBeenCalled();
+    expect(writeRunResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'rr1',
+        projectId: 'prj-1',
+        orgId: 'org-1',
+        source: 'experiment',
+        sourceId: 'exp-1',
+        status: 'failed',
+        errorClass: 'QueueJobFailed',
+        errorMessage: 'model is not available: m-1',
+        attempt: 5,
+        bullmqJobId: 'rr1',
+      }),
+    );
+    expect(countBatchTerminal).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ terminalCount: 1, failedCount: 1, control: null });
   });
 });
 

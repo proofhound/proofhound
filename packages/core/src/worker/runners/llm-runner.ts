@@ -155,6 +155,7 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
               runResult: {
                 id: runResultId,
                 projectId: input.projectId,
+                orgId: input.orgId ?? null,
                 source: input.source,
                 sourceId: input.sourceId,
                 releaseVersionId: input.releaseVersionId ?? null,
@@ -174,6 +175,7 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
               // and the whole metrics is unreliable. Parse strict JSON first; on failure, fall back to parsing a Markdown JSON fence.
               parseResponse: parseJsonResponseWithMarkdownFallback,
               evaluateJudgment: evaluateJudgmentHook,
+              preReservedConcurrency: input.admission !== undefined,
             },
             {
               limiter: deps.limiter,

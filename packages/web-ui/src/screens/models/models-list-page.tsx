@@ -62,6 +62,7 @@ import { getApiErrorMessage, getProviderTypeLabel } from '../../lib';
 import {
   useDateTimeFormatter,
   useDeleteProjectModel,
+  useDuplicateProjectModel,
   useProbeProjectModel,
   useProjectModels,
   useUpdateProjectModel,
@@ -684,6 +685,7 @@ export function ModelsListPage({ projectId }: { projectId: string }) {
   const updateMutation = useUpdateProjectModel(projectId);
   const deleteMutation = useDeleteProjectModel(projectId);
   const probeMutation = useProbeProjectModel(projectId);
+  const duplicateMutation = useDuplicateProjectModel(projectId);
   const queryModels = useMemo(() => (projectQuery.data?.data ?? []).map(dtoToProjectModel), [projectQuery.data]);
   const [models, setModels] = useState<ProjectModel[]>([]);
   useEffect(() => {
@@ -781,7 +783,9 @@ export function ModelsListPage({ projectId }: { projectId: string }) {
   };
 
   const copyModel = (model: ProjectModel) => {
-    router.push(`/models/new?copyFrom=${model.id}`);
+    duplicateMutation.mutate(model.id, {
+      onSuccess: (created) => router.push(`/models/${created.id}/edit`),
+    });
   };
 
   const updateViewMode = (nextViewMode: ViewMode) => {

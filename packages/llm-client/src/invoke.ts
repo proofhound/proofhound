@@ -62,7 +62,8 @@ export type {
 const DEFAULT_TIMEOUT_MS = 300_000;
 
 // Unified invokeLLM entrypoint
-// Order: image pre-processing -> limiter.acquire -> provider.invoke -> application log -> [success: run_results] -> limiter.release
+// Order: image pre-processing -> limiter.acquire -> provider.invoke -> application log -> [success: run_results].
+// Calls that reserved limiter concurrency release it in finally; admission-pre-reserved calls release the external lease in the worker.
 // On failure, only log; do NOT write run_results; after BullMQ retries are exhausted, the consumer writes the final error row in OnWorkerEvent('failed'),
 // avoiding "the first failed error row blocks INSERT...WHERE NOT EXISTS so subsequent retry success cannot be persisted".
 export async function invokeLLM(args: InvokeLLMArgs, deps: InvokeLLMDependencies): Promise<InvokeLLMResult> {
@@ -72,7 +73,7 @@ export async function invokeLLM(args: InvokeLLMArgs, deps: InvokeLLMDependencies
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), args.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
-  let acquired = false;
+  let acquiredConcurrency = false;
   let invocationArgs = args;
 
   try {
@@ -97,8 +98,9 @@ export async function invokeLLM(args: InvokeLLMArgs, deps: InvokeLLMDependencies
         concurrencyLimit: invocationArgs.model.concurrencyLimit,
       },
       autoConcurrency: invocationArgs.model.autoConcurrency,
+      reserveConcurrency: invocationArgs.preReservedConcurrency === true ? false : true,
     });
-    acquired = true;
+    acquiredConcurrency = invocationArgs.preReservedConcurrency !== true;
     await notifyLimiterAcquired(deps, {
       key: invocationArgs.limiterKey,
       estimatedTokens: estimated.totalTokens,
@@ -226,7 +228,7 @@ export async function invokeLLM(args: InvokeLLMArgs, deps: InvokeLLMDependencies
     throw error;
   } finally {
     clearTimeout(timeout);
-    if (acquired) {
+    if (acquiredConcurrency) {
       await deps.limiter.release({ key: invocationArgs.limiterKey });
     }
   }

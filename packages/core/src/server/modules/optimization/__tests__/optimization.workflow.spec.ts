@@ -824,6 +824,43 @@ describe('OptimizationWorkflow.runImpl — child experiment inherits snapshot.or
     expect(childLaunch?.args).toEqual(['child-exp-1', '00000000-0000-4000-8000-000000000888']);
   });
 
+  it('reloads the prompt-baseline snapshot with snapshot.orgId after baseline finalization', async () => {
+    const registrar = buildRegistrar();
+    const r = registrar as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    const snapshot = {
+      ok: true,
+      projectId: 'prj-1',
+      orgId: '00000000-0000-4000-8000-000000000888',
+      startingMode: 'from_prompt_version',
+      sourceExperimentId: 'baseline-exp-1',
+    };
+    const reloaded = {
+      ...snapshot,
+      baseVersionId: 'pv-1',
+      bestVersion: null,
+      bestMetrics: {},
+      nextRound: 1,
+      maxRounds: 1,
+      goals: [],
+      resumeChildExpId: null,
+    };
+    r['preparePromptBaselineStep'] = vi.fn().mockResolvedValue({ kind: 'ready', experimentId: 'baseline-exp-1' });
+    r['finalizePromptBaselineStep'] = vi.fn().mockResolvedValue({ kind: 'ready' });
+    r['loadConfigStep'] = vi.fn().mockResolvedValue(reloaded);
+
+    const result = await (
+      registrar as unknown as {
+        ensurePromptBaseline: (
+          optimizationId: string,
+          inputSnapshot: typeof snapshot,
+        ) => Promise<{ kind: 'ready'; snapshot: typeof reloaded }>;
+      }
+    ).ensurePromptBaseline('opt-1', snapshot);
+
+    expect(result).toEqual({ kind: 'ready', snapshot: reloaded });
+    expect(r['loadConfigStep']).toHaveBeenCalledWith('opt-1', '00000000-0000-4000-8000-000000000888');
+  });
+
   it('OSS default (snapshot.orgId undefined) → child experiment launched with orgId=undefined', async () => {
     const registrar = buildRegistrar();
     // Re-stub loadConfigStep to drop orgId (OSS: ProjectContext.orgId is undefined → snapshot.orgId undefined).

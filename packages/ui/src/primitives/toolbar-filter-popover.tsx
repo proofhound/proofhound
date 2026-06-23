@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { Button } from './button';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
@@ -28,8 +29,10 @@ export function ToolbarFilterPopover({
   align?: 'start' | 'center' | 'end';
   contentClassName?: string;
 }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -41,7 +44,12 @@ export function ToolbarFilterPopover({
           <SlidersHorizontal className="size-4" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align={align} className={cn('w-60 p-2 text-sm', contentClassName)}>
+      <PopoverContent
+        align={align}
+        className={cn('w-60 p-2 text-sm', contentClassName)}
+        onEscapeKeyDown={() => setOpen(false)}
+        onInteractOutside={() => setOpen(false)}
+      >
         {children}
       </PopoverContent>
     </Popover>

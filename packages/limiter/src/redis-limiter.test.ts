@@ -74,6 +74,30 @@ describe('RedisLimiter', () => {
     expect(acquireScript).toMatch(/concurrency_after > concurrency_peak/);
   });
 
+  it('can record RPM/TPM without reserving limiter concurrency', async () => {
+    const evalMock = vi.fn(async (_script: string, _keyCount: number, ..._args: Array<string | number>) => [
+      1,
+      0,
+      'ok',
+      2,
+      1000,
+      3000,
+    ]);
+    const limiter = new RedisLimiter({ eval: evalMock });
+
+    await limiter.acquire({
+      key: 'model-1',
+      estimatedTokens: 12,
+      limits: { rpmLimit: 60, tpmLimit: 1000, concurrencyLimit: 2 },
+      reserveConcurrency: false,
+    });
+
+    const acquireScript = evalMock.mock.calls[0]?.[0] as string;
+    const acquireArgs = evalMock.mock.calls[0]!;
+    expect(acquireScript).toMatch(/reserve_concurrency == 1/);
+    expect(acquireArgs.at(-1)).toBe(0);
+  });
+
   it('raises a typed error when the Redis script keeps rejecting on rpm', async () => {
     const redis = { eval: vi.fn(async () => [0, 0, 'rpm']) };
     const limiter = new RedisLimiter(redis);

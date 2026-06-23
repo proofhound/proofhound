@@ -1,7 +1,7 @@
 import type { Query, SQL } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import { DrizzleRunResultWriter } from '../run-result-writer';
-import { LocalQuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
+import { LocalQuotaPolicyHook, type QuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 import type { UsageMeteringHook } from '../../../common/contracts/usage-metering.hook';
 
 describe('DrizzleRunResultWriter', () => {
@@ -66,6 +66,37 @@ describe('DrizzleRunResultWriter', () => {
     expect(query!.sql).not.toMatch(/,\s*,/u);
     expect(query!.params).not.toContain(undefined);
     expect(query!.params).toContain(1);
+  });
+
+  it('passes orgId into storage quota checks when the workflow run_result carries SaaS project context', async () => {
+    const db = {
+      execute: vi.fn(async () => []),
+    };
+    const quotaPolicy = createSpyQuotaPolicy();
+    const writer = new DrizzleRunResultWriter(db as never, quotaPolicy);
+
+    await writer.writeRunResult({
+      id: '11111111-1111-4111-8111-111111111111',
+      projectId: '22222222-2222-4222-8222-222222222222',
+      orgId: '99999999-9999-4999-8999-999999999999',
+      source: 'optimization_generate',
+      sourceId: '33333333-3333-4333-8333-333333333333',
+      promptVersionId: '44444444-4444-4444-8444-444444444444',
+      modelId: '55555555-5555-4555-8555-555555555555',
+      renderedPrompt: { prompt: 'hello' },
+      status: 'success',
+      attempt: 1,
+    });
+
+    expect(quotaPolicy.assertCanStore).toHaveBeenCalledWith({
+      bytes: expect.any(Number),
+      project: {
+        projectId: '22222222-2222-4222-8222-222222222222',
+        orgId: '99999999-9999-4999-8999-999999999999',
+        source: 'local',
+      },
+      source: 'run_result',
+    });
   });
 
   it('records a workflow-sourced run_result.created usage event after a successful insert attempt', async () => {
@@ -160,4 +191,11 @@ function toQuery(query: SQL): Query {
     escapeParam: (index) => `$${index + 1}`,
     escapeString: (value) => `'${value}'`,
   });
+}
+
+function createSpyQuotaPolicy(): QuotaPolicyHook {
+  return {
+    assertCanStore: vi.fn(async () => undefined),
+    withExecutionSlot: vi.fn(async (_input, run) => run()),
+  };
 }

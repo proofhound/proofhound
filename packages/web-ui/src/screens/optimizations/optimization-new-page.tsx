@@ -5,6 +5,7 @@ import { useRouter } from '../../hooks/use-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowLeft,
   Calculator,
   Check,
   ChevronRight,
@@ -21,9 +22,15 @@ import {
 } from 'lucide-react';
 import { Button, Input, cn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { PromptVersionPickerRow, PromptVersionPickerTag, PromptLanguageSelect } from '../../components';
+import {
+  PromptVersionPickerRow,
+  PromptVersionPickerTag,
+  PromptLanguageSelect,
+  RuntimeConcurrencyInfoIcon,
+} from '../../components';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { formatLatencySeconds, getApiErrorMessage, getProviderTypeLabel, isProjectNameTaken } from '../../lib';
+import { capConcurrencyValue, resolveEffectiveConcurrencyLimit, useRuntimeLimits } from '../../providers';
 import { useOptimizations, useCreateOptimization } from '../../hooks';
 import { useDatasets } from '../../hooks';
 import { useExperiments } from '../../hooks';
@@ -476,14 +483,9 @@ function ModeTile({
 
 // ---- Experiment info panel: right column full profile (basic / quality / run params / engineering metrics / per-class) ----
 
-function MetricCard({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-0.5 rounded-md border bg-card px-3 py-2',
-        highlight && 'border-primary/40 bg-primary/5',
-      )}
-    >
+    <div className="flex flex-col gap-0.5 rounded-md border bg-card px-3 py-2">
       <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
       <span className="font-mono text-[15px] font-semibold tabular-nums text-foreground">{value}</span>
     </div>
@@ -586,7 +588,6 @@ function ExperimentDetailPanel({
           <MetricCard
             label={t('optimizations.new.optimization.metric.accuracy')}
             value={formatMetricFraction(metrics?.accuracy)}
-            highlight
           />
           <MetricCard
             label={t('optimizations.new.optimization.metric.precision')}
@@ -1001,6 +1002,7 @@ export function OptimizationNewPage({
   initialSourceExperimentId?: string | null;
 }) {
   const { t } = useI18n();
+  const runtimeLimits = useRuntimeLimits();
   const { formatDateTime } = useDateTimeFormatter();
 
   // basic
@@ -1024,7 +1026,7 @@ export function OptimizationNewPage({
   const [selectedModelId, setSelectedModelId] = useState<string>('');
   const [modelSearch, setModelSearch] = useState('');
   const [temperature, setTemperature] = useState(0);
-  const [concurrency, setConcurrency] = useState(8);
+  const [concurrency, setConcurrency] = useState(() => capConcurrencyValue(8, runtimeLimits.concurrency?.max));
   const [rpm, setRpm] = useState(60);
   const [tpm, setTpm] = useState(120_000);
   const [sampleTimeoutSeconds, setSampleTimeoutSeconds] = useState(20);
@@ -1155,6 +1157,15 @@ export function OptimizationNewPage({
     () => models.find((item) => item.id === effectiveAnalysisModelId),
     [models, effectiveAnalysisModelId],
   );
+  const effectiveConcurrencyLimit = resolveEffectiveConcurrencyLimit(selectedModel?.concurrency.limit, runtimeLimits);
+  const effectiveConcurrency = capConcurrencyValue(concurrency, effectiveConcurrencyLimit);
+  const [prevEffectiveConcurrencyLimitRef, setPrevEffectiveConcurrencyLimitRef] = useState(effectiveConcurrencyLimit);
+  if (prevEffectiveConcurrencyLimitRef !== effectiveConcurrencyLimit) {
+    setPrevEffectiveConcurrencyLimitRef(effectiveConcurrencyLimit);
+    if (effectiveConcurrencyLimit !== null && concurrency > effectiveConcurrencyLimit) {
+      setConcurrency(effectiveConcurrencyLimit);
+    }
+  }
 
   // filtered lists — the experiment list only accepts status==='success' as a baseline candidate;
   // only completed experiments have trustworthy run parameters + metrics that can be group-imported
@@ -1216,23 +1227,36 @@ export function OptimizationNewPage({
         setAnalysisModelId(exp.modelId);
       }
       setTemperature(exp.runConfig?.temperature ?? 0);
-      setConcurrency(exp.runConfig?.concurrency ?? expModel?.concurrency.limit ?? 8);
+      setConcurrency(
+        capConcurrencyValue(
+          exp.runConfig?.concurrency ?? expModel?.concurrency.limit ?? 8,
+          resolveEffectiveConcurrencyLimit(expModel?.concurrency.limit, runtimeLimits),
+        ),
+      );
       setRpm(exp.runConfig?.rpmLimit ?? expModel?.rpm.limit ?? 60);
       setTpm(exp.runConfig?.tpmLimit ?? expModel?.tpm.limit ?? 120_000);
       setSampleTimeoutSeconds(exp.runConfig?.sampleTimeoutSeconds ?? 20);
       setRetries(exp.runConfig?.retries ?? 0);
       setImageEncoding(exp.runConfig?.imageEncoding ?? 'url');
     },
-    [modelOf],
+    [modelOf, runtimeLimits],
   );
 
   // Switch model / switch away from experiment mode → run parameters follow the model default (temperature has no model field; keep user value)
-  const applyModelDefaults = useCallback((model: ProjectModelListItemDto) => {
-    setSelectedModelId(model.id);
-    setConcurrency(model.concurrency.limit > 0 ? model.concurrency.limit : 8);
-    setRpm(model.rpm.limit > 0 ? model.rpm.limit : 60);
-    setTpm(model.tpm.limit > 0 ? model.tpm.limit : 120_000);
-  }, []);
+  const applyModelDefaults = useCallback(
+    (model: ProjectModelListItemDto) => {
+      setSelectedModelId(model.id);
+      setConcurrency(
+        capConcurrencyValue(
+          model.concurrency.limit > 0 ? model.concurrency.limit : 8,
+          resolveEffectiveConcurrencyLimit(model.concurrency.limit, runtimeLimits),
+        ),
+      );
+      setRpm(model.rpm.limit > 0 ? model.rpm.limit : 60);
+      setTpm(model.tpm.limit > 0 ? model.tpm.limit : 120_000);
+    },
+    [runtimeLimits],
+  );
 
   const handlePromptSelect = useCallback((promptId: string) => {
     setSelectedPromptId(promptId);
@@ -1428,7 +1452,7 @@ export function OptimizationNewPage({
       fieldWhitelist,
       runConfig: {
         temperature,
-        concurrency,
+        concurrency: effectiveConcurrency,
         rpmLimit: rpm,
         tpmLimit: tpm,
         sampleTimeoutSeconds,
@@ -1464,7 +1488,8 @@ export function OptimizationNewPage({
     <Main className="gap-0 bg-muted/35 p-0">
       <div className="mx-auto w-full max-w-[1760px] px-4 py-6 sm:px-6 lg:px-8" data-testid="optimization-new-page">
         <div className="mb-4 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
-          <Link href={`/optimizations`} className="hover:text-foreground">
+          <Link href={`/optimizations`} className="inline-flex items-center gap-1 hover:text-foreground">
+            <ArrowLeft className="size-3.5" />
             {t('optimizations.new.backToList')}
           </Link>
         </div>
@@ -1477,9 +1502,6 @@ export function OptimizationNewPage({
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild type="button" variant="ghost" size="sm" className="h-9">
               <Link href={`/optimizations`}>{t('optimizations.new.cancel')}</Link>
-            </Button>
-            <Button type="button" variant="outline" size="sm" className="h-9" disabled={isSubmitting}>
-              {t('optimizations.new.saveDraft')}
             </Button>
             <Button
               type="button"
@@ -1889,14 +1911,21 @@ export function OptimizationNewPage({
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="block text-[12.5px] font-medium">
+                      <label className="flex items-center gap-1.5 text-[12.5px] font-medium">
                         {t('optimizations.new.experiment.concurrency')}
+                        <RuntimeConcurrencyInfoIcon />
                       </label>
                       <Input
+                        type="number"
+                        min={1}
                         value={concurrency}
+                        max={effectiveConcurrencyLimit ?? undefined}
+                        step={1}
                         onChange={(event) => {
                           const next = Number(event.target.value);
-                          if (Number.isFinite(next)) setConcurrency(next);
+                          if (Number.isFinite(next)) {
+                            setConcurrency(capConcurrencyValue(next, effectiveConcurrencyLimit));
+                          }
                         }}
                         className="font-mono text-[13px]"
                         data-testid="optimization-new-concurrency"
@@ -2357,9 +2386,6 @@ export function OptimizationNewPage({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-[11.5px] text-muted-foreground">{t('optimizations.new.footerNote')}</div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="ghost" size="sm" className="h-9" disabled={isSubmitting}>
-                  {t('optimizations.new.saveDraft')}
-                </Button>
                 <Button asChild type="button" variant="outline" size="sm" className="h-9">
                   <Link href={`/optimizations`}>{t('optimizations.new.cancel')}</Link>
                 </Button>

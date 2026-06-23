@@ -4,9 +4,11 @@ import { DatasetRawImportConsumer } from './consumers/dataset-raw-import.consume
 import { LlmConsumer, llmConsumerProviders } from './consumers/llm.consumer';
 import { ProbeConsumer } from './consumers/probe.consumer';
 import { DatabaseModule } from '../shared/database/database.module';
+import { LlmAdmissionStore } from '../shared/llm-admission/llm-admission.store';
 import { RedisModule } from '../shared/redis/redis.module';
 import type { ProofHoundRuntimeModuleOptions } from '../shared/runtime-module-options';
 import { DatasetImportRepository } from '../server/modules/dataset/dataset-import.repository';
+import { LlmAdmissionDispatcher } from './llm-admission-dispatcher';
 
 export type ProofHoundWorkerModuleOptions = ProofHoundRuntimeModuleOptions;
 
@@ -32,6 +34,8 @@ export class ProofHoundWorkerModule {
       ],
       providers: [
         DatasetImportRepository,
+        LlmAdmissionStore,
+        LlmAdmissionDispatcher,
         ...llmConsumerProviders,
         LlmConsumer,
         ProbeConsumer,

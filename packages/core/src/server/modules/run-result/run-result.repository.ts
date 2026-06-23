@@ -20,6 +20,7 @@ import type {
 import { sql, type SQL } from 'drizzle-orm';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 import type { StoredObjectRef } from '../../common/contracts/object-storage.provider';
+import { DatasetSamplePayloadReader, type DatasetSamplePayloadRef } from '../dataset/dataset-sample-payload';
 import type { RunResultPayloadRef } from './run-result-payload';
 import { collectStoredObjectRefs, sumStoredObjectBytes } from './run-result-payload-ref';
 import { RunResultPayloadReader } from './run-result-payload.reader';
@@ -76,6 +77,7 @@ export class RunResultRepository {
   constructor(
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
     private readonly payloadReader: RunResultPayloadReader,
+    private readonly samplePayloadReader: DatasetSamplePayloadReader,
   ) {}
 
   async aggregateExperimentLatency(experimentId: string): Promise<{
@@ -265,6 +267,7 @@ export class RunResultRepository {
           rr.external_id ILIKE ${pattern}
           OR ds.external_id ILIKE ${pattern}
           OR ds.data::text ILIKE ${pattern}
+          OR ds.index_values::text ILIKE ${pattern}
           OR rr.raw_response ILIKE ${pattern}
           OR rr.input_variables::text ILIKE ${pattern}
           OR rr.decision_output ILIKE ${pattern}
@@ -300,6 +303,8 @@ export class RunResultRepository {
         rr.decision_output,
         rr.expected_output,
         ds.data AS sample_data,
+        ds.index_values AS sample_index_values,
+        ds.payload_ref AS sample_payload_ref,
         d.field_schema AS dataset_field_schema,
         rr.input_preview,
         rr.output_preview,
@@ -484,6 +489,8 @@ export class RunResultRepository {
           rr.decision_output,
           rr.expected_output,
           ds.data AS sample_data,
+          ds.index_values AS sample_index_values,
+          ds.payload_ref AS sample_payload_ref,
           d.field_schema AS dataset_field_schema,
           rr.input_preview,
           rr.output_preview,
@@ -532,6 +539,7 @@ export class RunResultRepository {
       r.raw_response = f.rawResponse;
       r.parsed_output = f.parsedOutput;
     });
+    await this.hydrateSampleDataForRows(rows);
 
     return {
       rows: rows.map(toDetail),
@@ -902,6 +910,8 @@ export class RunResultRepository {
         rr.decision_output,
         rr.expected_output,
         ds.data AS sample_data,
+        ds.index_values AS sample_index_values,
+        ds.payload_ref AS sample_payload_ref,
         d.field_schema AS dataset_field_schema,
         rr.error_class,
         rr.error_message,
@@ -936,19 +946,39 @@ export class RunResultRepository {
     if (!first) return null;
     // Resolve the large fields through the seam: inline when present, else read the offload shard
     // (SPEC 30 §9.2). A no-op pass-through when the row was never compacted / storage is disabled.
-    const fields = await this.payloadReader.hydrate({
-      renderedPrompt: first.rendered_prompt,
-      inputVariables: first.input_variables,
-      rawResponse: first.raw_response,
-      parsedOutput: first.parsed_output,
-      payloadRef: first.payload_ref,
-    });
+    const [fields, sampleData] = await Promise.all([
+      this.payloadReader.hydrate({
+        renderedPrompt: first.rendered_prompt,
+        inputVariables: first.input_variables,
+        rawResponse: first.raw_response,
+        parsedOutput: first.parsed_output,
+        payloadRef: first.payload_ref,
+      }),
+      this.samplePayloadReader.hydrate({
+        data: first.sample_data,
+        payloadRef: first.sample_payload_ref,
+      }),
+    ]);
     return toDetail({
       ...first,
+      sample_data: sampleData ?? first.sample_data,
       rendered_prompt: fields.renderedPrompt,
       input_variables: fields.inputVariables,
       raw_response: fields.rawResponse,
       parsed_output: fields.parsedOutput,
+    });
+  }
+
+  private async hydrateSampleDataForRows(rows: RunResultDetailRowShape[]): Promise<void> {
+    const hydrated = await this.samplePayloadReader.hydrateMany(
+      rows.map((row) => ({
+        data: row.sample_data,
+        payloadRef: row.sample_payload_ref,
+      })),
+    );
+    rows.forEach((row, index) => {
+      const data = hydrated[index];
+      if (data !== null && data !== undefined) row.sample_data = data;
     });
   }
 }
@@ -965,6 +995,8 @@ interface RunResultRowShape {
   decision_output: string | null;
   expected_output: string | null;
   sample_data: unknown;
+  sample_index_values: unknown;
+  sample_payload_ref: DatasetSamplePayloadRef | null;
   dataset_field_schema: unknown;
   input_preview: string | null;
   output_preview: string | null;
@@ -1047,9 +1079,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function getDatasetFieldValues(
   fieldSchema: unknown,
   sampleData: unknown,
+  sampleIndexValues: unknown,
+  inputVariables: unknown,
   roles: Set<DatasetFieldSchemaRole>,
 ): RunResultDatasetFieldValueDto[] {
   const data = isRecord(sampleData) ? sampleData : {};
+  const indexValues = isRecord(sampleIndexValues) ? sampleIndexValues : {};
+  const inputs = isRecord(inputVariables) ? inputVariables : {};
   const fields = Array.isArray(fieldSchema) ? fieldSchema : [];
   const out: RunResultDatasetFieldValueDto[] = [];
 
@@ -1059,10 +1095,17 @@ function getDatasetFieldValues(
     const role = field['role'];
     if (typeof name !== 'string' || typeof role !== 'string') continue;
     if (!roles.has(role as DatasetFieldSchemaRole)) continue;
+    const value = Object.prototype.hasOwnProperty.call(data, name)
+      ? (data[name] ?? null)
+      : Object.prototype.hasOwnProperty.call(indexValues, name)
+        ? (indexValues[name] ?? null)
+        : Object.prototype.hasOwnProperty.call(inputs, name)
+          ? (inputs[name] ?? null)
+          : null;
     out.push({
       name,
       role: role as DatasetFieldSchemaRole,
-      value: Object.prototype.hasOwnProperty.call(data, name) ? (data[name] ?? null) : null,
+      value,
     });
   }
 
@@ -1169,6 +1212,7 @@ function experimentRunResultWhereSql(
         rr.external_id ILIKE ${pattern}
         OR ds.external_id ILIKE ${pattern}
         OR ds.data::text ILIKE ${pattern}
+        OR ds.index_values::text ILIKE ${pattern}
         OR rr.raw_response ILIKE ${pattern}
         OR rr.input_variables::text ILIKE ${pattern}
         OR rr.decision_output ILIKE ${pattern}
@@ -1302,8 +1346,20 @@ function toListItem(row: RunResultRowShape): RunResultListItemDto {
     isCorrect: row.is_correct,
     decisionOutput: row.decision_output,
     expectedOutput: row.expected_output,
-    datasetTextFields: getDatasetFieldValues(row.dataset_field_schema, row.sample_data, TEXT_FIELD_ROLES),
-    datasetImageFields: getDatasetFieldValues(row.dataset_field_schema, row.sample_data, IMAGE_FIELD_ROLES),
+    datasetTextFields: getDatasetFieldValues(
+      row.dataset_field_schema,
+      row.sample_data,
+      row.sample_index_values,
+      row.input_variables,
+      TEXT_FIELD_ROLES,
+    ),
+    datasetImageFields: getDatasetFieldValues(
+      row.dataset_field_schema,
+      row.sample_data,
+      row.sample_index_values,
+      row.input_variables,
+      IMAGE_FIELD_ROLES,
+    ),
     // List previews come from the persisted preview columns once compacted, else are computed from the
     // still-inline fields (SPEC 30 §9). The full fields below are null after compaction (detail rehydrates).
     inputPreview: row.input_preview ?? previewOfValue(row.input_variables),

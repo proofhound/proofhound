@@ -8,14 +8,15 @@ This chapter explains how long-running tasks and asynchronous jobs are carried i
 apps/server (mounts @proofhound/core/server)
   ├─ REST / MCP Controller
   ├─ DBOS runtime
-  ├─ BullMQ producer
+  ├─ LLM pending producer
   └─ release runner service
           │
           ▼
-        Redis / BullMQ
+        Redis pending backlog / admission leases / BullMQ ready queue
           │
           ▼
 apps/worker (mounts @proofhound/core/worker)
+  ├─ LLM admission dispatcher
   ├─ llm consumer -> LLM -> run_results
   └─ dataset-import consumer -> raw file -> staging -> dataset_samples
 ```
@@ -26,12 +27,12 @@ DBOS workflow state is written to the same Postgres instance. After a server res
 
 | Queue            | Who enqueues             | Who consumes  | Content                                          |
 | ---------------- | ------------------------ | ------------- | ------------------------------------------------ |
-| `llm`            | server workflow / runner | apps/worker   | A single LLM call                                |
+| `llm`            | admission dispatcher     | apps/worker   | Ready-to-run LLM calls                           |
 | `dataset-import` | server                   | apps/worker   | Stream-parse uploaded raw dataset and promote it |
 | `probe`          | server                   | server/worker | Model / connector connectivity probe             |
 | `export`         | server                   | server        | CSV / JSONL export                               |
 
-The `dataset-import` queue is only for raw-upload imports. The legacy client-streamed batch path remains a synchronous staging/promote request path; cleanup of abandoned pre-queued sessions uses an in-server sweep tick; see [§3.5](#35-probe--export--dataset-import-cleanup).
+The server workflow / release runner / webhook producer first writes LLM calls into a Redis **pending admission backlog** keyed by the limiter/fairness key. A worker-side dispatcher admits pending jobs into the BullMQ `llm` ready queue only after a concurrency admission lease is available. This uses ordinary Redis + BullMQ primitives; BullMQ Pro groups are not required. The `dataset-import` queue is only for raw-upload imports. The legacy client-streamed batch path remains a synchronous staging/promote request path; cleanup of abandoned pre-queued sessions uses an in-server sweep tick; see [§3.5](#35-probe--export--dataset-import-cleanup).
 
 ## 3. Orchestration Inventory
 
@@ -41,16 +42,18 @@ Experiments are carried by a DBOS workflow:
 
 - Read the experiment, prompt version, dataset, model, and run configuration.
 - Generate a stable `runResultId` per sample.
-- Enqueue LLM calls into the `llm` queue.
-- The worker writes `ph_runs.run_results`.
+- Enqueue LLM calls into the LLM pending admission backlog; the worker dispatcher later moves admitted jobs into the BullMQ `llm` ready queue.
+- The worker writes `ph_runs.run_results`; `ExperimentWorkflow` also reconciles BullMQ-terminal LLM jobs whose
+  business row is missing into failed run results, so a missed worker finalization event cannot leave an experiment
+  polling forever.
 - The workflow aggregates progress and metrics and writes them back to `ph_runs.experiments`.
 - `control_state` supports `stop` / `resume`; legacy `cancel` experiment actions are normalized to `stop`.
   When `ExperimentWorkflow` observes `stop` while a batch is in flight, it removes this experiment's not-yet-started
-  `llm` jobs from BullMQ (`waiting` / `delayed` / `prioritized` / `waiting-children` / `paused`) and then waits only
+  `llm` jobs from both the Redis pending backlog and BullMQ (`waiting` / `delayed` / `prioritized` / `waiting-children` / `paused`) and then waits only
   for already-started jobs in that batch to reach terminal `ph_runs.run_results` rows before finalizing `stopped`.
-  If BullMQ already reports a job as `completed` / `failed` but the matching `run_results` row is still missing,
-  the workflow records an idempotent failed run result from the queued payload and removes that stale terminal job,
-  so a lost worker finalization event cannot keep the experiment in `running + control_state='stop'` until timeout.
+  Pending jobs are treated as non-terminal during polling/reconciliation rather than as missing BullMQ jobs. If BullMQ already reports a job as `completed` / `failed` but the matching `run_results` row is still missing,
+  the normal poll loop records an idempotent failed run result from the queued payload before rechecking progress;
+  stop cleanup also removes that stale terminal job.
 
 ### 3.2 OptimizationWorkflow
 
@@ -71,7 +74,7 @@ Releases do not enter DBOS; they are driven by an in-server runner service ticki
 - Queue consumption holds a Redis mutex lease per release line and renews it periodically; at any given moment only one server instance consumes a given input route,
   avoiding duplicate enqueues or duplicate recording in multi-instance deployments.
 - Provide the same routing decisions for the Webhook entry point: the first Webhook production runs directly, and subsequent split / dual_run canaries are routed by the release line.
-- Enqueue into the `llm` queue.
+- Enqueue into the LLM pending admission backlog.
 - LLM jobs use `source='release'` and `source_id=release_line_events.id`, no longer distinguishing canary from production on the run result source.
 - Write run results, push outputs to the corresponding lane's output connector, and accumulate the release event count snapshot.
 - Read the release event's `control_state` to respond to stop / resume / cancel / extend.
@@ -104,7 +107,7 @@ Request processing path:
 3. Resolution output:
    - `ProjectContext`: `{ projectId: connector.projectId }`. In OSS, `projectId` is fixed to the local default project; in SaaS, after replacing `ConnectorContextResolver`, it is determined by the connector configuration
    - `ActorContext`: `{ actorKind: 'system_webhook', actorId: connectorId }`. This actor does not map to any user / API token actor; in run results and logs, the event's actor identity is recorded with the flat `actorKind` plus the connector id in `actorId`
-4. Subsequent routing / enqueue logic reuses the same flow as the §3.3 Release Runner: release line decisions (production / canary / split / dual_run), variable mapping, enqueue into the `llm` queue; the BullMQ job payload additionally carries `webhookTokenId` (the resolved webhook token UUID)
+4. Subsequent routing / enqueue logic reuses the same flow as the §3.3 Release Runner: release line decisions (production / canary / split / dual_run), variable mapping, enqueue into the LLM pending admission backlog; the BullMQ job payload additionally carries `webhookTokenId` (the resolved webhook token UUID)
 5. Writes to `ph_runs.run_results` and stdout logs both use the above `ProjectContext / ActorContext`; when the worker writes a run_result, it passes the `webhookTokenId` from the payload through to the `ph_runs.run_results.webhook_token_id` column, used for per-consumer usage aggregation by token (the HTTP / MCP entry points write NULL)
 6. Idempotent deduplication is keyed on the `externalId` in the request body and handled by the business layer; the resolver is unaware of it
 
@@ -151,7 +154,8 @@ The current open-source schema does not keep a separate `ph_streaming` table; sh
 | ---------------------------------- | ----------- | ----------- |
 | REST / MCP param validation        | ✓           | -           |
 | Start a DBOS workflow              | ✓           | -           |
-| Enqueue a BullMQ job               | ✓           | -           |
+| Enqueue an LLM pending job         | ✓           | -           |
+| Admit pending LLM jobs to BullMQ   | -           | ✓           |
 | Release runner                     | ✓           | -           |
 | Consume the `llm` queue            | -           | ✓           |
 | Consume the `dataset-import` queue | -           | ✓           |
@@ -164,7 +168,9 @@ Rate limiting has **two independent gates**; do not conflate them when configuri
 - **Worker process concurrency**: BullMQ `@Processor('llm', { concurrency })` (default 4, overridable via `WORKER_CONCURRENCY`), the number of jobs a single process pulls simultaneously, **shared across all models**.
 - **Model-level effective concurrency**: Redis controls "the number of in-flight requests globally for a limiter key" using the opaque key produced by `LimiterKeyStrategy` (OSS default: `model:<modelId>`), **shared across all worker processes / all entry points that resolve to that key**; when auto-concurrency is enabled, the system self-tunes it ([21 §6.1](21-models.md#61-auto-concurrency)).
 
-A job first passes worker process concurrency, then `limiter.acquire` (≤ effective). For raising a model's effective concurrency to actually take effect, you need enough worker processes × process concurrency; otherwise it will be bottlenecked by worker process concurrency. When effective is smaller than the in-flight jobs, the surplus jobs are re-queued at `acquire` via `moveToDelayed` (without consuming BullMQ attempts).
+For the queued `llm` channel, jobs first enter a Redis pending backlog grouped by fairness key. The dispatcher scans due keys, attempts one concurrency admission lease per key at a time, and only then writes the job to BullMQ as ready. A key with no available slot is rescheduled without blocking other due keys behind it. For an admitted job, the admission lease is the concurrency reservation; immediately before the provider request, the worker calls the Redis limiter in pre-reserved mode so RPM / TPM remain call-time sliding-window checks without double-counting concurrency. Non-admitted/direct invocations still reserve concurrency through the limiter itself. Admission leases are heartbeated while the worker runs, released when it finishes, and expire for crash recovery.
+
+For raising a model's effective concurrency to actually take effect, you still need enough worker processes × process concurrency; otherwise it will be bottlenecked by worker process concurrency. The recommended deployment shape is a high worker process concurrency plus the pending/ready dispatcher, so BullMQ pulls only jobs that have already passed admission instead of consuming a worker slot and then discovering that no model slot is available.
 
 ## 8. Integration Test Isolation
 

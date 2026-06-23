@@ -140,7 +140,7 @@ describe('LlmConsumer webhook async receipts', () => {
       writeRunResult,
     };
 
-    const payload = makeWebhookPayload();
+    const payload = { ...makeWebhookPayload(), orgId: validUuid('09999') };
     await consumer.onFailed(
       {
         id: payload.runResultId,
@@ -153,7 +153,9 @@ describe('LlmConsumer webhook async receipts', () => {
     );
 
     expect(writeRunResult).toHaveBeenCalledTimes(1);
-    expect(writeRunResult).toHaveBeenCalledWith(expect.objectContaining({ webhookTokenId: validUuid('08888') }));
+    expect(writeRunResult).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: validUuid('09999'), webhookTokenId: validUuid('08888') }),
+    );
     expect(redis.set).toHaveBeenCalledTimes(1);
     const [, raw, ex, ttl] = redis.set.mock.calls[0]!;
     expect(ex).toBe('EX');

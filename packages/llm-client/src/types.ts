@@ -70,6 +70,8 @@ export interface LLMCallContext {
 export interface RunResultContext {
   id: string;
   projectId: string;
+  /** SaaS-only project org attribution; OSS callers leave it unset. */
+  orgId?: string | null;
   source: LLMSource;
   sourceId: string;
   releaseVersionId?: string | null;
@@ -117,6 +119,8 @@ export interface InvokeLLMArgs {
   maxRetries?: number;
   parseResponse?: (content: string) => unknown;
   evaluateJudgment?: (args: { parsed: unknown; rawResponse: string }) => LLMJudgmentOutcome;
+  /** True when an upstream queue-admission lease already accounts for concurrency. */
+  preReservedConcurrency?: boolean;
 }
 
 export interface AdapterInvokeArgs {
@@ -155,6 +159,8 @@ export type LLMJudgmentStatus = 'correct' | 'incorrect' | 'parse_error' | 'judge
 export interface LLMRunResultRecord {
   id: string;
   projectId: string;
+  /** SaaS-only project org attribution; OSS callers leave it unset. */
+  orgId?: string | null;
   source: LLMSource;
   sourceId: string;
   releaseVersionId?: string | null;
@@ -208,6 +214,7 @@ export interface RateLimiterLike {
       concurrencyLimit: number;
     };
     autoConcurrency?: boolean;
+    reserveConcurrency?: boolean;
   }): Promise<RateLimiterAcquireResult | void>;
   release(args: { key: string }): Promise<void>;
   reportOutcome?(args: {
