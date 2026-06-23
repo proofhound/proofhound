@@ -175,7 +175,7 @@ Annotations are used for manual correction or to supplement the judgment:
   - `objectBytes` is the total byte size of object-storage shards referenced by the matched rows.
   - `reclaimableObjectBytes` is the subset whose shard is no longer referenced by any remaining run result and can be deleted immediately.
   - `deferredObjectBytes` is shared shard bytes that remain until all rows pointing at the shard are removed. Cleanup does not rewrite partially retained shards in place.
-- Release-line hard delete uses the same object-ref accounting: once it removes the line's release run results, it best-effort deletes only unreferenced `run_result_shard` objects.
+- Parent hard deletes use the same object-ref accounting: once experiment deletion removes owned experiment run results, or release-line deletion removes owned release run results, the service best-effort deletes only unreferenced `run_result_shard` objects after the DB delete commits. Object-storage cleanup failures are logged and do not roll back the parent delete.
 
 ## 8. Real-time behavior
 
