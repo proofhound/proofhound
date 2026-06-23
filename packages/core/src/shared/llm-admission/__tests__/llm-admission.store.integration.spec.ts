@@ -106,7 +106,8 @@ describeIf('LlmAdmissionStore + dispatcher (integration, real Redis/BullMQ)', ()
     const dispatcher = createDispatcher(store, queue);
     await expect(dispatcher.dispatchOnce()).resolves.toBe(1);
 
-    await expect(queue.getJob('job-a')).resolves.toBeNull();
+    const blockedJob = await queue.getJob('job-a');
+    expect(blockedJob ?? null).toBeNull();
     const readyJob = await queue.getJob('job-b');
     expect(readyJob).toMatchObject({ id: 'job-b' });
     expect(readyJob?.data.admission).toMatchObject({ fairnessKey: 'key-b', concurrencyLimit: 1 });
