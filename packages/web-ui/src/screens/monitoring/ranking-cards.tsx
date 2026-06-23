@@ -15,6 +15,7 @@ import {
 } from '@proofhound/ui';
 import type { TableColumn as UiTableColumn } from '@proofhound/ui';
 import { useI18n, type TranslationKey } from '../../i18n';
+import { getProviderTypeLabel } from '../../lib';
 type PromptSortBy = PromptMonitoringRankingResponseDto['sortBy'];
 type ModelSortBy = ModelMonitoringRankingResponseDto['sortBy'];
 
@@ -224,7 +225,7 @@ export function ProjectModelRankingCard({
                 <TableCell column="model" truncate={2}>
                   <div className="text-[13px] font-semibold leading-tight">{item.modelName}</div>
                   <div className="font-mono text-[11px] text-muted-foreground">
-                    {item.providerType} / {item.providerModelId}
+                    {getProviderTypeLabel(item.providerType)} / {item.providerModelId}
                   </div>
                 </TableCell>
                 <TableCell column="requests" className="text-right">

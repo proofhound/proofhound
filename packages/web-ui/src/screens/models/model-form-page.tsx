@@ -2,7 +2,16 @@
 
 import { Link } from '../../components/navigation/link';
 import { useRouter } from '../../hooks/use-router';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from 'react';
 import {
   MODEL_DEFAULT_CONCURRENCY_LIMIT,
   MODEL_MAX_CONCURRENCY_LIMIT,
@@ -49,10 +58,24 @@ import {
   formatProgressLabel,
   cn,
 } from '@proofhound/ui';
-import { JsonObjectTextarea, ModelContextWindowInput, ModelProbeStatus, type ModelProbeFeedback, ModelPresetQuickFill, type ModelQuickFillDraft } from '../../components';
+import {
+  JsonObjectTextarea,
+  ModelContextWindowInput,
+  ModelProbeStatus,
+  type ModelProbeFeedback,
+  ModelPresetQuickFill,
+  type ModelQuickFillDraft,
+} from '../../components';
 import { Main } from '@proofhound/ui/layout';
 import { useI18n } from '../../i18n';
-import { getApiErrorMessage, toIntegerInputValue, buildProviderTypeOptions, isProjectNameTaken } from '../../lib';
+import {
+  getApiErrorMessage,
+  toIntegerInputValue,
+  buildProviderTypeOptions,
+  getCanonicalProviderTypeValue,
+  getProviderTypeLabel,
+  isProjectNameTaken,
+} from '../../lib';
 import {
   useCreateProjectModel,
   useDateTimeFormatter,
@@ -187,6 +210,9 @@ function FieldInput({
   disabled = false,
   readOnly = false,
   type = 'text',
+  min,
+  step,
+  inputMode,
   onChange,
   testId,
 }: {
@@ -196,7 +222,10 @@ function FieldInput({
   placeholder?: string;
   disabled?: boolean;
   readOnly?: boolean;
-  type?: string;
+  type?: InputHTMLAttributes<HTMLInputElement>['type'];
+  min?: InputHTMLAttributes<HTMLInputElement>['min'];
+  step?: InputHTMLAttributes<HTMLInputElement>['step'];
+  inputMode?: InputHTMLAttributes<HTMLInputElement>['inputMode'];
   onChange?: (value: string) => void;
   testId?: string;
 }) {
@@ -209,6 +238,9 @@ function FieldInput({
         placeholder={placeholder}
         disabled={disabled}
         readOnly={readOnly}
+        min={min}
+        step={step}
+        inputMode={inputMode}
         onChange={onChange ? (event) => onChange(event.target.value) : undefined}
         data-testid={testId}
         className={cn('h-9 text-sm', suffix && 'pr-20', readOnly && 'bg-muted/50 text-muted-foreground')}
@@ -345,6 +377,11 @@ function BasicSection({
 }) {
   const { t } = useI18n();
   const isNew = mode === 'new';
+  const providerTypeValue = useDefaults
+    ? isNew
+      ? getCanonicalProviderTypeValue(model.provider)
+      : model.provider
+    : undefined;
 
   return (
     <Section
@@ -377,7 +414,7 @@ function BasicSection({
         >
           <Select
             name="providerType"
-            defaultValue={useDefaults ? model.provider || undefined : undefined}
+            defaultValue={providerTypeValue || undefined}
             disabled={!isNew}
             onValueChange={onDraftChange}
           >
@@ -389,7 +426,7 @@ function BasicSection({
               <SelectValue placeholder={t('models.form.providerPlaceholder')} />
             </SelectTrigger>
             <SelectContent>
-              {buildProviderTypeOptions(useDefaults ? model.provider : undefined).map((option) => (
+              {buildProviderTypeOptions(providerTypeValue).map((option) => (
                 <SelectItem
                   key={option.value}
                   value={option.value}
@@ -852,6 +889,9 @@ function PricingSection({
           <FieldInput
             name="inputPrice"
             type="number"
+            min={0}
+            step="any"
+            inputMode="decimal"
             defaultValue={useDefaults ? model.pricing.inputPerMillion : undefined}
             placeholder="2.50"
             suffix="/ 1M tokens"
@@ -862,6 +902,9 @@ function PricingSection({
           <FieldInput
             name="outputPrice"
             type="number"
+            min={0}
+            step="any"
+            inputMode="decimal"
             defaultValue={useDefaults ? model.pricing.outputPerMillion : undefined}
             placeholder="10.00"
             suffix="/ 1M tokens"
@@ -1581,7 +1624,9 @@ export function ModelFormPage({
         },
         onError: (error) => {
           const message = getApiErrorMessage(error);
-          setSubmitError(message === 'model_name_taken' ? nameTakenMessage : (message ?? t('common.loadFailedRefresh')));
+          setSubmitError(
+            message === 'model_name_taken' ? nameTakenMessage : (message ?? t('common.loadFailedRefresh')),
+          );
         },
       },
     );
@@ -1823,7 +1868,7 @@ export function ModelFormPage({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <SourceAndStatus model={model} />
                 <span className="font-mono text-xs text-muted-foreground">
-                  {model.provider} · {model.providerModelId} · {t('models.form.updated')}{' '}
+                  {getProviderTypeLabel(model.provider)} · {model.providerModelId} · {t('models.form.updated')}{' '}
                   {formatDateTime(model.lastUpdated)}
                 </span>
               </div>
@@ -2098,11 +2143,7 @@ export function ModelFormPage({
                 disabled={!editDirty || updateMutation.isPending || editNameTaken}
                 aria-busy={updateMutation.isPending}
               >
-                {updateMutation.isPending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Save className="size-4" />
-                )}
+                {updateMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
                 {t('models.form.saveChanges')}
               </Button>
             </div>

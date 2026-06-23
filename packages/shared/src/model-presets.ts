@@ -5,14 +5,7 @@ import {
   type SupportedModelProviderType,
 } from './dto/model.dto';
 
-export type ModelPresetGroup =
-  | 'openai'
-  | 'claude'
-  | 'deepseek'
-  | 'kimi'
-  | 'minimax'
-  | 'qwen'
-  | 'ernie';
+export type ModelPresetGroup = 'openai' | 'claude' | 'deepseek' | 'kimi' | 'minimax' | 'qwen' | 'ernie';
 
 export interface ModelPreset {
   key: string;
@@ -175,7 +168,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'deepseek:v4-pro',
     group: 'deepseek',
     name: 'DeepSeek V4 Pro',
-    providerType: 'deepseek',
+    providerType: 'openai',
     providerLabel: 'DeepSeek',
     providerModelId: 'deepseek-v4-pro',
     endpoint: 'https://api.deepseek.com/chat/completions',
@@ -189,7 +182,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'deepseek:v4-flash',
     group: 'deepseek',
     name: 'DeepSeek V4 Flash',
-    providerType: 'deepseek',
+    providerType: 'openai',
     providerLabel: 'DeepSeek',
     providerModelId: 'deepseek-v4-flash',
     endpoint: 'https://api.deepseek.com/chat/completions',
@@ -202,7 +195,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'kimi:k2.6',
     group: 'kimi',
     name: 'KIMI K2.6',
-    providerType: 'kimi',
+    providerType: 'openai',
     providerLabel: 'KIMI / Moonshot',
     providerModelId: 'kimi-k2.6',
     endpoint: 'https://api.moonshot.ai/v1',
@@ -216,7 +209,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'kimi:k2.5',
     group: 'kimi',
     name: 'KIMI K2.5',
-    providerType: 'kimi',
+    providerType: 'openai',
     providerLabel: 'KIMI / Moonshot',
     providerModelId: 'kimi-k2.5',
     endpoint: 'https://api.moonshot.ai/v1',
@@ -229,7 +222,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'minimax:m2.7',
     group: 'minimax',
     name: 'MiniMax M2.7',
-    providerType: 'minimax',
+    providerType: 'openai',
     providerLabel: 'MiniMax',
     providerModelId: 'MiniMax-M2.7',
     endpoint: 'https://api.minimaxi.com/v1',
@@ -245,7 +238,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'minimax:m2.7-highspeed',
     group: 'minimax',
     name: 'MiniMax M2.7 Highspeed',
-    providerType: 'minimax',
+    providerType: 'openai',
     providerLabel: 'MiniMax',
     providerModelId: 'MiniMax-M2.7-highspeed',
     endpoint: 'https://api.minimaxi.com/v1',
@@ -260,7 +253,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'qwen:qwen3.6-max-preview',
     group: 'qwen',
     name: 'Qwen 3.6 Max Preview',
-    providerType: 'qwen',
+    providerType: 'openai',
     providerLabel: 'Qwen / DashScope',
     providerModelId: 'qwen3.6-max-preview',
     endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -276,7 +269,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'qwen:qwen3.6-plus',
     group: 'qwen',
     name: 'Qwen 3.6 Plus',
-    providerType: 'qwen',
+    providerType: 'openai',
     providerLabel: 'Qwen / DashScope',
     providerModelId: 'qwen3.6-plus',
     endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -291,7 +284,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'qwen:qwen3.6-flash',
     group: 'qwen',
     name: 'Qwen 3.6 Flash',
-    providerType: 'qwen',
+    providerType: 'openai',
     providerLabel: 'Qwen / DashScope',
     providerModelId: 'qwen3.6-flash',
     endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
@@ -306,7 +299,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'ernie:4.5-turbo-20260402',
     group: 'ernie',
     name: 'ERNIE 4.5 Turbo',
-    providerType: 'ernie',
+    providerType: 'openai',
     providerLabel: 'ERNIE / Qianfan',
     providerModelId: 'ernie-4.5-turbo-20260402',
     endpoint: 'https://qianfan.baidubce.com/v2',
@@ -322,7 +315,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     key: 'ernie:4.5-turbo-vl',
     group: 'ernie',
     name: 'ERNIE 4.5 Turbo VL',
-    providerType: 'ernie',
+    providerType: 'openai',
     providerLabel: 'ERNIE / Qianfan',
     providerModelId: 'ernie-4.5-turbo-vl',
     endpoint: 'https://qianfan.baidubce.com/v2',

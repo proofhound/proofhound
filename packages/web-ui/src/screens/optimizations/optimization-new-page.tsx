@@ -23,7 +23,7 @@ import { Button, Input, cn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { PromptVersionPickerRow, PromptVersionPickerTag, PromptLanguageSelect } from '../../components';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { formatLatencySeconds, getApiErrorMessage, isProjectNameTaken } from '../../lib';
+import { formatLatencySeconds, getApiErrorMessage, getProviderTypeLabel, isProjectNameTaken } from '../../lib';
 import { useOptimizations, useCreateOptimization } from '../../hooks';
 import { useDatasets } from '../../hooks';
 import { useExperiments } from '../../hooks';
@@ -961,7 +961,7 @@ function ModelOptionRow({
           {model.status === 'disabled' && <Tag tone="neutral">{t('optimizations.new.experiment.modelDisabled')}</Tag>}
           {model.status === 'testing' && <Tag tone="warning">{t('optimizations.new.experiment.modelTesting')}</Tag>}
         </div>
-        <div className="mt-0.5 text-[12px] text-muted-foreground">{model.providerType}</div>
+        <div className="mt-0.5 text-[12px] text-muted-foreground">{getProviderTypeLabel(model.providerType)}</div>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           {ctx && <Tag>{ctx}</Tag>}
           {model.capabilities.image !== 'none' && (
@@ -1182,14 +1182,18 @@ export function OptimizationNewPage({
     const query = modelSearch.trim().toLowerCase();
     if (!query) return models;
     return models.filter((item) =>
-      `${item.name} ${item.providerType} ${item.providerModelId}`.toLowerCase().includes(query),
+      `${item.name} ${getProviderTypeLabel(item.providerType)} ${item.providerType} ${item.providerModelId}`
+        .toLowerCase()
+        .includes(query),
     );
   }, [models, modelSearch]);
   const filteredAnalysisModels = useMemo(() => {
     const query = analysisModelSearch.trim().toLowerCase();
     if (!query) return models;
     return models.filter((item) =>
-      `${item.name} ${item.providerType} ${item.providerModelId}`.toLowerCase().includes(query),
+      `${item.name} ${getProviderTypeLabel(item.providerType)} ${item.providerType} ${item.providerModelId}`
+        .toLowerCase()
+        .includes(query),
     );
   }, [models, analysisModelSearch]);
 

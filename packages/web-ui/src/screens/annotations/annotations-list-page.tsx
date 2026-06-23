@@ -3,12 +3,13 @@
 import { useMemo, useState } from 'react';
 import { Link } from '../../components/navigation/link';
 import { useRouter } from '../../hooks/use-router';
-import { ArrowRight, ListChecks, Plus, Search } from 'lucide-react';
+import { ArrowRight, ListChecks, Plus } from 'lucide-react';
 import { AnnotationClaimDialog } from '../../components';
 import { Main } from '@proofhound/ui/layout';
 import {
   Button,
-  Input,
+  FilterChip,
+  ListToolbar,
   Table,
   TableBody,
   TableCell,
@@ -18,7 +19,7 @@ import {
   TableRow,
   TableSkeletonRows,
   TableActionIconButton,
-  cn,
+  ToolbarSearch,
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
 import { useAnnotationTaskList, useClaimAnnotationSamples, useDateTimeFormatter } from '../../hooks';
@@ -152,33 +153,26 @@ export function AnnotationsListPage({ projectId }: { projectId: string }) {
           />
         </div>
 
-        <div className="rounded-lg border bg-card p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[260px] flex-1 sm:max-w-[420px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={t('annotations.search')}
-                className="pl-9"
-              />
-            </div>
-            {FILTERS.map((item) => (
-              <FilterChip
-                key={item.value}
-                active={filter === item.value}
-                label={t(item.key)}
-                count={counts[item.value]}
-                onClick={() => setFilter(item.value)}
-              />
-            ))}
-          </div>
+        <section className="overflow-hidden rounded-lg border bg-card" aria-label={t('annotations.listSurface')}>
+          <ListToolbar
+            lead={
+              <>
+                <ToolbarSearch value={search} onChange={setSearch} placeholder={t('annotations.search')} />
+                {FILTERS.map((item) => (
+                  <FilterChip
+                    key={item.value}
+                    active={filter === item.value}
+                    label={t(item.key)}
+                    count={counts[item.value]}
+                    onClick={() => setFilter(item.value)}
+                  />
+                ))}
+              </>
+            }
+          />
           {tasksQuery.isError ? (
-            <div className="mt-2 text-[12px] text-destructive">{t('annotations.loadFailed')}</div>
+            <div className="border-b px-4 py-2 text-[12px] text-destructive">{t('annotations.loadFailed')}</div>
           ) : null}
-        </div>
-
-        <div className="overflow-hidden rounded-lg border bg-card">
           <Table columns={TASK_COLUMNS}>
             <TableHeader>
               <TableRow>
@@ -259,7 +253,7 @@ export function AnnotationsListPage({ projectId }: { projectId: string }) {
               )}
             </TableBody>
           </Table>
-        </div>
+        </section>
       </div>
 
       {claimTarget ? (
@@ -279,37 +273,3 @@ export function AnnotationsListPage({ projectId }: { projectId: string }) {
   );
 }
 
-function FilterChip({
-  active,
-  label,
-  count,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  count: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'inline-flex h-9 items-center gap-2 rounded-md border px-3 text-[12.5px] font-medium transition-colors',
-        active
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-    >
-      <span>{label}</span>
-      <span
-        className={cn(
-          'rounded-full px-1.5 font-mono text-[10.5px]',
-          active ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-muted text-muted-foreground',
-        )}
-      >
-        {formatCount(count)}
-      </span>
-    </button>
-  );
-}

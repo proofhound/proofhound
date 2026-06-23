@@ -33,6 +33,7 @@ import {
 } from '../../hooks';
 import { usePrompts } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
+import { getProviderTypeLabel } from '../../lib';
 import { useProjectContext } from '../../providers';
 import { BigChartCard, type DeltaTone } from './big-chart-card';
 import { MonitoringFilterStrip } from './monitoring-filter-strip';
@@ -139,7 +140,7 @@ export function ProjectMonitoringPage({ testId, titleKey, subtitleKey }: Project
       modelsList.map((model) => ({
         value: model.id,
         label: model.name,
-        meta: model.providerType,
+        meta: getProviderTypeLabel(model.providerType),
         logoText: initials(model.name),
       })),
     [modelsList],

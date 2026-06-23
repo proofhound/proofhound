@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   DATASET_PREVIEW_PAGE_SIZE,
+  getDatasetNameFromFile,
   getDatasetPreviewPage,
   inferRole,
   parseDatasetFile,
@@ -149,6 +150,12 @@ function makeStoredZipFile(entries: Record<string, Uint8Array | string>) {
 }
 
 describe('dataset upload parser', () => {
+  it('preserves non-English characters when deriving dataset names from file names', () => {
+    expect(getDatasetNameFromFile('中文情感分析.csv')).toBe('中文情感分析');
+    expect(getDatasetNameFromFile('顧客レビュー_2026_日本語.JSONL')).toBe('顧客レビュー-2026-日本語');
+    expect(getDatasetNameFromFile('Résumé données (été).tsv')).toBe('résumé-données-été');
+  });
+
   it('paginates parsed preview rows at 10 rows per page', () => {
     const rows = Array.from({ length: 25 }, (_, index) => ({ sample_id: `case-${index + 1}` }));
 

@@ -366,25 +366,34 @@ export async function testModelConnectivity(
   }
 }
 
-const OPENAI_COMPATIBLE_PROVIDER_TYPES = ['openai', 'deepseek', 'kimi', 'minimax', 'qwen', 'ernie'] as const;
+const OPENAI_COMPATIBLE_PROVIDER_ALIASES = new Set(['openai', 'deepseek', 'kimi', 'minimax', 'qwen', 'ernie']);
 
 export function defaultLLMAdapters(): LLMAdapter[] {
-  return [
-    ...OPENAI_COMPATIBLE_PROVIDER_TYPES.map((providerType) => ({ ...openAIAdapter, providerType })),
-    azureOpenAIAdapter,
-    { ...azureOpenAIAdapter, providerType: 'azure' },
-    anthropicAdapter,
-  ];
+  return [openAIAdapter, azureOpenAIAdapter, { ...azureOpenAIAdapter, providerType: 'azure' }, anthropicAdapter];
 }
 
 export function resolveLLMAdapter(providerType: string, adapters = defaultLLMAdapters()): LLMAdapter {
   const normalized = normalizeProviderType(providerType);
   const adapter = adapters.find((candidate) => candidate.providerType === normalized);
 
-  if (!adapter) {
-    throw new Error(`unsupported llm provider type: ${providerType}`);
+  if (adapter) return adapter;
+
+  if (OPENAI_COMPATIBLE_PROVIDER_ALIASES.has(normalized)) {
+    return requireLLMAdapter('openai', adapters, providerType);
   }
 
+  throw new Error(`unsupported llm provider type: ${providerType}`);
+}
+
+function requireLLMAdapter(
+  canonicalProviderType: string,
+  adapters: LLMAdapter[],
+  originalProviderType: string,
+): LLMAdapter {
+  const adapter = adapters.find((candidate) => candidate.providerType === canonicalProviderType);
+  if (!adapter) {
+    throw new Error(`unsupported llm provider type: ${originalProviderType}`);
+  }
   return adapter;
 }
 

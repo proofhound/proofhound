@@ -16,8 +16,6 @@ import {
   MoreHorizontal,
   Power,
   Plus,
-  Search,
-  SlidersHorizontal,
   Timer,
   Trash2,
   X,
@@ -34,8 +32,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Input,
+  FilterChip,
   ListRowsSkeleton,
+  ListToolbar,
   PlatformLoaderOverlay,
   ModalityIconGroup,
   Progress,
@@ -51,12 +50,15 @@ import {
   TABLE_ACTION_ICON_BUTTON_CLASS,
   TableActionIconButton,
   TableActionTooltip,
+  ToolbarFilterPopover,
+  ToolbarSearch,
+  ToolbarSelectionBar,
   cn,
 } from '@proofhound/ui';
 import type { ModalityKind, TableColumn } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { getApiErrorMessage } from '../../lib';
+import { getApiErrorMessage, getProviderTypeLabel } from '../../lib';
 import {
   useDateTimeFormatter,
   useDeleteProjectModel,
@@ -150,55 +152,14 @@ function matchesFilter(model: ProjectModel, filter: ModelFilter) {
 }
 
 function getSearchText(model: ProjectModel) {
-  return [model.name, model.provider, model.providerModelId, model.owner].filter(Boolean).join(' ').toLowerCase();
+  return [model.name, getProviderTypeLabel(model.provider), model.provider, model.providerModelId, model.owner]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
 }
 
 function getFilterCount(models: ProjectModel[], filter: ModelFilter) {
   return models.filter((model) => matchesFilter(model, filter)).length;
-}
-
-function FilterChip({
-  active,
-  count,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  count: number;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors',
-        active
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-    >
-      {label}
-      <span className={cn('font-mono text-[11px]', active ? 'opacity-75' : 'text-muted-foreground')}>{count}</span>
-    </button>
-  );
-}
-
-function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (value: ViewMode) => void }) {
-  const { t } = useI18n();
-
-  return (
-    <SlidingViewToggle
-      value={value}
-      ariaLabel={t('models.viewMode')}
-      onChange={onChange}
-      options={[
-        { value: 'table', label: t('models.viewTable'), icon: List },
-        { value: 'cards', label: t('models.viewCards'), icon: Grid2X2 },
-      ]}
-    />
-  );
 }
 
 function SourcePill({ source }: { source: ModelSource }) {
@@ -568,7 +529,7 @@ function ModelCards({
                 <div className="min-w-0">
                   <h2 className="truncate text-[15px] font-semibold">{model.name}</h2>
                   <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-                    {model.provider} · {model.providerModelId}
+                    {getProviderTypeLabel(model.provider)} · {model.providerModelId}
                   </div>
                 </div>
                 <ModelActions
@@ -672,7 +633,7 @@ function ConnectivityDialog({
                 {testing ? t('models.connectivity.running') : t('models.connectivity.done')}
               </div>
               <div className="mt-1 font-mono text-[11px] text-muted-foreground">
-                {model.provider} · {model.providerModelId}
+                {getProviderTypeLabel(model.provider)} · {model.providerModelId}
               </div>
             </div>
             <div
@@ -732,7 +693,6 @@ export function ModelsListPage({ projectId }: { projectId: string }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const [onlyEditable, setOnlyEditable] = useState(false);
   const [onlyNearLimit, setOnlyNearLimit] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProjectModel | null>(null);
@@ -856,31 +816,6 @@ export function ModelsListPage({ projectId }: { projectId: string }) {
             <h1 className="text-[26px] font-semibold">{t('models.title')}</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {selectedIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 border-r pr-3">
-                <span className="text-xs text-muted-foreground">
-                  {t('models.selected')} <b className="font-mono text-foreground">{selectedIds.length}</b>
-                </span>
-                <Button type="button" variant="outline" size="sm" className="h-8">
-                  <Download className="size-3.5" />
-                  {t('models.action.exportCsv')}
-                </Button>
-                <Button type="button" variant="outline" size="sm" className="h-8">
-                  <Cable className="size-3.5" />
-                  {t('models.action.bulkTest')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={() => setSelectedIds([])}
-                  aria-label={t('models.clearSelection')}
-                >
-                  <X className="size-3.5" />
-                </Button>
-              </div>
-            )}
             <Button asChild size="sm" className="h-9">
               <Link href={`/models/new`}>
                 <Plus className="size-4" />
@@ -891,92 +826,118 @@ export function ModelsListPage({ projectId }: { projectId: string }) {
         </div>
 
         <section className="rounded-lg border bg-card" aria-label={t('models.listSurface')}>
-          <div className="relative flex flex-col gap-3 border-b p-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-1 flex-wrap items-center gap-2">
-              <div className="relative w-full sm:w-[280px]">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="search"
+          <ListToolbar
+            lead={
+              <>
+                <ToolbarSearch
                   value={searchQuery}
-                  onChange={(event) => {
-                    setSearchQuery(event.target.value);
+                  onChange={(value) => {
+                    setSearchQuery(value);
                     setPageIndex(0);
                   }}
                   placeholder={t('models.searchPlaceholder')}
-                  className="h-9 pl-8 text-sm"
                 />
-              </div>
-              {FILTERS.map((filter) => (
-                <FilterChip
-                  key={filter.key}
-                  active={activeFilter === filter.key}
-                  count={getFilterCount(models, filter.key)}
-                  label={t(filter.labelKey)}
-                  onClick={() => {
-                    setActiveFilter(filter.key);
-                    setPageIndex(0);
-                  }}
+                {FILTERS.map((filter) => (
+                  <FilterChip
+                    key={filter.key}
+                    active={activeFilter === filter.key}
+                    count={getFilterCount(models, filter.key)}
+                    label={t(filter.labelKey)}
+                    onClick={() => {
+                      setActiveFilter(filter.key);
+                      setPageIndex(0);
+                    }}
+                  />
+                ))}
+              </>
+            }
+            trail={
+              <>
+                <SlidingViewToggle
+                  value={viewMode}
+                  ariaLabel={t('models.viewMode')}
+                  onChange={updateViewMode}
+                  options={[
+                    { value: 'table', label: t('models.viewTable'), icon: List },
+                    { value: 'cards', label: t('models.viewCards'), icon: Grid2X2 },
+                  ]}
                 />
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <ViewToggle value={viewMode} onChange={updateViewMode} />
+                <ToolbarFilterPopover
+                  label={t('models.filterSettings')}
+                  active={onlyEditable || onlyNearLimit}
+                >
+                  <div className="px-2 pb-2 text-xs font-medium text-muted-foreground">
+                    {t('models.filterSettings')}
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-accent">
+                    <input
+                      type="checkbox"
+                      checked={onlyEditable}
+                      onChange={(event) => {
+                        setOnlyEditable(event.target.checked);
+                        setPageIndex(0);
+                      }}
+                      className="size-4 accent-primary"
+                    />
+                    <span>{t('models.filter.editableOnly')}</span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-accent">
+                    <input
+                      type="checkbox"
+                      checked={onlyNearLimit}
+                      onChange={(event) => {
+                        setOnlyNearLimit(event.target.checked);
+                        setPageIndex(0);
+                      }}
+                      className="size-4 accent-primary"
+                    />
+                    <span>{t('models.filter.nearLimitOnly')}</span>
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1 h-8 w-full justify-start"
+                    onClick={() => {
+                      setActiveFilter('all');
+                      setOnlyEditable(false);
+                      setOnlyNearLimit(false);
+                      setSearchQuery('');
+                      setPageIndex(0);
+                    }}
+                  >
+                    {t('models.filter.reset')}
+                  </Button>
+                </ToolbarFilterPopover>
+              </>
+            }
+          />
+
+          {selectedIds.length > 0 && (
+            <ToolbarSelectionBar>
+              <span className="text-xs text-muted-foreground">
+                {t('models.selected')} <b className="font-mono text-foreground">{selectedIds.length}</b>
+              </span>
+              <Button type="button" variant="outline" size="sm" className="h-8">
+                <Download className="size-3.5" />
+                {t('models.action.exportCsv')}
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="h-8">
+                <Cable className="size-3.5" />
+                {t('models.action.bulkTest')}
+              </Button>
               <Button
                 type="button"
-                variant={filterPanelOpen ? 'secondary' : 'outline'}
+                variant="ghost"
                 size="icon"
-                className="size-9"
-                aria-label={t('models.filterSettings')}
-                onClick={() => setFilterPanelOpen((open) => !open)}
+                className="ml-auto size-8"
+                onClick={() => setSelectedIds([])}
+                aria-label={t('models.clearSelection')}
               >
-                <SlidersHorizontal className="size-4" />
+                <X className="size-3.5" />
               </Button>
-            </div>
-            {filterPanelOpen && (
-              <div className="absolute right-4 top-[calc(100%-8px)] z-40 w-60 rounded-md border bg-popover p-2 text-sm shadow-lg">
-                <div className="px-2 pb-2 text-xs font-medium text-muted-foreground">{t('models.filterSettings')}</div>
-                <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-accent">
-                  <input
-                    type="checkbox"
-                    checked={onlyEditable}
-                    onChange={(event) => {
-                      setOnlyEditable(event.target.checked);
-                      setPageIndex(0);
-                    }}
-                    className="size-4 accent-primary"
-                  />
-                  <span>{t('models.filter.editableOnly')}</span>
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-accent">
-                  <input
-                    type="checkbox"
-                    checked={onlyNearLimit}
-                    onChange={(event) => {
-                      setOnlyNearLimit(event.target.checked);
-                      setPageIndex(0);
-                    }}
-                    className="size-4 accent-primary"
-                  />
-                  <span>{t('models.filter.nearLimitOnly')}</span>
-                </label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="mt-1 h-8 w-full justify-start"
-                  onClick={() => {
-                    setActiveFilter('all');
-                    setOnlyEditable(false);
-                    setOnlyNearLimit(false);
-                    setSearchQuery('');
-                    setPageIndex(0);
-                  }}
-                >
-                  {t('models.filter.reset')}
-                </Button>
-              </div>
-            )}
-          </div>
+            </ToolbarSelectionBar>
+          )}
 
           {modelsLoading ? (
             <div className="relative">
@@ -984,9 +945,9 @@ export function ModelsListPage({ projectId }: { projectId: string }) {
               <PlatformLoaderOverlay />
             </div>
           ) : viewMode === 'table' ? (
-              <ModelTable
-                models={pagedModels}
-                selectedIds={selectedIds}
+            <ModelTable
+              models={pagedModels}
+              selectedIds={selectedIds}
               onToggleSelected={toggleSelected}
               onDelete={requestDeleteModel}
               onCopy={copyModel}
@@ -995,9 +956,9 @@ export function ModelsListPage({ projectId }: { projectId: string }) {
               testingIds={testingIds}
             />
           ) : (
-              <ModelCards
-                models={pagedModels}
-                selectedIds={selectedIds}
+            <ModelCards
+              models={pagedModels}
+              selectedIds={selectedIds}
               onToggleSelected={toggleSelected}
               onDelete={requestDeleteModel}
               onCopy={copyModel}

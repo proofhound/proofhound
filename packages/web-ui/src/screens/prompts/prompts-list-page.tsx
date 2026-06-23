@@ -4,7 +4,7 @@ import type { PromptDeletionImpactDto, PromptDeletionImpactItemDto } from '@proo
 import { useSearchParams } from 'next/navigation';
 import { useRouter } from '../../hooks/use-router';
 import { useMemo, useState, type FormEvent } from 'react';
-import { Archive, FlaskConical, History, Plus, RotateCcw, Search, Sparkles, Trash2, X } from 'lucide-react';
+import { Archive, FlaskConical, History, Plus, RotateCcw, Sparkles, Trash2, X } from 'lucide-react';
 import {
   Button,
   Dialog,
@@ -13,8 +13,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FilterChip,
   Input,
   ListRowsSkeleton,
+  ListToolbar,
   PlatformLoaderOverlay,
   Skeleton,
   ResourcePaginationFooter,
@@ -25,6 +27,8 @@ import {
   TableHeader,
   TableRow,
   TableActionIconButton,
+  ToolbarSearch,
+  ToolbarSelectionBar,
   cn,
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
@@ -83,33 +87,6 @@ function getPromptOptimizationNewHref(prompt: ProjectPrompt) {
   return `/optimizations/new?${query.toString()}`;
 }
 
-function FilterChip({
-  active,
-  count,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  count: number;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors',
-        active
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-    >
-      {label}
-      <span className={cn('font-mono text-[11px]', active ? 'opacity-75' : 'text-muted-foreground')}>{count}</span>
-    </button>
-  );
-}
 
 function ArchivedBadge() {
   const { t } = useI18n();
@@ -555,27 +532,6 @@ export function PromptsListPage({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {selectedIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 border-r pr-3">
-                <span className="text-xs text-muted-foreground">
-                  {t('prompts.selected')} <b className="font-mono text-foreground">{selectedIds.length}</b>
-                </span>
-                <Button type="button" variant="outline" size="sm" className="h-8">
-                  <Trash2 className="size-3.5" />
-                  {t('prompts.action.batchDelete')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={() => setSelectedIds([])}
-                  aria-label={t('prompts.clearSelection')}
-                >
-                  <X className="size-3.5" />
-                </Button>
-              </div>
-            )}
             <Button type="button" size="sm" className="h-9" onClick={() => setCreateDialogManuallyOpen(true)}>
               <Plus className="size-4" />
               {t('prompts.create')}
@@ -584,35 +540,54 @@ export function PromptsListPage({
         </div>
 
         <section className="rounded-lg border bg-card" aria-label={t('prompts.listSurface')}>
-          <div className="flex flex-col gap-3 border-b p-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-1 flex-wrap items-center gap-2">
-              <div className="relative w-full sm:w-[320px]">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="search"
+          <ListToolbar
+            lead={
+              <>
+                <ToolbarSearch
                   value={searchQuery}
-                  onChange={(event) => {
-                    setSearchQuery(event.target.value);
+                  onChange={(value) => {
+                    setSearchQuery(value);
                     setPageIndex(0);
                   }}
                   placeholder={t('prompts.searchPlaceholder')}
-                  className="h-9 pl-8 text-sm"
                 />
-              </div>
-              {FILTERS.map((filter) => (
-                <FilterChip
-                  key={filter.key}
-                  active={activeFilter === filter.key}
-                  count={getFilterCount(prompts, filter.key)}
-                  label={t(filter.labelKey)}
-                  onClick={() => {
-                    setActiveFilter(filter.key);
-                    setPageIndex(0);
-                  }}
-                />
-              ))}
-            </div>
-          </div>
+                {FILTERS.map((filter) => (
+                  <FilterChip
+                    key={filter.key}
+                    active={activeFilter === filter.key}
+                    count={getFilterCount(prompts, filter.key)}
+                    label={t(filter.labelKey)}
+                    onClick={() => {
+                      setActiveFilter(filter.key);
+                      setPageIndex(0);
+                    }}
+                  />
+                ))}
+              </>
+            }
+          />
+
+          {selectedIds.length > 0 && (
+            <ToolbarSelectionBar>
+              <span className="text-xs text-muted-foreground">
+                {t('prompts.selected')} <b className="font-mono text-foreground">{selectedIds.length}</b>
+              </span>
+              <Button type="button" variant="outline" size="sm" className="h-8">
+                <Trash2 className="size-3.5" />
+                {t('prompts.action.batchDelete')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="ml-auto size-8"
+                onClick={() => setSelectedIds([])}
+                aria-label={t('prompts.clearSelection')}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </ToolbarSelectionBar>
+          )}
 
           {promptsLoading ? (
             <div className="relative">

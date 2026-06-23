@@ -46,7 +46,7 @@ describe('modelPresetToQuickFillDraft', () => {
       key: 'qwen:test',
       group: 'qwen',
       name: 'Qwen Test',
-      providerType: 'qwen',
+      providerType: 'openai',
       providerLabel: 'Qwen / DashScope',
       providerModelId: 'qwen-test',
       endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',

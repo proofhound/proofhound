@@ -73,9 +73,11 @@ export function getDisplayValue(value: unknown) {
 export function getDatasetNameFromFile(fileName: string) {
   return fileName
     .replace(/\.[^.]+$/u, '')
+    .normalize('NFKC')
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9-]+/gu, '-')
+    .replace(/[^\p{L}\p{N}-]+/gu, '-')
+    .replace(/-+/gu, '-')
     .replace(/^-+|-+$/gu, '')
     .slice(0, 80);
 }

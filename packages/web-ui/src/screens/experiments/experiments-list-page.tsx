@@ -6,7 +6,7 @@ import { useRouter } from '../../hooks/use-router';
 import { useCallback, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ExperimentControlActionDto, ExperimentListItemDto, ExperimentListStatsDto } from '@proofhound/shared';
-import { BarChart3, List, Loader2, Play, Plus, Search, Sliders, Square, Trash2, X } from 'lucide-react';
+import { BarChart3, List, Loader2, Play, Plus, Square, Trash2, X } from 'lucide-react';
 import {
   Button,
   Dialog,
@@ -15,16 +15,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  Input,
+  FilterChip,
   ListRowsSkeleton,
+  ListToolbar,
   PlatformLoaderOverlay,
   Skeleton,
   ResourcePaginationFooter,
   SlidingViewToggle,
+  ToolbarSearch,
+  ToolbarSelectionBar,
+  ToolbarSortMenu,
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
@@ -36,10 +36,10 @@ import { getApiErrorMessage } from '../../lib';
 import {
   deriveExperimentDisplayStatus,
   normalizeExperimentStatus,
+  EXPERIMENT_STATUS_TONE,
   type ExperimentStatus,
   type ExperimentSummary,
 } from './experiment-view-model';
-import { ChipFilter } from './experiment-ui';
 import { ExperimentsComparisonView } from './experiments-comparison-view';
 import { ExperimentsTable } from './experiments-table';
 
@@ -446,58 +446,6 @@ export function ExperimentsListPage({ projectId }: { projectId: string }) {
             <h1 className="text-[26px] font-semibold">{t('experiments.title')}</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {selectedIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 border-r pr-3">
-                <span className="text-xs text-muted-foreground">
-                  {t('experiments.selected')} <b className="font-mono text-foreground">{selectedIds.length}</b>
-                  {bulkBreakdown && <span className="ml-1.5 text-muted-foreground">· {bulkBreakdown}</span>}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1"
-                  disabled={isBusy || !selectedExperiments.some((experiment) => experiment.status === 'stopped')}
-                  onClick={() => void runBulkControl('resume')}
-                >
-                  {bulkBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-                  {t('experiments.bulk.resume')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1"
-                  disabled={isBusy || !selectedExperiments.some((experiment) => experiment.status === 'running')}
-                  onClick={() => void runBulkControl('stop')}
-                >
-                  {bulkBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
-                  {t('experiments.bulk.stop')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1 border-destructive/40 text-destructive hover:text-destructive"
-                  disabled={isBusy}
-                  onClick={() => openDeleteDialog(selectedExperiments)}
-                >
-                  {bulkBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-                  {t('experiments.bulk.delete')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  disabled={isBusy}
-                  onClick={() => setSelectedIds([])}
-                  aria-label={t('experiments.clearSelection')}
-                >
-                  <X className="size-3.5" />
-                </Button>
-              </div>
-            )}
             <Button asChild size="sm" className="h-9">
               <Link href={`/experiments/new`}>
                 <Plus className="size-4" />
@@ -550,72 +498,118 @@ export function ExperimentsListPage({ projectId }: { projectId: string }) {
         )}
 
         <section className="rounded-lg border bg-card" aria-label={t('experiments.listSurface')}>
-          <div className="flex flex-col gap-3 border-b p-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-1 flex-wrap items-center gap-2">
-              <div className="relative w-full sm:w-[320px]">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="search"
+          <ListToolbar
+            lead={
+              <>
+                <ToolbarSearch
                   value={searchQuery}
-                  onChange={(event) => {
-                    setSearchQuery(event.target.value);
+                  onChange={(value) => {
+                    setSearchQuery(value);
                     setPageIndex(0);
                   }}
                   placeholder={t('experiments.searchPlaceholder')}
-                  className="h-9 pl-8 text-sm"
                 />
-              </div>
-              <ChipFilter
-                active={activeFilter === 'all'}
-                count={experiments.length}
-                label={t('experiments.filter.all')}
-                onClick={() => {
-                  setActiveFilter('all');
-                  setPageIndex(0);
-                }}
-              />
-              {STATUS_FILTERS.map((filter) => (
-                <ChipFilter
-                  key={filter.key}
-                  active={activeFilter === filter.key}
-                  tone={filter.key}
-                  count={getStatusCount(experiments, filter.key)}
-                  label={t(filter.labelKey)}
+                <FilterChip
+                  active={activeFilter === 'all'}
+                  count={experiments.length}
+                  label={t('experiments.filter.all')}
                   onClick={() => {
-                    setActiveFilter(filter.key);
+                    setActiveFilter('all');
                     setPageIndex(0);
                   }}
                 />
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5">
-                    <Sliders className="size-4" />
-                    {formatTemplate(t('experiments.sortLabel'), { field: t(SORT_LABEL_KEYS[sortMode]) })}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {(Object.keys(SORT_LABEL_KEYS) as Array<keyof typeof SORT_LABEL_KEYS>).map((mode) => (
-                    <DropdownMenuItem key={mode} onClick={() => setSortMode(mode)}>
-                      {t(SORT_LABEL_KEYS[mode])}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <span className="text-xs text-muted-foreground">{t('experiments.viewMode')}</span>
-              <SlidingViewToggle
-                value={viewMode}
-                ariaLabel={t('experiments.viewMode')}
-                onChange={updateViewMode}
-                options={[
-                  { value: 'table', label: t('experiments.viewTable'), icon: List },
-                  { value: 'compare', label: t('experiments.viewCompare'), icon: BarChart3 },
-                ]}
-              />
-            </div>
-          </div>
+                {STATUS_FILTERS.map((filter) => (
+                  <FilterChip
+                    key={filter.key}
+                    active={activeFilter === filter.key}
+                    dotClassName={EXPERIMENT_STATUS_TONE[filter.key].dot}
+                    pulse={EXPERIMENT_STATUS_TONE[filter.key].pulse}
+                    count={getStatusCount(experiments, filter.key)}
+                    label={t(filter.labelKey)}
+                    onClick={() => {
+                      setActiveFilter(filter.key);
+                      setPageIndex(0);
+                    }}
+                  />
+                ))}
+              </>
+            }
+            trail={
+              <>
+                <ToolbarSortMenu
+                  value={sortMode}
+                  label={t('common.toolbar.sort')}
+                  options={(Object.keys(SORT_LABEL_KEYS) as Array<keyof typeof SORT_LABEL_KEYS>).map((mode) => ({
+                    value: mode,
+                    label: t(SORT_LABEL_KEYS[mode]),
+                  }))}
+                  onChange={(mode) => setSortMode(mode)}
+                />
+                <SlidingViewToggle
+                  value={viewMode}
+                  ariaLabel={t('experiments.viewMode')}
+                  onChange={updateViewMode}
+                  options={[
+                    { value: 'table', label: t('experiments.viewTable'), icon: List },
+                    { value: 'compare', label: t('experiments.viewCompare'), icon: BarChart3 },
+                  ]}
+                />
+              </>
+            }
+          />
+
+          {selectedIds.length > 0 && (
+            <ToolbarSelectionBar>
+              <span className="text-xs text-muted-foreground">
+                {t('experiments.selected')} <b className="font-mono text-foreground">{selectedIds.length}</b>
+                {bulkBreakdown && <span className="ml-1.5 text-muted-foreground">· {bulkBreakdown}</span>}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1"
+                disabled={isBusy || !selectedExperiments.some((experiment) => experiment.status === 'stopped')}
+                onClick={() => void runBulkControl('resume')}
+              >
+                {bulkBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+                {t('experiments.bulk.resume')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1"
+                disabled={isBusy || !selectedExperiments.some((experiment) => experiment.status === 'running')}
+                onClick={() => void runBulkControl('stop')}
+              >
+                {bulkBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
+                {t('experiments.bulk.stop')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 border-destructive/40 text-destructive hover:text-destructive"
+                disabled={isBusy}
+                onClick={() => openDeleteDialog(selectedExperiments)}
+              >
+                {bulkBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                {t('experiments.bulk.delete')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="ml-auto size-8"
+                disabled={isBusy}
+                onClick={() => setSelectedIds([])}
+                aria-label={t('experiments.clearSelection')}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </ToolbarSelectionBar>
+          )}
 
           {experimentsLoading ? (
             <div className="relative">

@@ -4,7 +4,7 @@
 
 "Models" maintains the LLM configurations available to the current self-hosted instance. A model is the smallest unit through which ProofHound invokes an LLM:
 
-- Provider type
+- Invocation protocol
 - Provider model ID
 - Endpoint
 - API Key
@@ -23,7 +23,7 @@ Model names are unique within a project; when creating, editing, or copying a mo
 Each row shows:
 
 - Name
-- Provider type
+- Invocation protocol
 - Model ID
 - Status
 - Context length
@@ -49,15 +49,20 @@ Each row shows:
 
 A draft connectivity probe initiated on the create-model page before saving does not create a model, but the returned probe result must be retained in the page state. When the user subsequently clicks "Save as draft" or "Save and enable", if the most recent draft probe corresponds to the current form content, the create endpoint must write that result into the model's latest probe time and error fields; after a successful save it returns uniformly to the model list page. If the user changes any configuration that affects connectivity after probing, that draft probe is no longer attached to the create record.
 
-## 4. Endpoint Compatibility Rules
+## 4. Invocation Protocol and Endpoint Compatibility Rules
+
+The historical `provider_type` field stores the invocation protocol rather than the vendor brand. New model records use only:
+
+- `openai`: OpenAI-compatible Chat Completions request / response shape.
+- `anthropic`: Anthropic Messages request / response shape.
+
+Vendor names such as DeepSeek / KIMI / MiniMax / Qwen / ERNIE remain preset groups and display labels only. Those presets set `provider_type = openai` because they are invoked through the OpenAI-compatible adapter. Legacy stored vendor aliases may continue to be accepted by the LLM adapter resolver as compatibility aliases, but the create/edit UI must not expose them as new choices.
 
 An OpenAI-compatible Endpoint supports three input formats:
 
 - Full request URL: used as-is when it ends with `/chat/completions`.
 - API root already carrying a version: when it ends with `/v1`, `/v2`, `/v1beta`, `/openai`, etc., only `/chat/completions` is appended.
 - Plain host / gateway path: `/v1/chat/completions` is appended by default.
-
-DeepSeek / KIMI / MiniMax / Qwen / ERNIE and others can be sent over the OpenAI-compatible protocol; `provider_type` is still retained, used for filtering and subsequent adaptation.
 
 ## 5. Model Context Dictionary
 
@@ -72,10 +77,10 @@ DeepSeek / KIMI / MiniMax / Qwen / ERNIE and others can be sent over the OpenAI-
 
 The three limits are mutually independent:
 
-| Quota       | Meaning                                                                       |
-| ----------- | ----------------------------------------------------------------------------- |
-| RPM         | Number of requests in the most recent 60-second sliding window                |
-| TPM         | Input + output tokens in the most recent 60-second sliding window             |
+| Quota       | Meaning                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------- |
+| RPM         | Number of requests in the most recent 60-second sliding window                                    |
+| TPM         | Input + output tokens in the most recent 60-second sliding window                                 |
 | Concurrency | Number of in-flight requests at the same time (the concurrency limit when auto concurrency is on) |
 
 RPM / TPM allow `-1` to indicate no limit at the model layer; a positive runtime / deployment / plan cap from `RuntimeLimitsProvider` still applies when the model layer is unlimited. Concurrency must be `1..999`. All entries share the same effective quota, counted uniformly by the centralized Redis rate limiter through the opaque key produced by `LimiterKeyStrategy` ([08 §3.7](08-saas-adapter-boundary.md#37-limiterkeystrategy)); the OSS default key is `model:<modelId>`.

@@ -126,7 +126,7 @@ export const PromptBodyEditor = forwardRef<PromptBodyEditorHandle, PromptBodyEdi
           highlightSelectionMatches: true,
         }}
       />
-      <style jsx global>{`
+      <style>{`
         .prompt-body-editor .cm-editor {
           min-height: 320px;
           background: var(--background);

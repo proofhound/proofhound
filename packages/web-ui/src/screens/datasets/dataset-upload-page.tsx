@@ -53,6 +53,7 @@ import {
   FORMAT_CHIPS,
   PREVIEW_LIMIT,
   getDatasetNameFromFile,
+  getDatasetPreviewPage,
   getDisplayValue,
   getUploadFilePath,
   inferRole,
@@ -484,6 +485,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
   const leaveActionRef = useRef<(() => void) | null>(null);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [activeImportPath, setActiveImportPath] = useState<DatasetUploadImportPath | null>(null);
+  const [previewPageIndex, setPreviewPageIndex] = useState(0);
 
   // Leaving before completion cancels the import and asks the server to clear any staged/raw data.
   useEffect(
@@ -587,6 +589,10 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
   };
 
   const previewRows = useMemo(() => parsedFile?.samples.slice(0, PREVIEW_LIMIT) ?? [], [parsedFile]);
+  const previewPage = useMemo(
+    () => getDatasetPreviewPage(previewRows, previewPageIndex),
+    [previewRows, previewPageIndex],
+  );
   const selectedColumns = useMemo(
     () => parsedFile?.columns.filter((column) => selectedFields[column]) ?? [],
     [parsedFile, selectedFields],
@@ -662,6 +668,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     setIsLargeFile(false);
     setFieldRoles({});
     setSelectedFields({});
+    setPreviewPageIndex(0);
     uploadProgress.reset();
   };
 
@@ -687,6 +694,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
       setSelectedFile(file);
       setParsedFile(parsed);
       setIsLargeFile(large);
+      setPreviewPageIndex(0);
       setFieldRoles(
         normalizeExpectedRoles(
           Object.fromEntries(parsed.columns.map((column) => [column, inferRole(column, parsed.samples[0]?.[column])])),
@@ -1209,8 +1217,11 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {previewRows.map((row, index) => (
-                          <tr key={index} className="border-b last:border-b-0 hover:bg-muted/35">
+                        {previewPage.rows.map((row, index) => (
+                          <tr
+                            key={previewPage.rangeStart + index - 1}
+                            className="border-b last:border-b-0 hover:bg-muted/35"
+                          >
                             {parsedFile.columns.map((column) => (
                               <td key={column} className="max-w-[280px] truncate px-3 py-3 font-mono text-[12px]">
                                 {getDisplayValue(row[column])}
@@ -1229,13 +1240,14 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
                         size="icon"
                         className="size-7"
                         aria-label={t('common.previousPage')}
-                        disabled
+                        disabled={!previewPage.canGoPrevious}
+                        onClick={() => setPreviewPageIndex(Math.max(0, previewPage.pageIndex - 1))}
                       >
                         <ChevronLeft className="size-3.5" />
                       </Button>
                       <span className="font-mono">
-                        1-{previewRows.length}{' '}
-                        {isLargeFile ? `· ${t('datasets.upload.previewPrefixOnly')}` : `/ ${parsedFile.samples.length}`}
+                        {previewPage.rangeStart}-{previewPage.rangeEnd} / {previewPage.totalRows}{' '}
+                        {isLargeFile ? `· ${t('datasets.upload.previewPrefixOnly')}` : null}
                       </span>
                       <Button
                         type="button"
@@ -1243,7 +1255,10 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
                         size="icon"
                         className="size-7"
                         aria-label={t('common.nextPage')}
-                        disabled
+                        disabled={!previewPage.canGoNext}
+                        onClick={() =>
+                          setPreviewPageIndex(Math.min(previewPage.pageCount - 1, previewPage.pageIndex + 1))
+                        }
                       >
                         <ChevronRight className="size-3.5" />
                       </Button>

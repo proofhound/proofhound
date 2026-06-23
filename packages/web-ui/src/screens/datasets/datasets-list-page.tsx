@@ -11,8 +11,6 @@ import {
   Loader2,
   MoreHorizontal,
   Plus,
-  Search,
-  SlidersHorizontal,
   Sparkles,
   Trash2,
   RotateCcw,
@@ -31,11 +29,16 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  FilterChip,
   Input,
   ListRowsSkeleton,
+  ListToolbar,
   PlatformLoaderOverlay,
   Skeleton,
   ResourcePaginationFooter,
+  ToolbarSearch,
+  ToolbarSelectionBar,
+  ToolbarSortMenu,
   Table,
   TableBody,
   TableCell,
@@ -141,34 +144,6 @@ function HeaderStat({ label, value }: { label: string; value: string }) {
     <span>
       <span className="font-mono font-medium text-foreground">{value}</span> {label}
     </span>
-  );
-}
-
-function FilterChip({
-  active,
-  count,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  count: number;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors',
-        active
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-    >
-      {label}
-      <span className={cn('font-mono text-[11px]', active ? 'opacity-75' : 'text-muted-foreground')}>{count}</span>
-    </button>
   );
 }
 
@@ -596,27 +571,6 @@ export function DatasetsListPage({ projectId }: { projectId: string }) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {selectedIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 border-r pr-3">
-                <span className="text-xs text-muted-foreground">
-                  {t('datasets.selected')} <b className="font-mono text-foreground">{selectedIds.length}</b>
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {t('datasets.aggregateSamples')} {formatCount(selectedSamples)} {t('datasets.samples')}
-                </span>
-                <ExportFormatMenu variant="outline" />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={() => setSelectedIds([])}
-                  aria-label={t('datasets.clearSelection')}
-                >
-                  <X className="size-3.5" />
-                </Button>
-              </div>
-            )}
             <Button asChild size="sm" className="h-9 self-start">
               <Link href={`/datasets/new`}>
                 <Plus className="size-4" />
@@ -629,73 +583,83 @@ export function DatasetsListPage({ projectId }: { projectId: string }) {
         <DatasetTransferProgressPanel progress={downloadProgress.progress} className="mb-4" />
 
         <section className="rounded-lg border bg-card" aria-label={t('datasets.listSurface')}>
-          <div className="relative flex flex-col gap-3 border-b p-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-1 flex-wrap items-center gap-2">
-              <div className="relative w-full sm:w-[320px]">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="search"
+          <ListToolbar
+            lead={
+              <>
+                <ToolbarSearch
                   value={searchQuery}
-                  onChange={(event) => {
-                    setSearchQuery(event.target.value);
+                  onChange={(value) => {
+                    setSearchQuery(value);
                     setPageIndex(0);
                   }}
                   placeholder={t('datasets.searchPlaceholder')}
-                  className="h-9 pl-8 text-sm"
                 />
-              </div>
-              <FilterChip
-                active={activeModality === 'all'}
-                count={activeDatasets.length}
-                label={t('datasets.filter.all')}
-                onClick={() => {
-                  setActiveModality('all');
+                <FilterChip
+                  active={activeModality === 'all'}
+                  count={activeDatasets.length}
+                  label={t('datasets.filter.all')}
+                  onClick={() => {
+                    setActiveModality('all');
+                    setPageIndex(0);
+                  }}
+                />
+                <FilterChip
+                  active={activeModality === 'text'}
+                  count={getModalityCount(datasets, 'text')}
+                  label={t('datasets.modality.text')}
+                  onClick={() => {
+                    setActiveModality('text');
+                    setPageIndex(0);
+                  }}
+                />
+                <FilterChip
+                  active={activeModality === 'image'}
+                  count={getModalityCount(datasets, 'image')}
+                  label={t('datasets.modality.image')}
+                  onClick={() => {
+                    setActiveModality('image');
+                    setPageIndex(0);
+                  }}
+                />
+              </>
+            }
+            trail={
+              <ToolbarSortMenu
+                value={sortMode}
+                label={t('common.toolbar.sort')}
+                options={(Object.keys(SORT_LABEL_KEYS) as SortMode[]).map((mode) => ({
+                  value: mode,
+                  label: t(SORT_LABEL_KEYS[mode]),
+                }))}
+                onChange={(mode) => {
+                  setSortMode(mode);
                   setPageIndex(0);
                 }}
               />
-              <FilterChip
-                active={activeModality === 'text'}
-                count={getModalityCount(datasets, 'text')}
-                label={t('datasets.modality.text')}
-                onClick={() => {
-                  setActiveModality('text');
-                  setPageIndex(0);
-                }}
-              />
-              <FilterChip
-                active={activeModality === 'image'}
-                count={getModalityCount(datasets, 'image')}
-                label={t('datasets.modality.image')}
-                onClick={() => {
-                  setActiveModality('image');
-                  setPageIndex(0);
-                }}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" size="sm" className="h-9">
-                    <SlidersHorizontal className="size-4" />
-                    {t(SORT_LABEL_KEYS[sortMode])}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {(Object.keys(SORT_LABEL_KEYS) as SortMode[]).map((mode) => (
-                    <DropdownMenuItem
-                      key={mode}
-                      onClick={() => {
-                        setSortMode(mode);
-                        setPageIndex(0);
-                      }}
-                    >
-                      {t(SORT_LABEL_KEYS[mode])}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
+            }
+          />
+
+          {selectedIds.length > 0 && (
+            <ToolbarSelectionBar>
+              <span className="text-xs text-muted-foreground">
+                {t('datasets.selected')} <b className="font-mono text-foreground">{selectedIds.length}</b>
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {t('datasets.aggregateSamples')} {formatCount(selectedSamples)} {t('datasets.samples')}
+              </span>
+              <ExportFormatMenu variant="outline" />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="ml-auto size-8"
+                onClick={() => setSelectedIds([])}
+                aria-label={t('datasets.clearSelection')}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </ToolbarSelectionBar>
+          )}
 
           {datasetsLoading ? (
             <div className="relative">

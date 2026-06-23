@@ -74,48 +74,6 @@ export function SelectionBox({
   );
 }
 
-export function ChipFilter({
-  active,
-  label,
-  count,
-  tone,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  count: number;
-  tone?: OptimizationStatus;
-  onClick: () => void;
-}) {
-  const toneStyle = tone ? OPTIMIZATION_STATUS_TONE[tone] : null;
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors',
-        active
-          ? 'border-primary bg-primary text-primary-foreground'
-          : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-    >
-      {tone && toneStyle && (
-        <span
-          className={cn(
-            'size-1.5 rounded-full',
-            toneStyle.dot,
-            toneStyle.pulse && !active && 'animate-pulse',
-            active && 'bg-current opacity-90',
-          )}
-        />
-      )}
-      <span>{label}</span>
-      <span className={cn('font-mono text-[11px]', active ? 'opacity-75' : 'text-muted-foreground')}>{count}</span>
-    </button>
-  );
-}
-
 const ORIGIN_ICON: Record<OptimizationOrigin, typeof FlaskConical> = {
   experiment: FlaskConical,
   prompt: FileText,

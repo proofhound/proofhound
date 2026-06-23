@@ -21,7 +21,7 @@ export const DEV_MODELS: DevModelFixture[] = [
   {
     id: 'e656b649-b7d5-48da-bc88-a54f78754a6f',
     name: 'ERNIE 4.5 Turbo',
-    providerType: 'ernie',
+    providerType: 'openai',
     providerModelId: 'ernie-4.5-turbo-20260402',
     endpoint: 'https://qianfan.baidubce.com/v2',
     contextWindowTokens: 128000,
@@ -57,7 +57,7 @@ export const DEV_MODELS: DevModelFixture[] = [
   {
     id: '826d092f-0afa-4e01-b223-d608d1db519d',
     name: 'ERNIE 5.0',
-    providerType: 'ernie',
+    providerType: 'openai',
     providerModelId: 'ernie-5.0',
     endpoint: 'https://qianfan.baidubce.com/v2',
     contextWindowTokens: 128000,

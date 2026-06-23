@@ -4,7 +4,7 @@ import { Link } from '../../components/navigation/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useRouter } from '../../hooks/use-router';
 import { useCallback, useDeferredValue, useMemo, useState } from 'react';
-import { Ban, Check, ChevronDown, Columns3, List, Play, Plus, Search, Sliders, Square, Trash2, X } from 'lucide-react';
+import { Ban, Check, ChevronDown, Columns3, List, Play, Plus, Square, Trash2, X } from 'lucide-react';
 import {
   Button,
   Dialog,
@@ -13,15 +13,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  Input,
+  FilterChip,
   KanbanScrollArea,
   ListRowsSkeleton,
+  ListToolbar,
   ResourcePaginationFooter,
   SlidingViewToggle,
+  ToolbarSearch,
+  ToolbarSelectionBar,
+  ToolbarSortMenu,
   Table,
   TableBody,
   TableCell,
@@ -50,7 +50,6 @@ import {
 import { optimizationTone } from './optimization-theme';
 import {
   OptimizationStatusBadge,
-  ChipFilter,
   GoalList,
   LoopProgressBar,
   OriginBadge,
@@ -687,54 +686,6 @@ export function OptimizationsListPage({ projectId }: { projectId: string }) {
             <p className="mt-1 text-[12.5px] text-muted-foreground">{t('optimizations.subtitle')}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {selectedIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 border-r pr-3">
-                <span className="text-xs text-muted-foreground">
-                  {t('optimizations.selected')} <b className="font-mono text-foreground">{selectedIds.length}</b>
-                  {bulkBreakdown && <span className="ml-1.5 text-muted-foreground">· {bulkBreakdown}</span>}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1"
-                  disabled={bulkResumeDisabled}
-                  onClick={() => void runBulkControl('resume')}
-                >
-                  <Play className="size-3.5" /> {t('optimizations.bulk.resume')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 gap-1"
-                  disabled={bulkStopDisabled}
-                  onClick={() => void runBulkControl('stop')}
-                >
-                  <Square className="size-3.5" /> {t('optimizations.bulk.stop')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1 border-destructive/40 text-destructive hover:text-destructive"
-                  disabled={bulkDeleteDisabled}
-                  onClick={() => openDeleteDialog(selectedItems)}
-                >
-                  <Trash2 className="size-3.5" /> {t('optimizations.bulk.delete')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={() => setSelectedIds([])}
-                  aria-label={t('optimizations.clearSelection')}
-                >
-                  <X className="size-3.5" />
-                </Button>
-              </div>
-            )}
             <Button asChild size="sm" className="h-9">
               <Link href={`/optimizations/new`}>
                 <Plus className="size-4" />
@@ -794,78 +745,117 @@ export function OptimizationsListPage({ projectId }: { projectId: string }) {
         )}
 
         <section className="rounded-lg border bg-card" aria-label={t('optimizations.listSurface')}>
-          <div className="flex flex-col gap-3 border-b p-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-1 flex-wrap items-center gap-2">
-              <div className="relative w-full sm:w-[320px]">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="search"
+          <ListToolbar
+            lead={
+              <>
+                <ToolbarSearch
                   value={searchInput}
-                  onChange={(event) => {
-                    setSearchInput(event.target.value);
+                  onChange={(value) => {
+                    setSearchInput(value);
                     setPageIndex(0);
                   }}
                   placeholder={t('optimizations.searchPlaceholder')}
-                  className="h-9 pl-8 text-sm"
                 />
-              </div>
-              <ChipFilter
-                active={activeFilter === 'all'}
-                count={optimizationsQuery.data?.total ?? items.length}
-                label={t('optimizations.filter.all')}
-                onClick={() => {
-                  setActiveFilter('all');
-                  setPageIndex(0);
-                }}
-              />
-              {STATUS_FILTERS.map((filter) => (
-                <ChipFilter
-                  key={filter.key}
-                  active={activeFilter === filter.key}
-                  tone={filter.key}
-                  count={getStatusCount(items, filter.key)}
-                  label={t(filter.labelKey)}
+                <FilterChip
+                  active={activeFilter === 'all'}
+                  count={optimizationsQuery.data?.total ?? items.length}
+                  label={t('optimizations.filter.all')}
                   onClick={() => {
-                    setActiveFilter(filter.key);
+                    setActiveFilter('all');
                     setPageIndex(0);
                   }}
                 />
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5">
-                    <Sliders className="size-4" />
-                    {formatTemplate(t('optimizations.sortLabel'), { field: t(SORT_LABEL_KEYS[sortMode]) })}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {(Object.keys(SORT_LABEL_KEYS) as Array<keyof typeof SORT_LABEL_KEYS>).map((mode) => (
-                    <DropdownMenuItem
-                      key={mode}
-                      onClick={() => {
-                        setSortMode(mode);
-                        setPageIndex(0);
-                      }}
-                    >
-                      {t(SORT_LABEL_KEYS[mode])}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <span className="text-xs text-muted-foreground">{t('optimizations.viewMode')}</span>
-              <SlidingViewToggle
-                value={viewMode}
-                ariaLabel={t('optimizations.viewMode')}
-                onChange={updateViewMode}
-                options={[
-                  { value: 'table', label: t('optimizations.viewTable'), icon: List },
-                  { value: 'kanban', label: t('optimizations.viewKanban'), icon: Columns3 },
-                ]}
-              />
-            </div>
-          </div>
+                {STATUS_FILTERS.map((filter) => (
+                  <FilterChip
+                    key={filter.key}
+                    active={activeFilter === filter.key}
+                    dotClassName={OPTIMIZATION_STATUS_TONE[filter.key].dot}
+                    pulse={OPTIMIZATION_STATUS_TONE[filter.key].pulse}
+                    count={getStatusCount(items, filter.key)}
+                    label={t(filter.labelKey)}
+                    onClick={() => {
+                      setActiveFilter(filter.key);
+                      setPageIndex(0);
+                    }}
+                  />
+                ))}
+              </>
+            }
+            trail={
+              <>
+                <ToolbarSortMenu
+                  value={sortMode}
+                  label={t('common.toolbar.sort')}
+                  options={(Object.keys(SORT_LABEL_KEYS) as Array<keyof typeof SORT_LABEL_KEYS>).map((mode) => ({
+                    value: mode,
+                    label: t(SORT_LABEL_KEYS[mode]),
+                  }))}
+                  onChange={(mode) => {
+                    setSortMode(mode);
+                    setPageIndex(0);
+                  }}
+                />
+                <SlidingViewToggle
+                  value={viewMode}
+                  ariaLabel={t('optimizations.viewMode')}
+                  onChange={updateViewMode}
+                  options={[
+                    { value: 'table', label: t('optimizations.viewTable'), icon: List },
+                    { value: 'kanban', label: t('optimizations.viewKanban'), icon: Columns3 },
+                  ]}
+                />
+              </>
+            }
+          />
+
+          {selectedIds.length > 0 && (
+            <ToolbarSelectionBar>
+              <span className="text-xs text-muted-foreground">
+                {t('optimizations.selected')} <b className="font-mono text-foreground">{selectedIds.length}</b>
+                {bulkBreakdown && <span className="ml-1.5 text-muted-foreground">· {bulkBreakdown}</span>}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1"
+                disabled={bulkResumeDisabled}
+                onClick={() => void runBulkControl('resume')}
+              >
+                <Play className="size-3.5" /> {t('optimizations.bulk.resume')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1"
+                disabled={bulkStopDisabled}
+                onClick={() => void runBulkControl('stop')}
+              >
+                <Square className="size-3.5" /> {t('optimizations.bulk.stop')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 border-destructive/40 text-destructive hover:text-destructive"
+                disabled={bulkDeleteDisabled}
+                onClick={() => openDeleteDialog(selectedItems)}
+              >
+                <Trash2 className="size-3.5" /> {t('optimizations.bulk.delete')}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="ml-auto size-8"
+                onClick={() => setSelectedIds([])}
+                aria-label={t('optimizations.clearSelection')}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </ToolbarSelectionBar>
+          )}
 
           {optimizationsLoading ? (
             <ListRowsSkeleton rows={6} />

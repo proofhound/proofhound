@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState, type MouseEvent } from 'react';
 import { useRouter } from '../../hooks/use-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Archive, ArrowRight, Play, Plus, RotateCcw, Search, Square } from 'lucide-react';
+import { Archive, ArrowRight, Play, Plus, RotateCcw, Square } from 'lucide-react';
 import { Main } from '@proofhound/ui/layout';
 import {
   Button,
@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  ListToolbar,
   Table,
   TableBody,
   TableCell,
@@ -23,6 +24,7 @@ import {
   TableRow,
   TableSkeletonRows,
   TableActionIconButton,
+  ToolbarSearch,
 } from '@proofhound/ui';
 import type { TableColumn } from '@proofhound/ui';
 import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh, useDateTimeFormatter } from '../../hooks';
@@ -215,24 +217,11 @@ export function ReleasesListPage({ projectId }: { projectId: string }) {
           />
         </div>
 
-        <div className="rounded-lg border bg-card p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[260px] flex-1 sm:max-w-[420px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={t('releases.search')}
-                className="pl-9"
-              />
-            </div>
-          </div>
+        <section className="overflow-hidden rounded-lg border bg-card" aria-label={t('releases.listSurface')}>
+          <ListToolbar lead={<ToolbarSearch value={search} onChange={setSearch} placeholder={t('releases.search')} />} />
           {releaseLineQuery.isError ? (
-            <div className="mt-2 text-[12px] text-destructive">{t('releases.loadPartialFailed')}</div>
+            <div className="border-b px-4 py-2 text-[12px] text-destructive">{t('releases.loadPartialFailed')}</div>
           ) : null}
-        </div>
-
-        <div className="overflow-hidden rounded-lg border bg-card">
           <Table columns={RELEASE_COLUMNS}>
             <TableHeader>
               <TableRow>
@@ -336,7 +325,7 @@ export function ReleasesListPage({ projectId }: { projectId: string }) {
               )}
             </TableBody>
           </Table>
-        </div>
+        </section>
       </div>
       <Dialog open={Boolean(stopTarget)} onOpenChange={(open) => (open ? undefined : closeStopDialog())}>
         <DialogContent data-testid="release-line-stop-dialog">

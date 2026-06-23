@@ -15,17 +15,8 @@ export const MODEL_UNLIMITED_RATE_LIMIT = -1;
 export const MODEL_DEFAULT_CONCURRENCY_LIMIT = 20;
 export const MODEL_MAX_CONCURRENCY_LIMIT = 999;
 
-// UI-selectable vendor types; the DTO keeps an open string to avoid locking existing data and future extensions.
-export const SUPPORTED_MODEL_PROVIDER_TYPES = [
-  'openai',
-  'azure-openai',
-  'anthropic',
-  'deepseek',
-  'kimi',
-  'minimax',
-  'qwen',
-  'ernie',
-] as const;
+// UI-selectable invocation protocols; the DTO keeps an open string to avoid locking existing legacy data and future adapters.
+export const SUPPORTED_MODEL_PROVIDER_TYPES = ['openai', 'anthropic'] as const;
 export type SupportedModelProviderType = (typeof SUPPORTED_MODEL_PROVIDER_TYPES)[number];
 
 const modelRateLimitValueSchema = z

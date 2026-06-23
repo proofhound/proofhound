@@ -13,12 +13,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FilterChip,
   Input,
   Label,
   ListRowsSkeleton,
+  ListToolbar,
   PlatformLoaderOverlay,
   ResourcePaginationFooter,
   SlidingViewToggle,
+  ToolbarSearch,
+  ToolbarSelectionBar,
   Table,
   TableBody,
   TableCell,
@@ -223,49 +227,6 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
           </div>
         </div>
 
-        {/* toolbar */}
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <Input
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setPage(1);
-            }}
-            placeholder={t('connectors.searchPlaceholder')}
-            className="w-72"
-            data-testid="project-connectors-search"
-          />
-          <SlidingViewToggle
-            value={view}
-            ariaLabel="view-toggle"
-            onChange={updateView}
-            options={[
-              { value: 'list', label: 'List' },
-              { value: 'card', label: 'Card' },
-            ]}
-          />
-        </div>
-
-        {/* chips */}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {FILTER_CHIPS.map(({ filter: chipFilter, labelKey }) => {
-            const active = isSameFilter(filter, chipFilter);
-            return (
-              <Button
-                key={`${chipFilter.kind}:${'value' in chipFilter ? chipFilter.value : '*'}`}
-                size="sm"
-                variant={active ? 'default' : 'outline'}
-                onClick={() => {
-                  setFilter(chipFilter);
-                  setPage(1);
-                }}
-              >
-                {t(labelKey)}
-              </Button>
-            );
-          })}
-        </div>
-
         {/* bulk banner */}
         {bulkResultBanner && (
           <div
@@ -282,69 +243,111 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        {/* selection toolbar */}
-        {selection.size > 0 && (
-          <div className="mt-4 flex items-center justify-between rounded-md border bg-card px-4 py-2 text-sm">
-            <span>{`${selection.size} ${t('connectors.totalSuffix')}`}</span>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => openDeleteDialog([...selection])}
-              data-testid="project-connectors-bulk-delete"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              {t('connectors.action.bulkDelete')}
-            </Button>
-          </div>
-        )}
-
-        {/* table or cards */}
-        {connectorsLoading ? (
-          <div className="relative rounded-lg border bg-card">
-            <ListRowsSkeleton rows={8} />
-            <PlatformLoaderOverlay />
-          </div>
-        ) : (
-          <>
-            {view === 'list' ? (
-              <ListView
-                items={paginated}
-                allSelected={paginated.every((item) => selection.has(item.id))}
-                onToggleAll={selectAllOnPage}
-                isSelected={(id) => selection.has(id)}
-                onToggle={toggleSelection}
-                onDelete={(id) => openDeleteDialog([id])}
+        <section className="mt-6 rounded-lg border bg-card" aria-label={t('connectors.listSurface')}>
+          <ListToolbar
+            lead={
+              <>
+                <ToolbarSearch
+                  value={search}
+                  onChange={(value) => {
+                    setSearch(value);
+                    setPage(1);
+                  }}
+                  placeholder={t('connectors.searchPlaceholder')}
+                  data-testid="project-connectors-search"
+                />
+                {FILTER_CHIPS.map(({ filter: chipFilter, labelKey }) => (
+                  <FilterChip
+                    key={`${chipFilter.kind}:${'value' in chipFilter ? chipFilter.value : '*'}`}
+                    active={isSameFilter(filter, chipFilter)}
+                    count={all.filter((item) => connectorMatchesFilter(item, chipFilter)).length}
+                    label={t(labelKey)}
+                    onClick={() => {
+                      setFilter(chipFilter);
+                      setPage(1);
+                    }}
+                  />
+                ))}
+              </>
+            }
+            trail={
+              <SlidingViewToggle
+                value={view}
+                ariaLabel={t('common.toolbar.view')}
+                onChange={updateView}
+                options={[
+                  { value: 'list', label: t('connectors.view.list') },
+                  { value: 'card', label: t('connectors.view.card') },
+                ]}
               />
-            ) : (
-              <CardView
-                items={paginated}
-                isSelected={(id) => selection.has(id)}
-                onToggle={toggleSelection}
-                onDelete={(id) => openDeleteDialog([id])}
+            }
+          />
+
+          {selection.size > 0 && (
+            <ToolbarSelectionBar>
+              <span className="text-xs text-muted-foreground">
+                {`${selection.size} ${t('connectors.totalSuffix')}`}
+              </span>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="ml-auto h-8"
+                onClick={() => openDeleteDialog([...selection])}
+                data-testid="project-connectors-bulk-delete"
+              >
+                <Trash2 className="size-3.5" />
+                {t('connectors.action.bulkDelete')}
+              </Button>
+            </ToolbarSelectionBar>
+          )}
+
+          {connectorsLoading ? (
+            <div className="relative">
+              <ListRowsSkeleton rows={8} />
+              <PlatformLoaderOverlay />
+            </div>
+          ) : (
+            <>
+              {view === 'list' ? (
+                <ListView
+                  items={paginated}
+                  allSelected={paginated.every((item) => selection.has(item.id))}
+                  onToggleAll={selectAllOnPage}
+                  isSelected={(id) => selection.has(id)}
+                  onToggle={toggleSelection}
+                  onDelete={(id) => openDeleteDialog([id])}
+                />
+              ) : (
+                <CardView
+                  items={paginated}
+                  isSelected={(id) => selection.has(id)}
+                  onToggle={toggleSelection}
+                  onDelete={(id) => openDeleteDialog([id])}
+                />
+              )}
+
+              {filtered.length === 0 && (
+                <p className="py-8 text-center text-sm text-muted-foreground" data-testid="project-connectors-empty">
+                  {t('connectors.empty')}
+                </p>
+              )}
+
+              <ResourcePaginationFooter
+                pageIndex={currentPage - 1}
+                pageCount={totalPages}
+                pageSize={pageSize}
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                previousPageLabel="Previous"
+                nextPageLabel="Next"
+                onPageChange={(index) => setPage(index + 1)}
+                onPageSizeChange={(next) => {
+                  setPageSize(next);
+                  setPage(1);
+                }}
               />
-            )}
-
-            {filtered.length === 0 && (
-              <p className="mt-8 text-center text-sm text-muted-foreground" data-testid="project-connectors-empty">
-                {t('connectors.empty')}
-              </p>
-            )}
-
-            <ResourcePaginationFooter
-              pageIndex={currentPage - 1}
-              pageCount={totalPages}
-              pageSize={pageSize}
-              pageSizeOptions={PAGE_SIZE_OPTIONS}
-              previousPageLabel="Previous"
-              nextPageLabel="Next"
-              onPageChange={(index) => setPage(index + 1)}
-              onPageSizeChange={(next) => {
-                setPageSize(next);
-                setPage(1);
-              }}
-            />
-          </>
-        )}
+            </>
+          )}
+        </section>
       </div>
 
       {/* delete dialog */}
@@ -424,7 +427,7 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
     onDelete: (id: string) => void;
   }) {
     return (
-      <div className="mt-4 overflow-hidden rounded-lg border bg-card" data-testid="project-connectors-table">
+      <div className="overflow-hidden" data-testid="project-connectors-table">
         <Table columns={CONNECTORS_COLUMNS}>
           <TableHeader>
             <TableRow>
@@ -532,7 +535,7 @@ export function ConnectorsListPage({ projectId }: { projectId: string }) {
     onDelete: (id: string) => void;
   }) {
     return (
-      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="project-connectors-cards">
+      <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2 xl:grid-cols-3" data-testid="project-connectors-cards">
         {items.map((item) => {
           const selected = isSelected(item.id);
           return (

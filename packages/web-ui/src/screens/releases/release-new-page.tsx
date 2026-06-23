@@ -33,7 +33,7 @@ import { usePrompt, usePrompts } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useReleaseLineList } from '../../hooks';
 import { useI18n } from '../../i18n';
-import { getApiErrorMessage, getReleaseLineId } from '../../lib';
+import { getApiErrorMessage, getProviderTypeLabel, getReleaseLineId } from '../../lib';
 import { composePromptPreview } from '../prompts/prompt-preview';
 import { renderPromptPreviewParts } from '../prompts/prompt-preview-parts';
 import { VARIABLE_TONE_CLASSES } from '../prompts/prompt-ui';
@@ -727,7 +727,7 @@ function ModelOptionRow({
           <span className="font-mono text-[13px] font-semibold">{model.name}</span>
           {model.status === 'testing' ? <Tag tone="warning">{t('canaryReleases.new.modelTesting')}</Tag> : null}
         </div>
-        <div className="mt-0.5 text-[12px] text-muted-foreground">{model.providerType}</div>
+        <div className="mt-0.5 text-[12px] text-muted-foreground">{getProviderTypeLabel(model.providerType)}</div>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           {ctx ? <Tag>{ctx}</Tag> : null}
           <ModalityIconGroup kinds={modalityKinds} size="sm" tooltips={modalityLabels} ariaLabels={modalityLabels} />
@@ -1333,7 +1333,9 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
     const query = modelSearch.trim().toLowerCase();
     if (!query) return models;
     return models.filter((model) =>
-      `${model.name} ${model.providerType} ${model.providerModelId}`.toLowerCase().includes(query),
+      `${model.name} ${getProviderTypeLabel(model.providerType)} ${model.providerType} ${model.providerModelId}`
+        .toLowerCase()
+        .includes(query),
     );
   }, [modelSearch, models]);
 
@@ -2181,7 +2183,11 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
                     value={
                       retentionDays === null
                         ? t('productionReleases.new.retention.forever')
-                        : t(RELEASE_RETENTION_LABEL_KEYS[String(retentionDays) as Exclude<ReleaseRetentionOption, 'forever'>])
+                        : t(
+                            RELEASE_RETENTION_LABEL_KEYS[
+                              String(retentionDays) as Exclude<ReleaseRetentionOption, 'forever'>
+                            ],
+                          )
                     }
                   />
                 ) : null}
