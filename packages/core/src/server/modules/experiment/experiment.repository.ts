@@ -3,6 +3,8 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
+import type { StoredObjectRef } from '../../common/contracts/object-storage.provider';
+import { collectStoredObjectRefs } from '../run-result/run-result-payload-ref';
 
 const {
   datasets,
@@ -72,6 +74,11 @@ export interface ExperimentUpdateValues {
   finishedAt?: Date | null;
   updatedAt?: Date;
   deletedAt?: Date | null;
+}
+
+export interface ExperimentHardDeleteResult {
+  deleted: number;
+  payloadRefs: StoredObjectRef[];
 }
 
 @Injectable()
@@ -190,15 +197,44 @@ export class ExperimentRepository {
     return rows.length > 0;
   }
 
-  async hardDeleteExperiment(projectId: string, experimentId: string): Promise<void> {
-    await this.db.transaction(async (tx) => {
+  async hardDeleteExperiment(projectId: string, experimentId: string): Promise<ExperimentHardDeleteResult> {
+    return this.db.transaction(async (tx) => {
       const now = new Date();
+      const reclaimablePayloadRows = unwrapRows<{ payload_ref: unknown }>(
+        await tx.execute(sql`
+          WITH target_run_results AS (
+            SELECT rr.id, rr.created_at, rr.payload_ref
+            FROM ph_runs.run_results rr
+            WHERE rr.project_id = ${projectId}::uuid
+              AND rr.source = 'experiment'
+              AND rr.source_id = ${experimentId}::uuid
+          )
+          SELECT DISTINCT target.payload_ref
+          FROM target_run_results target
+          WHERE target.payload_ref IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM ph_runs.run_results other
+              WHERE other.payload_ref IS NOT NULL
+                AND COALESCE(other.payload_ref->'shard'->>'key', other.payload_ref->>'key')
+                  = COALESCE(target.payload_ref->'shard'->>'key', target.payload_ref->>'key')
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM target_run_results same_target
+                  WHERE same_target.id = other.id
+                    AND same_target.created_at = other.created_at
+                )
+            )
+        `),
+      );
+      const payloadRefs = collectStoredObjectRefs(reclaimablePayloadRows.map((row) => row.payload_ref));
 
       await tx.execute(sql`
         WITH target_run_results AS (
           SELECT id, created_at
           FROM ph_runs.run_results
-          WHERE source = 'experiment'
+          WHERE project_id = ${projectId}::uuid
+            AND source = 'experiment'
             AND source_id = ${experimentId}::uuid
         )
         DELETE FROM ph_runs.annotations annotation
@@ -211,7 +247,8 @@ export class ExperimentRepository {
         WITH target_run_results AS (
           SELECT id, created_at
           FROM ph_runs.run_results
-          WHERE source = 'experiment'
+          WHERE project_id = ${projectId}::uuid
+            AND source = 'experiment'
             AND source_id = ${experimentId}::uuid
         )
         DELETE FROM ph_runs.run_results rr
@@ -240,7 +277,11 @@ export class ExperimentRepository {
         .set({ sourceExperimentId: null, updatedAt: now })
         .where(and(eq(releaseLineEvents.projectId, projectId), eq(releaseLineEvents.sourceExperimentId, experimentId)));
 
-      await tx.delete(experiments).where(and(eq(experiments.projectId, projectId), eq(experiments.id, experimentId)));
+      const deleted = await tx
+        .delete(experiments)
+        .where(and(eq(experiments.projectId, projectId), eq(experiments.id, experimentId)))
+        .returning({ id: experiments.id });
+      return { deleted: deleted.length, payloadRefs: deleted.length > 0 ? payloadRefs : [] };
     });
   }
 
@@ -285,6 +326,14 @@ export class ExperimentRepository {
       )
       .map((r) => ({ experimentId: r.id, projectId: r.projectId, dbosWorkflowId: r.dbosWorkflowId }));
   }
+}
+
+function unwrapRows<T = unknown>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  if (result && typeof result === 'object' && 'rows' in (result as Record<string, unknown>)) {
+    return ((result as { rows?: T[] }).rows ?? []) as T[];
+  }
+  return [];
 }
 
 export interface CreateExperimentRecordArgs {

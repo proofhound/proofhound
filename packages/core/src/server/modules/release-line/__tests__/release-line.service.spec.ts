@@ -5,6 +5,7 @@ import { ReleaseLineService } from '../release-line.service';
 import type { ReleaseLineRepository } from '../release-line.repository';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 import type { UsageMeteringHook } from '../../../common/contracts/usage-metering.hook';
+import { type ObjectStorageProvider, type StoredObjectRef } from '../../../common/contracts/object-storage.provider';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const promptId = '22222222-2222-4222-8222-222222222222';
@@ -86,12 +87,13 @@ function createDeletionHookMock() {
   };
 }
 
-function createService(repo: unknown, usageMetering?: UsageMeteringHook) {
+function createService(repo: unknown, usageMetering?: UsageMeteringHook, objectStorage?: ObjectStorageProvider) {
   return new ReleaseLineService(
     repo as unknown as ReleaseLineRepository,
     new LocalAccessControlService(),
     createDeletionHookMock() as never,
     usageMetering,
+    objectStorage,
   );
 }
 
@@ -293,12 +295,7 @@ describe('ReleaseLineService.stopLine', () => {
     const repo = createWritableRepoMock();
     const service = createService(repo);
 
-    await service.stopLine(
-      projectId,
-      '77777777-7777-4777-8777-777777777777',
-      { reason: 'operator stop' },
-      actor,
-    );
+    await service.stopLine(projectId, '77777777-7777-4777-8777-777777777777', { reason: 'operator stop' }, actor);
 
     expect(repo.stopLine).toHaveBeenCalledWith(
       projectId,
@@ -324,12 +321,7 @@ describe('ReleaseLineService.startLine', () => {
     const repo = createWritableRepoMock();
     const service = createService(repo);
 
-    await service.startLine(
-      projectId,
-      '77777777-7777-4777-8777-777777777777',
-      { reason: 'operator start' },
-      actor,
-    );
+    await service.startLine(projectId, '77777777-7777-4777-8777-777777777777', { reason: 'operator start' }, actor);
 
     expect(repo.startLine).toHaveBeenCalledWith(
       projectId,
@@ -344,9 +336,9 @@ describe('ReleaseLineService.startLine', () => {
     repo.startLine.mockResolvedValue(null);
     const service = createService(repo);
 
-    await expect(
-      service.startLine(projectId, '77777777-7777-4777-8777-777777777777', {}, actor),
-    ).rejects.toThrow('has no stopped lane to start');
+    await expect(service.startLine(projectId, '77777777-7777-4777-8777-777777777777', {}, actor)).rejects.toThrow(
+      'has no stopped lane to start',
+    );
   });
 });
 
@@ -355,12 +347,7 @@ describe('ReleaseLineService.archiveLine', () => {
     const repo = createWritableRepoMock();
     const service = createService(repo);
 
-    await service.archiveLine(
-      projectId,
-      '77777777-7777-4777-8777-777777777777',
-      { reason: 'operator archive' },
-      actor,
-    );
+    await service.archiveLine(projectId, '77777777-7777-4777-8777-777777777777', { reason: 'operator archive' }, actor);
 
     expect(repo.archiveLine).toHaveBeenCalledWith(
       projectId,
@@ -375,9 +362,9 @@ describe('ReleaseLineService.archiveLine', () => {
     repo.archiveLine.mockResolvedValue(null);
     const service = createService(repo);
 
-    await expect(
-      service.archiveLine(projectId, '77777777-7777-4777-8777-777777777777', {}, actor),
-    ).rejects.toThrow('must be stopped before archive');
+    await expect(service.archiveLine(projectId, '77777777-7777-4777-8777-777777777777', {}, actor)).rejects.toThrow(
+      'must be stopped before archive',
+    );
   });
 });
 
@@ -406,9 +393,9 @@ describe('ReleaseLineService.unarchiveLine', () => {
     repo.unarchiveLine.mockResolvedValue(null);
     const service = createService(repo);
 
-    await expect(
-      service.unarchiveLine(projectId, '77777777-7777-4777-8777-777777777777', {}, actor),
-    ).rejects.toThrow('is not archived');
+    await expect(service.unarchiveLine(projectId, '77777777-7777-4777-8777-777777777777', {}, actor)).rejects.toThrow(
+      'is not archived',
+    );
   });
 });
 
@@ -463,12 +450,7 @@ describe('ReleaseLineService.restoreHistoryToSlot', () => {
     const service = createService(repo);
 
     await expect(
-      service.restoreHistoryToProduction(
-        projectId,
-        '77777777-7777-4777-8777-777777777777',
-        { sourceEventId },
-        actor,
-      ),
+      service.restoreHistoryToProduction(projectId, '77777777-7777-4777-8777-777777777777', { sourceEventId }, actor),
     ).rejects.toThrow('cannot restore that history event');
   });
 
@@ -483,12 +465,7 @@ describe('ReleaseLineService.restoreHistoryToSlot', () => {
     const service = createService(repo);
 
     await expect(
-      service.restoreHistoryToProduction(
-        projectId,
-        '77777777-7777-4777-8777-777777777777',
-        { sourceEventId },
-        actor,
-      ),
+      service.restoreHistoryToProduction(projectId, '77777777-7777-4777-8777-777777777777', { sourceEventId }, actor),
     ).rejects.toThrow(new ConflictException('release_line_restore_conflict'));
   });
 
@@ -503,12 +480,7 @@ describe('ReleaseLineService.restoreHistoryToSlot', () => {
     const service = createService(repo);
 
     await expect(
-      service.restoreHistoryToCanary(
-        projectId,
-        '77777777-7777-4777-8777-777777777777',
-        { sourceEventId },
-        actor,
-      ),
+      service.restoreHistoryToCanary(projectId, '77777777-7777-4777-8777-777777777777', { sourceEventId }, actor),
     ).rejects.toThrow(new ConflictException('release_line_restore_conflict'));
   });
 });
@@ -525,10 +497,7 @@ describe('ReleaseLineService.deleteLine', () => {
       actor,
     );
 
-    expect(repo.forceStopRunningLanesForDelete).toHaveBeenCalledWith(
-      projectId,
-      '77777777-7777-4777-8777-777777777777',
-    );
+    expect(repo.forceStopRunningLanesForDelete).toHaveBeenCalledWith(projectId, '77777777-7777-4777-8777-777777777777');
     expect(repo.hardDeleteLine).toHaveBeenCalledWith(projectId, '77777777-7777-4777-8777-777777777777');
     // Barrier first: the force-stop must run before the physical delete.
     expect(repo.forceStopRunningLanesForDelete.mock.invocationCallOrder[0]!).toBeLessThan(
@@ -536,17 +505,40 @@ describe('ReleaseLineService.deleteLine', () => {
     );
   });
 
+  it('cleans offloaded release run-result payload refs after permanent deletion', async () => {
+    const repo = createWritableRepoMock();
+    const payloadRef: StoredObjectRef = {
+      provider: 'r2',
+      bucket: 'proofhound-dev',
+      key: 'orgs/org-1/projects/project-1/run_result_shard/99999999-9999-4999-8999-999999999999/gen1/shard-00000.jsonl.gz',
+      bytes: 7114,
+      codec: 'gzip',
+      resourceType: 'run_result_shard',
+      resourceId: '99999999-9999-4999-8999-999999999999',
+    };
+    const objectStorage = {
+      isEnabled: vi.fn(() => true),
+      deleteObjects: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ObjectStorageProvider;
+    repo.hardDeleteLine.mockResolvedValue({ deleted: 1, payloadRefs: [payloadRef] });
+    const service = createService(repo, undefined, objectStorage);
+
+    await service.deleteLine(
+      projectId,
+      '77777777-7777-4777-8777-777777777777',
+      { confirmationName: 'risk-prod', reason: 'cleanup' },
+      actor,
+    );
+
+    expect(objectStorage.deleteObjects).toHaveBeenCalledWith([payloadRef]);
+  });
+
   it('rejects permanent deletion when the confirmation name does not match', async () => {
     const repo = createWritableRepoMock();
     const service = createService(repo);
 
     await expect(
-      service.deleteLine(
-        projectId,
-        '77777777-7777-4777-8777-777777777777',
-        { confirmationName: 'wrong-name' },
-        actor,
-      ),
+      service.deleteLine(projectId, '77777777-7777-4777-8777-777777777777', { confirmationName: 'wrong-name' }, actor),
     ).rejects.toThrow('release_line_delete_confirmation_mismatch');
     expect(repo.hardDeleteLine).not.toHaveBeenCalled();
   });
@@ -740,12 +732,7 @@ describe('ReleaseLineService.updateRetention', () => {
     const repo = createWritableRepoMock();
     const service = createService(repo);
 
-    await service.updateRetention(
-      projectId,
-      '77777777-7777-4777-8777-777777777777',
-      { retentionDays: 7 },
-      actor,
-    );
+    await service.updateRetention(projectId, '77777777-7777-4777-8777-777777777777', { retentionDays: 7 }, actor);
 
     expect(repo.updateCurrentProductionRetention).toHaveBeenCalledWith(
       projectId,

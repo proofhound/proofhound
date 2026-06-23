@@ -9,6 +9,7 @@ import { ExperimentRepository, type ExperimentProjectAccessRow, type ExperimentR
 import { ExperimentService } from '../experiment.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
+import { ObjectStorageProvider, type StoredObjectRef } from '../../../common/contracts/object-storage.provider';
 import { WorkflowAuthorizationHook } from '../../../common/contracts/workflow-authorization.hook';
 import { vi, type Mocked, type Mock } from 'vitest';
 
@@ -90,7 +91,7 @@ function makeRepo(): Mocked<ExperimentRepository> {
     createExperiment: vi.fn(),
     updateExperiment: vi.fn(),
     hasProductionReleaseSourceReference: vi.fn().mockResolvedValue(false),
-    hardDeleteExperiment: vi.fn(),
+    hardDeleteExperiment: vi.fn().mockResolvedValue({ deleted: 1, payloadRefs: [] }),
   } as unknown as Mocked<ExperimentRepository>;
 }
 
@@ -132,6 +133,7 @@ describe('ExperimentService', () => {
   let runResults: Mocked<RunResultService>;
   let db: { select: Mock; update: Mock };
   let workflowAuth: Mocked<WorkflowAuthorizationHook>;
+  let objectStorage: { isEnabled: Mock; deleteObjects: Mock };
 
   beforeEach(async () => {
     repo = makeRepo();
@@ -151,6 +153,10 @@ describe('ExperimentService', () => {
     workflowAuth = {
       assertCanStart: vi.fn().mockResolvedValue(undefined),
     } as unknown as Mocked<WorkflowAuthorizationHook>;
+    objectStorage = {
+      isEnabled: vi.fn(() => true),
+      deleteObjects: vi.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -161,6 +167,7 @@ describe('ExperimentService', () => {
         { provide: DATABASE_CLIENT, useValue: db },
         { provide: AccessControlService, useClass: LocalAccessControlService },
         { provide: WorkflowAuthorizationHook, useValue: workflowAuth },
+        { provide: ObjectStorageProvider, useValue: objectStorage },
         ExperimentService,
       ],
     }).compile();
@@ -448,6 +455,50 @@ describe('ExperimentService', () => {
       '77777777-7777-4777-8777-777777777777',
       '22222222-2222-4222-8222-222222222222',
     );
+    expect(objectStorage.deleteObjects).not.toHaveBeenCalled();
+  });
+
+  it('cleans offloaded run-result payload refs after hard-deleting an experiment', async () => {
+    const payloadRef: StoredObjectRef = {
+      provider: 'r2',
+      bucket: 'proofhound-dev',
+      key: 'orgs/org-1/projects/project-1/run_result_shard/22222222-2222-4222-8222-222222222222/gen1/shard-00000.jsonl.gz',
+      bytes: 7114,
+      codec: 'gzip',
+      resourceType: 'run_result_shard',
+      resourceId: '22222222-2222-4222-8222-222222222222',
+    };
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findExperimentById.mockResolvedValue(experimentRow());
+    repo.hardDeleteExperiment.mockResolvedValue({ deleted: 1, payloadRefs: [payloadRef] });
+
+    await service.deleteExperiment(
+      '77777777-7777-4777-8777-777777777777',
+      '22222222-2222-4222-8222-222222222222',
+      actor,
+    );
+
+    expect(objectStorage.deleteObjects).toHaveBeenCalledWith([payloadRef]);
+  });
+
+  it('does not roll back experiment deletion when offloaded payload cleanup fails', async () => {
+    const payloadRef: StoredObjectRef = {
+      provider: 'r2',
+      bucket: 'proofhound-dev',
+      key: 'orgs/org-1/projects/project-1/run_result_shard/22222222-2222-4222-8222-222222222222/gen1/shard-00000.jsonl.gz',
+      bytes: 7114,
+      codec: 'gzip',
+      resourceType: 'run_result_shard',
+      resourceId: '22222222-2222-4222-8222-222222222222',
+    };
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findExperimentById.mockResolvedValue(experimentRow());
+    repo.hardDeleteExperiment.mockResolvedValue({ deleted: 1, payloadRefs: [payloadRef] });
+    objectStorage.deleteObjects.mockRejectedValueOnce(new Error('r2 unavailable'));
+
+    await expect(
+      service.deleteExperiment('77777777-7777-4777-8777-777777777777', '22222222-2222-4222-8222-222222222222', actor),
+    ).resolves.toBeUndefined();
   });
 
   it('derives datasetModalities from dataset fieldSchema (text + image)', async () => {
