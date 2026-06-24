@@ -43,6 +43,7 @@ import { deriveRecordCategoryOptions, releaseRecordModeFromCategories } from './
 
 interface ReleaseNewPageProps {
   projectId: string;
+  initialName?: string | null;
 }
 
 interface PromptVersionOption {
@@ -1165,7 +1166,7 @@ function DeployButton({
   );
 }
 
-export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
+export function ReleaseNewPage({ projectId, initialName }: ReleaseNewPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useI18n();
@@ -1223,7 +1224,7 @@ export function ReleaseNewPage({ projectId }: ReleaseNewPageProps) {
     [inheritedOutputConnectorIds],
   );
 
-  const [releaseName, setReleaseName] = useState(buildDefaultReleaseName);
+  const [releaseName, setReleaseName] = useState(() => initialName?.trim() || buildDefaultReleaseName());
   const [description, setDescription] = useState('');
   const [promptSearch, setPromptSearch] = useState('');
   const [modelSearch, setModelSearch] = useState('');

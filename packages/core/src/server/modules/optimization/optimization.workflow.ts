@@ -182,20 +182,29 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
   private readonly markStartedStep: (optimizationId: string) => Promise<void>;
   // SPEC 25 §2.1: from_dataset_only start exclusive — sample from the dataset + call analysisModel to generate the first prompt version
   private readonly generateFirstVersionStep: (optimizationId: string, orgId?: string) => Promise<void>;
-  private readonly preparePromptBaselineStep: (optimizationId: string) => Promise<PromptBaselinePrepareOutcome>;
+  private readonly preparePromptBaselineStep: (
+    optimizationId: string,
+    orgId?: string,
+  ) => Promise<PromptBaselinePrepareOutcome>;
   private readonly recordBaselineWorkflowIdStep: (experimentId: string, workflowId: string) => Promise<void>;
   private readonly markPromptBaselineFailedStep: (experimentId: string, failureReason: string) => Promise<void>;
   private readonly finalizePromptBaselineStep: (
     optimizationId: string,
     experimentId: string,
+    orgId?: string,
   ) => Promise<PromptBaselineFinalizeOutcome>;
   private readonly readStateStep: (optimizationId: string) => Promise<WorkflowControlState>;
   private readonly clearResumeStep: (optimizationId: string) => Promise<void>;
-  private readonly prepareRoundStep: (optimizationId: string, roundNumber: number) => Promise<PrepareOutcome>;
+  private readonly prepareRoundStep: (
+    optimizationId: string,
+    roundNumber: number,
+    orgId?: string,
+  ) => Promise<PrepareOutcome>;
   private readonly finalizeRoundStep: (
     optimizationId: string,
     roundNumber: number,
     experimentId: string,
+    orgId?: string,
   ) => Promise<RoundOutcome>;
   private readonly markChildLaunchFailedStep: (
     experimentId: string,
@@ -390,7 +399,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         // True only when n == snapshot.nextRound; the next round (n+1) goes through normal prepare + startWorkflow
         const isResumeRound = n === snapshot.nextRound && snapshot.resumeChildExpId !== null;
 
-        const prepare = await this.prepareRoundStep(optimizationId, n);
+        const prepare = await this.prepareRoundStep(optimizationId, n, snapshot.orgId);
         if (prepare.kind === 'fatal') {
           await this.finalizeStep(optimizationId, 'failed', {
             reason: prepare.errorMessage ?? 'round_fatal_error',
@@ -452,7 +461,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
           }
         }
 
-        const outcome = await this.finalizeRoundStep(optimizationId, n, prepare.experimentId);
+        const outcome = await this.finalizeRoundStep(optimizationId, n, prepare.experimentId, snapshot.orgId);
 
         if (outcome.kind === 'fatal') {
           await this.finalizeStep(optimizationId, 'failed', {
@@ -499,7 +508,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       return { kind: 'ready', snapshot };
     }
 
-    const prepare = await this.preparePromptBaselineStep(optimizationId);
+    const prepare = await this.preparePromptBaselineStep(optimizationId, snapshot.orgId);
     if (prepare.kind === 'skip') {
       return { kind: 'ready', snapshot };
     }
@@ -547,7 +556,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       return { kind: 'fatal', errorMessage: 'baseline_experiment_missing' };
     }
 
-    const finalized = await this.finalizePromptBaselineStep(optimizationId, experimentId);
+    const finalized = await this.finalizePromptBaselineStep(optimizationId, experimentId, snapshot.orgId);
     if (finalized.kind === 'failed') {
       return { kind: 'fatal', errorMessage: finalized.errorMessage ?? 'baseline_experiment_failed' };
     }
@@ -955,8 +964,11 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     }
   }
 
-  private async preparePromptBaselineImpl(optimizationId: string): Promise<PromptBaselinePrepareOutcome> {
-    const snapshot = await this.loadConfigImpl(optimizationId);
+  private async preparePromptBaselineImpl(
+    optimizationId: string,
+    orgId?: string,
+  ): Promise<PromptBaselinePrepareOutcome> {
+    const snapshot = await this.loadConfigImpl(optimizationId, orgId);
     if (!snapshot.ok) {
       return { kind: 'failed', errorMessage: snapshot.reason ?? 'snapshot_invalid' };
     }
@@ -1054,8 +1066,9 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
   private async finalizePromptBaselineImpl(
     optimizationId: string,
     experimentId: string,
+    orgId?: string,
   ): Promise<PromptBaselineFinalizeOutcome> {
-    const snapshot = await this.loadConfigImpl(optimizationId);
+    const snapshot = await this.loadConfigImpl(optimizationId, orgId);
     if (!snapshot.ok) {
       return { kind: 'failed', errorMessage: snapshot.reason ?? 'snapshot_invalid' };
     }
@@ -1249,8 +1262,12 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     };
   }
 
-  private async prepareRoundImpl(optimizationId: string, roundNumber: number): Promise<PrepareOutcome> {
-    const snapshot = await this.loadConfigImpl(optimizationId);
+  private async prepareRoundImpl(
+    optimizationId: string,
+    roundNumber: number,
+    orgId?: string,
+  ): Promise<PrepareOutcome> {
+    const snapshot = await this.loadConfigImpl(optimizationId, orgId);
     if (!snapshot.ok) {
       return { kind: 'fatal', errorMessage: snapshot.reason ?? 'snapshot_invalid' };
     }
@@ -1697,9 +1714,10 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     optimizationId: string,
     roundNumber: number,
     experimentId: string,
+    orgId?: string,
   ): Promise<RoundOutcome> {
     // Reload snapshot inside the step: sensitive fields like apiKey are not stored in the DBOS system tables, so we do not pass snapshot across steps
-    const snapshot = await this.loadConfigImpl(optimizationId);
+    const snapshot = await this.loadConfigImpl(optimizationId, orgId);
     if (!snapshot.ok) {
       this.logger.warn(
         { optimizationId, roundNumber, reason: snapshot.reason },

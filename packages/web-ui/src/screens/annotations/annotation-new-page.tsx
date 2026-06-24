@@ -35,7 +35,7 @@ function buildDefaultTaskName() {
   return `annotation-${yyyy}${mm}${dd}`;
 }
 
-export function AnnotationNewPage({ projectId }: { projectId: string }) {
+export function AnnotationNewPage({ projectId, initialName }: { projectId: string; initialName?: string | null }) {
   const router = useRouter();
   const { t } = useI18n();
   const searchParams = useSearchParams();
@@ -47,7 +47,7 @@ export function AnnotationNewPage({ projectId }: { projectId: string }) {
   const [explicitLineId, setExplicitLineId] = useState('');
   const [explicitVersionId, setExplicitVersionId] = useState('');
   const [samplingMode, setSamplingMode] = useState<SamplingMode>('random');
-  const [taskName, setTaskName] = useState(buildDefaultTaskName);
+  const [taskName, setTaskName] = useState(() => initialName?.trim() || buildDefaultTaskName());
   const [sampleSizeDraft, setSampleSizeDraft] = useState<string | null>(null);
   const [categorySampleDrafts, setCategorySampleDrafts] = useState<Record<string, string>>({});
 

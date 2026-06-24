@@ -56,7 +56,7 @@ export interface PendingCompactionGroup {
 export interface RunResultCompactionStore {
   nextGeneration(sourceId: string): Promise<number>;
   loadUncompacted(target: CompactionTarget): Promise<CompactionRow[]>;
-  commit(input: CommitCompactionInput): Promise<void>;
+  commit(input: CommitCompactionInput): Promise<number>;
   findPendingGroups(sources: string[], limit: number): Promise<PendingCompactionGroup[]>;
 }
 
@@ -96,14 +96,14 @@ export class RunResultCompactor {
       shardRefs[shard.seq] = { ...ref, version: generation };
     }
 
-    await this.store.commit({
+    const compactedRows = await this.store.commit({
       assignments: plan.assignments,
       shardRefs,
       generation,
       clearedFields: plan.clearedFields,
     });
 
-    return { compactedRows: plan.assignments.length, shards: plan.shards.length, generation };
+    return { compactedRows, shards: plan.shards.length, generation };
   }
 
   /**
@@ -199,31 +199,32 @@ export class DrizzleRunResultCompactionStore implements RunResultCompactionStore
     }));
   }
 
-  async commit({ assignments, shardRefs, generation, clearedFields }: CommitCompactionInput): Promise<void> {
-    if (assignments.length === 0) return;
+  async commit({ assignments, shardRefs, generation, clearedFields }: CommitCompactionInput): Promise<number> {
+    if (assignments.length === 0) return 0;
 
     const valueRows = assignments.map((a) => {
       const payloadRef = JSON.stringify({ shard: shardRefs[a.shardSeq], rowIndex: a.rowIndex });
-      return sql`(${a.id}::uuid, ${toIso(a.createdAt)}::timestamptz, ${payloadRef}::jsonb, ${a.inputPreview}::text, ${a.outputPreview}::text)`;
+      return sql`(${a.id}::uuid, ${payloadRef}::jsonb, ${a.inputPreview}::text, ${a.outputPreview}::text)`;
     });
     const clears = clearedFields.map((f) => CLEAR_COLUMN_SQL[f]);
     const clearClause = clears.length > 0 ? sql`, ${sql.join(clears, sql`, `)}` : sql``;
 
     // Single statement = atomic: at commit, every payload_ref points at an already-written shard.
-    await this.db.execute(sql`
+    // Match by id only: created_at is part of the partitioned PK, but JS Date values round to
+    // milliseconds while Postgres timestamps may carry microseconds, which would silently miss rows.
+    const result = await this.db.execute<{ id: string }>(sql`
       UPDATE ph_runs.run_results AS rr
       SET payload_ref = v.payload_ref,
           compaction_generation = ${generation},
           input_preview = v.input_preview,
           output_preview = v.output_preview${clearClause}
-      FROM (VALUES ${sql.join(valueRows, sql`, `)}) AS v(id, created_at, payload_ref, input_preview, output_preview)
-      WHERE rr.id = v.id AND rr.created_at = v.created_at
+      FROM (VALUES ${sql.join(valueRows, sql`, `)}) AS v(id, payload_ref, input_preview, output_preview)
+      WHERE rr.id = v.id
+        AND rr.payload_ref IS NULL
+      RETURNING rr.id
     `);
+    return unwrapRows<{ id: string }>(result).length;
   }
-}
-
-function toIso(value: string | Date): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 function unwrapRows<T = unknown>(result: unknown): T[] {

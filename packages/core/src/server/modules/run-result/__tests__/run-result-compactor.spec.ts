@@ -24,7 +24,15 @@ class FakeStorage extends ObjectStorageProvider {
   async putObject(loc: ResourceLocator, _body: Buffer | Readable, opts?: PutObjectOptions): Promise<StoredObjectRef> {
     const key = `orgs/o/projects/${loc.project.projectId}/${loc.resourceType}/${loc.resourceId}/${loc.name}`;
     this.puts.push({ key, codec: opts?.codec });
-    return { provider: 'r2', bucket: 'b', key, bytes: 1, codec: opts?.codec, resourceType: loc.resourceType, resourceId: loc.resourceId };
+    return {
+      provider: 'r2',
+      bucket: 'b',
+      key,
+      bytes: 1,
+      codec: opts?.codec,
+      resourceType: loc.resourceType,
+      resourceId: loc.resourceId,
+    };
   }
   async getObject(): Promise<Buffer> {
     throw new Error('unused');
@@ -44,6 +52,7 @@ class FakeStore implements RunResultCompactionStore {
   committed: CommitCompactionInput | null = null;
   loadCalls = 0;
   pendingGroups: Array<{ projectId: string; source: string; sourceId: string }> = [];
+  committedRows: number | null = null;
   constructor(
     private readonly rows: CompactionRow[],
     private readonly generation = 1,
@@ -55,8 +64,9 @@ class FakeStore implements RunResultCompactionStore {
     this.loadCalls += 1;
     return this.rows;
   }
-  async commit(input: CommitCompactionInput): Promise<void> {
+  async commit(input: CommitCompactionInput): Promise<number> {
     this.committed = input;
+    return this.committedRows ?? input.assignments.length;
   }
   async findPendingGroups(): Promise<Array<{ projectId: string; source: string; sourceId: string }>> {
     return this.pendingGroups;
@@ -119,6 +129,17 @@ describe('RunResultCompactor', () => {
     expect(store.committed?.clearedFields.sort()).toEqual(
       ['inputVariables', 'parsedOutput', 'rawResponse', 'renderedPrompt'].sort(),
     );
+  });
+
+  it('reports the number of rows actually committed by the store', async () => {
+    const storage = new FakeStorage();
+    const store = new FakeStore([row(0), row(1)], 3);
+    store.committedRows = 1;
+
+    const out = await new RunResultCompactor(store, storage).compact(target);
+
+    expect(out).toEqual({ compactedRows: 1, shards: 1, generation: 3 });
+    expect(store.committed?.assignments).toHaveLength(2);
   });
 
   it('compactPending compacts each pending group for the given sources', async () => {

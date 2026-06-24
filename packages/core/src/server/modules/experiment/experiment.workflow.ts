@@ -161,6 +161,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
         );
         const control = await this.readControlStateStep(experimentId);
         if (control === 'stop' || control === 'cancel') {
+          await this.compactRunResultsStep(experimentId, plan.projectId);
           await this.finalizeStep(experimentId, 'stopped');
           return;
         }
@@ -191,6 +192,7 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
         // Control signals observed inside poll remove queued-but-not-started LLM jobs and then wait for already-started
         // jobs in the batch to write terminal run_results before stopping at the batch boundary.
         if (counts.control === 'stop' || counts.control === 'cancel') {
+          await this.compactRunResultsStep(experimentId, plan.projectId);
           await this.finalizeStep(experimentId, 'stopped');
           return;
         }

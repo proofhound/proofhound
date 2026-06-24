@@ -641,6 +641,181 @@ describe('OptimizationWorkflow.loadConfigImpl — orgId 透传 analysisLimiterKe
   });
 });
 
+describe('OptimizationWorkflow.runImpl — orgId survives internal config reload steps', () => {
+  const ORG_ID = '00000000-0000-4000-8000-000000000888';
+
+  function workflowContext(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'opt-1',
+      projectId: 'prj-1',
+      name: 'opt',
+      description: null,
+      optimizationHint: null,
+      strategy: 'error_pattern',
+      strategyConfig: {},
+      startingMode: 'from_experiment',
+      sourceExperimentId: 'source-exp-1',
+      promptId: 'p-1',
+      baseVersionId: 'pv-1',
+      baseVersionBody: 'body',
+      baseVersionVariables: [],
+      baseVersionOutputSchema: null,
+      baseVersionJudgmentRules: null,
+      baseVersionPromptLanguage: 'en-US',
+      baseVersionNumber: 1,
+      datasetId: 'ds-1',
+      datasetSampleCount: 10,
+      experimentModelId: 'task-model',
+      analysisModelId: 'analysis-model',
+      promptLanguage: 'en-US',
+      goals: [{ metric: 'accuracy', comparator: 'gte', target: 0.9, scope: 'overall' }],
+      fieldWhitelist: { inputFields: [], metaFields: [] },
+      runConfig: {},
+      maxRounds: 1,
+      currentRound: 0,
+      bestVersionId: null,
+      bestMetrics: { accuracy: 0.2 },
+      status: 'running',
+      controlState: null,
+      startedAt: null,
+      finishedAt: null,
+      createdBy: 'u-1',
+      ...overrides,
+    };
+  }
+
+  function dbReturningExperiment(status = 'success', metrics: Record<string, number> = { accuracy: 1 }) {
+    return {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: vi.fn().mockResolvedValue([{ status, metrics }]),
+          })),
+        })),
+      })),
+    };
+  }
+
+  function buildRegistrar(contexts: Array<Record<string, unknown>>) {
+    let contextIndex = 0;
+    const buildModelKey = vi.fn((project: { orgId?: string }, modelId: string) => {
+      if (!project.orgId) throw new Error('missing_org_context_for_limiter_key');
+      return `org:${project.orgId}:model:${modelId}`;
+    });
+    const repo = {
+      loadWorkflowContext: vi.fn(async () => contexts[Math.min(contextIndex++, contexts.length - 1)]),
+      listRoundExperimentsForOptimization: vi.fn().mockResolvedValue([]),
+      findExperimentStatus: vi.fn().mockResolvedValue({ id: 'baseline-exp-1', status: 'success' }),
+      loadDatasetSamples: vi.fn().mockResolvedValue([]),
+      upsertRoundStep: vi.fn().mockResolvedValue(undefined),
+      updateBest: vi.fn().mockResolvedValue(undefined),
+      updateCurrentRound: vi.fn().mockResolvedValue(undefined),
+    };
+    const experimentRunWorkflow = vi.fn();
+    const registrar = new OptimizationWorkflowRegistrar(
+      dbReturningExperiment() as never,
+      repo as never,
+      {} as never,
+      { runWorkflow: experimentRunWorkflow } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { buildModelKey } as never,
+      { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) } as never,
+      new LocalQuotaPolicyHook(),
+    );
+
+    const r = registrar as unknown as Record<string, unknown>;
+    r['loadModelInvocationConfig'] = vi
+      .fn()
+      .mockImplementation(async (modelId: string) => ({ id: modelId, providerType: 'openai' }));
+    r['markStartedStep'] = vi.fn().mockResolvedValue(undefined);
+    r['readStateStep'] = vi.fn().mockResolvedValue({ status: 'running', controlState: null });
+    r['finalizeStep'] = vi.fn().mockResolvedValue(undefined);
+
+    return { registrar, repo, buildModelKey, internals: r };
+  }
+
+  function expectEveryLimiterCallHasOrg(buildModelKey: ReturnType<typeof vi.fn>) {
+    expect(buildModelKey).toHaveBeenCalled();
+    for (const [project] of buildModelKey.mock.calls) {
+      expect(project).toEqual(expect.objectContaining({ projectId: 'prj-1', orgId: ORG_ID, source: 'local' }));
+    }
+  }
+
+  beforeEach(() => {
+    startWorkflowCalls.length = 0;
+  });
+
+  it('from_experiment passes orgId into prepareRoundStep reloads', async () => {
+    const { registrar, buildModelKey, internals } = buildRegistrar([
+      workflowContext({ startingMode: 'from_experiment', bestMetrics: { accuracy: 0.2 } }),
+    ]);
+
+    await (registrar as unknown as { runImpl: (id: string, orgId?: string) => Promise<void> }).runImpl('opt-1', ORG_ID);
+
+    expect(internals['finalizeStep']).toHaveBeenCalledWith(
+      'opt-1',
+      'failed',
+      expect.objectContaining({ reason: 'dataset_empty' }),
+    );
+    expectEveryLimiterCallHasOrg(buildModelKey);
+  });
+
+  it('from_experiment passes orgId into finalizeRoundStep reloads', async () => {
+    const { registrar, repo, buildModelKey, internals } = buildRegistrar([
+      workflowContext({ startingMode: 'from_experiment', bestMetrics: { accuracy: 0.2 } }),
+    ]);
+    internals['prepareRoundStep'] = vi.fn().mockResolvedValue({ kind: 'launch', experimentId: 'round-exp-1' });
+
+    await (registrar as unknown as { runImpl: (id: string, orgId?: string) => Promise<void> }).runImpl('opt-1', ORG_ID);
+
+    expect(repo.updateBest).toHaveBeenCalled();
+    expect(internals['finalizeStep']).toHaveBeenCalledWith('opt-1', 'success', { reason: 'goals_met' });
+    expectEveryLimiterCallHasOrg(buildModelKey);
+  });
+
+  it('from_prompt_version passes orgId through prompt-baseline prepare and finalize reloads', async () => {
+    const { registrar, buildModelKey, internals } = buildRegistrar([
+      workflowContext({
+        startingMode: 'from_prompt_version',
+        sourceExperimentId: 'baseline-exp-1',
+        bestMetrics: { accuracy: 1 },
+      }),
+    ]);
+
+    await (registrar as unknown as { runImpl: (id: string, orgId?: string) => Promise<void> }).runImpl('opt-1', ORG_ID);
+
+    expect(internals['finalizeStep']).toHaveBeenCalledWith('opt-1', 'success', { reason: 'goals_met' });
+    expectEveryLimiterCallHasOrg(buildModelKey);
+  });
+
+  it('from_dataset_only keeps orgId after first-version generation and baseline reloads', async () => {
+    const { registrar, buildModelKey, internals } = buildRegistrar([
+      workflowContext({
+        startingMode: 'from_dataset_only',
+        sourceExperimentId: null,
+        baseVersionId: null,
+        baseVersionBody: null,
+        bestMetrics: { accuracy: 0.2 },
+      }),
+      workflowContext({
+        startingMode: 'from_dataset_only',
+        sourceExperimentId: 'baseline-exp-1',
+        bestMetrics: { accuracy: 1 },
+      }),
+    ]);
+    internals['generateFirstVersionStep'] = vi.fn().mockResolvedValue(undefined);
+
+    await (registrar as unknown as { runImpl: (id: string, orgId?: string) => Promise<void> }).runImpl('opt-1', ORG_ID);
+
+    expect(internals['generateFirstVersionStep']).toHaveBeenCalledWith('opt-1', ORG_ID);
+    expect(internals['finalizeStep']).toHaveBeenCalledWith('opt-1', 'success', { reason: 'goals_met' });
+    expectEveryLimiterCallHasOrg(buildModelKey);
+  });
+});
+
 describe('OptimizationWorkflow.applySynchronousRuntimeLimits — plan cap', () => {
   it('merges RuntimeLimitsProvider caps before synchronous optimization LLM calls', async () => {
     const runtimeLimitsProvider = {

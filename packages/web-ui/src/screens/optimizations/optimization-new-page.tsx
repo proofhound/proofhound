@@ -991,12 +991,14 @@ function ModelOptionRow({
 export function OptimizationNewPage({
   projectId,
   initialDatasetId,
+  initialName,
   initialPromptId,
   initialPromptVersionId,
   initialSourceExperimentId,
 }: {
   projectId: string;
   initialDatasetId?: string | null;
+  initialName?: string | null;
   initialPromptId?: string | null;
   initialPromptVersionId?: string | null;
   initialSourceExperimentId?: string | null;
@@ -1006,7 +1008,7 @@ export function OptimizationNewPage({
   const { formatDateTime } = useDateTimeFormatter();
 
   // basic
-  const [name, setName] = useState<string>(defaultName);
+  const [name, setName] = useState<string>(() => initialName?.trim() || defaultName());
   const [description, setDescription] = useState<string>('');
   const [optimizationHint, setOptimizationHint] = useState<string>('');
 
