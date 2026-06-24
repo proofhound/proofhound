@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/judgment",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Judgment strategies (extension point) — V1: classification; generative / agent reserved",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
