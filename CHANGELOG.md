@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.19](https://github.com/proofhound/proofhound/compare/v0.1.18...v0.1.19) (2026-06-25)
+
+
+### Bug Fixes
+
+* **core:** harden workflow result handling ([e05f107](https://github.com/proofhound/proofhound/commit/e05f1078c39ca40c6d4ea11ea173ac8a8f830f7c))
+
 ## [0.1.18](https://github.com/proofhound/proofhound/compare/v0.1.17...v0.1.18) (2026-06-23)
 
 
