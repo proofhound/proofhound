@@ -176,6 +176,13 @@
       "when": 1781700000000,
       "tag": "0024_dataset_raw_import_progress_restore",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781703600000,
+      "tag": "0025_optimization_objective_status",
+      "breakpoints": true
     }
   ]
 }

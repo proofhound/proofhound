@@ -9,17 +9,8 @@ import type {
   RoundHistoryEntry,
 } from '../loop/types';
 import type { ErrorPatternAnalysisConfig } from '../error-pattern-analysis/config.schema';
-import {
-  createFakeAdapter,
-  makeAnalysisModel,
-  makeLoopDependencies,
-  makeTaskModel,
-} from './helpers/fake-invoke-deps';
-import {
-  InMemoryExperimentRunner,
-  makeInMemoryPorts,
-  runnerFromMetricCurve,
-} from './helpers/in-memory-ports';
+import { createFakeAdapter, makeAnalysisModel, makeLoopDependencies, makeTaskModel } from './helpers/fake-invoke-deps';
+import { InMemoryExperimentRunner, makeInMemoryPorts, runnerFromMetricCurve } from './helpers/in-memory-ports';
 
 // Standard fake responses — one each for confusion / regression / summarize / generate
 const CONFUSION_RESP = JSON.stringify({
@@ -130,10 +121,7 @@ describe('runIterationLoop', () => {
 
   it('Scenario 2: max_rounds — exhausted without meeting goal', async () => {
     const adapter = defaultAdapter();
-    const runner = runnerFromMetricCurve([
-      { overall: { accuracy: 0.65 } },
-      { overall: { accuracy: 0.7 } },
-    ]);
+    const runner = runnerFromMetricCurve([{ overall: { accuracy: 0.65 } }, { overall: { accuracy: 0.7 } }]);
     const ports = makeInMemoryPorts({ runner });
     const result = await runIterationLoop(
       makeConfig([accuracyGoal], 2),
@@ -141,17 +129,34 @@ describe('runIterationLoop', () => {
       ports,
       makeLoopDependencies(adapter),
     );
-    expect(result.status).toBe('failed');
+    expect(result.status).toBe('success');
     expect(result.reason).toBe('max_rounds');
+    expect(result.rounds).toHaveLength(2);
+  });
+
+  it('stops after the configured consecutive no-improvement rounds', async () => {
+    const adapter = defaultAdapter();
+    const runner = runnerFromMetricCurve([
+      { overall: { accuracy: 0.4 } },
+      { overall: { accuracy: 0.4 } },
+      { overall: { accuracy: 0.95 } },
+    ]);
+    const ports = makeInMemoryPorts({ runner });
+    const result = await runIterationLoop(
+      { ...makeConfig([accuracyGoal], 5), stopAfterNoImprovementRounds: 2 },
+      makeSnapshot({ overall: { accuracy: 0.5 } }),
+      ports,
+      makeLoopDependencies(adapter),
+    );
+
+    expect(result.status).toBe('success');
+    expect(result.reason).toBe('no_improvement');
     expect(result.rounds).toHaveLength(2);
   });
 
   it('Scenario 3: control=cancel aborts before round 2', async () => {
     const adapter = defaultAdapter();
-    const runner = runnerFromMetricCurve([
-      { overall: { accuracy: 0.6 } },
-      { overall: { accuracy: 0.75 } },
-    ]);
+    const runner = runnerFromMetricCurve([{ overall: { accuracy: 0.6 } }, { overall: { accuracy: 0.75 } }]);
     const ports = makeInMemoryPorts({ runner, controlSignals: [null, 'cancel'] });
     const result = await runIterationLoop(
       makeConfig([accuracyGoal], 5),
@@ -215,10 +220,7 @@ describe('runIterationLoop', () => {
 
   it('passes previousRunResults from port to analyzeFailures (triggers regression batch on round 2+)', async () => {
     const adapter = defaultAdapter();
-    const runner = runnerFromMetricCurve([
-      { overall: { accuracy: 0.65 } },
-      { overall: { accuracy: 0.7 } },
-    ]);
+    const runner = runnerFromMetricCurve([{ overall: { accuracy: 0.65 } }, { overall: { accuracy: 0.7 } }]);
     // round 1 has no previous (returns null); round 2 provides previous (triggers regression batch)
     const ports = makeInMemoryPorts({
       runner,
@@ -236,7 +238,7 @@ describe('runIterationLoop', () => {
       ports,
       makeLoopDependencies(adapter),
     );
-    expect(result.status).toBe('failed'); // max_rounds
+    expect(result.status).toBe('success'); // max_rounds
     expect(ports.previousRoundRunResultsReader.calls).toHaveLength(2);
     expect(ports.previousRoundRunResultsReader.calls[0]?.currentRoundNumber).toBe(1);
     expect(ports.previousRoundRunResultsReader.calls[1]?.currentRoundNumber).toBe(2);
@@ -247,11 +249,7 @@ describe('runIterationLoop', () => {
   it('retries from the parent prompt and analyzes the regressed round when a round is worse than its base', async () => {
     const adapter = defaultAdapter();
     const runner = runnerFromMetricCurve(
-      [
-        { overall: { accuracy: 0.7 } },
-        { overall: { accuracy: 0.6 } },
-        { overall: { accuracy: 0.75 } },
-      ],
+      [{ overall: { accuracy: 0.7 } }, { overall: { accuracy: 0.6 } }, { overall: { accuracy: 0.75 } }],
       (round) => [
         {
           id: `rr_${round}_a`,
@@ -350,9 +348,7 @@ describe('computeNoBestStreak', () => {
 
   it('counts consecutive !isBest entries from the end', () => {
     expect(computeNoBestStreak([makeEntry(1, false)])).toBe(1);
-    expect(
-      computeNoBestStreak([makeEntry(1, true), makeEntry(2, false), makeEntry(3, false)]),
-    ).toBe(2);
+    expect(computeNoBestStreak([makeEntry(1, true), makeEntry(2, false), makeEntry(3, false)])).toBe(2);
   });
 
   it('stops counting at the first best entry from the end', () => {
@@ -369,8 +365,6 @@ describe('computeNoBestStreak', () => {
   });
 
   it('returns full length when all entries are !isBest', () => {
-    expect(
-      computeNoBestStreak([makeEntry(1, false), makeEntry(2, false), makeEntry(3, false)]),
-    ).toBe(3);
+    expect(computeNoBestStreak([makeEntry(1, false), makeEntry(2, false), makeEntry(3, false)])).toBe(3);
   });
 });

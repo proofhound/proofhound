@@ -1,18 +1,17 @@
 'use client';
 
 import { Check, Database, FileText, FlaskConical } from 'lucide-react';
-import {
-  Progress,
-  formatProgressLabel,
-  formatProgressNumber,
-  cn,
-} from '@proofhound/ui';
+import { Progress, formatProgressLabel, formatProgressNumber, cn } from '@proofhound/ui';
 import { useI18n } from '../../i18n';
+import { Link } from '../../components/navigation/link';
 import {
+  OPTIMIZATION_OBJECTIVE_STATUS_LABEL_KEYS,
+  OPTIMIZATION_OBJECTIVE_STATUS_TONE,
   OPTIMIZATION_ORIGIN_LABEL_KEYS,
   OPTIMIZATION_STATUS_LABEL_KEYS,
   OPTIMIZATION_STATUS_TONE,
   type OptimizationGoal,
+  type OptimizationObjectiveStatus,
   type OptimizationOrigin,
   type OptimizationStatus,
   type OptimizationSummary,
@@ -39,6 +38,91 @@ export function OptimizationStatusBadge({
     >
       <span className={cn(compact ? 'size-1' : 'size-1.5', 'rounded-full', tone.dot, tone.pulse && 'animate-pulse')} />
       {t(OPTIMIZATION_STATUS_LABEL_KEYS[status])}
+    </span>
+  );
+}
+
+export function OptimizationObjectiveStatusBadge({
+  status,
+  summary,
+  maxRounds,
+  stopAfterNoImprovementRounds,
+  compact = false,
+}: {
+  status: OptimizationObjectiveStatus;
+  summary?: OptimizationSummary['summary'];
+  maxRounds?: number;
+  stopAfterNoImprovementRounds?: number;
+  compact?: boolean;
+}) {
+  const { t } = useI18n();
+  const tone = OPTIMIZATION_OBJECTIVE_STATUS_TONE[status];
+  const reason = summary?.reason;
+  const label =
+    status === 'not_met' && reason === 'max_rounds' && typeof maxRounds === 'number'
+      ? formatTemplate(t('optimizations.detail.objectiveStatus.notMetMaxRounds'), { rounds: maxRounds })
+      : status === 'not_met' && reason === 'no_improvement' && typeof stopAfterNoImprovementRounds === 'number'
+        ? formatTemplate(t('optimizations.detail.objectiveStatus.notMetNoImprovement'), {
+            rounds: stopAfterNoImprovementRounds,
+          })
+        : t(OPTIMIZATION_OBJECTIVE_STATUS_LABEL_KEYS[status]);
+
+  return (
+    <span
+      title={label}
+      className={cn(
+        'inline-flex max-w-full items-center rounded-full border font-medium whitespace-nowrap',
+        compact ? 'gap-1 px-1.5 py-0.5 text-[10.5px]' : 'gap-1.5 px-2 py-0.5 text-[11.5px]',
+        tone.pill,
+      )}
+    >
+      <span className={cn(compact ? 'size-1' : 'size-1.5', 'rounded-full', tone.dot, tone.pulse && 'animate-pulse')} />
+      <span className="min-w-0 truncate">{label}</span>
+    </span>
+  );
+}
+
+export function OptimizationOutcomeBadge({
+  status,
+  objectiveStatus,
+  summary,
+  maxRounds,
+  stopAfterNoImprovementRounds,
+  compact = false,
+}: {
+  status: OptimizationStatus;
+  objectiveStatus: OptimizationObjectiveStatus;
+  summary?: OptimizationSummary['summary'];
+  maxRounds?: number;
+  stopAfterNoImprovementRounds?: number;
+  compact?: boolean;
+}) {
+  const { t } = useI18n();
+  const reason = summary?.reason;
+  const isObjectiveNotMet = status === 'success' && objectiveStatus === 'not_met';
+  const tone = isObjectiveNotMet ? OPTIMIZATION_OBJECTIVE_STATUS_TONE.not_met : OPTIMIZATION_STATUS_TONE[status];
+  const label =
+    isObjectiveNotMet && reason === 'max_rounds' && typeof maxRounds === 'number'
+      ? formatTemplate(t('optimizations.detail.objectiveStatus.notMetMaxRounds'), { rounds: maxRounds })
+      : isObjectiveNotMet && reason === 'no_improvement' && typeof stopAfterNoImprovementRounds === 'number'
+        ? formatTemplate(t('optimizations.detail.objectiveStatus.notMetNoImprovement'), {
+            rounds: stopAfterNoImprovementRounds,
+          })
+        : isObjectiveNotMet
+          ? t(OPTIMIZATION_OBJECTIVE_STATUS_LABEL_KEYS.not_met)
+          : t(OPTIMIZATION_STATUS_LABEL_KEYS[status]);
+
+  return (
+    <span
+      title={label}
+      className={cn(
+        'inline-flex max-w-full items-center rounded-full border font-medium whitespace-nowrap',
+        compact ? 'gap-1 px-1.5 py-0.5 text-[10.5px]' : 'gap-1.5 px-2 py-0.5 text-[11.5px]',
+        tone.pill,
+      )}
+    >
+      <span className={cn(compact ? 'size-1' : 'size-1.5', 'rounded-full', tone.dot, tone.pulse && 'animate-pulse')} />
+      <span className="min-w-0 truncate">{label}</span>
     </span>
   );
 }
@@ -95,21 +179,43 @@ const ORIGIN_TONE: Record<OptimizationOrigin, { box: string; text: string }> = {
   },
 };
 
-export function OriginBadge({ origin, originRef }: { origin: OptimizationOrigin; originRef: string }) {
+export function OriginBadge({
+  origin,
+  originRef,
+  href,
+}: {
+  origin: OptimizationOrigin;
+  originRef: string;
+  href?: string;
+}) {
   const { t } = useI18n();
   const Icon = ORIGIN_ICON[origin];
   const tone = ORIGIN_TONE[origin];
   const label = t(OPTIMIZATION_ORIGIN_LABEL_KEYS[origin]);
+  const textClassName = cn('min-w-0 truncate font-mono text-[12px]', tone.text);
 
   return (
-    <span className="flex min-w-0 items-center gap-2" title={label}>
+    <span className="flex min-w-0 items-center gap-2" title={`${label}: ${originRef}`}>
       <span
         aria-label={label}
         className={cn('inline-flex size-6 shrink-0 items-center justify-center rounded-md border', tone.box)}
       >
         <Icon className="size-3" />
       </span>
-      <span className={cn('min-w-0 truncate font-mono text-[12px]', tone.text)}>{originRef}</span>
+      {href ? (
+        <Link
+          href={href}
+          onClick={(event) => event.stopPropagation()}
+          className={cn(
+            textClassName,
+            'rounded-[2px] underline decoration-border underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          )}
+        >
+          {originRef}
+        </Link>
+      ) : (
+        <span className={textClassName}>{originRef}</span>
+      )}
     </span>
   );
 }
@@ -176,7 +282,15 @@ function formatGoalValue(value: number | undefined) {
   return value.toFixed(3);
 }
 
-export function GoalRow({ goal, compact = false }: { goal: OptimizationGoal; compact?: boolean }) {
+export function GoalRow({
+  goal,
+  compact = false,
+  showClassLabel = true,
+}: {
+  goal: OptimizationGoal;
+  compact?: boolean;
+  showClassLabel?: boolean;
+}) {
   return (
     <li
       className={cn('grid items-center gap-1.5', compact ? 'grid-cols-[12px_1fr_auto]' : 'grid-cols-[14px_1fr_auto]')}
@@ -197,7 +311,7 @@ export function GoalRow({ goal, compact = false }: { goal: OptimizationGoal; com
       </span>
       <span className={cn('min-w-0 truncate text-foreground', compact ? 'text-[11px]' : 'text-[11.5px]')}>
         {goal.metric}
-        {goal.classLabel ? ` · ${goal.classLabel}` : ''}
+        {showClassLabel && goal.classLabel ? ` · ${goal.classLabel}` : ''}
       </span>
       <span
         className={cn(
@@ -236,9 +350,17 @@ export function GoalList({
     <div className="flex min-w-0 flex-col gap-1.5">
       <GoalScopeRow scope={scope} classes={classes} compact={compact} />
       <ul className={cn('flex flex-col gap-1 border-t border-dashed pt-1.5', compact ? 'gap-1' : 'gap-1.5')}>
-        {goals.map((goal, idx) => (
-          <GoalRow key={`${goal.metric}-${goal.classLabel ?? 'overall'}-${idx}`} goal={goal} compact={compact} />
-        ))}
+        {goals.map((goal, idx) => {
+          const showClassLabel = !(classes?.length === 1 && goal.classLabel === classes[0]);
+          return (
+            <GoalRow
+              key={`${goal.metric}-${goal.classLabel ?? 'overall'}-${idx}`}
+              goal={goal}
+              compact={compact}
+              showClassLabel={showClassLabel}
+            />
+          );
+        })}
       </ul>
     </div>
   );
@@ -295,7 +417,12 @@ export function SparkLine({
       ];
       if (all.length <= 11) return all;
       // For many rounds, only show first/last + 4 intermediate points
-      const sample = [0, 1, ...Array.from({ length: 4 }, (_, i) => Math.round(((totalRounds - 1) * (i + 1)) / 4) + 1), totalRounds];
+      const sample = [
+        0,
+        1,
+        ...Array.from({ length: 4 }, (_, i) => Math.round(((totalRounds - 1) * (i + 1)) / 4) + 1),
+        totalRounds,
+      ];
       const seen = new Set<number>();
       return all.filter((t) => sample.includes(t.slot) && (seen.has(t.slot) ? false : (seen.add(t.slot), true)));
     }

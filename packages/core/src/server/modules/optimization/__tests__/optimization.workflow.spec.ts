@@ -594,6 +594,7 @@ describe('OptimizationWorkflow.loadConfigImpl — orgId 透传 analysisLimiterKe
       fieldWhitelist: { inputFields: [], metaFields: [] },
       runConfig: {},
       maxRounds: 5,
+      stopAfterNoImprovementRounds: 0,
       currentRound: 0,
       bestVersionId: null,
       bestMetrics: { accuracy: 0.8 },
@@ -672,6 +673,7 @@ describe('OptimizationWorkflow.runImpl — orgId survives internal config reload
       fieldWhitelist: { inputFields: [], metaFields: [] },
       runConfig: {},
       maxRounds: 1,
+      stopAfterNoImprovementRounds: 0,
       currentRound: 0,
       bestVersionId: null,
       bestMetrics: { accuracy: 0.2 },
@@ -774,6 +776,76 @@ describe('OptimizationWorkflow.runImpl — orgId survives internal config reload
     expect(repo.updateBest).toHaveBeenCalled();
     expect(internals['finalizeStep']).toHaveBeenCalledWith('opt-1', 'success', { reason: 'goals_met' });
     expectEveryLimiterCallHasOrg(buildModelKey);
+  });
+
+  it('finalizes max_rounds as a successful task when goals are not met', async () => {
+    const { registrar, internals } = buildRegistrar([
+      workflowContext({
+        startingMode: 'from_experiment',
+        maxRounds: 1,
+        bestMetrics: { accuracy: 0.2 },
+      }),
+    ]);
+    internals['prepareRoundStep'] = vi.fn().mockResolvedValue({ kind: 'launch', experimentId: 'round-exp-1' });
+    internals['finalizeRoundStep'] = vi
+      .fn()
+      .mockResolvedValue({ kind: 'continue', metrics: { overall: { accuracy: 0.3 } }, isBest: true });
+
+    await (registrar as unknown as { runImpl: (id: string, orgId?: string) => Promise<void> }).runImpl('opt-1', ORG_ID);
+
+    expect(internals['finalizeStep']).toHaveBeenCalledWith('opt-1', 'success', { reason: 'max_rounds' });
+  });
+
+  it('stops after the configured consecutive no-improvement rounds', async () => {
+    const { registrar, internals } = buildRegistrar([
+      workflowContext({
+        startingMode: 'from_experiment',
+        maxRounds: 5,
+        stopAfterNoImprovementRounds: 2,
+        bestMetrics: { accuracy: 0.8 },
+      }),
+    ]);
+    internals['prepareRoundStep'] = vi
+      .fn()
+      .mockResolvedValueOnce({ kind: 'launch', experimentId: 'round-exp-1' })
+      .mockResolvedValueOnce({ kind: 'launch', experimentId: 'round-exp-2' });
+    internals['finalizeRoundStep'] = vi
+      .fn()
+      .mockResolvedValue({ kind: 'continue', metrics: { overall: { accuracy: 0.7 } }, isBest: false });
+    internals['loadRoundHistoryStep'] = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          roundIndex: 1,
+          metrics: { accuracy: 0.7 },
+          promptVersionId: 'pv-round-1',
+          parentVersionId: 'pv-1',
+          generateParsedOutput: null,
+          isBest: false,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          roundIndex: 1,
+          metrics: { accuracy: 0.7 },
+          promptVersionId: 'pv-round-1',
+          parentVersionId: 'pv-1',
+          generateParsedOutput: null,
+          isBest: false,
+        },
+        {
+          roundIndex: 2,
+          metrics: { accuracy: 0.7 },
+          promptVersionId: 'pv-round-2',
+          parentVersionId: 'pv-1',
+          generateParsedOutput: null,
+          isBest: false,
+        },
+      ]);
+
+    await (registrar as unknown as { runImpl: (id: string, orgId?: string) => Promise<void> }).runImpl('opt-1', ORG_ID);
+
+    expect(internals['finalizeStep']).toHaveBeenCalledWith('opt-1', 'success', { reason: 'no_improvement' });
   });
 
   it('from_prompt_version passes orgId through prompt-baseline prepare and finalize reloads', async () => {
@@ -964,6 +1036,7 @@ describe('OptimizationWorkflow.runImpl — child experiment inherits snapshot.or
       sourceExperimentId: 'exp-src',
       nextRound: 1,
       maxRounds: 5,
+      stopAfterNoImprovementRounds: 0,
       bestVersion: null,
       bestMetrics: {},
       goals: [{ metric: 'accuracy', comparator: 'gte', target: 0.9, scope: 'overall' }],
@@ -1016,6 +1089,7 @@ describe('OptimizationWorkflow.runImpl — child experiment inherits snapshot.or
       bestMetrics: {},
       nextRound: 1,
       maxRounds: 1,
+      stopAfterNoImprovementRounds: 0,
       goals: [],
       resumeChildExpId: null,
     };
@@ -1049,6 +1123,7 @@ describe('OptimizationWorkflow.runImpl — child experiment inherits snapshot.or
       sourceExperimentId: 'exp-src',
       nextRound: 1,
       maxRounds: 5,
+      stopAfterNoImprovementRounds: 0,
       bestVersion: null,
       bestMetrics: {},
       goals: [{ metric: 'accuracy', comparator: 'gte', target: 0.9, scope: 'overall' }],

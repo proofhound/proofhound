@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   optimizationListQuerySchema,
   optimizationLoopLimitsSchema,
+  optimizationBestMetricsSchema,
   createOptimizationSchema,
 } from './optimization.dto';
 
@@ -18,15 +19,11 @@ const validBase = {
 
 describe('optimizationLoopLimitsSchema', () => {
   it('accepts stopAfterNoImprovementRounds = 0 (no-limit sentinel)', () => {
-    expect(() =>
-      optimizationLoopLimitsSchema.parse({ maxRounds: 5, stopAfterNoImprovementRounds: 0 }),
-    ).not.toThrow();
+    expect(() => optimizationLoopLimitsSchema.parse({ maxRounds: 5, stopAfterNoImprovementRounds: 0 })).not.toThrow();
   });
 
   it('rejects negative stopAfterNoImprovementRounds', () => {
-    expect(() =>
-      optimizationLoopLimitsSchema.parse({ maxRounds: 5, stopAfterNoImprovementRounds: -1 }),
-    ).toThrow();
+    expect(() => optimizationLoopLimitsSchema.parse({ maxRounds: 5, stopAfterNoImprovementRounds: -1 })).toThrow();
   });
 
   it('rejects regressionThresholdPp (field removed)', () => {
@@ -36,6 +33,20 @@ describe('optimizationLoopLimitsSchema', () => {
       regressionThresholdPp: 3,
     });
     expect('regressionThresholdPp' in parsed).toBe(false);
+  });
+});
+
+describe('optimizationBestMetricsSchema', () => {
+  it('accepts overall metrics plus per-class rows', () => {
+    expect(
+      optimizationBestMetricsSchema.parse({
+        precision: 0.5,
+        perClass: [{ label: 'good', precision: 0.875, recall: 0.9 }],
+      }),
+    ).toEqual({
+      precision: 0.5,
+      perClass: [{ label: 'good', precision: 0.875, recall: 0.9 }],
+    });
   });
 });
 
@@ -59,9 +70,7 @@ describe('createOptimizationSchema', () => {
       optimizationHint: '  保持提示词简洁  ',
     });
     expect(parsed.optimizationHint).toBe('保持提示词简洁');
-    expect(() =>
-      createOptimizationSchema.parse({ ...validBase, optimizationHint: 'x'.repeat(4001) }),
-    ).toThrow();
+    expect(() => createOptimizationSchema.parse({ ...validBase, optimizationHint: 'x'.repeat(4001) })).toThrow();
   });
 
   it('rejects unsupported optimization goal metrics on create', () => {
@@ -73,6 +82,22 @@ describe('createOptimizationSchema', () => {
         }),
       ).toThrow();
     }
+  });
+
+  it('rejects class-scoped accuracy goals on create', () => {
+    expect(() =>
+      createOptimizationSchema.parse({
+        ...validBase,
+        goals: [{ metric: 'accuracy', comparator: 'gte', target: 0.8, scope: 'good' }],
+      }),
+    ).toThrow(/class_goal_metric_unsupported/);
+
+    expect(
+      createOptimizationSchema.parse({
+        ...validBase,
+        goals: [{ metric: 'precision', comparator: 'gte', target: 0.8, scope: 'good' }],
+      }).goals[0],
+    ).toEqual({ metric: 'precision', comparator: 'gte', target: 0.8, scope: 'good' });
   });
 });
 

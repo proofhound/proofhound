@@ -29,7 +29,13 @@ import {
   RuntimeConcurrencyInfoIcon,
 } from '../../components';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { formatLatencySeconds, getApiErrorMessage, getProviderTypeLabel, isProjectNameTaken } from '../../lib';
+import {
+  formatLatencySeconds,
+  formatTimestampedDefaultName,
+  getApiErrorMessage,
+  getProviderTypeLabel,
+  isProjectNameTaken,
+} from '../../lib';
 import { capConcurrencyValue, resolveEffectiveConcurrencyLimit, useRuntimeLimits } from '../../providers';
 import { useOptimizations, useCreateOptimization } from '../../hooks';
 import { useDatasets } from '../../hooks';
@@ -78,6 +84,10 @@ const METRIC_LABEL_KEY: Record<GoalMetric, TranslationKey> = {
   recall: 'optimizations.new.optimization.metric.recall',
 };
 
+const OVERALL_GOAL_SCOPE = 'overall';
+const ALL_GOAL_METRICS = Object.keys(METRIC_LABEL_KEY) as GoalMetric[];
+const CLASS_GOAL_METRICS: GoalMetric[] = ['precision', 'recall'];
+
 const COMPARATOR_LABEL_KEY: Record<GoalComparator, TranslationKey> = {
   gte: 'optimizations.new.optimization.comparator.gte',
   gt: 'optimizations.new.optimization.comparator.gt',
@@ -123,12 +133,16 @@ function formatThousand(value: number) {
   return value.toLocaleString('en-US').replace(/,/g, ' ');
 }
 
-function defaultName(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  return `optm-${yyyy}-${mm}${dd}-`;
+function isClassGoalScope(scope: string): boolean {
+  return scope !== OVERALL_GOAL_SCOPE;
+}
+
+function isMetricAllowedForScope(metric: GoalMetric, scope: string): boolean {
+  return !isClassGoalScope(scope) || CLASS_GOAL_METRICS.includes(metric);
+}
+
+function metricOptionsForScope(scope: string): GoalMetric[] {
+  return isClassGoalScope(scope) ? CLASS_GOAL_METRICS : ALL_GOAL_METRICS;
 }
 
 function formatPrice(value: number): string {
@@ -1008,7 +1022,7 @@ export function OptimizationNewPage({
   const { formatDateTime } = useDateTimeFormatter();
 
   // basic
-  const [name, setName] = useState<string>(() => initialName?.trim() || defaultName());
+  const [name, setName] = useState<string>(() => initialName?.trim() || formatTimestampedDefaultName('optm'));
   const [description, setDescription] = useState<string>('');
   const [optimizationHint, setOptimizationHint] = useState<string>('');
 
@@ -1037,7 +1051,7 @@ export function OptimizationNewPage({
 
   // optimization
   const [goals, setGoals] = useState<GoalDraft[]>([
-    { id: 'g1', metric: 'accuracy', comparator: 'gte', target: '0.90', scope: 'overall' },
+    { id: 'g1', metric: 'accuracy', comparator: 'gte', target: '0.90', scope: OVERALL_GOAL_SCOPE },
   ]);
   const [analysisModelId, setAnalysisModelId] = useState<string>('');
   const [analysisModelSearch, setAnalysisModelSearch] = useState('');
@@ -1299,10 +1313,19 @@ export function OptimizationNewPage({
   // goal handlers
   const addGoal = () => {
     const id = `g${goals.length + 1}-${Date.now()}`;
-    setGoals((current) => [...current, { id, metric: 'recall', comparator: 'gte', target: '0.80', scope: 'overall' }]);
+    setGoals((current) => [
+      ...current,
+      { id, metric: 'recall', comparator: 'gte', target: '0.80', scope: OVERALL_GOAL_SCOPE },
+    ]);
   };
   const updateGoal = (id: string, patch: Partial<GoalDraft>) => {
-    setGoals((current) => current.map((goal) => (goal.id === id ? { ...goal, ...patch } : goal)));
+    setGoals((current) =>
+      current.map((goal) => {
+        if (goal.id !== id) return goal;
+        const next = { ...goal, ...patch };
+        return isMetricAllowedForScope(next.metric, next.scope) ? next : { ...next, metric: 'precision' };
+      }),
+    );
   };
   const removeGoal = (id: string) => {
     setGoals((current) => current.filter((goal) => goal.id !== id));
@@ -1427,6 +1450,12 @@ export function OptimizationNewPage({
     }
     if (numericGoals.length === 0) {
       setSubmitError(t('optimizations.new.error.goalsRequired'));
+      return null;
+    }
+    if (
+      numericGoals.some((goal) => isClassGoalScope(goal.scope) && !isMetricAllowedForScope(goal.metric, goal.scope))
+    ) {
+      setSubmitError(t('optimizations.new.error.classGoalMetricUnsupported'));
       return null;
     }
 
@@ -2129,7 +2158,7 @@ export function OptimizationNewPage({
                             aria-label={t('optimizations.new.optimization.metric.accuracy')}
                             data-testid="optimization-new-goal-metric"
                           >
-                            {(Object.keys(METRIC_LABEL_KEY) as GoalMetric[]).map((metric) => (
+                            {metricOptionsForScope(goal.scope).map((metric) => (
                               <option key={metric} value={metric}>
                                 {t(METRIC_LABEL_KEY[metric])}
                               </option>
@@ -2162,7 +2191,9 @@ export function OptimizationNewPage({
                             className="h-8 rounded-md border bg-background px-2.5 font-mono text-[12.5px] text-foreground"
                             aria-label={t('optimizations.new.optimization.scope.overall')}
                           >
-                            <option value="overall">{t('optimizations.new.optimization.scope.overall')}</option>
+                            <option value={OVERALL_GOAL_SCOPE}>
+                              {t('optimizations.new.optimization.scope.overall')}
+                            </option>
                             {scopeOptions.map((label) => (
                               <option key={label} value={label}>
                                 {formatTemplate(t('optimizations.new.optimization.scope.class'), { label })}

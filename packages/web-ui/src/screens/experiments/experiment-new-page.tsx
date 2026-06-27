@@ -26,7 +26,7 @@ import { useProjectModels } from '../../hooks';
 import { usePrompt, usePrompts } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
-import { getApiErrorMessage, isProjectNameTaken } from '../../lib';
+import { formatTimestampedDefaultName, getApiErrorMessage, isProjectNameTaken } from '../../lib';
 import { capConcurrencyValue, resolveEffectiveConcurrencyLimit, useRuntimeLimits } from '../../providers';
 import type { PromptVariableType } from '../prompts/prompt-model';
 import { renderPromptPreviewParts } from '../prompts/prompt-preview-parts';
@@ -69,14 +69,6 @@ interface ExperimentNewPageProps {
   initialSampleTimeoutSeconds?: string | null;
   initialRetries?: string | null;
   initialImageEncoding?: string | null;
-}
-
-function buildDefaultExperimentName(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  return `exp-${yyyy}-${mm}${dd}-`;
 }
 
 function formatTemplate(template: string, values: Record<string, string | number>) {
@@ -588,7 +580,7 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
   const experiments = useMemo(() => experimentsQuery.data?.data ?? [], [experimentsQuery.data]);
   const datasetDtos = useMemo(() => datasetsQuery.data?.data ?? [], [datasetsQuery.data]);
 
-  const [name, setName] = useState(initialName ?? buildDefaultExperimentName());
+  const [name, setName] = useState(initialName ?? formatTimestampedDefaultName('exp'));
   const [description, setDescription] = useState(initialDescription ?? '');
   const [promptSearch, setPromptSearch] = useState('');
   const [datasetSearch, setDatasetSearch] = useState('');
@@ -1398,9 +1390,7 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
                 <span>{t('experiments.new.check.preSubmit')}</span>
                 <div className="flex items-center gap-2">
                   {readinessChecking ? (
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
-                    >
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
                       <Loader2 className="size-3 animate-spin" />
                       {t('experiments.new.check.checking')}
                     </span>

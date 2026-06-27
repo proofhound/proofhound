@@ -5,6 +5,7 @@ import {
   formatDateTime,
   formatDateTimeLocalInput,
   formatMonitoringTick,
+  formatTimestampedDefaultName,
   formatTime,
   parseDateTimeLocalInput,
 } from './format';
@@ -31,6 +32,23 @@ describe('date time formatting', () => {
     expect(formatDateTime(null)).toBe('-');
     expect(formatDateTime('not-a-date', { fallback: '—' })).toBe('—');
     expect(formatDateTime(value, { timeZone: 'Mars/Olympus', fallback: '—' })).toBe('—');
+  });
+});
+
+describe('timestamped default names', () => {
+  const instant = '2026-06-27T01:11:30.000Z';
+
+  it('builds prefix-YYYYMMDDHHmm- using the requested time zone', () => {
+    expect(formatTimestampedDefaultName('exp', instant, { timeZone: 'Asia/Shanghai' })).toBe('exp-202606270911-');
+    expect(formatTimestampedDefaultName('optm', instant, { timeZone: 'UTC' })).toBe('optm-202606270111-');
+  });
+
+  it('keeps the trailing dash even when the date is invalid', () => {
+    expect(formatTimestampedDefaultName('release', 'not-a-date')).toBe('release-');
+  });
+
+  it('falls back instead of throwing when the time zone is invalid', () => {
+    expect(formatTimestampedDefaultName('anno', instant, { timeZone: 'Mars/Olympus' })).toBe('anno-');
   });
 });
 

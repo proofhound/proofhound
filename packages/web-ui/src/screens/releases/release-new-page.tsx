@@ -33,7 +33,7 @@ import { usePrompt, usePrompts } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useReleaseLineList } from '../../hooks';
 import { useI18n } from '../../i18n';
-import { getApiErrorMessage, getProviderTypeLabel, getReleaseLineId } from '../../lib';
+import { formatTimestampedDefaultName, getApiErrorMessage, getProviderTypeLabel, getReleaseLineId } from '../../lib';
 import { capConcurrencyValue, resolveEffectiveConcurrencyLimit, useRuntimeLimits } from '../../providers';
 import { composePromptPreview } from '../prompts/prompt-preview';
 import { renderPromptPreviewParts } from '../prompts/prompt-preview-parts';
@@ -93,14 +93,6 @@ const RELEASE_RETENTION_LABEL_KEYS: Record<
   '365': 'productionReleases.new.retention.365',
   forever: 'productionReleases.new.retention.forever',
 };
-
-function buildDefaultReleaseName(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  return `release-${yyyy}${mm}${dd}-`;
-}
 
 function formatTemplate(template: string, values: Record<string, string | number>) {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => {
@@ -1224,7 +1216,7 @@ export function ReleaseNewPage({ projectId, initialName }: ReleaseNewPageProps) 
     [inheritedOutputConnectorIds],
   );
 
-  const [releaseName, setReleaseName] = useState(() => initialName?.trim() || buildDefaultReleaseName());
+  const [releaseName, setReleaseName] = useState(() => initialName?.trim() || formatTimestampedDefaultName('rls'));
   const [description, setDescription] = useState('');
   const [promptSearch, setPromptSearch] = useState('');
   const [modelSearch, setModelSearch] = useState('');

@@ -61,8 +61,8 @@ import { AUTO_REFRESH_INTERVAL_MS, useAutoRefresh } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage } from '../../lib';
 import { optimizationTone } from './optimization-theme';
-import { OptimizationStatusBadge, OriginBadge } from './optimization-ui';
-import { OPTIMIZATION_ORIGIN_LABEL_KEYS, STARTING_MODE_TO_ORIGIN } from './optimization-mappers';
+import { OptimizationOutcomeBadge, OriginBadge } from './optimization-ui';
+import { OPTIMIZATION_ORIGIN_LABEL_KEYS, getOptimizationOriginDisplay } from './optimization-mappers';
 
 type OptimizationDetail = OptimizationDetailDto;
 type IterationRound = OptimizationDetailIterationRoundDto;
@@ -213,13 +213,7 @@ function formatThousand(value: number) {
 }
 
 const OVERALL_TREND_SCOPE = 'overall';
-const TREND_METRIC_KEYS: OptimizationMetricKey[] = [
-  'accuracy',
-  'precision',
-  'recall',
-  'f1',
-  'fpr',
-];
+const TREND_METRIC_KEYS: OptimizationMetricKey[] = ['accuracy', 'precision', 'recall', 'f1', 'fpr'];
 const SCORE_TREND_METRICS = new Set<OptimizationMetricKey>(['accuracy', 'precision', 'recall', 'f1', 'fpr']);
 const LOWER_IS_BETTER_TREND_METRICS = new Set<OptimizationMetricKey>([
   'fpr',
@@ -386,9 +380,10 @@ function buildTrendChartViewModel(
   const goalScope = detail.goals.find((goal) => goal.scope !== OVERALL_TREND_SCOPE)?.scope;
   const goalScopeId = goalScope ? trendScopeIdForGoalScope(goalScope) : OVERALL_TREND_SCOPE;
   const defaultScopeId = scopeOptions.some((option) => option.id === goalScopeId) ? goalScopeId : OVERALL_TREND_SCOPE;
-  const scopeId = requestedScopeId && scopeOptions.some((option) => option.id === requestedScopeId)
-    ? requestedScopeId
-    : defaultScopeId;
+  const scopeId =
+    requestedScopeId && scopeOptions.some((option) => option.id === requestedScopeId)
+      ? requestedScopeId
+      : defaultScopeId;
   const metricOptions = buildTrendMetricOptions(detail, scopeId);
   const matchingGoalKeys = detail.goals
     .filter((goal) => goalMatchesTrendScope(goal, scopeId))
@@ -398,9 +393,10 @@ function buildTrendChartViewModel(
     uniqueValues(matchingGoalKeys).find((key) => metricOptions.some((option) => option.value === key)) ??
     metricOptions[0]?.value ??
     null;
-  const metricValue = requestedMetricValue && metricOptions.some((option) => option.value === requestedMetricValue)
-    ? requestedMetricValue
-    : defaultMetricValue;
+  const metricValue =
+    requestedMetricValue && metricOptions.some((option) => option.value === requestedMetricValue)
+      ? requestedMetricValue
+      : defaultMetricValue;
   const selectedMetricKeys = metricValue ? [metricValue] : [];
 
   const sortedRounds = detail.rounds
@@ -480,7 +476,11 @@ function formatTrendMetricOption(option: TrendMetricOption, t: (key: Translation
   return t(OPTIMIZATION_METRIC_LABEL_KEYS[option.value]);
 }
 
-function buildTrendLinePath(values: Array<number | null>, xForIndex: (index: number) => number, yToPx: (v: number) => number) {
+function buildTrendLinePath(
+  values: Array<number | null>,
+  xForIndex: (index: number) => number,
+  yToPx: (v: number) => number,
+) {
   let path = '';
   let open = false;
   values.forEach((value, index) => {
@@ -518,6 +518,12 @@ function formatTrendAxisValue(value: number, metricKey: OptimizationMetricKey | 
   if (LATENCY_METRIC_KEYS.has(metricKey)) return formatThousand(Math.round(value));
   if (metricKey === 'costEstimate') return formatMetricCost(value);
   return value.toFixed(2);
+}
+
+function formatTrendBestSlotLabel(slot: TrendSlot | undefined, t: (key: TranslationKey) => string): string {
+  if (!slot) return '—';
+  if (slot.kind === 'baseline') return t('optimizations.detail.round.baseline');
+  return `r${slot.roundIndex}`;
 }
 
 function BestPointer({ label, className }: { label: string; className?: string }) {
@@ -578,9 +584,7 @@ function FailureBanner({ detail }: { detail: OptimizationDetail }) {
     <div className="mb-4 flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-[12.5px] text-destructive">
       <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
       <div className="flex-1">
-        <p className="font-mono text-[11px] uppercase tracking-wide">
-          {t('optimizations.detail.failureBanner.title')}
-        </p>
+        <p className="font-mono text-[11px] uppercase tracking-wide">{t('optimizations.detail.failureBanner.title')}</p>
         <p className="mt-1 break-words text-foreground">{reason}</p>
         {detail.analysisFailureReason && (
           <p className="mt-2 text-[11.5px] text-destructive/85">
@@ -617,8 +621,8 @@ function OptimizationTimingSubtitle({ detail, className }: { detail: Optimizatio
   const comparisonEndDate = finishedDate ?? (detail.status === 'running' ? new Date() : parseDate(detail.updatedAt));
   const includeDate = Boolean(
     startDate &&
-      comparisonEndDate &&
-      formatDate(startDate, { fallback: '' }) !== formatDate(comparisonEndDate, { fallback: '' }),
+    comparisonEndDate &&
+    formatDate(startDate, { fallback: '' }) !== formatDate(comparisonEndDate, { fallback: '' }),
   );
 
   return (
@@ -646,10 +650,7 @@ function OptimizationTimingSubtitle({ detail, className }: { detail: Optimizatio
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-        <Play
-          className={cn('size-2 fill-current stroke-current', optimizationTone.positive.text)}
-          aria-hidden="true"
-        />
+        <Play className={cn('size-2 fill-current stroke-current', optimizationTone.positive.text)} aria-hidden="true" />
         <TimePoint date={startDate} includeDate={includeDate} />
         <span className="font-mono text-[10.5px] text-muted-foreground/70 sm:text-[11px]" aria-hidden="true">
           →
@@ -782,8 +783,7 @@ function ConfigSection({ detail }: { detail: OptimizationDetail }) {
   const [open, setOpen] = useState(true);
   const cfg = detail.experimentConfig;
   const iter = detail.iterationConfig;
-  const origin = STARTING_MODE_TO_ORIGIN[detail.startingMode];
-  const originRef = detail.sourceExperimentName ?? detail.promptName ?? detail.datasetName;
+  const { origin, originRef } = getOptimizationOriginDisplay(detail);
   const originLabel = t(OPTIMIZATION_ORIGIN_LABEL_KEYS[origin]);
   const originDesc = t(STARTING_MODE_DESC_KEY[detail.startingMode]);
 
@@ -963,18 +963,19 @@ function ConfigSection({ detail }: { detail: OptimizationDetail }) {
 function TrendChart({ detail }: { detail: OptimizationDetail }) {
   const { t } = useI18n();
   const [selectedScopeId, setSelectedScopeId] = useState<TrendScopeId | null>(null);
-  const [selectedMetricValue, setSelectedMetricValue] =
-    useState<TrendMetricSelectorValue | null>(null);
+  const [selectedMetricValue, setSelectedMetricValue] = useState<TrendMetricSelectorValue | null>(null);
   const trend = useMemo(
     () => buildTrendChartViewModel(detail, selectedScopeId, selectedMetricValue),
     [detail, selectedMetricValue, selectedScopeId],
   );
-  const scopeValue = selectedScopeId && trend.scopeOptions.some((option) => option.id === selectedScopeId)
-    ? selectedScopeId
-    : trend.defaultScopeId;
-  const metricValue = selectedMetricValue && trend.metricOptions.some((option) => option.value === selectedMetricValue)
-    ? selectedMetricValue
-    : trend.defaultMetricValue;
+  const scopeValue =
+    selectedScopeId && trend.scopeOptions.some((option) => option.id === selectedScopeId)
+      ? selectedScopeId
+      : trend.defaultScopeId;
+  const metricValue =
+    selectedMetricValue && trend.metricOptions.some((option) => option.value === selectedMetricValue)
+      ? selectedMetricValue
+      : trend.defaultMetricValue;
   const series = trend.series;
   if (series.length === 0) {
     return (
@@ -1012,12 +1013,10 @@ function TrendChart({ detail }: { detail: OptimizationDetail }) {
   const yToPx = (v: number) =>
     padT + (1 - (Math.max(scale.min, Math.min(scale.max, v)) - scale.min) / (scale.max - scale.min)) * innerH;
   const axisMetricKey = series[0]?.metricKey;
+  const bestSlot = typeof trend.primaryBestSlotIndex === 'number' ? trend.slots[trend.primaryBestSlotIndex] : undefined;
 
   const bestPointerLabel = formatTemplate(t('optimizations.detail.trend.bestPointer'), {
-    label:
-      detail.bestRoundLabel === 'baseline'
-        ? t('optimizations.detail.round.baseline')
-        : (detail.bestRoundLabel ?? '—'),
+    label: formatTrendBestSlotLabel(bestSlot, t),
   });
 
   return (
@@ -2433,11 +2432,7 @@ function BestVersionCard({ detail }: { detail: OptimizationDetail }) {
               ) : (
                 <span>{best.promptRef}</span>
               )}
-              <RoundJumpButtons
-                promptId={promptId}
-                promptVersionId={best.promptVersionId}
-                experimentId={null}
-              />
+              <RoundJumpButtons promptId={promptId} promptVersionId={best.promptVersionId} experimentId={null} />
             </span>
           </div>
           <div className="flex items-baseline justify-between gap-2">
@@ -2465,11 +2460,7 @@ function BestVersionCard({ detail }: { detail: OptimizationDetail }) {
               ) : (
                 <span>{best.experimentRef}</span>
               )}
-              <RoundJumpButtons
-                promptId={null}
-                promptVersionId={null}
-                experimentId={best.experimentId}
-              />
+              <RoundJumpButtons promptId={null} promptVersionId={null} experimentId={best.experimentId} />
             </span>
           </div>
         </div>
@@ -2482,13 +2473,7 @@ function BestVersionCard({ detail }: { detail: OptimizationDetail }) {
   );
 }
 
-export function OptimizationDetailPage({
-  projectId,
-  optimizationId,
-}: {
-  projectId: string;
-  optimizationId: string;
-}) {
+export function OptimizationDetailPage({ projectId, optimizationId }: { projectId: string; optimizationId: string }) {
   const { t } = useI18n();
   const detailQuery = useOptimization(projectId, optimizationId);
   const detail = detailQuery.data ?? null;
@@ -2539,10 +2524,7 @@ export function OptimizationDetailPage({
   if (detailLoading) {
     return (
       <Main className="gap-0 bg-muted/35 p-0">
-        <div
-          className="mx-auto w-full max-w-[1280px] px-6 py-12"
-          data-testid="optimization-detail-loading"
-        >
+        <div className="mx-auto w-full max-w-[1280px] px-6 py-12" data-testid="optimization-detail-loading">
           <DetailPageSkeleton />
         </div>
       </Main>
@@ -2594,7 +2576,13 @@ export function OptimizationDetailPage({
             <h1 className="flex flex-wrap items-baseline gap-2 text-[24px] font-semibold tracking-tight">
               <span className="font-mono">{detail.name}</span>
               <span data-testid="optimization-detail-status-badge">
-                <OptimizationStatusBadge status={status} />
+                <OptimizationOutcomeBadge
+                  status={status}
+                  objectiveStatus={detail.objectiveStatus}
+                  summary={detail.summary}
+                  maxRounds={detail.maxRounds}
+                  stopAfterNoImprovementRounds={detail.stopAfterNoImprovementRounds}
+                />
               </span>
             </h1>
           </div>

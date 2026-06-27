@@ -49,9 +49,9 @@ import {
 } from './optimization-mappers';
 import { optimizationTone } from './optimization-theme';
 import {
-  OptimizationStatusBadge,
   GoalList,
   LoopProgressBar,
+  OptimizationOutcomeBadge,
   OriginBadge,
   SelectionBox,
   SparkLine,
@@ -347,10 +347,17 @@ function OptimizationsTable({
                   </div>
                 </TableCell>
                 <TableCell column="origin">
-                  <OriginBadge origin={item.origin} originRef={item.originRef} />
+                  <OriginBadge origin={item.origin} originRef={item.originRef} href={item.originHref} />
                 </TableCell>
                 <TableCell column="status">
-                  <OptimizationStatusBadge status={item.status} />
+                  <OptimizationOutcomeBadge
+                    status={item.status}
+                    objectiveStatus={item.objectiveStatus}
+                    summary={item.summary}
+                    maxRounds={item.maxRounds}
+                    stopAfterNoImprovementRounds={item.stopAfterNoImprovementRounds}
+                    compact
+                  />
                 </TableCell>
                 <TableCell column="loop">
                   <div className="flex min-w-0 flex-col gap-1.5">
@@ -385,7 +392,7 @@ const OPTIMIZATIONS_COLUMNS: TableColumn[] = [
   { key: 'select', width: 'narrow', sticky: 'left' },
   { key: 'name', width: 'wide', sticky: 'left' },
   { key: 'origin', width: 'normal' },
-  { key: 'status', width: 'compact' },
+  { key: 'status', width: 'normal' },
   { key: 'loop', width: 'flex', minPx: 220 },
   { key: 'bestGoal', width: 'flex', minPx: 280 },
   { key: 'createdAt', width: 'normal' },
@@ -430,6 +437,14 @@ function KanbanCard({ item }: { item: OptimizationSummary }) {
         )}
       </div>
       <LoopProgressBar status={item.status} current={item.currentRound} total={item.maxRounds} size="sm" />
+      <OptimizationOutcomeBadge
+        status={item.status}
+        objectiveStatus={item.objectiveStatus}
+        summary={item.summary}
+        maxRounds={item.maxRounds}
+        stopAfterNoImprovementRounds={item.stopAfterNoImprovementRounds}
+        compact
+      />
       <div className="text-[11px] text-muted-foreground">
         <span className="truncate">{optimizationProgressTimingLabel(t, item)}</span>
       </div>

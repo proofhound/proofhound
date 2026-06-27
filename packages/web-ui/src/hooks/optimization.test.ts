@@ -1,11 +1,7 @@
 import type { OptimizationListItemDto } from '@proofhound/shared';
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  getOptimizationDetailQueryKey,
-  getOptimizationListQueryKey,
-  handleOptimizationCreated,
-} from './optimization';
+import { getOptimizationDetailQueryKey, getOptimizationListQueryKey, handleOptimizationCreated } from './optimization';
 
 vi.mock('@proofhound/api-client', () => ({
   optimizationClient: {},
@@ -24,6 +20,7 @@ function createdOptimization(overrides: Partial<OptimizationListItemDto> = {}): 
     promptLanguage: 'zh-CN',
     startingMode: 'from_experiment',
     status: 'running',
+    objectiveStatus: 'pending',
     controlState: null,
     sourceExperimentId: '33333333-3333-4333-8333-333333333333',
     sourceExperimentName: 'exp-baseline',
@@ -42,6 +39,7 @@ function createdOptimization(overrides: Partial<OptimizationListItemDto> = {}): 
     fieldWhitelist: null,
     runConfig: {},
     maxRounds: 10,
+    stopAfterNoImprovementRounds: 0,
     currentRound: 0,
     bestVersionId: null,
     bestVersionNumber: null,

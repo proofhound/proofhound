@@ -281,6 +281,14 @@ export async function runIterationLoop(
       if (goalProgress.every((p) => p.achieved)) {
         return finalize({ status: 'success', reason: 'goals_met', bestVersion, bestMetrics, rounds }, config, ports);
       }
+      const stopAfterNoImprovementRounds = config.stopAfterNoImprovementRounds ?? 0;
+      if (stopAfterNoImprovementRounds > 0 && computeNoBestStreak(accumulatedHistory) >= stopAfterNoImprovementRounds) {
+        return finalize(
+          { status: 'success', reason: 'no_improvement', bestVersion, bestMetrics, rounds },
+          config,
+          ports,
+        );
+      }
     } catch (err) {
       const { errorClass, errorMessage } = normalizeErrorClass(err);
       return finalize(
@@ -299,7 +307,7 @@ export async function runIterationLoop(
     }
   }
 
-  return finalize({ status: 'failed', reason: 'max_rounds', bestVersion, bestMetrics, rounds }, config, ports);
+  return finalize({ status: 'success', reason: 'max_rounds', bestVersion, bestMetrics, rounds }, config, ports);
 }
 
 // Build the RoundHistoryEntry from this round's outcome — passed to the next round's LLM calls (SPEC 25 §11.3)

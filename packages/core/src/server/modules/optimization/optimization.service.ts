@@ -4,6 +4,7 @@ import {
   optimizationDevMockTimelineSchema,
   optimizationFieldWhitelistSchema,
   optimizationGoalSchema,
+  optimizationObjectiveStatusSchema,
   optimizationRunConfigSchema,
   optimizationSummarySchema,
   DEFAULT_PROMPT_LANGUAGE,
@@ -27,6 +28,7 @@ import {
   type OptimizationListItemDto,
   type OptimizationListQueryDto,
   type OptimizationListResponseDto,
+  type OptimizationObjectiveStatusDto,
   type OptimizationRunConfigDto,
   type OptimizationStartingModeDto,
   type OptimizationStatusDto,
@@ -214,7 +216,11 @@ export class OptimizationService {
     let workflowStartAuthorized = false;
     const assertWorkflowStart = async () => {
       if (workflowStartAuthorized) return;
-      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, orgId, source: 'local' }, 'optimization');
+      await this.workflowAuth.assertCanStart(
+        toActorContext(actor),
+        { projectId, orgId, source: 'local' },
+        'optimization',
+      );
       workflowStartAuthorized = true;
     };
 
@@ -293,6 +299,7 @@ export class OptimizationService {
       fieldWhitelist: body.fieldWhitelist ?? null,
       runConfig: body.runConfig ?? {},
       maxRounds: body.loopLimits.maxRounds,
+      stopAfterNoImprovementRounds: body.loopLimits.stopAfterNoImprovementRounds,
       createdBy: actor.sub,
     });
 
@@ -303,6 +310,7 @@ export class OptimizationService {
       const now = new Date();
       await this.repo.updateOptimization(projectId, insertedId, {
         status: 'failed',
+        objectiveStatus: 'unknown',
         controlState: null,
         finishedAt: now,
         summary: { kind: 'failed', reason, finalizedAt: now.toISOString() },
@@ -409,7 +417,11 @@ export class OptimizationService {
     }
 
     if (parsedAction === 'resume') {
-      await this.workflowAuth.assertCanStart(toActorContext(actor), { projectId, orgId, source: 'local' }, 'optimization');
+      await this.workflowAuth.assertCanStart(
+        toActorContext(actor),
+        { projectId, orgId, source: 'local' },
+        'optimization',
+      );
       await this.launcher.resume(optimizationId, orgId);
     }
 
@@ -513,6 +525,7 @@ export class OptimizationService {
       // control_state is preserved; on the next round the workflow reads status as terminal and exits directly.
       return {
         status: 'stopped' as const,
+        objectiveStatus: 'not_met' as const,
         controlState: 'stop' as const,
         finishedAt: now,
         updatedAt: now,
@@ -525,6 +538,7 @@ export class OptimizationService {
       }
       return {
         status: 'running' as const,
+        objectiveStatus: 'pending' as const,
         controlState: 'resume' as const,
         startedAt: row.startedAt ?? now,
         finishedAt: null,
@@ -538,6 +552,7 @@ export class OptimizationService {
     // cancel is preemptive in the same way (regardless of whether the original status was running or stopped/failed).
     return {
       status: 'cancelled' as const,
+      objectiveStatus: status === 'failed' ? row.objectiveStatus : ('not_met' as const),
       controlState: 'cancel' as const,
       finishedAt: now,
       updatedAt: now,
@@ -563,6 +578,7 @@ export class OptimizationService {
       strategy: row.strategy,
       startingMode: row.startingMode as OptimizationStartingModeDto,
       status: row.status as OptimizationStatusDto,
+      objectiveStatus: this.parseObjectiveStatus(row.objectiveStatus, row.status, row.summary),
       controlState: row.controlState as OptimizationListItemDto['controlState'],
 
       sourceExperimentId: row.sourceExperimentId,
@@ -584,6 +600,7 @@ export class OptimizationService {
       fieldWhitelist: this.parseFieldWhitelist(row.fieldWhitelist),
       runConfig: this.parseRunConfig(row.runConfig),
       maxRounds: row.maxRounds,
+      stopAfterNoImprovementRounds: row.stopAfterNoImprovementRounds,
       currentRound: options.currentRound ?? row.currentRound,
       bestVersionId: row.bestVersionId,
       bestVersionNumber: row.bestVersionNumber,
@@ -681,7 +698,8 @@ export class OptimizationService {
         sourceMetrics,
         base.startingMode,
       );
-      const goalProgress = this.deriveGoalProgress(base.goals, effectiveBest?.metrics ?? null);
+      const progressMetrics = this.deriveGoalProgressMetrics(aggregation.rounds, base.goals, effectiveBest);
+      const goalProgress = this.deriveGoalProgress(base.goals, progressMetrics);
       const bestVersion = this.deriveBestVersion(row, effectiveBest);
       const bestRoundLabel = bestVersion ? bestVersion.generatedAtRoundLabel : derivedBestRoundLabel;
       const baseline = derivedBaseline;
@@ -747,8 +765,8 @@ export class OptimizationService {
     rounds: OptimizationRoundExperimentRow[],
   ): { values: number[] | null; hasBaseline: boolean } {
     const goals = this.parseGoals(row.goals);
-    const primary = goals[0]?.metric;
-    if (!primary) return { values: null, hasBaseline: false };
+    const primaryGoal = goals[0];
+    if (!primaryGoal) return { values: null, hasBaseline: false };
     const baselineMetrics =
       row.sourceExperimentMetrics && typeof row.sourceExperimentMetrics === 'object'
         ? (row.sourceExperimentMetrics as Record<string, unknown>)
@@ -756,18 +774,24 @@ export class OptimizationService {
     const sortedRounds = rounds.slice().sort((a, b) => a.roundIndex - b.roundIndex);
     if (row.startingMode === 'from_dataset_only') {
       const baselineRound = sortedRounds.find((r) => r.roundIndex === 0);
-      const baselineValue = extractMetric(baselineRound?.metrics ?? baselineMetrics, primary);
+      const baselineValue = readMetricValue(
+        baselineRound?.metrics ?? baselineMetrics,
+        primaryGoal.scope,
+        primaryGoal.metric,
+      );
       const roundValues = sortedRounds
         .filter((r) => r.roundIndex > 0)
-        .map((r) => extractMetric(r.metrics, primary))
+        .map((r) => readMetricValue(r.metrics, primaryGoal.scope, primaryGoal.metric))
         .filter((v): v is number => v !== null);
       const values: number[] = baselineValue !== null ? [baselineValue, ...roundValues] : roundValues;
       return { values: values.length > 0 ? values : null, hasBaseline: baselineValue !== null };
     }
-    const baselineValue = baselineMetrics ? extractMetric(baselineMetrics, primary) : null;
+    const baselineValue = baselineMetrics
+      ? readMetricValue(baselineMetrics, primaryGoal.scope, primaryGoal.metric)
+      : null;
     const hasBaseline = baselineValue !== null;
     const roundValues = sortedRounds
-      .map((r) => extractMetric(r.metrics, primary))
+      .map((r) => readMetricValue(r.metrics, primaryGoal.scope, primaryGoal.metric))
       .filter((v): v is number => v !== null);
     const values: number[] = hasBaseline ? [baselineValue, ...roundValues] : roundValues;
     return { values: values.length > 0 ? values : null, hasBaseline };
@@ -782,6 +806,7 @@ export class OptimizationService {
     const sorted = rounds.slice().sort((a, b) => a.roundIndex - b.roundIndex);
     const keyCandidates: Array<{ key: OptimizationDetailTrendSeriesKeyDto; metric: string }> = [
       { key: 'accuracy', metric: 'accuracy' },
+      { key: 'precision', metric: 'precision' },
       { key: 'recall', metric: 'recall' },
       { key: 'fpr', metric: 'fpr' },
     ];
@@ -789,20 +814,21 @@ export class OptimizationService {
     for (const { key, metric } of keyCandidates) {
       const datasetBaselineRound =
         startingMode === 'from_dataset_only' ? sorted.find((r) => r.roundIndex === 0) : undefined;
+      const matchingGoal = goals.find((g) => g.metric === metric);
+      const scope = matchingGoal?.scope ?? 'overall';
       const baselineValue =
         startingMode === 'from_dataset_only'
-          ? extractMetric(datasetBaselineRound?.metrics ?? baselineMetrics, metric)
+          ? readMetricValue(datasetBaselineRound?.metrics ?? baselineMetrics, scope, metric)
           : baselineMetrics
-            ? extractMetric(baselineMetrics, metric)
+            ? readMetricValue(baselineMetrics, scope, metric)
             : null;
       const optimizationRounds = startingMode === 'from_dataset_only' ? sorted.filter((r) => r.roundIndex > 0) : sorted;
       const roundValues = optimizationRounds
-        .map((r) => extractMetric(r.metrics, metric))
+        .map((r) => readMetricValue(r.metrics, scope, metric))
         .filter((v): v is number => v !== null);
       const hasBaseline = baselineValue !== null;
       const values: number[] = hasBaseline ? [baselineValue, ...roundValues] : roundValues;
       if (values.length === 0) continue;
-      const matchingGoal = goals.find((g) => g.metric === metric);
       // bestRoundIndex still points to the best index within the round set (excluding baseline) to preserve prop semantics
       let bestRoundIndex: number | undefined;
       if (roundValues.length > 0) {
@@ -931,7 +957,7 @@ export class OptimizationService {
     bestMetrics: OptimizationBestMetricsDto,
   ): OptimizationDetailGoalProgressDto[] {
     return goals.map((goal) => {
-      const current = typeof bestMetrics?.[goal.metric] === 'number' ? (bestMetrics[goal.metric] as number) : null;
+      const current = readMetricValue(bestMetrics, goal.scope, goal.metric);
       const achieved: OptimizationDetailGoalProgressDto['achieved'] =
         current === null
           ? 'miss'
@@ -950,7 +976,10 @@ export class OptimizationService {
       const percent =
         current === null ? 0 : Math.min(100, Math.max(0, Math.round((current / Math.max(0.0001, goal.target)) * 100)));
       return {
-        label: this.formatMetricLabel(goal.metric),
+        label:
+          goal.scope === 'overall'
+            ? this.formatMetricLabel(goal.metric)
+            : `${goal.scope} ${this.formatMetricLabel(goal.metric)}`,
         targetText: `${comparatorText} ${goal.target}`,
         currentText: current === null ? '—' : current.toFixed(3),
         achieved,
@@ -966,23 +995,8 @@ export class OptimizationService {
     experiment: OptimizationRoundExperimentRow | null,
   ): OptimizationDetailRoundGoalChipDto[] {
     if (!experiment) return goals.map((g) => this.makeRoundGoalChip(g, null));
-    const metricsObj =
-      experiment.metrics && typeof experiment.metrics === 'object'
-        ? (experiment.metrics as Record<string, unknown>)
-        : null;
-    if (!metricsObj) return goals.map((g) => this.makeRoundGoalChip(g, null));
     return goals.map((g) => {
-      let current: number | null = null;
-      if (g.scope === 'overall') {
-        current = typeof metricsObj[g.metric] === 'number' ? (metricsObj[g.metric] as number) : null;
-      } else {
-        const perClass = Array.isArray(metricsObj['perClass']) ? metricsObj['perClass'] : [];
-        const entry = perClass.find(
-          (x): x is Record<string, unknown> =>
-            !!x && typeof x === 'object' && (x as Record<string, unknown>)['label'] === g.scope,
-        );
-        current = entry && typeof entry[g.metric] === 'number' ? (entry[g.metric] as number) : null;
-      }
+      const current = readMetricValue(experiment.metrics, g.scope, g.metric);
       return this.makeRoundGoalChip(g, current);
     });
   }
@@ -1105,8 +1119,39 @@ export class OptimizationService {
   }
 
   private readBestMetric(metrics: BestMetricMap, goal: OptimizationGoalDto): number | null {
-    const value = metrics[goal.metric];
-    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+    return readMetricValue(metrics, goal.scope, goal.metric);
+  }
+
+  private deriveGoalProgressMetrics(
+    rounds: OptimizationRoundExperimentRow[],
+    goals: OptimizationGoalDto[],
+    effectiveBest: EffectiveBestCandidate | null,
+  ): OptimizationBestMetricsDto {
+    if (effectiveBest?.metrics && this.hasAnyGoalMetric(effectiveBest.metrics, goals)) {
+      return effectiveBest.metrics;
+    }
+    return this.deriveLatestRoundMetrics(rounds, goals) ?? effectiveBest?.metrics ?? null;
+  }
+
+  private hasAnyGoalMetric(metrics: BestMetricMap, goals: OptimizationGoalDto[]): boolean {
+    return goals.some((goal) => readMetricValue(metrics, goal.scope, goal.metric) !== null);
+  }
+
+  private deriveLatestRoundMetrics(
+    rounds: OptimizationRoundExperimentRow[],
+    goals: OptimizationGoalDto[],
+  ): OptimizationBestMetricsDto {
+    const sortedRounds = rounds.slice().sort((a, b) => b.roundIndex - a.roundIndex);
+    for (const round of sortedRounds) {
+      if (round.status !== 'success') continue;
+      const metrics = this.parseBestMetrics(round.metrics);
+      if (metrics && this.hasAnyGoalMetric(metrics, goals)) return metrics;
+    }
+    for (const round of sortedRounds) {
+      const metrics = this.parseBestMetrics(round.metrics);
+      if (metrics && this.hasAnyGoalMetric(metrics, goals)) return metrics;
+    }
+    return null;
   }
 
   private deriveBestVersion(
@@ -1114,7 +1159,9 @@ export class OptimizationService {
     best: EffectiveBestCandidate | null,
   ): OptimizationDetailDto['bestVersion'] {
     if (!best) return null;
-    const metricCells = Object.entries(best.metrics).map(([k, v]) => ({ label: this.formatMetricLabel(k), value: v }));
+    const metricCells = Object.entries(best.metrics)
+      .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
+      .map(([k, v]) => ({ label: this.formatMetricLabel(k), value: v }));
     return {
       promptRef: row.promptName ?? '—',
       promptVersion: best.promptVersionNumber ? `v${best.promptVersionNumber}` : '—',
@@ -1185,13 +1232,12 @@ export class OptimizationService {
     runConfig: OptimizationRunConfigDto,
   ): OptimizationDetailIterationConfigDto | null {
     if (!row.analysisModelName) return null;
-    const noImprovement = (runConfig as Record<string, unknown>)['stopAfterNoImprovementRounds'];
     const regressionRaw = (runConfig as Record<string, unknown>)['regressionThreshold'];
     return {
       analysisModel: row.analysisModelName,
       strategy: row.strategy,
       maxRounds: row.maxRounds,
-      noImprovementStop: typeof noImprovement === 'number' ? noImprovement : 0,
+      noImprovementStop: row.stopAfterNoImprovementRounds,
       regressionThreshold: typeof regressionRaw === 'number' ? regressionRaw : 0,
     };
   }
@@ -1267,11 +1313,28 @@ export class OptimizationService {
   private parseBestMetrics(value: unknown): OptimizationBestMetricsDto {
     if (value === null || value === undefined) return null;
     if (typeof value !== 'object') return null;
-    const result: Record<string, number> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      if (typeof entry === 'number' && Number.isFinite(entry)) result[key] = entry;
+    return normalizeBestMetrics(value);
+  }
+
+  private parseObjectiveStatus(
+    value: unknown,
+    lifecycleStatus: string,
+    summary: unknown,
+  ): OptimizationObjectiveStatusDto {
+    const parsed = optimizationObjectiveStatusSchema.safeParse(value);
+    if (parsed.success) return parsed.data;
+    const summaryReason =
+      summary && typeof summary === 'object' ? (summary as Record<string, unknown>)['reason'] : undefined;
+    if (summaryReason === 'goals_met') return 'met';
+    if (
+      summaryReason === 'max_rounds' ||
+      summaryReason === 'no_improvement' ||
+      summaryReason === 'control_stop' ||
+      summaryReason === 'control_cancel'
+    ) {
+      return 'not_met';
     }
-    return result;
+    return lifecycleStatus === 'running' ? 'pending' : 'unknown';
   }
 
   private parseSummary(value: unknown): OptimizationSummaryDto | null {
@@ -1326,7 +1389,9 @@ export class OptimizationService {
 
   private bestMetricScalar(metrics: OptimizationBestMetricsDto): number {
     if (!metrics) return -1;
-    const values = Object.values(metrics).filter((value) => Number.isFinite(value));
+    const values = Object.values(metrics).filter(
+      (value): value is number => typeof value === 'number' && Number.isFinite(value),
+    );
     return values.length === 0 ? -1 : Math.max(...values);
   }
 }
@@ -1513,10 +1578,97 @@ function buildPromptDiffWithoutExperiment(
   };
 }
 
-function extractMetric(metrics: unknown, key: string): number | null {
-  if (!metrics || typeof metrics !== 'object') return null;
-  const v = (metrics as Record<string, unknown>)[key];
-  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+function normalizeBestMetrics(value: unknown): NonNullable<OptimizationBestMetricsDto> {
+  const result: Record<string, unknown> = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return result as NonNullable<OptimizationBestMetricsDto>;
+  }
+  const obj = value as Record<string, unknown>;
+  const overall = obj['overall'];
+  if (overall && typeof overall === 'object' && !Array.isArray(overall)) {
+    copyNumericMetrics(result, overall as Record<string, unknown>);
+  }
+  copyNumericMetrics(result, obj);
+  const perClass = normalizePerClassMetrics(obj);
+  if (perClass.length > 0) result['perClass'] = perClass;
+  return result as NonNullable<OptimizationBestMetricsDto>;
+}
+
+function readMetricValue(metrics: unknown, scope: string, metric: string): number | null {
+  if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return null;
+  const obj = metrics as Record<string, unknown>;
+  if (scope === 'overall') {
+    return readOverallMetricValue(obj, metric);
+  }
+  return readClassMetricValue(obj, scope, metric);
+}
+
+function readOverallMetricValue(obj: Record<string, unknown>, metric: string): number | null {
+  const direct = obj[metric];
+  if (typeof direct === 'number' && Number.isFinite(direct)) return direct;
+  const overall = obj['overall'];
+  if (overall && typeof overall === 'object' && !Array.isArray(overall)) {
+    const nested = (overall as Record<string, unknown>)[metric];
+    if (typeof nested === 'number' && Number.isFinite(nested)) return nested;
+  }
+  return null;
+}
+
+function readClassMetricValue(obj: Record<string, unknown>, label: string, metric: string): number | null {
+  const arrays = [obj['perClass'], obj['per_class']].filter(Array.isArray) as unknown[][];
+  for (const perClass of arrays) {
+    for (const entry of perClass) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const row = entry as Record<string, unknown>;
+      if (row['label'] !== label) continue;
+      const value = row[metric];
+      return typeof value === 'number' && Number.isFinite(value) ? value : null;
+    }
+  }
+
+  const objects = [obj['perClass'], obj['per_class']].filter(
+    (value): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value),
+  );
+  for (const perClass of objects) {
+    const row = perClass[label];
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
+    const value = (row as Record<string, unknown>)[metric];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  }
+  return null;
+}
+
+function normalizePerClassMetrics(obj: Record<string, unknown>): Array<Record<string, string | number>> {
+  const rows: Array<Record<string, string | number>> = [];
+  const raw = obj['perClass'] ?? obj['per_class'];
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const row = entry as Record<string, unknown>;
+      const label = typeof row['label'] === 'string' ? row['label'] : null;
+      if (!label) continue;
+      const normalized: Record<string, string | number> = { label };
+      copyNumericMetrics(normalized, row);
+      if (Object.keys(normalized).length > 1) rows.push(normalized);
+    }
+    return rows;
+  }
+  if (raw && typeof raw === 'object') {
+    for (const [label, entry] of Object.entries(raw as Record<string, unknown>)) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const normalized: Record<string, string | number> = { label };
+      copyNumericMetrics(normalized, entry as Record<string, unknown>);
+      if (Object.keys(normalized).length > 1) rows.push(normalized);
+    }
+  }
+  return rows;
+}
+
+function copyNumericMetrics(target: Record<string, unknown>, source: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(source)) {
+    if (key === 'overall' || key === 'perClass' || key === 'per_class' || key === 'label') continue;
+    if (typeof value === 'number' && Number.isFinite(value)) target[key] = value;
+  }
 }
 
 function extractAnalysisSummary(row: OptimizationRoundLlmRow, roundIndex: number): string | undefined {

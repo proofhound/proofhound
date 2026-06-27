@@ -86,6 +86,7 @@ export interface OptimizationConfig<TStrategyConfig = unknown> {
   optimizationId: string;
   goals: OptimizationGoal[];
   maxRounds: number;
+  stopAfterNoImprovementRounds?: number;
   fieldWhitelist: FieldWhitelist;
   analysisModel: ModelInvocationConfig;
   analysisLimiterKey: string;
@@ -141,7 +142,13 @@ export interface RoundHistoryEntry {
 
 export type OptimizationStatus = 'success' | 'failed' | 'stopped' | 'cancelled';
 
-export type OptimizationReason = 'goals_met' | 'max_rounds' | 'control_stop' | 'control_cancel' | 'fatal_error';
+export type OptimizationReason =
+  | 'goals_met'
+  | 'max_rounds'
+  | 'no_improvement'
+  | 'control_stop'
+  | 'control_cancel'
+  | 'fatal_error';
 
 export interface OptimizationResult {
   status: OptimizationStatus;

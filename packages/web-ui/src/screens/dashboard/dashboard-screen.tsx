@@ -3,11 +3,7 @@
 import { Link } from '../../components/navigation/link';
 import { useRouter } from '../../hooks/use-router';
 import { useMemo, useState } from 'react';
-import type {
-  ExperimentListItemDto,
-  OptimizationListItemDto,
-  OptimizationStatusDto,
-} from '@proofhound/shared';
+import type { ExperimentListItemDto, OptimizationListItemDto, OptimizationStatusDto } from '@proofhound/shared';
 import type { LucideIcon } from 'lucide-react';
 import {
   AlertCircle,
@@ -282,7 +278,7 @@ function buildOptimizationMetrics(
   const firstGoal = optimization.goals[0];
   if (!firstGoal) return [];
 
-  const value = optimization.bestMetrics?.[firstGoal.metric];
+  const value = readOptimizationGoalMetric(optimization, firstGoal);
   const formatted = formatMetricValue(value);
   if (!formatted) return [];
 
@@ -293,6 +289,21 @@ function buildOptimizationMetrics(
       highlight: true,
     },
   ];
+}
+
+function readOptimizationGoalMetric(
+  optimization: OptimizationListItemDto,
+  goal: OptimizationListItemDto['goals'][number],
+): number | undefined {
+  const metrics = optimization.bestMetrics;
+  if (!metrics) return undefined;
+  if (goal.scope === 'overall') {
+    const value = metrics[goal.metric];
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+  const entry = metrics.perClass?.find((item) => item.label === goal.scope);
+  const value = entry?.[goal.metric];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function buildFeedItems({

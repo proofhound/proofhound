@@ -58,10 +58,7 @@ export const experiments = phRuns.table(
   },
   (t) => [
     check('experiments_status_check', sql`${t.status} IN ('running', 'success', 'failed', 'stopped')`),
-    check(
-      'experiments_control_state_check',
-      sql`${t.controlState} IN ('stop', 'resume') OR ${t.controlState} IS NULL`,
-    ),
+    check('experiments_control_state_check', sql`${t.controlState} IN ('stop', 'resume') OR ${t.controlState} IS NULL`),
     check(
       'experiments_failure_kind_check',
       sql`${t.failureKind} IN ('rate_limit', 'parse', 'timeout', 'internal') OR ${t.failureKind} IS NULL`,
@@ -116,6 +113,7 @@ export const optimizations = phRuns.table(
       .references(() => models.id),
     promptLanguage: text('prompt_language').notNull().default('zh-CN'),
     status: text('status').notNull().default('running'),
+    objectiveStatus: text('objective_status').notNull().default('pending'),
     dbosWorkflowId: text('dbos_workflow_id'),
     controlState: text('control_state'),
     goals: jsonb('goals').notNull(),
@@ -124,6 +122,7 @@ export const optimizations = phRuns.table(
       .notNull()
       .default(sql`'{}'::jsonb`),
     maxRounds: integer('max_rounds').notNull().default(10),
+    stopAfterNoImprovementRounds: integer('stop_after_no_improvement_rounds').notNull().default(0),
     currentRound: integer('current_round').notNull().default(0),
     bestVersionId: uuid('best_version_id'),
     bestMetrics: jsonb('best_metrics'),
@@ -138,6 +137,14 @@ export const optimizations = phRuns.table(
   },
   (t) => [
     check('optimizations_status_check', sql`${t.status} IN ('running', 'success', 'failed', 'stopped', 'cancelled')`),
+    check(
+      'optimizations_objective_status_check',
+      sql`${t.objectiveStatus} IN ('pending', 'met', 'not_met', 'unknown')`,
+    ),
+    check(
+      'optimizations_stop_after_no_improvement_rounds_check',
+      sql`${t.stopAfterNoImprovementRounds} >= 0 AND ${t.stopAfterNoImprovementRounds} <= 20`,
+    ),
     check(
       'optimizations_starting_mode_check',
       sql`${t.startingMode} IN ('from_experiment', 'from_prompt_version', 'from_dataset_only')`,

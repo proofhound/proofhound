@@ -61,12 +61,14 @@ const baseRow = (overrides: Partial<OptimizationRow> = {}): OptimizationRow => (
   analysisModelId: 'd2222222-2222-4222-8222-222222222222',
   analysisModelName: 'claude-opus-4-7',
   status: 'running',
+  objectiveStatus: 'pending',
   controlState: null,
   dbosWorkflowId: null,
   goals: [{ metric: 'accuracy', comparator: 'gte', target: 0.82, scope: 'overall' }],
   fieldWhitelist: null,
   runConfig: { temperature: 0.3, concurrency: 8 },
   maxRounds: 10,
+  stopAfterNoImprovementRounds: 2,
   currentRound: 0,
   bestVersionId: null,
   bestVersionNumber: null,
@@ -653,6 +655,111 @@ describe('OptimizationService', () => {
         promptVersionId: 'pv222222-2222-4222-8222-222222222222',
         experimentId: 'e2222222-2222-4222-8222-222222222222',
       });
+    });
+
+    it('uses latest round metrics for goal progress when no best candidate exists', async () => {
+      repo.findProjectAccess.mockResolvedValue(projectAccess());
+      repo.findOptimizationById.mockResolvedValue(
+        baseRow({
+          startingMode: 'from_prompt_version',
+          sourceExperimentMetrics: null,
+          promptId: 'p1111111-1111-4111-8111-111111111111',
+          promptName: 'risk-judge',
+          baseVersionId: 'pv111111-1111-4111-8111-111111111111',
+          baseVersionNumber: 3,
+          goals: [{ metric: 'precision', comparator: 'gte', target: 0.95, scope: 'good' }],
+          bestVersionId: null,
+          bestVersionNumber: null,
+          bestMetrics: null,
+        }),
+      );
+      repo.listRoundExperimentsForOptimization.mockResolvedValue([
+        {
+          experimentId: 'e2222222-2222-4222-8222-222222222222',
+          experimentName: 'round-2',
+          roundIndex: 2,
+          promptVersionId: 'pv222222-2222-4222-8222-222222222222',
+          promptVersionNumber: 4,
+          parentVersionId: 'pv111111-1111-4111-8111-111111111111',
+          status: 'success',
+          metrics: {
+            precision: 0.97,
+            perClass: [{ label: 'good', precision: 0.91, recall: 0.84 }],
+          },
+          failureReason: null,
+          startedAt: new Date('2026-05-18T11:00:00Z'),
+          finishedAt: new Date('2026-05-18T11:30:00Z'),
+          totalSamples: 100,
+          processedSamples: 100,
+          failedSamples: 0,
+        },
+      ]);
+
+      const result = await service.getOptimization(projectAccess().id, baseRow().id, actor);
+
+      expect(result.bestVersion).toBeNull();
+      expect(result.goalProgress).toMatchObject([
+        {
+          label: 'good Precision',
+          currentText: '0.910',
+          targetText: '≥ 0.95',
+          achieved: 'miss',
+        },
+      ]);
+    });
+
+    it('uses class-scoped best metrics for goal progress', async () => {
+      repo.findProjectAccess.mockResolvedValue(projectAccess());
+      repo.findOptimizationById.mockResolvedValue(
+        baseRow({
+          promptId: 'p1111111-1111-4111-8111-111111111111',
+          promptName: 'risk-judge',
+          goals: [{ metric: 'precision', comparator: 'gte', target: 0.8, scope: 'good' }],
+          bestVersionId: 'pv222222-2222-4222-8222-222222222222',
+          bestVersionNumber: 4,
+          bestMetrics: {
+            precision: 0.5,
+            perClass: [
+              { label: 'bad', precision: 0.3 },
+              { label: 'good', precision: 0.875 },
+            ],
+          },
+        }),
+      );
+      repo.listRoundExperimentsForOptimization.mockResolvedValue([
+        {
+          experimentId: 'e2222222-2222-4222-8222-222222222222',
+          experimentName: 'round-2',
+          roundIndex: 2,
+          promptVersionId: 'pv222222-2222-4222-8222-222222222222',
+          promptVersionNumber: 4,
+          parentVersionId: 'pv111111-1111-4111-8111-111111111111',
+          status: 'success',
+          metrics: {
+            precision: 0.5,
+            perClass: [
+              { label: 'bad', precision: 0.3 },
+              { label: 'good', precision: 0.875 },
+            ],
+          },
+          failureReason: null,
+          startedAt: new Date('2026-05-18T11:00:00Z'),
+          finishedAt: new Date('2026-05-18T11:30:00Z'),
+          totalSamples: 100,
+          processedSamples: 100,
+          failedSamples: 0,
+        },
+      ]);
+
+      const result = await service.getOptimization(projectAccess().id, baseRow().id, actor);
+
+      expect(result.goalProgress).toMatchObject([
+        {
+          label: 'good Precision',
+          currentText: '0.875',
+          achieved: 'hit',
+        },
+      ]);
     });
 
     it('produces trend series with baseline as the first point when sourceExperimentMetrics has the metric', async () => {
@@ -1650,6 +1757,7 @@ describe('OptimizationService', () => {
           experimentModelId: createInput.experimentModelId,
           analysisModelId: createInput.analysisModelId,
           maxRounds: 10,
+          stopAfterNoImprovementRounds: 2,
           status: 'running',
           createdBy: actor.sub,
         }),
@@ -1986,6 +2094,7 @@ describe('OptimizationService', () => {
         // The workflow's subsequent finalize is skipped because the repo.finalize guard (status='running') is not satisfied
         expect.objectContaining({
           status: 'stopped',
+          objectiveStatus: 'not_met',
           controlState: 'stop',
           finishedAt: expect.any(Date),
         }),
@@ -2004,7 +2113,12 @@ describe('OptimizationService', () => {
       expect(repo.updateOptimization).toHaveBeenCalledWith(
         projectAccess().id,
         baseRow().id,
-        expect.objectContaining({ status: 'running', controlState: 'resume', finishedAt: null }),
+        expect.objectContaining({
+          status: 'running',
+          objectiveStatus: 'pending',
+          controlState: 'resume',
+          finishedAt: null,
+        }),
       );
       // orgId is SaaS-only; the OSS test actor has none, so resume is invoked with orgId=undefined.
       expect(launcher.resume).toHaveBeenCalledWith(baseRow().id, undefined);
@@ -2023,6 +2137,7 @@ describe('OptimizationService', () => {
         baseRow().id,
         expect.objectContaining({
           status: 'cancelled',
+          objectiveStatus: 'not_met',
           controlState: 'cancel',
           finishedAt: expect.any(Date),
         }),

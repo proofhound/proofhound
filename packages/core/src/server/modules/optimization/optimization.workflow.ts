@@ -70,7 +70,12 @@ import { ExperimentService } from '../experiment/experiment.service';
 import { ExperimentWorkflowRegistrar } from '../experiment/experiment.workflow';
 import { PromptRepository } from '../prompt/prompt.repository';
 import { OptimizationRepository } from './optimization.repository';
-import type { OptimizationAnalysisExperimentRow, OptimizationRoundHistoryRow, OptimizationRunResultRow, RoundStepUpsertInput } from './optimization.repository';
+import type {
+  OptimizationAnalysisExperimentRow,
+  OptimizationRoundHistoryRow,
+  OptimizationRunResultRow,
+  RoundStepUpsertInput,
+} from './optimization.repository';
 
 const { models, runResults, experiments } = schema;
 
@@ -84,6 +89,7 @@ const OPTIMIZATION_EXPERIMENT_NAME_SEPARATOR = ' · ';
 const OPTIMIZATION_EXPERIMENT_NAME_FALLBACK = 'optimization';
 
 type FinalizeKind = 'success' | 'failed' | 'stopped' | 'cancelled';
+type ObjectiveStatus = 'pending' | 'met' | 'not_met' | 'unknown';
 type ControlSignal = 'stop' | 'resume' | 'cancel' | null;
 type ChildExperimentAction = 'stop' | 'cancel' | 'resume';
 type WorkflowControlState = { status: string; controlState: ControlSignal } | null;
@@ -123,6 +129,7 @@ interface WorkflowConfigSnapshot {
   strategy: string;
   strategyConfig: ErrorPatternAnalysisConfig;
   maxRounds: number;
+  stopAfterNoImprovementRounds: number;
   optimizationHint?: string;
   createdBy: string;
   // Snapshot
@@ -474,9 +481,17 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
           await this.finalizeStep(optimizationId, 'success', { reason: 'goals_met' });
           return;
         }
+        if (
+          snapshot.stopAfterNoImprovementRounds > 0 &&
+          outcome.metrics &&
+          (await this.hasReachedNoImprovementLimit(optimizationId, n + 1, snapshot))
+        ) {
+          await this.finalizeStep(optimizationId, 'success', { reason: 'no_improvement' });
+          return;
+        }
       }
 
-      await this.finalizeStep(optimizationId, 'failed', { reason: 'max_rounds' });
+      await this.finalizeStep(optimizationId, 'success', { reason: 'max_rounds' });
     } catch (error) {
       // Fallback: any uncaught step exception writes status=failed, to prevent the application table from being stuck in running
       const message = error instanceof Error ? error.message : String(error);
@@ -746,6 +761,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       strategy: ctx.strategy,
       strategyConfig,
       maxRounds: ctx.maxRounds,
+      stopAfterNoImprovementRounds: ctx.stopAfterNoImprovementRounds,
       optimizationHint,
       createdBy: ctx.createdBy,
       nextRound,
@@ -1162,6 +1178,31 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     });
   }
 
+  private async hasReachedNoImprovementLimit(
+    optimizationId: string,
+    beforeRoundIndex: number,
+    snapshot: WorkflowConfigSnapshot,
+  ): Promise<boolean> {
+    const limit = snapshot.stopAfterNoImprovementRounds;
+    if (limit <= 0) return false;
+    const rows = await this.loadRoundHistoryStep(optimizationId, beforeRoundIndex);
+    const history = this.buildRoundHistoryEntries(rows, snapshot.goals);
+    const streak = computeNoBestStreak(history);
+    if (streak >= limit) {
+      this.logger.info(
+        {
+          optimizationId,
+          limit,
+          streak,
+          beforeRoundIndex,
+        },
+        'optimization_no_improvement_limit_reached',
+      );
+      return true;
+    }
+    return false;
+  }
+
   private async resolveRoundOptimizationContext(
     optimizationId: string,
     roundNumber: number,
@@ -1262,11 +1303,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     };
   }
 
-  private async prepareRoundImpl(
-    optimizationId: string,
-    roundNumber: number,
-    orgId?: string,
-  ): Promise<PrepareOutcome> {
+  private async prepareRoundImpl(optimizationId: string, roundNumber: number, orgId?: string): Promise<PrepareOutcome> {
     const snapshot = await this.loadConfigImpl(optimizationId, orgId);
     if (!snapshot.ok) {
       return { kind: 'fatal', errorMessage: snapshot.reason ?? 'snapshot_invalid' };
@@ -1773,7 +1810,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     });
 
     if (decision.isBest) {
-      await this.repo.updateBest(optimizationId, versionId, roundMetrics.overall);
+      await this.repo.updateBest(optimizationId, versionId, metricSnapshotToBestMetrics(roundMetrics));
     }
     await this.repo.updateCurrentRound(optimizationId, roundNumber);
     await this.upsertStepSafe({
@@ -1817,20 +1854,22 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     kind: FinalizeKind,
     options: { reason?: string; analysisFailureReason?: string },
   ): Promise<void> {
+    const objectiveStatus = objectiveStatusForFinalize(kind, options.reason);
     const updated = await this.repo.finalize(optimizationId, kind, {
       summary: options.reason ? { kind, reason: options.reason, finalizedAt: new Date().toISOString() } : undefined,
+      objectiveStatus,
       analysisFailureReason: options.analysisFailureReason ?? null,
     });
     if (!updated) {
       // service has already done preemptive terminal-state write (stop/cancel directly writes status); the workflow's own finalize is intercepted by the guard.
       // Reaching here means the workflow has finished its own cleanup; no need to overwrite status again.
       this.logger.debug(
-        { optimizationId, kind, reason: options.reason },
+        { optimizationId, kind, reason: options.reason, objectiveStatus },
         'optimization_finalize_no_op_already_terminal',
       );
       return;
     }
-    this.logger.info({ optimizationId, kind, reason: options.reason }, 'optimization_finalized');
+    this.logger.info({ optimizationId, kind, reason: options.reason, objectiveStatus }, 'optimization_finalized');
   }
 
   // SPEC 25 §11.4.1: check whether the LLM result for this round is already success in DB; on hit, skip the LLM call
@@ -1962,11 +2001,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       if (!exp) {
         return { status: 'failed', metrics: null };
       }
-      if (
-        exp.status === 'success' ||
-        exp.status === 'failed' ||
-        exp.status === 'stopped'
-      ) {
+      if (exp.status === 'success' || exp.status === 'failed' || exp.status === 'stopped') {
         return { status: exp.status, metrics: exp.metrics };
       }
 
@@ -2016,14 +2051,32 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     const obj = value as Record<string, unknown>;
     const overall: Record<string, number> = {};
     for (const [k, v] of Object.entries(obj)) {
-      if (typeof v === 'number' && Number.isFinite(v)) overall[k] = v;
-      else if (k === 'per_class' && v && typeof v === 'object') {
+      if (k === 'overall' && v && typeof v === 'object' && !Array.isArray(v)) {
+        for (const [ok, ov] of Object.entries(v as Record<string, unknown>)) {
+          if (typeof ov === 'number' && Number.isFinite(ov)) overall[ok] = ov;
+        }
+      } else if (typeof v === 'number' && Number.isFinite(v)) overall[k] = v;
+      else if ((k === 'per_class' || k === 'perClass') && v && typeof v === 'object') {
         // handled below
       }
     }
-    const perClassRaw = obj['per_class'];
+    const perClassRaw = obj['perClass'] ?? obj['per_class'];
     let perClass: Record<string, Record<string, number>> | undefined;
-    if (perClassRaw && typeof perClassRaw === 'object') {
+    if (Array.isArray(perClassRaw)) {
+      perClass = {};
+      for (const entry of perClassRaw) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+        const row = entry as Record<string, unknown>;
+        const label = typeof row['label'] === 'string' ? row['label'] : null;
+        if (!label) continue;
+        const inner: Record<string, number> = {};
+        for (const [mk, mv] of Object.entries(row)) {
+          if (mk === 'label') continue;
+          if (typeof mv === 'number' && Number.isFinite(mv)) inner[mk] = mv;
+        }
+        perClass[label] = inner;
+      }
+    } else if (perClassRaw && typeof perClassRaw === 'object') {
       perClass = {};
       for (const [cls, metrics] of Object.entries(perClassRaw as Record<string, unknown>)) {
         if (!metrics || typeof metrics !== 'object') continue;
@@ -2277,6 +2330,7 @@ function invalidSnapshot(reason: string): WorkflowConfigSnapshot {
     nextRound: 1,
     bestVersion: null,
     bestMetrics: emptyMetrics(),
+    stopAfterNoImprovementRounds: 0,
     childRunConfig: {},
     resumeChildExpId: null,
   };
@@ -2284,6 +2338,32 @@ function invalidSnapshot(reason: string): WorkflowConfigSnapshot {
 
 function emptyMetrics(): MetricSnapshot {
   return { overall: {} };
+}
+
+function objectiveStatusForFinalize(kind: FinalizeKind, reason?: string): ObjectiveStatus {
+  if (reason === 'goals_met') return 'met';
+  if (
+    reason === 'max_rounds' ||
+    reason === 'no_improvement' ||
+    reason === 'control_stop' ||
+    reason === 'control_cancel'
+  ) {
+    return 'not_met';
+  }
+  if (kind === 'stopped' || kind === 'cancelled') return 'not_met';
+  if (kind === 'failed') return 'unknown';
+  return 'unknown';
+}
+
+function metricSnapshotToBestMetrics(snapshot: MetricSnapshot): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...snapshot.overall };
+  if (snapshot.perClass) {
+    out['perClass'] = Object.entries(snapshot.perClass).map(([label, metrics]) => ({
+      label,
+      ...metrics,
+    }));
+  }
+  return out;
 }
 
 function emptyModel(): ModelInvocationConfig {

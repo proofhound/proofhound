@@ -21,19 +21,11 @@ import {
 import { useAnnotationTaskOptions, useCreateAnnotationTask } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useI18n } from '../../i18n';
-import { getApiErrorMessage } from '../../lib';
+import { formatTimestampedDefaultName, getApiErrorMessage } from '../../lib';
 import { formatCount } from './annotation-ui';
 
 type TFunction = ReturnType<typeof useI18n>['t'];
 type SamplingMode = 'random' | 'per_category';
-
-function buildDefaultTaskName() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  return `annotation-${yyyy}${mm}${dd}`;
-}
 
 export function AnnotationNewPage({ projectId, initialName }: { projectId: string; initialName?: string | null }) {
   const router = useRouter();
@@ -47,7 +39,7 @@ export function AnnotationNewPage({ projectId, initialName }: { projectId: strin
   const [explicitLineId, setExplicitLineId] = useState('');
   const [explicitVersionId, setExplicitVersionId] = useState('');
   const [samplingMode, setSamplingMode] = useState<SamplingMode>('random');
-  const [taskName, setTaskName] = useState(() => initialName?.trim() || buildDefaultTaskName());
+  const [taskName, setTaskName] = useState(() => initialName?.trim() || formatTimestampedDefaultName('anno'));
   const [sampleSizeDraft, setSampleSizeDraft] = useState<string | null>(null);
   const [categorySampleDrafts, setCategorySampleDrafts] = useState<Record<string, string>>({});
 

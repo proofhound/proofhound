@@ -259,7 +259,7 @@ describeIf('runIterationLoop · real LLM integration', () => {
       // ===== Assertions: path is correct =====
       expect(result.rounds).toHaveLength(1);
       // 1 round did not reach goal → exit via max_rounds
-      expect(result.status).toBe('failed');
+      expect(result.status).toBe('success');
       expect(result.reason).toBe('max_rounds');
 
       // promptVersionWriter wrote 1 new version; body contains variable placeholders

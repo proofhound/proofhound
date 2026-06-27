@@ -40,10 +40,7 @@ function getZonedParts(date: Date, timeZone?: string) {
   };
 }
 
-export function formatDateTime(
-  value: string | number | Date | null | undefined,
-  options: DateTimeFormatOptions = {},
-) {
+export function formatDateTime(value: string | number | Date | null | undefined, options: DateTimeFormatOptions = {}) {
   const fallback = options.fallback ?? '-';
   const date = parseDate(value);
   if (!date) return fallback;
@@ -55,10 +52,7 @@ export function formatDateTime(
   }
 }
 
-export function formatDate(
-  value: string | number | Date | null | undefined,
-  options: DateTimeFormatOptions = {},
-) {
+export function formatDate(value: string | number | Date | null | undefined, options: DateTimeFormatOptions = {}) {
   const fallback = options.fallback ?? '-';
   const date = parseDate(value);
   if (!date) return fallback;
@@ -87,6 +81,21 @@ export function formatTime(
   }
 }
 
+export function formatTimestampedDefaultName(
+  prefix: string,
+  value: string | number | Date | null | undefined = new Date(),
+  options: Pick<DateTimeFormatOptions, 'timeZone'> = {},
+) {
+  const date = parseDate(value);
+  if (!date) return `${prefix}-`;
+  try {
+    const parts = getZonedParts(date, options.timeZone);
+    return `${prefix}-${parts.year}${parts.month}${parts.day}${parts.hour}${parts.minute}-`;
+  } catch {
+    return `${prefix}-`;
+  }
+}
+
 const DATETIME_LOCAL_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
 
 /**
@@ -106,10 +115,7 @@ function resolveInputTimeZone(timeZone?: string): string {
  * resolved display time zone) rather than the browser's system time zone.
  * Returns '' for empty/invalid values so it can feed an input value directly.
  */
-export function formatDateTimeLocalInput(
-  value: string | number | Date | null | undefined,
-  timeZone?: string,
-): string {
+export function formatDateTimeLocalInput(value: string | number | Date | null | undefined, timeZone?: string): string {
   const date = parseDate(value);
   if (!date) return '';
   const parts = getZonedParts(date, resolveInputTimeZone(timeZone));
@@ -123,10 +129,7 @@ export function formatDateTimeLocalInput(
  * UTC ISO instant. Returns null for empty or malformed input. The two-pass
  * offset lookup keeps the result correct across daylight-saving boundaries.
  */
-export function parseDateTimeLocalInput(
-  value: string | null | undefined,
-  timeZone?: string,
-): string | null {
+export function parseDateTimeLocalInput(value: string | null | undefined, timeZone?: string): string | null {
   if (!value) return null;
   const match = DATETIME_LOCAL_PATTERN.exec(value.trim());
   if (!match) return null;

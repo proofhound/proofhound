@@ -12,6 +12,7 @@ function baseDto(overrides: Partial<OptimizationListItemDto> = {}): Optimization
     promptLanguage: 'zh-CN',
     startingMode: 'from_experiment',
     status: 'running',
+    objectiveStatus: 'pending',
     controlState: null,
     sourceExperimentId: '33333333-3333-4333-8333-333333333333',
     sourceExperimentName: 'exp-baseline',
@@ -30,6 +31,7 @@ function baseDto(overrides: Partial<OptimizationListItemDto> = {}): Optimization
     fieldWhitelist: null,
     runConfig: {},
     maxRounds: 10,
+    stopAfterNoImprovementRounds: 0,
     currentRound: 3,
     bestVersionId: null,
     bestVersionNumber: null,
@@ -55,14 +57,15 @@ describe('mapDtoToSummary', () => {
 
     expect(summary.origin).toBe('experiment');
     expect(summary.originRef).toBe('exp-baseline');
+    expect(summary.originHref).toBe('/experiments/33333333-3333-4333-8333-333333333333');
   });
 
-  it('maps from_prompt_version starting mode to origin=prompt with prompt name', () => {
+  it('maps from_prompt_version starting mode to origin=prompt with prompt name and version link', () => {
     const summary = mapDtoToSummary(
       baseDto({
         startingMode: 'from_prompt_version',
-        sourceExperimentId: null,
-        sourceExperimentName: null,
+        sourceExperimentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        sourceExperimentName: 'later-generated-experiment',
         promptId: '88888888-8888-4888-8888-888888888888',
         promptName: 'risk-judge',
         baseVersionId: '99999999-9999-4999-8999-999999999999',
@@ -71,20 +74,43 @@ describe('mapDtoToSummary', () => {
     );
 
     expect(summary.origin).toBe('prompt');
-    expect(summary.originRef).toBe('risk-judge');
+    expect(summary.originRef).toBe('risk-judge · v2');
+    expect(summary.originHref).toBe(
+      '/prompts/88888888-8888-4888-8888-888888888888?version=99999999-9999-4999-8999-999999999999',
+    );
   });
 
   it('maps from_dataset_only starting mode to origin=dataset with dataset name', () => {
     const summary = mapDtoToSummary(
       baseDto({
         startingMode: 'from_dataset_only',
-        sourceExperimentId: null,
-        sourceExperimentName: null,
+        sourceExperimentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        sourceExperimentName: 'later-generated-experiment',
       }),
     );
 
     expect(summary.origin).toBe('dataset');
     expect(summary.originRef).toBe('risk-eval');
+    expect(summary.originHref).toBe('/datasets/44444444-4444-4444-8444-444444444444');
+  });
+
+  it('carries objective stop summary fields for list badges', () => {
+    const summary = mapDtoToSummary(
+      baseDto({
+        status: 'success',
+        objectiveStatus: 'not_met',
+        stopAfterNoImprovementRounds: 2,
+        summary: {
+          kind: 'success',
+          reason: 'no_improvement',
+          finalizedAt: '2026-05-18T10:00:00.000Z',
+        },
+      }),
+    );
+
+    expect(summary.objectiveStatus).toBe('not_met');
+    expect(summary.stopAfterNoImprovementRounds).toBe(2);
+    expect(summary.summary?.reason).toBe('no_improvement');
   });
 
   it('treats all-overall goals as goalScope.kind=overall', () => {
@@ -141,6 +167,26 @@ describe('mapDtoToSummary', () => {
     expect(summary.goals[0]?.status).toBe('hit');
     expect(summary.bestMetricLabel).toBe('accuracy');
     expect(summary.bestMetricValue).toBeCloseTo(0.842);
+  });
+
+  it('reads class-scoped best metrics from perClass rows', () => {
+    const summary = mapDtoToSummary(
+      baseDto({
+        goals: [{ metric: 'precision', comparator: 'gte', target: 0.8, scope: 'good' }],
+        bestMetrics: {
+          precision: 0.5,
+          perClass: [
+            { label: 'bad', precision: 0.3 },
+            { label: 'good', precision: 0.875 },
+          ],
+        },
+      }),
+    );
+
+    expect(summary.goals[0]?.current).toBeCloseTo(0.875);
+    expect(summary.goals[0]?.status).toBe('hit');
+    expect(summary.bestMetricLabel).toBe('good · precision');
+    expect(summary.bestMetricValue).toBeCloseTo(0.875);
   });
 
   it('leaves goal.current undefined and bestMetricValue undefined when bestMetrics missing the key', () => {

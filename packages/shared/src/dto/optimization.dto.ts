@@ -7,6 +7,9 @@ export type OptimizationIdParamDto = z.infer<typeof optimizationIdParamSchema>;
 export const optimizationStatusSchema = z.enum(['running', 'success', 'failed', 'stopped', 'cancelled']);
 export type OptimizationStatusDto = z.infer<typeof optimizationStatusSchema>;
 
+export const optimizationObjectiveStatusSchema = z.enum(['pending', 'met', 'not_met', 'unknown']);
+export type OptimizationObjectiveStatusDto = z.infer<typeof optimizationObjectiveStatusSchema>;
+
 export const optimizationControlActionSchema = z.enum(['stop', 'resume', 'cancel']);
 export type OptimizationControlActionDto = z.infer<typeof optimizationControlActionSchema>;
 
@@ -63,12 +66,40 @@ export type OptimizationRunConfigDto = z.infer<typeof optimizationRunConfigSchem
 
 export const optimizationLoopLimitsSchema = z.object({
   maxRounds: z.number().int().min(1).max(50),
-  // 0 = disable "stop after no improvement"; the service has not yet consumed this field, pending optimization landing
+  // 0 = disable "stop after no improvement".
   stopAfterNoImprovementRounds: z.number().int().min(0).max(20),
 });
 export type OptimizationLoopLimitsDto = z.infer<typeof optimizationLoopLimitsSchema>;
 
-export const optimizationBestMetricsSchema = z.record(z.string(), z.number()).nullable();
+export const optimizationBestClassMetricSchema = z
+  .object({
+    label: z.string(),
+    accuracy: z.number().optional(),
+    precision: z.number().optional(),
+    recall: z.number().optional(),
+    f1: z.number().optional(),
+    fpr: z.number().optional(),
+  })
+  .passthrough();
+export type OptimizationBestClassMetricDto = z.infer<typeof optimizationBestClassMetricSchema>;
+
+export const optimizationBestMetricsSchema = z
+  .object({
+    accuracy: z.number().optional(),
+    precision: z.number().optional(),
+    recall: z.number().optional(),
+    f1: z.number().optional(),
+    fpr: z.number().optional(),
+    inputTokens: z.number().optional(),
+    outputTokens: z.number().optional(),
+    costEstimate: z.number().optional(),
+    averageLatencyMs: z.number().optional(),
+    p50LatencyMs: z.number().optional(),
+    p95LatencyMs: z.number().optional(),
+    perClass: z.array(optimizationBestClassMetricSchema).optional(),
+  })
+  .passthrough()
+  .nullable();
 export type OptimizationBestMetricsDto = z.infer<typeof optimizationBestMetricsSchema>;
 
 // Closing summary persisted at finalize; the service layer truncates reason to ≤500 chars to prevent upstream API payloads from leaking to the frontend
@@ -90,6 +121,7 @@ export const optimizationListItemSchema = z.object({
   strategy: optimizationStrategySchema,
   startingMode: optimizationStartingModeSchema,
   status: optimizationStatusSchema,
+  objectiveStatus: optimizationObjectiveStatusSchema,
   controlState: z.enum(['stop', 'resume', 'cancel']).nullable(),
 
   sourceExperimentId: z.string().uuid().nullable(),
@@ -111,6 +143,7 @@ export const optimizationListItemSchema = z.object({
   fieldWhitelist: optimizationFieldWhitelistSchema.nullable(),
   runConfig: optimizationRunConfigSchema,
   maxRounds: z.number().int().positive(),
+  stopAfterNoImprovementRounds: z.number().int().min(0).max(20),
   currentRound: z.number().int().nonnegative(),
   bestVersionId: z.string().uuid().nullable(),
   bestVersionNumber: z.number().int().positive().nullable(),
@@ -185,6 +218,15 @@ export const createOptimizationSchema = z
     if (value.startingMode === 'from_prompt_version' && !value.promptId) {
       ctx.addIssue({ code: 'custom', path: ['promptId'], message: 'prompt_required' });
     }
+    value.goals.forEach((goal, index) => {
+      if (goal.scope !== 'overall' && goal.metric !== 'precision' && goal.metric !== 'recall') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['goals', index, 'metric'],
+          message: 'class_goal_metric_unsupported',
+        });
+      }
+    });
   });
 export type CreateOptimizationDto = z.infer<typeof createOptimizationSchema>;
 
@@ -306,9 +348,7 @@ export const optimizationDetailRoundOverallRowSchema = z.object({
 export type OptimizationDetailRoundOverallRowDto = z.infer<typeof optimizationDetailRoundOverallRowSchema>;
 
 export const optimizationDetailRoundGoalChipAchievedSchema = z.enum(['hit', 'miss']);
-export type OptimizationDetailRoundGoalChipAchievedDto = z.infer<
-  typeof optimizationDetailRoundGoalChipAchievedSchema
->;
+export type OptimizationDetailRoundGoalChipAchievedDto = z.infer<typeof optimizationDetailRoundGoalChipAchievedSchema>;
 
 export const optimizationDetailRoundGoalChipSchema = z.object({
   label: z.string(),
@@ -358,9 +398,7 @@ export const optimizationDetailRoundExperimentResultSchema = z.object({
   classRows: z.array(optimizationDetailRoundClassRowSchema),
   vsPrevLabel: z.string(),
 });
-export type OptimizationDetailRoundExperimentResultDto = z.infer<
-  typeof optimizationDetailRoundExperimentResultSchema
->;
+export type OptimizationDetailRoundExperimentResultDto = z.infer<typeof optimizationDetailRoundExperimentResultSchema>;
 
 export const optimizationDetailRoundStreamSegmentSchema = z.object({
   kind: z.enum(['observation', 'hypothesis', 'rewrite', 'plain']),
@@ -492,7 +530,7 @@ export const optimizationDetailBestVersionSchema = z.object({
 });
 export type OptimizationDetailBestVersionDto = z.infer<typeof optimizationDetailBestVersionSchema>;
 
-export const optimizationDetailTrendSeriesKeySchema = z.enum(['accuracy', 'recall', 'fpr']);
+export const optimizationDetailTrendSeriesKeySchema = z.enum(['accuracy', 'precision', 'recall', 'fpr']);
 export type OptimizationDetailTrendSeriesKeyDto = z.infer<typeof optimizationDetailTrendSeriesKeySchema>;
 
 export const optimizationDetailTrendSeriesSchema = z.object({

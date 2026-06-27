@@ -64,12 +64,14 @@ export interface OptimizationRow {
   analysisModelName: string;
   promptLanguage: string;
   status: string;
+  objectiveStatus: string;
   controlState: string | null;
   dbosWorkflowId: string | null;
   goals: unknown;
   fieldWhitelist: unknown;
   runConfig: unknown;
   maxRounds: number;
+  stopAfterNoImprovementRounds: number;
   currentRound: number;
   bestVersionId: string | null;
   bestVersionNumber: number | null;
@@ -103,15 +105,18 @@ export interface OptimizationInsertValues {
   analysisModelId: string;
   promptLanguage: string;
   status: string;
+  objectiveStatus?: string;
   goals: unknown;
   fieldWhitelist: unknown;
   runConfig: unknown;
   maxRounds: number;
+  stopAfterNoImprovementRounds: number;
   createdBy: string;
 }
 
 export interface OptimizationUpdateValues {
   status?: string;
+  objectiveStatus?: string;
   controlState?: string | null;
   sourceExperimentId?: string | null;
   currentRound?: number;
@@ -153,6 +158,7 @@ export interface OptimizationWorkflowContext {
   fieldWhitelist: unknown;
   runConfig: unknown;
   maxRounds: number;
+  stopAfterNoImprovementRounds: number;
   currentRound: number;
   bestVersionId: string | null;
   bestMetrics: unknown;
@@ -309,12 +315,14 @@ export class OptimizationRepository {
     analysisModelName: analysisModels.name,
     promptLanguage: optimizations.promptLanguage,
     status: optimizations.status,
+    objectiveStatus: optimizations.objectiveStatus,
     controlState: optimizations.controlState,
     dbosWorkflowId: optimizations.dbosWorkflowId,
     goals: optimizations.goals,
     fieldWhitelist: optimizations.fieldWhitelist,
     runConfig: optimizations.runConfig,
     maxRounds: optimizations.maxRounds,
+    stopAfterNoImprovementRounds: optimizations.stopAfterNoImprovementRounds,
     currentRound: optimizations.currentRound,
     bestVersionId: optimizations.bestVersionId,
     bestVersionNumber: bestVersions.versionNumber,
@@ -392,10 +400,12 @@ export class OptimizationRepository {
         analysisModelId: values.analysisModelId,
         promptLanguage: values.promptLanguage,
         status: values.status,
+        objectiveStatus: values.objectiveStatus ?? 'pending',
         goals: values.goals as unknown,
         fieldWhitelist: values.fieldWhitelist as unknown,
         runConfig: values.runConfig as Record<string, unknown>,
         maxRounds: values.maxRounds,
+        stopAfterNoImprovementRounds: values.stopAfterNoImprovementRounds,
         createdBy: values.createdBy,
       })
       .returning({ id: optimizations.id });
@@ -725,13 +735,14 @@ export class OptimizationRepository {
   async finalize(
     optimizationId: string,
     status: 'success' | 'failed' | 'stopped' | 'cancelled',
-    options: { summary?: unknown; analysisFailureReason?: string | null } = {},
+    options: { summary?: unknown; objectiveStatus?: string; analysisFailureReason?: string | null } = {},
   ): Promise<boolean> {
     const now = new Date();
     const rows = await this.db
       .update(optimizations)
       .set({
         status,
+        objectiveStatus: options.objectiveStatus ?? sql`${optimizations.objectiveStatus}`,
         controlState: null,
         finishedAt: now,
         updatedAt: now,
@@ -778,6 +789,7 @@ export class OptimizationRepository {
         fieldWhitelist: optimizations.fieldWhitelist,
         runConfig: optimizations.runConfig,
         maxRounds: optimizations.maxRounds,
+        stopAfterNoImprovementRounds: optimizations.stopAfterNoImprovementRounds,
         currentRound: optimizations.currentRound,
         bestVersionId: optimizations.bestVersionId,
         bestMetrics: optimizations.bestMetrics,
