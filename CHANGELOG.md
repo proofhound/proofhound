@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.20](https://github.com/proofhound/proofhound/compare/v0.1.19...v0.1.20) (2026-06-27)
+
+
+### Bug Fixes
+
+* **optimizations:** refine objective outcomes and metrics ([958962d](https://github.com/proofhound/proofhound/commit/958962d7ae980985f80480e7b732e6427e39b289))
+
 ## [0.1.19](https://github.com/proofhound/proofhound/compare/v0.1.18...v0.1.19) (2026-06-25)
 
 
