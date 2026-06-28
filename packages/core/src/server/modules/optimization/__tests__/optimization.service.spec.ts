@@ -334,7 +334,7 @@ describe('OptimizationService', () => {
               buildRoundStepRow({
                 optimizationId: id,
                 roundIndex: 5,
-                step: 'generate_prompt',
+                step: 'experiment',
                 status: 'running',
                 updatedAt: new Date('2026-05-18T11:00:00Z'),
               }),
@@ -347,6 +347,47 @@ describe('OptimizationService', () => {
       expect(result.data[0]!.id).toBe('a1111111-1111-4111-8111-111111111111');
       expect(result.data[0]!.currentRound).toBe(5);
       expect(result.data[0]!.updatedAt).toBe('2026-05-18T11:00:00.000Z');
+    });
+
+    it('does not advance live progress from analysis steps before the child experiment starts', async () => {
+      repo.findProjectAccess.mockResolvedValue(projectAccess());
+      repo.listOptimizations.mockResolvedValue([
+        baseRow({
+          currentRound: 0,
+          updatedAt: new Date('2026-05-18T08:00:00Z'),
+        }),
+      ]);
+      repo.listRoundExperimentsForOptimization.mockResolvedValue([]);
+      repo.listRoundStepsForOptimization.mockResolvedValue([
+        buildRoundStepRow({
+          roundIndex: 1,
+          step: 'error_analysis',
+          status: 'running',
+          updatedAt: new Date('2026-05-18T10:00:00Z'),
+        }),
+      ]);
+
+      const result = await service.listOptimizations(projectAccess().id, actor);
+
+      expect(result.data[0]!.currentRound).toBe(0);
+      expect(result.data[0]!.updatedAt).toBe('2026-05-18T10:00:00.000Z');
+    });
+
+    it('projects a from_experiment source baseline without child rounds as zero progress', async () => {
+      repo.findProjectAccess.mockResolvedValue(projectAccess());
+      repo.listOptimizations.mockResolvedValue([
+        baseRow({
+          currentRound: 1,
+          sourceExperimentMetrics: { accuracy: 0.81 },
+          updatedAt: new Date('2026-05-18T08:00:00Z'),
+        }),
+      ]);
+      repo.listRoundExperimentsForOptimization.mockResolvedValue([]);
+      repo.listRoundStepsForOptimization.mockResolvedValue([]);
+
+      const result = await service.listOptimizations(projectAccess().id, actor);
+
+      expect(result.data[0]!.currentRound).toBe(0);
     });
 
     it('does not count a from_experiment baseline round in live progress', async () => {
@@ -1522,7 +1563,7 @@ describe('OptimizationService', () => {
         ...overrides,
       });
 
-      it('renders a round card from round_steps even when experiment row does not exist yet', async () => {
+      it('renders an analysis round card without advancing progress before the experiment starts', async () => {
         // Analysis stage: only the round_steps rows contain error_analysis=running; the experiments table has no entry for this round yet
         repo.findProjectAccess.mockResolvedValue(projectAccess());
         repo.findOptimizationById.mockResolvedValue(baseRow());
@@ -1535,7 +1576,7 @@ describe('OptimizationService', () => {
 
         const result = await service.getOptimization(projectAccess().id, baseRow().id, actor);
         expect(result.rounds).toHaveLength(1);
-        expect(result.currentRound).toBe(1);
+        expect(result.currentRound).toBe(0);
         expect(result.updatedAt).toBe('2026-05-18T10:00:00.000Z');
         const round = result.rounds[0]!;
         expect(round.index).toBe(1);

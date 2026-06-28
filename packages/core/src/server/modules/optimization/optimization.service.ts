@@ -1419,13 +1419,16 @@ function deriveLiveProjection(
   for (const step of roundSteps) {
     if (!isProgressRoundIndex(step.roundIndex)) {
       baselineRoundIndexes.add(step.roundIndex);
-    } else {
+    } else if (isProgressRoundStep(step)) {
       progressRoundIndexes.push(step.roundIndex);
     }
     updatedAt = latestDate(updatedAt, step.updatedAt, step.finishedAt, step.startedAt, step.createdAt);
   }
 
-  if (baselineRoundIndexes.size > 0 && progressRoundIndexes.length === 0) {
+  const hasExternalBaselineOnly =
+    row.sourceExperimentId !== null && row.currentRound <= 1 && progressRoundIndexes.length === 0;
+
+  if ((baselineRoundIndexes.size > 0 || hasExternalBaselineOnly) && progressRoundIndexes.length === 0) {
     currentRound = 0;
   } else if (baselineRoundIndexes.has(currentRound) && !progressRoundIndexes.some((index) => index >= currentRound)) {
     currentRound = progressRoundIndexes.length > 0 ? Math.max(...progressRoundIndexes) : 0;
@@ -1446,6 +1449,10 @@ function isBaselineProgressRound(round: OptimizationRoundExperimentRow): boolean
 
 function isProgressRoundIndex(roundIndex: number): boolean {
   return roundIndex > 0;
+}
+
+function isProgressRoundStep(step: OptimizationRoundStepRow): boolean {
+  return step.step === 'experiment';
 }
 
 function latestDate(current: Date, ...candidates: Array<Date | null | undefined>): Date {
