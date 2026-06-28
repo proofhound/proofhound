@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.21](https://github.com/proofhound/proofhound/compare/v0.1.20...v0.1.21) (2026-06-28)
+
+
+### Bug Fixes
+
+* **core:** count only experiment rounds in optimization progress ([#72](https://github.com/proofhound/proofhound/issues/72)) ([ba12d91](https://github.com/proofhound/proofhound/commit/ba12d919b3f70eae419aad88a3f5358e5eb9793c))
+
 ## [0.1.20](https://github.com/proofhound/proofhound/compare/v0.1.19...v0.1.20) (2026-06-27)
 
 
