@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/core",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "ProofHound reusable backend runtime: server / webhook / worker NestJS modules, contracts, local defaults, Services, Repositories",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

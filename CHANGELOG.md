@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.22](https://github.com/proofhound/proofhound/compare/v0.1.21...v0.1.22) (2026-06-28)
+
+
+### Bug Fixes
+
+* **datasets:** recover stalled import promotion ([c510aea](https://github.com/proofhound/proofhound/commit/c510aea946c899fd10bfc77fa2f5ff8ff1e5bc2d))
+
 ## [0.1.21](https://github.com/proofhound/proofhound/compare/v0.1.20...v0.1.21) (2026-06-28)
 
 
