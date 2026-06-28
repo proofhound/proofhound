@@ -11,7 +11,10 @@ const fieldSchema: DatasetFieldSchemaDto[] = [
 ];
 
 function staging(n: number): StagingSample[] {
-  return Array.from({ length: n }, (_, i) => ({ data: { q: `q${i}`, label: i % 2 === 0 ? 'a' : 'b' }, externalId: `ext-${i}` }));
+  return Array.from({ length: n }, (_, i) => ({
+    data: { q: `q${i}`, label: i % 2 === 0 ? 'a' : 'b' },
+    externalId: `ext-${i}`,
+  }));
 }
 
 function run(samples: StagingSample[], batchSize: number) {
@@ -53,11 +56,7 @@ describe('offloadStagingToShards', () => {
       [1, 2, 2],
       [2, 4, 1],
     ]);
-    expect(shards.map((s) => s.name)).toEqual([
-      'shard-00000.jsonl.gz',
-      'shard-00001.jsonl.gz',
-      'shard-00002.jsonl.gz',
-    ]);
+    expect(shards.map((s) => s.name)).toEqual(['shard-00000.jsonl.gz', 'shard-00001.jsonl.gz', 'shard-00002.jsonl.gz']);
     expect(inserted).toHaveLength(5);
     expect(result.storagePrefix).toBe('orgs/o/projects/p/dataset_normalized/ds-1/');
   });
@@ -80,6 +79,36 @@ describe('offloadStagingToShards', () => {
     const shard0 = await decodeShard<Record<string, unknown>>(shards[0]!.body, 'gzip');
     // inserted[1] points at shard 0 row 1 → its data is the original sample 1
     expect(shard0[inserted[1]!.payloadRef.rowIndex]).toEqual({ q: 'q1', label: 'b' });
+  });
+
+  it('reports progress after every shard by default', async () => {
+    const progress: Array<{ completedShards: number; processedRows: number }> = [];
+
+    await offloadStagingToShards({
+      datasetId: 'ds-1',
+      sampleCount: 5,
+      batchSize: 2,
+      fieldSchema,
+      readBatch: async (offset, limit) => staging(5).slice(offset, offset + limit),
+      putShard: async (name, body) => ({
+        provider: 'object',
+        bucket: 'b',
+        key: `orgs/o/projects/p/dataset_normalized/ds-1/${name}`,
+        bytes: body.byteLength,
+        codec: 'gzip',
+        resourceType: 'dataset_normalized',
+        resourceId: 'ds-1',
+      }),
+      onProgress: ({ completedShards, processedRows }) => {
+        progress.push({ completedShards, processedRows });
+      },
+    });
+
+    expect(progress).toEqual([
+      { completedShards: 1, processedRows: 2 },
+      { completedShards: 2, processedRows: 4 },
+      { completedShards: 3, processedRows: 5 },
+    ]);
   });
 
   it('does nothing for an empty import', async () => {

@@ -216,6 +216,49 @@ describe('runDatasetImport', () => {
     );
   });
 
+  it('keeps polling and retries stale promotion when the complete request drops', async () => {
+    const offloadingStatus = importStatus('importing', {
+      receivedRows: 3,
+      progress: {
+        state: 'importing',
+        phase: 'offloading',
+        uploadedBytes: CREATE_BODY.sourceFile.fileSizeBytes,
+        parsedRows: 3,
+        importedRows: 0,
+        totalRows: 3,
+        totalBytes: CREATE_BODY.sourceFile.fileSizeBytes,
+        totalShards: 2,
+        completedShards: 0,
+        committedRows: 0,
+        percentage: 90,
+      },
+      updatedAt: '2020-01-01T00:00:00.000Z',
+    });
+    const client = fakeClient({
+      completeDatasetImport: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('network dropped'))
+        .mockResolvedValueOnce(importStatus('completed', { receivedRows: 3 })),
+      getDatasetImport: vi.fn().mockResolvedValueOnce(offloadingStatus),
+    });
+    (client.appendDatasetImportBatch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      importId: 'imp-1',
+      receivedRows: 3,
+    });
+
+    const result = await runDatasetImport({
+      projectId: PROJECT_ID,
+      createBody: CREATE_BODY,
+      batches: batchesOf([{ a: 1 }, { a: 2 }, { a: 3 }]),
+      client,
+      pollIntervalMs: 1,
+    });
+
+    expect(result).toMatchObject({ status: 'completed', receivedRows: 3 });
+    expect(client.completeDatasetImport).toHaveBeenCalledTimes(2);
+    expect(client.abortDatasetImport).not.toHaveBeenCalled();
+  });
+
   it('projects streamed rows into batches bounded by rows and encoded bytes', async () => {
     const rowA = { id: 'a', text: 'x'.repeat(80), ignored: 'drop' };
     const rowB = { id: 'b', text: 'y'.repeat(80), ignored: 'drop' };

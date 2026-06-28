@@ -17,6 +17,7 @@ export interface DatasetImportProgress {
 export const DEFAULT_IMPORT_BATCH_MAX_ROWS = 1000;
 // Keep the encoded JSON body below the default SERVER_BODY_LIMIT=10mb.
 export const DEFAULT_IMPORT_BATCH_MAX_BYTES = 8 * 1024 * 1024;
+const DEFAULT_IMPORT_PROMOTION_RECOVERY_MS = 5 * 60 * 1000;
 
 const textEncoder = new TextEncoder();
 const DATASET_IMPORT_PAYLOAD_PREFIX_BYTES = textEncoder.encode('{"batchStartIndex":0,"samples":').length;
@@ -124,6 +125,7 @@ export async function runDatasetImport(options: RunDatasetImportOptions): Promis
 
   const session = await client.createDatasetImport(projectId, createBody);
   options.onCreated?.(session.id);
+  let completionStarted = false;
 
   try {
     let batchStartIndex = 0;
@@ -151,15 +153,32 @@ export async function runDatasetImport(options: RunDatasetImportOptions): Promis
       signal: pollController.signal,
     }).catch(() => undefined);
     try {
+      completionStarted = true;
       const result = await client.completeDatasetImport(projectId, session.id);
       return result;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      pollController.abort();
+      await progressPoll;
+      return pollDatasetImportStatus({
+        client,
+        projectId,
+        importId: session.id,
+        pollIntervalMs: options.pollIntervalMs,
+        onProgress: options.onProgress,
+        signal,
+        recoverStalePromotionAfterMs: DEFAULT_IMPORT_PROMOTION_RECOVERY_MS,
+        recoverStalePromotion: () => client.completeDatasetImport(projectId, session.id),
+      });
     } finally {
       signal?.removeEventListener('abort', abortPoll);
       pollController.abort();
       await progressPoll;
     }
   } catch (error) {
-    await client.abortDatasetImport(projectId, session.id).catch(() => undefined);
+    if (!completionStarted || signal?.aborted) {
+      await client.abortDatasetImport(projectId, session.id).catch(() => undefined);
+    }
     throw error;
   }
 }
@@ -199,6 +218,8 @@ async function pollDatasetImportStatus({
   pollIntervalMs = 1500,
   onProgress,
   signal,
+  recoverStalePromotionAfterMs,
+  recoverStalePromotion,
 }: {
   client: DatasetImportClient;
   projectId: string;
@@ -206,7 +227,10 @@ async function pollDatasetImportStatus({
   pollIntervalMs?: number;
   onProgress?: (progress: DatasetImportProgress) => void;
   signal?: AbortSignal;
+  recoverStalePromotionAfterMs?: number;
+  recoverStalePromotion?: () => Promise<DatasetImportStatusDto>;
 }): Promise<DatasetImportStatusDto> {
+  let lastRecoveryAttemptAt = 0;
   for (;;) {
     await delay(pollIntervalMs, signal);
     if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
@@ -220,7 +244,32 @@ async function pollDatasetImportStatus({
       throw new Error(status.errorCode ?? status.state);
     }
     onProgress?.({ phase, receivedRows: status.receivedRows, status });
+    if (
+      recoverStalePromotion &&
+      recoverStalePromotionAfterMs &&
+      isServerProgressPhase(phase) &&
+      isStaleStatus(status.updatedAt, recoverStalePromotionAfterMs) &&
+      Date.now() - lastRecoveryAttemptAt >= recoverStalePromotionAfterMs
+    ) {
+      lastRecoveryAttemptAt = Date.now();
+      const recovered = await recoverStalePromotion();
+      const recoveredPhase = recovered.progress.phase ?? recovered.state;
+      onProgress?.({ phase: recoveredPhase, receivedRows: recovered.receivedRows, status: recovered });
+      if (recovered.state === 'completed') return recovered;
+      if (recovered.state === 'failed' || recovered.state === 'aborted') {
+        throw new Error(recovered.errorCode ?? recovered.state);
+      }
+    }
   }
+}
+
+function isServerProgressPhase(phase: DatasetImportProgressPhase | 'completing'): boolean {
+  return phase === 'finalizing' || phase === 'offloading' || phase === 'committing';
+}
+
+function isStaleStatus(updatedAt: string, staleAfterMs: number): boolean {
+  const updatedAtMs = Date.parse(updatedAt);
+  return Number.isFinite(updatedAtMs) && Date.now() - updatedAtMs >= staleAfterMs;
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {

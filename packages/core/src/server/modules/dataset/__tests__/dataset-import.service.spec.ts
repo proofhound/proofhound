@@ -10,7 +10,7 @@ import {
 import { DatasetImportService } from '../dataset-import.service';
 import type { DatasetService } from '../dataset.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
-import type { ObjectStorageProvider} from '../../../common/contracts/object-storage.provider';
+import type { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
 import { type StoredObjectRef } from '../../../common/contracts/object-storage.provider';
 import { LocalQuotaPolicyHook } from '../../../common/contracts/quota-policy.hook';
 
@@ -467,7 +467,9 @@ describe('DatasetImportService.complete', () => {
 
     expect(result.status).toBe('completed');
     expect(result.datasetId).toBe('00000000-0000-4000-8000-000000000200');
-    expect(repo.markPromoting).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID);
+    expect(repo.markPromoting).toHaveBeenCalledWith(PROJECT_ID, IMPORT_ID, {
+      stalePromotionBefore: expect.any(Date),
+    });
     const promoteArgs = repo.promote.mock.calls[0]?.[0];
     expect(promoteArgs?.fieldSchema).toEqual([{ name: 'label', role: 'expected_output', type: 'string' }]);
     expect(promoteArgs?.hasImages).toBe(false);

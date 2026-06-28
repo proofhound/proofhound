@@ -46,6 +46,7 @@ import { DatasetService } from './dataset.service';
 const TYPE_INFERENCE_SAMPLE_LIMIT = 500;
 const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
 const DEFAULT_STALE_TIMEOUT_MS = 120_000;
+const DEFAULT_PROMOTION_STALE_TIMEOUT_MS = 5 * 60_000;
 const MIN_TICK_MS = 1_000;
 const IMAGE_ROLES = new Set(['image', 'image_url', 'image_base64']);
 const DEFAULT_DATASET_RAW_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024;
@@ -397,7 +398,9 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
     if (!['uploading', 'importing'].includes(session.status)) {
       return this.toImportItem(session);
     }
-    const promoting = await this.repo.markPromoting(projectId, session.id);
+    const promoting = await this.repo.markPromoting(projectId, session.id, {
+      stalePromotionBefore: new Date(Date.now() - this.getPromotionStaleTimeoutMs()),
+    });
     if (!promoting) {
       const latest = await this.repo.findImportById(projectId, session.id);
       if (latest) return this.toImportItem(latest);
@@ -540,6 +543,11 @@ export class DatasetImportService implements OnModuleInit, OnModuleDestroy {
   private getStaleTimeoutMs(): number {
     const raw = Number(process.env['DATASET_IMPORT_STALE_TIMEOUT_MS']);
     return Number.isFinite(raw) && raw >= MIN_TICK_MS ? Math.floor(raw) : DEFAULT_STALE_TIMEOUT_MS;
+  }
+
+  private getPromotionStaleTimeoutMs(): number {
+    const raw = Number(process.env['DATASET_IMPORT_PROMOTION_STALE_TIMEOUT_MS']);
+    return Number.isFinite(raw) && raw >= MIN_TICK_MS ? Math.floor(raw) : DEFAULT_PROMOTION_STALE_TIMEOUT_MS;
   }
 
   private getRawUploadMaxBytes(): number {

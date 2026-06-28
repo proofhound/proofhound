@@ -14,6 +14,10 @@ const { datasetImports, datasetImportSamples, datasetSamples, datasets, projects
 // (large image/base64 samples make per-row size unpredictable); each batch becomes one R2 shard.
 const PROMOTE_SHARD_BATCH = 200;
 const PROMOTION_PHASES = ['finalizing', 'offloading', 'committing'] as const;
+const DEFAULT_PROMOTE_OFFLOAD_CONCURRENCY = 1;
+const MAX_PROMOTE_OFFLOAD_CONCURRENCY = 16;
+const PROMOTE_OFFLOAD_CONCURRENCY_ENV = 'DATASET_PROMOTE_STORAGE_CONCURRENCY';
+const PROMOTE_OFFLOAD_CONCURRENCY_FALLBACK_ENV = 'DATASET_IMPORT_OFFLOAD_CONCURRENCY';
 
 export interface DatasetImportProgressPatch {
   phase?: DatasetImportProgressPhase;
@@ -85,6 +89,10 @@ export interface PromoteDatasetImportArgs {
   fieldSchema: DatasetFieldSchemaDto[];
   hasImages: boolean;
   onProgress?: (progress: DatasetImportProgressPatch) => Promise<void> | void;
+}
+
+export interface MarkPromotingOptions {
+  stalePromotionBefore?: Date;
 }
 
 // Thrown inside the promote transaction so the caller can map to the right HTTP status while the tx rolls back.
@@ -204,8 +212,17 @@ export class DatasetImportRepository {
     );
   }
 
-  async markPromoting(projectId: string, importId: string): Promise<DatasetImportRow | null> {
+  async markPromoting(
+    projectId: string,
+    importId: string,
+    options: MarkPromotingOptions = {},
+  ): Promise<DatasetImportRow | null> {
     const now = new Date();
+    const phase = sql`COALESCE(${datasetImports.progress}->>'phase', ${datasetImports.status})`;
+    const stalePromotion =
+      options.stalePromotionBefore === undefined
+        ? sql`FALSE`
+        : sql`(${phase} IN (${promotionPhaseList()}) AND ${datasetImports.updatedAt} < ${options.stalePromotionBefore.toISOString()}::timestamptz AND ${datasetImports.datasetId} IS NULL)`;
     const [row] = await this.db
       .update(datasetImports)
       .set({
@@ -223,10 +240,7 @@ export class DatasetImportRepository {
           eq(datasetImports.projectId, projectId),
           eq(datasetImports.id, importId),
           sql`${datasetImports.status} IN ('uploading', 'parsing', 'importing')`,
-          sql`COALESCE(${datasetImports.progress}->>'phase', ${datasetImports.status}) NOT IN (${sql.join(
-            PROMOTION_PHASES.map((phase) => sql`${phase}`),
-            sql`, `,
-          )})`,
+          sql`(${phase} NOT IN (${promotionPhaseList()}) OR ${stalePromotion})`,
         ),
       )
       .returning();
@@ -286,6 +300,7 @@ export class DatasetImportRepository {
             datasetId: args.datasetId,
             sampleCount,
             batchSize: PROMOTE_SHARD_BATCH,
+            concurrency: resolvePromoteOffloadConcurrency(),
             fieldSchema: args.fieldSchema,
             onProgress: async ({ completedShards, processedRows }) => {
               await args.onProgress?.({
@@ -576,4 +591,18 @@ function sanitizeProgressPatch(progress: DatasetImportProgressPatch): Record<str
       ([, value]) => value === null || typeof value === 'string' || typeof value === 'number',
     ),
   );
+}
+
+function promotionPhaseList() {
+  return sql.join(
+    PROMOTION_PHASES.map((phase) => sql`${phase}`),
+    sql`, `,
+  );
+}
+
+export function resolvePromoteOffloadConcurrency(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env[PROMOTE_OFFLOAD_CONCURRENCY_ENV] ?? env[PROMOTE_OFFLOAD_CONCURRENCY_FALLBACK_ENV];
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) return DEFAULT_PROMOTE_OFFLOAD_CONCURRENCY;
+  return Math.min(parsed, MAX_PROMOTE_OFFLOAD_CONCURRENCY);
 }

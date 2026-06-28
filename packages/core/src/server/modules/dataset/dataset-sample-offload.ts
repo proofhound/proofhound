@@ -68,9 +68,7 @@ export interface OffloadStagingOptions {
   onProgress?: (progress: OffloadStagingProgress) => Promise<void> | void;
 }
 
-export async function offloadStagingToShards(
-  opts: OffloadStagingOptions,
-): Promise<{
+export async function offloadStagingToShards(opts: OffloadStagingOptions): Promise<{
   shards: number;
   storagePrefix: string | null;
   manifests: OffloadShardManifest[];
@@ -79,7 +77,7 @@ export async function offloadStagingToShards(
   const codec = opts.codec ?? 'gzip';
   const totalShards = Math.ceil(opts.sampleCount / opts.batchSize);
   const concurrency = Math.min(normalizeConcurrency(opts.concurrency), Math.max(totalShards, 1));
-  const progressInterval = Math.max(1, opts.progressIntervalShards ?? 100);
+  const progressInterval = Math.max(1, opts.progressIntervalShards ?? 1);
   const manifests: OffloadShardManifest[] = [];
   const putDurations: number[] = [];
   const metrics = {
