@@ -247,12 +247,15 @@ async function pollDatasetImportStatus({
     if (
       recoverStalePromotion &&
       recoverStalePromotionAfterMs &&
-      isServerProgressPhase(phase) &&
-      isStaleStatus(status.updatedAt, recoverStalePromotionAfterMs) &&
-      Date.now() - lastRecoveryAttemptAt >= recoverStalePromotionAfterMs
+      shouldAttemptPromotionRecovery(status, phase, recoverStalePromotionAfterMs, lastRecoveryAttemptAt)
     ) {
       lastRecoveryAttemptAt = Date.now();
-      const recovered = await recoverStalePromotion();
+      let recovered: DatasetImportStatusDto;
+      try {
+        recovered = await recoverStalePromotion();
+      } catch {
+        continue;
+      }
       const recoveredPhase = recovered.progress.phase ?? recovered.state;
       onProgress?.({ phase: recoveredPhase, receivedRows: recovered.receivedRows, status: recovered });
       if (recovered.state === 'completed') return recovered;
@@ -261,6 +264,17 @@ async function pollDatasetImportStatus({
       }
     }
   }
+}
+
+function shouldAttemptPromotionRecovery(
+  status: DatasetImportStatusDto,
+  phase: DatasetImportProgressPhase | 'completing',
+  recoveryAfterMs: number,
+  lastRecoveryAttemptAt: number,
+): boolean {
+  if (Date.now() - lastRecoveryAttemptAt < recoveryAfterMs) return false;
+  if (isServerProgressPhase(phase)) return isStaleStatus(status.updatedAt, recoveryAfterMs);
+  return status.state === 'uploading' || status.state === 'importing';
 }
 
 function isServerProgressPhase(phase: DatasetImportProgressPhase | 'completing'): boolean {
