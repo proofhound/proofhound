@@ -4,6 +4,7 @@ import type { Language } from '../i18n';
 import type { DisplayPreferencesContract } from '../providers/display-preferences-provider';
 import type { ResolveHref } from '../providers/navigation-provider';
 import type { RuntimeLimitsUiContract } from '../providers/runtime-limits-provider';
+import type { DatasetUploadAdapter } from '../providers/dataset-upload-provider';
 
 export interface WebContracts {
   authSource: AuthSource;
@@ -17,6 +18,10 @@ export interface WebContracts {
   // (identity). SaaS injects a resolver that scopes flat product paths to
   // `/app/org/:orgId/project/:projectId/...`.
   resolveHref?: ResolveHref;
+  // Swappable dataset upload transport + UI size cap (08 §3.13). OSS omits both (multipart client +
+  // DATASET_UPLOAD_MAX_BYTES). SaaS injects its own upload implementation and/or a per-plan max.
+  datasetUpload?: DatasetUploadAdapter;
+  datasetUploadMaxBytes?: number;
 }
 
 export const localWebContracts: WebContracts = {

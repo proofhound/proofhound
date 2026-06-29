@@ -4,11 +4,11 @@ import { DatasetDeletionHook, LocalDatasetDeletionHook } from './dataset-deletio
 import { DatasetController } from './dataset.controller';
 import { DatasetRepository } from './dataset.repository';
 import { DatasetService } from './dataset.service';
-import { DatasetImportRepository } from './dataset-import.repository';
-import { LocalDatasetUploadService } from './dataset-import.service';
-import { DatasetUploadInterface } from './dataset-upload.interface';
 
-// DatasetSamplePayloadReader is provided globally by the contracts module (08 §3.14); injected directly.
+// DatasetUploadInterface (+ its OSS LocalDatasetUploadService impl and DatasetImportRepository) and the
+// DatasetSamplePayloadReader are provided by the global contracts module (08 §3.13/§3.14), so a SaaS
+// contracts module can replace them without this feature module shadowing the binding. The controller
+// injects DatasetUploadInterface directly from the global provider.
 @Module({
   imports: [DatabaseModule],
   controllers: [DatasetController],
@@ -16,10 +16,7 @@ import { DatasetUploadInterface } from './dataset-upload.interface';
     DatasetRepository,
     { provide: DatasetDeletionHook, useClass: LocalDatasetDeletionHook },
     DatasetService,
-    DatasetImportRepository,
-    LocalDatasetUploadService,
-    { provide: DatasetUploadInterface, useExisting: LocalDatasetUploadService },
   ],
-  exports: [DatasetService, DatasetUploadInterface],
+  exports: [DatasetService],
 })
 export class DatasetModule {}

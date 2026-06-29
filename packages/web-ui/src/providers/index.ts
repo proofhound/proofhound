@@ -21,4 +21,10 @@ export {
   resolveEffectiveConcurrencyLimit,
   type RuntimeLimitsUiContract,
 } from './runtime-limits-provider';
+export {
+  DatasetUploadProvider,
+  useDatasetUploadAdapter,
+  useDatasetUploadMaxBytes,
+  type DatasetUploadAdapter,
+} from './dataset-upload-provider';
 export { RefineProvider } from './refine-provider';

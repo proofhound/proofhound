@@ -13,6 +13,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
@@ -25,9 +26,11 @@ import type {
   DatasetImportStatus,
   DatasetImportStatusDto,
 } from '@proofhound/shared';
+import { DATASET_UPLOAD_MAX_BYTES } from '@proofhound/shared';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
+import { UsageMeteringHook, safeRecordUsageEvent } from '../../common/contracts/usage-metering.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { buildDatasetFieldSchema } from './dataset-field-schema.util';
 import {
@@ -39,7 +42,6 @@ import {
   type DatasetImportRow,
 } from './dataset-import.repository';
 import { parseRawDatasetRows } from './dataset-import-raw-parser';
-import { DatasetService } from './dataset.service';
 import { DatasetUploadInterface, type DatasetUploadInput } from './dataset-upload.interface';
 
 const TYPE_INFERENCE_SAMPLE_LIMIT = 500;
@@ -48,7 +50,7 @@ const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
 const DEFAULT_STALE_TIMEOUT_MS = 120_000;
 const MIN_TICK_MS = 1_000;
 const IMAGE_ROLES = new Set(['image', 'image_url', 'image_base64']);
-const DEFAULT_DATASET_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+const DEFAULT_DATASET_UPLOAD_MAX_BYTES = DATASET_UPLOAD_MAX_BYTES;
 
 @Injectable()
 export class LocalDatasetUploadService extends DatasetUploadInterface implements OnModuleInit, OnModuleDestroy {
@@ -58,9 +60,9 @@ export class LocalDatasetUploadService extends DatasetUploadInterface implements
 
   constructor(
     private readonly repo: DatasetImportRepository,
-    private readonly datasetService: DatasetService,
     private readonly accessControl: AccessControlService,
     private readonly quotaPolicy: QuotaPolicyHook,
+    @Optional() private readonly usageMetering?: UsageMeteringHook,
   ) {
     super();
   }
@@ -176,13 +178,7 @@ export class LocalDatasetUploadService extends DatasetUploadInterface implements
       fieldSchema,
       hasImages,
     });
-    await this.datasetService.recordDatasetImportCompleted({
-      projectId,
-      datasetId,
-      importId: promoting.id,
-      actorId: actor.sub,
-      sampleCount,
-    });
+    await this.recordImportCompleted(projectId, datasetId, promoting.id, actor.sub, sampleCount);
     this.logger.info({ importId: promoting.id, datasetId, sampleCount }, 'dataset_upload_completed');
 
     const row = await this.repo.findImportById(projectId, promoting.id);
@@ -195,6 +191,34 @@ export class LocalDatasetUploadService extends DatasetUploadInterface implements
         progress: { phase: 'completed', committedRows: sampleCount },
       },
     );
+  }
+
+  // Emit the same usage-metering events as the dataset service did, so SaaS billing/usage stays intact.
+  // OSS binds NoopUsageMeteringHook, so this is a no-op locally.
+  private async recordImportCompleted(
+    projectId: string,
+    datasetId: string,
+    importId: string,
+    actorId: string,
+    sampleCount: number,
+  ): Promise<void> {
+    if (!this.usageMetering) return;
+    for (const eventType of ['dataset_import.completed', 'storage.dirty'] as const) {
+      await safeRecordUsageEvent(
+        this.usageMetering,
+        {
+          idempotencyKey: `storage:${eventType}:${datasetId}:${importId}`,
+          dimension: 'storage',
+          eventType,
+          projectId,
+          actorId,
+          occurredAt: new Date(),
+          source: 'server',
+          payload: { reason: 'dataset_import.completed', importId, datasetId, sampleCount },
+        },
+        this.logger,
+      );
+    }
   }
 
   private async failImport(projectId: string, importId: string, error: unknown): Promise<void> {

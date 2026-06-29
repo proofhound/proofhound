@@ -37,6 +37,7 @@ import {
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useUploadDataset } from '../../hooks';
+import { useDatasetUploadMaxBytes } from '../../providers';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { DatasetTransferProgressPanel, useDatasetTransferProgress } from './dataset-transfer-progress';
 import { RoleArrowLabel, RolePill } from './dataset-ui';
@@ -230,8 +231,6 @@ function getParseErrorKey(parseError: string | null): TranslationKey {
   return 'datasets.upload.parseFailed';
 }
 
-// Hard ceiling enforced server-side (Multer limits.fileSize, SPEC 22 §3.1.1).
-const UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 // Files larger than this are not parsed whole on selection: only a head prefix is read for preview.
 const PREVIEW_PREFIX_MAX_BYTES = 1024 * 1024;
 
@@ -318,6 +317,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
   const { t } = useI18n();
   const router = useRouter();
   const uploadDataset = useUploadDataset(projectId);
+  const uploadMaxBytes = useDatasetUploadMaxBytes();
   const uploadProgress = useDatasetTransferProgress();
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -454,7 +454,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
 
     try {
       const file = await selectSingleDatasetUploadFile(files);
-      if (file.size > UPLOAD_MAX_BYTES) {
+      if (file.size > uploadMaxBytes) {
         throw new Error('file_too_large');
       }
       const large = file.size > PREVIEW_PREFIX_MAX_BYTES;
@@ -601,7 +601,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
             hint={
               <div className="flex items-center gap-2">
                 <span className="font-mono">{t('datasets.upload.fileHint')}</span>
-                <UploadLimitInfoIcon maxBytes={UPLOAD_MAX_BYTES} />
+                <UploadLimitInfoIcon maxBytes={uploadMaxBytes} />
               </div>
             }
           >

@@ -1,8 +1,12 @@
 import { z } from 'zod';
 import { datasetFieldMappingSchema } from './dataset.dto';
 
-export const DATASET_IMPORT_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
-export const DATASET_IMPORT_ZIP_MAX_FILE_BYTES = 1024 * 1024 * 1024;
+// Single source of truth for the OSS dataset upload cap (env-overridable on the backend; a coarse
+// safety ceiling). Per-plan limits are enforced by QuotaPolicyHook (backend) and the UI's injected
+// WebContracts.datasetUploadMaxBytes, not by raising this constant.
+export const DATASET_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+export const DATASET_IMPORT_MAX_FILE_BYTES = DATASET_UPLOAD_MAX_BYTES;
+export const DATASET_IMPORT_ZIP_MAX_FILE_BYTES = DATASET_UPLOAD_MAX_BYTES;
 
 export const datasetImportSourceFormatSchema = z.enum(['jsonl', 'csv', 'tsv', 'json', 'zip']);
 export type DatasetImportSourceFormat = z.infer<typeof datasetImportSourceFormatSchema>;

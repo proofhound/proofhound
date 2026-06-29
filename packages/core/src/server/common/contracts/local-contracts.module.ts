@@ -33,6 +33,9 @@ import {
   RunResultPayloadReader,
   InlineRunResultPayloadReader,
 } from '../../modules/run-result/run-result-payload.reader';
+import { DatasetImportRepository } from '../../modules/dataset/dataset-import.repository';
+import { LocalDatasetUploadService } from '../../modules/dataset/dataset-import.service';
+import { DatasetUploadInterface } from '../../modules/dataset/dataset-upload.interface';
 import { ProjectContextResolver } from './project-context.resolver';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from './quota-policy.hook';
 import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from './runtime-limits.provider';
@@ -60,6 +63,8 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
     { provide: DatasetSamplePayloadReader, useClass: InlineDatasetSamplePayloadReader },
     { provide: RunResultPayloadReader, useClass: InlineRunResultPayloadReader },
+    DatasetImportRepository,
+    { provide: DatasetUploadInterface, useClass: LocalDatasetUploadService },
   ],
   exports: [
     ProjectContextResolver,
@@ -75,6 +80,7 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     WorkflowAuthorizationHook,
     DatasetSamplePayloadReader,
     RunResultPayloadReader,
+    DatasetUploadInterface,
     LocalUserTokenVerifier,
   ],
 })

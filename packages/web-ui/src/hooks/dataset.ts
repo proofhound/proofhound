@@ -1,4 +1,5 @@
-import { datasetClient, datasetImportClient, type DatasetTransferOptions } from '@proofhound/api-client';
+import { datasetClient, type DatasetTransferOptions } from '@proofhound/api-client';
+import { useDatasetUploadAdapter } from '../providers/dataset-upload-provider';
 import type {
   CreateDatasetDto,
   DatasetDeletionImpactDto,
@@ -99,10 +100,11 @@ export function useCreateDataset(projectId: string) {
 // the server parses, stages, and promotes synchronously, returning the completed import status.
 export function useUploadDataset(projectId: string) {
   const queryClient = useQueryClient();
+  const uploadDataset = useDatasetUploadAdapter();
 
   return useMutation({
     mutationFn: ({ file, metadata, signal, onProgress }: UploadDatasetVariables) =>
-      datasetImportClient.uploadDataset(projectId, file, metadata, { signal, onProgress }),
+      uploadDataset(projectId, file, metadata, { signal, onProgress }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['datasets', projectId] });
     },

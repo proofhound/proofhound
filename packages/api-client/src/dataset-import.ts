@@ -31,6 +31,9 @@ export const datasetImportClient = {
     const fileSize = file instanceof File ? file.size : (file as Blob).size;
     return httpClient
       .post<DatasetImportStatusDto>('/datasets/upload', form, {
+        // The shared httpClient defaults to application/json; without overriding it, axios serializes
+        // the FormData to JSON (dropping the file). Forcing multipart lets the browser set the boundary.
+        headers: { 'Content-Type': 'multipart/form-data' },
         signal: options?.signal,
         onUploadProgress: (event) => {
           options?.onProgress?.({

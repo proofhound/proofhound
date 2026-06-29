@@ -23,6 +23,10 @@ export {
   RunResultPayloadReader,
   InlineRunResultPayloadReader,
 } from '../../modules/run-result/run-result-payload.reader';
+export {
+  DatasetUploadInterface,
+  type DatasetUploadInput,
+} from '../../modules/dataset/dataset-upload.interface';
 export * from './http-actor.guard';
 export * from './local-project-context.resolver';
 export * from './local-actor-context.resolver';
