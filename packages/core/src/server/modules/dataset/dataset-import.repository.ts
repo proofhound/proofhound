@@ -31,7 +31,7 @@ export interface DatasetImportRow {
   contentType: string | null;
   sourceFormat: string;
   importMode: string;
-  // Raw-upload columns are SaaS-only dormant slots; OSS never writes them (06 §4.3.1).
+  // Raw-upload columns are override-only dormant slots; OSS never writes them (06 §4.3.1).
   rawUploadSessionId: string | null;
   rawUploadExpiresAt: Date | null;
   rawUploadCompletedAt: Date | null;

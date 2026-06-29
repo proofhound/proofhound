@@ -194,7 +194,7 @@ export class OptimizationService {
     body: CreateOptimizationDto,
     actor: CurrentUserPayload,
     source: AuditSource = 'api',
-    // orgId (SaaS-only; undefined in OSS) is sourced from the resolved ProjectContext — the project's org is the
+    // orgId (override-only; undefined in OSS) is sourced from the resolved ProjectContext — the project's org is the
     // rate-limit bucket (SPEC 08 §3.7). Threaded into launcher.launch → runWorkflow → snapshot.orgId so the worker
     // composes an org-scoped limiter key; child-experiment launches inside the workflow inherit it from the snapshot.
     orgId?: string,
@@ -394,7 +394,7 @@ export class OptimizationService {
     action: OptimizationControlActionDto,
     actor: CurrentUserPayload,
     source: AuditSource = 'api',
-    // orgId (SaaS-only; undefined in OSS) sourced from the resolved ProjectContext — the project's org is the
+    // orgId (override-only; undefined in OSS) sourced from the resolved ProjectContext — the project's org is the
     // rate-limit bucket (SPEC 08 §3.7). Threaded into launcher.resume on the resume path.
     orgId?: string,
   ): Promise<OptimizationListItemDto> {

@@ -109,7 +109,7 @@ interface WorkflowConfigSnapshot {
   reason?: string;
   // Context
   projectId: string;
-  // orgId (SaaS-only; undefined in OSS) is seeded from the launching actor via runWorkflow, so the
+  // orgId (override-only; undefined in OSS) is seeded from the launching actor via runWorkflow, so the
   // analysis limiter key and child experiment launches can be org-scoped without re-querying.
   orgId?: string;
   optimizationName: string;

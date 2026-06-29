@@ -1,5 +1,5 @@
 // HttpActorGuard — HTTP entry guard adapter extension point
-// See docs/specs/08-saas-adapter-boundary.md §3
+// See docs/specs/08-adapter-extension-points.md §3
 //
 // HTTP controllers attach @UseGuards(HttpActorGuard). Nest treats class guards in metadata as
 // enhancer injectables, so this class must be executable at runtime rather than an abstract shell.
@@ -33,7 +33,7 @@ export class HttpActorGuard implements CanActivate {
     request.user = toCurrentUserPayload(actor);
 
     // Resolve the request's ProjectContext via the DI resolver and attach it for @CurrentProject.
-    // OSS LocalProjectContextResolver ignores the hint and returns LOCAL_PROJECT_CONTEXT; SaaS reads
+    // OSS LocalProjectContextResolver ignores the hint and returns LOCAL_PROJECT_CONTEXT; a replacement implementation reads
     // the X-Project-Id header and validates the actor's access to the project.
     try {
       request.projectContext = await this.projectResolver.resolve(actor, {
@@ -62,7 +62,7 @@ export function toCurrentUserPayload(actor: ActorContext): CurrentUserPayload {
     actorKind: actor.actorKind,
     projectId: actor.projectId,
     // OSS user tokens have no email / role metadata; the field is kept for backward compatibility.
-    // SaaS-specific claims should be exposed through a dedicated adapter/decorator, not read by OSS business code.
+    // Override-specific claims should be exposed through a dedicated adapter/decorator, not read by OSS business code.
     email: '',
     isSuperAdmin: isOwnerActor(actor.actorKind),
     isActive: true,

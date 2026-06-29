@@ -1,13 +1,13 @@
 // project-context — shortcut entrypoint for Controller / Service layer
-// See docs/specs/08-saas-adapter-boundary.md §3.1
+// See docs/specs/08-adapter-extension-points.md §3.1
 //
 // `resolveProjectContext` is a legacy synchronous helper. The OSS default implementation always returns LOCAL_PROJECT_CONTEXT,
 // and the sync signature is preserved to avoid rewriting every Controller.
-// In the SaaS form this must go through `ProjectContextProvider.resolveAsync(actor, hint)` (async version) —
+// In a replacement implementation this must go through `ProjectContextProvider.resolveAsync(actor, hint)` (async version) —
 // switched once PR §7 PR11 lands the X-Project-Id transport. This PR does not force a migration.
 //
 // `ProjectContextProvider` now internally delegates to `ProjectContextResolver` (registered as DI in LocalContractsModule).
-// Synchronous direct calls still use the constant; the async path goes through the resolver, making it easy for SaaS to override.
+// Synchronous direct calls still use the constant; the async path goes through the resolver, making it easy for a replacement implementation to override.
 
 import { Injectable, Optional } from '@nestjs/common';
 import { LOCAL_PROJECT_CONTEXT, type ProjectContext } from '@proofhound/shared';
@@ -38,7 +38,7 @@ export class ProjectContextProvider {
   }
 
   /**
-   * Async path via DI; SaaS RemoteProjectContextResolver reads hint / actor.claims here.
+   * Async path via DI; a replacement RemoteProjectContextResolver reads hint / actor.claims here.
    * The OSS default implementation ignores the hint and always returns LOCAL_PROJECT_CONTEXT.
    */
   async resolveAsync(actor: ActorContext, hint?: ProjectContextHint): Promise<ProjectContext> {

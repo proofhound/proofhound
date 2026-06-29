@@ -1,9 +1,9 @@
 // LocalContractsModule — the OSS default `contracts` module: binds each adapter extension-point
 // token to its Local* implementation.
-// See docs/specs/08-saas-adapter-boundary.md §2 + §3.
+// See docs/specs/08-adapter-extension-points.md §2 + §3.
 //
-// Supplied to the root `AppModule.forRoot({ contracts })` at assembly time. A SaaS shell passes its
-// own `SaasContractsModule` (binding Remote* implementations) the same way; OSS mainline is unaware
+// Supplied to the root `AppModule.forRoot({ contracts })` at assembly time. A replacement shell passes its
+// own override `contracts` module (binding Remote* implementations) the same way; OSS mainline is unaware
 // of which contracts module was supplied. `overrideProvider` stays a test-only primitive (§2).
 //
 // @Global() ensures every feature module can inject these resolvers without a per-module import.

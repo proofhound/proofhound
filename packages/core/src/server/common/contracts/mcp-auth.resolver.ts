@@ -1,5 +1,5 @@
 // McpAuthResolver — MCP channel adapter extension point
-// See docs/specs/08-saas-adapter-boundary.md §3.3
+// See docs/specs/08-adapter-extension-points.md §3.3
 //
 // In OSS, the MCP entry and HTTP entry share the `ph_core.tokens where scope='user'` resource pool,
 // but the two resolvers override independently. MUST NOT call ActorContextResolver.

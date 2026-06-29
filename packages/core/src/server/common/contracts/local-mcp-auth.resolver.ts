@@ -1,5 +1,5 @@
 // LocalMcpAuthResolver — default implementation for the MCP channel
-// See docs/specs/08-saas-adapter-boundary.md §3.3 and docs/specs/09-mcp-server.md.
+// See docs/specs/08-adapter-extension-points.md §3.3 and docs/specs/09-mcp-server.md.
 //
 // The MCP server transport (channels/mcp/mcp.transport.ts) calls resolveFromMcp(metadata) on every
 // request before dispatching a tool. This resolver:
@@ -7,7 +7,7 @@
 //     headers.authorization (`Bearer ph_*`) / meta.token; if found, runs the verifier; otherwise 401.
 //   - resolveFromUserToken(token): verifier check directly (same as the HTTP path, skipping IP check).
 //
-// SaaS overrides this resolver (e.g. per-org MCP token / JWT) without touching the transport.
+// A replacement implementation overrides this resolver (e.g. per-org MCP token / JWT) without touching the transport.
 
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { McpAuthResolver } from './mcp-auth.resolver';

@@ -35,7 +35,7 @@ export class ProjectModelController {
 
   @Get()
   async list(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
-    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); override-only, undefined in OSS.
     return this.modelService.listProjectModels(project.projectId, actor, project.orgId);
   }
 
@@ -60,7 +60,7 @@ export class ProjectModelController {
     @CurrentUser() actor: CurrentUserPayload,
     @CurrentProject() project: ProjectContext,
   ) {
-    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); override-only, undefined in OSS.
     return this.modelService.getProjectModelDetail(project.projectId, this.parseModelId(modelId), actor, project.orgId);
   }
 
@@ -90,7 +90,7 @@ export class ProjectModelController {
   ) {
     const parse = createProjectModelSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); override-only, undefined in OSS.
     return this.modelService.createProjectModel(project.projectId, parse.data, actor, 'api', project.orgId);
   }
 
@@ -102,7 +102,7 @@ export class ProjectModelController {
   ) {
     const parse = probeDraftProjectModelSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); override-only, undefined in OSS.
     return this.modelService.probeDraftProjectModel(project.projectId, parse.data, actor, 'api', project.orgId);
   }
 
@@ -115,7 +115,7 @@ export class ProjectModelController {
   ) {
     const parse = updateProjectModelSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); override-only, undefined in OSS.
     return this.modelService.updateProjectModel(
       project.projectId,
       this.parseModelId(modelId),
@@ -132,7 +132,7 @@ export class ProjectModelController {
     @CurrentUser() actor: CurrentUserPayload,
     @CurrentProject() project: ProjectContext,
   ) {
-    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); override-only, undefined in OSS.
     return this.modelService.probeProjectModel(
       project.projectId,
       this.parseModelId(modelId),
@@ -148,7 +148,7 @@ export class ProjectModelController {
     @CurrentUser() actor: CurrentUserPayload,
     @CurrentProject() project: ProjectContext,
   ) {
-    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); override-only, undefined in OSS.
     return this.modelService.duplicateProjectModel(
       project.projectId,
       this.parseModelId(modelId),

@@ -11,8 +11,8 @@ function Probe({ k }: { k: string }) {
 describe('I18nProvider extend', () => {
   it('extend 追加的 key 可被 t 解析', () => {
     render(
-      <I18nProvider defaultLanguage="en-US" extend={{ 'en-US': { 'saas.org.title': 'Organization' } }}>
-        <Probe k="saas.org.title" />
+      <I18nProvider defaultLanguage="en-US" extend={{ 'en-US': { 'console.org.title': 'Organization' } }}>
+        <Probe k="console.org.title" />
       </I18nProvider>,
     );
     expect(screen.getByText('Organization')).toBeInTheDocument();

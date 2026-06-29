@@ -1,6 +1,6 @@
 // Public screen API for @proofhound/web-ui/screens.
 // Each product screen body is exported under a *Screen name; apps/web (and a future
-// SaaS shell) wrap these in thin route pages. Component bodies keep their *Page names
+// replacement shell) wrap these in thin route pages. Component bodies keep their *Page names
 // internally and are aliased here.
 
 // annotations

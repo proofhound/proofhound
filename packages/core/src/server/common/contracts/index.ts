@@ -1,5 +1,5 @@
 // Adapter extension point barrel — abstract class + default implementations + types
-// See docs/specs/08-saas-adapter-boundary.md
+// See docs/specs/08-adapter-extension-points.md
 
 export * from './types';
 export * from './project-context.resolver';

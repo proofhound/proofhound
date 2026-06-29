@@ -1,5 +1,5 @@
 // ActorContextResolver — HTTP-entry adapter extension point
-// See docs/specs/08-saas-adapter-boundary.md §3.2
+// See docs/specs/08-adapter-extension-points.md §3.2
 //
 // HTTP controllers complete user-token validation via HttpActorGuard → resolveFromHttp;
 // the same token pool is validated independently by McpAuthResolver, but this resolver MUST NOT call McpAuthResolver

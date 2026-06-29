@@ -1,8 +1,8 @@
 // ProjectContextResolver — adapter extension point
-// See docs/specs/08-saas-adapter-boundary.md §3.1
+// See docs/specs/08-adapter-extension-points.md §3.1
 //
 // The OSS default implementation `LocalProjectContextResolver` ignores all hints and always returns LOCAL_PROJECT_CONTEXT;
-// in the SaaS form, `RemoteProjectContextResolver` overrides this in a separate repo and resolves the
+// in a replacement implementation, `RemoteProjectContextResolver` overrides this in a separate repo and resolves the
 // real projectId from actor.claims / hint and validates access rights.
 
 import type { ProjectContext } from '@proofhound/shared';

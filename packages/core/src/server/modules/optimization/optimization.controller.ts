@@ -62,7 +62,7 @@ export class OptimizationController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
     }
-    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); override-only, undefined in OSS.
     return this.optimizationService.createOptimization(project.projectId, parsed.data, actor, 'api', project.orgId);
   }
 
@@ -83,7 +83,7 @@ export class OptimizationController {
       parsedAction.data,
       actor,
       'api',
-      // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+      // project.orgId is the rate-limit bucket (SPEC 08 §3.7); override-only, undefined in OSS.
       project.orgId,
     );
   }

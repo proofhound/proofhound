@@ -2,13 +2,13 @@
 //
 // This is an adapter extension point. The OSS default stores every sample inline in
 // `dataset_samples.data`, so it returns the inline value directly and never touches object storage.
-// A SaaS deployment binds its own implementation (resolving an offloaded `payload_ref` from its
-// object store) in its `contracts` module; that implementation lives in the SaaS repository.
+// A replacement implementation binds its own implementation (resolving an offloaded `payload_ref` from its
+// object store) in its `contracts` module; that implementation lives outside the OSS trunk.
 import { Injectable } from '@nestjs/common';
 
 /**
  * Stored in `dataset_samples.payload_ref`. Always `NULL` in OSS (a reserved, storage-agnostic slot);
- * a SaaS reader interprets its own ref shape. OSS code never reads it, so it is opaque here.
+ * a replacement reader interprets its own ref shape. OSS code never reads it, so it is opaque here.
  */
 export type DatasetSamplePayloadRef = unknown;
 

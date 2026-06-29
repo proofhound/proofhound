@@ -1,8 +1,8 @@
 // AccessControlService — adapter extension point
-// See docs/specs/08-saas-adapter-boundary.md §3.6
+// See docs/specs/08-adapter-extension-points.md §3.6
 //
 // Decides whether `actor + project + action` is allowed. The OSS default `LocalAccessControlService`
-// applies coarse actorKind rules and ignores `project`; the SaaS form (`RbacAccessControl`, in a separate
+// applies coarse actorKind rules and ignores `project`; a replacement implementation (`RbacAccessControl`, in a separate
 // repo) reads actor org membership / role + project and may perform async lookups — hence the async signature.
 
 import type { ActorContext, ProjectContext } from '../actor-context';

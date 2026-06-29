@@ -6,7 +6,7 @@
  * reverse-proxy header or LOCAL_ACTOR env-var fallback). `LocalAuthSource`
  * reflects this by returning null so no Authorization header is injected.
  *
- * A future SaaS adapter that issues per-user tokens can subclass AuthSource
+ * A future replacement implementation that issues per-user tokens can subclass AuthSource
  * and return the token string; the interceptor in configure.ts picks it up
  * automatically.
  */

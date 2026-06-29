@@ -25,7 +25,7 @@ const releaseLineEventId = '44444444-4444-4444-8444-444444444444';
 const promptVersionId = '55555555-5555-4555-8555-555555555555';
 const promptId = '66666666-6666-4666-8666-666666666666';
 const modelId = '77777777-7777-4777-8777-777777777777';
-// SaaS-only org attribution; OSS resolver never sets it (see ProjectContext.orgId).
+// Override-only org attribution; OSS resolver never sets it (see ProjectContext.orgId).
 const orgId = '99999999-9999-4999-8999-999999999999';
 
 const connector = {
@@ -132,7 +132,7 @@ describe('WebhookService', () => {
     workflowAuth = new LocalWorkflowAuthorizationHook(),
     // Default resolver delegates to the same repo, so the existing repo-call assertions
     // (findConnectorWithValidToken / touchTokenLastUsed / invalid|expired_webhook_token) still hold.
-    // Tests that need a SaaS-style org-scoped projectContext pass an override resolver.
+    // Tests that need an override-style org-scoped projectContext pass an override resolver.
     resolver: ConnectorContextResolver = new LocalConnectorContextResolver(
       repo as unknown as WebhookRepository,
     ),
@@ -146,7 +146,7 @@ describe('WebhookService', () => {
     );
   }
 
-  // Stub resolver that returns a projectContext carrying an org id, mirroring how a SaaS
+  // Stub resolver that returns a projectContext carrying an org id, mirroring how a replacement implementation's
   // RemoteConnectorContextResolver would resolve the webhook's project to its owning org.
   function makeOrgResolver(resolvedOrgId: string | undefined): ConnectorContextResolver {
     const result: ConnectorResolveResult = {

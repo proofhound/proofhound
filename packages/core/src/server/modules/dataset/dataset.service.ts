@@ -46,7 +46,7 @@ export interface DatasetExportFile {
 
 /**
  * How the export is delivered to the client. OSS always streams a fresh DB-backed export (`stream`).
- * The `redirect` variant is a reserved delivery shape (a SaaS deployment serving payload bytes from
+ * The `redirect` variant is a reserved delivery shape (a replacement implementation serving payload bytes from
  * object storage via a signed URL); OSS never produces it.
  */
 export type DatasetExportDelivery =

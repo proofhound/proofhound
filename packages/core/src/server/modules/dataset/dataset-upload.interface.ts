@@ -2,9 +2,9 @@
 // parse it, stage the rows, and atomically promote them into a dataset.
 //
 // The OSS default (LocalDatasetUploadService) parses a Multer temp file synchronously in the server
-// process and stores samples inline in PostgreSQL. A SaaS deployment binds its own implementation
+// process and stores samples inline in PostgreSQL. A replacement implementation binds its own implementation
 // (browser-direct-to-object-storage + async worker + offload) in its `contracts` module; that
-// implementation lives in the SaaS repository.
+// implementation lives outside the OSS trunk.
 import type { DatasetFieldMappingDto, DatasetImportSourceFormat, DatasetImportStatusDto } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 

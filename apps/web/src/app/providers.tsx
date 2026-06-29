@@ -14,8 +14,8 @@ import { ProofHoundWebProvider } from '@proofhound/web-ui/providers';
  * The root `layout.tsx` is an async Server Component, so it must NOT pass `contracts` directly to
  * the client `ProofHoundWebProvider`. Instead the layout passes only serializable data
  * (`defaultLanguage: string`) + `children`, and this 'use client' module constructs/imports the
- * contracts entirely on the client side. A SaaS app writes its own equivalent wrapper with its
- * own `saasWebContracts`.
+ * contracts entirely on the client side. A replacement app writes its own equivalent wrapper with its
+ * own override `WebContracts`.
  */
 export function Providers({
   defaultLanguage,

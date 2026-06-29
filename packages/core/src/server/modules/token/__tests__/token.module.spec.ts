@@ -9,8 +9,8 @@ import { ProjectContextResolver } from '../../../common/contracts/project-contex
 import { TokenService } from '../../../common/contracts/token.service';
 import { TokenModule } from '../token.module';
 
-function createSaasContractsModule(remoteTokenService: TokenService) {
-  const resolveFromHttp = vi.fn().mockResolvedValue({ actorId: 'saas-user-1', actorKind: 'local_user' });
+function createOverrideContractsModule(remoteTokenService: TokenService) {
+  const resolveFromHttp = vi.fn().mockResolvedValue({ actorId: 'override-user-1', actorKind: 'local_user' });
   const resolveProject = vi.fn().mockResolvedValue(LOCAL_PROJECT_CONTEXT);
 
   @Global()
@@ -22,9 +22,9 @@ function createSaasContractsModule(remoteTokenService: TokenService) {
     ],
     exports: [TokenService, ActorContextResolver, ProjectContextResolver],
   })
-  class SaasContractsModule {}
+  class OverrideContractsModule {}
 
-  return { module: SaasContractsModule, resolveFromHttp, resolveProject };
+  return { module: OverrideContractsModule, resolveFromHttp, resolveProject };
 }
 
 function createRemoteTokenService(): TokenService {
@@ -46,7 +46,7 @@ describe('TokenModule contract wiring', () => {
 
   it('resolves TokenController through the edition-supplied TokenService', async () => {
     const remoteTokenService = createRemoteTokenService();
-    const contracts = createSaasContractsModule(remoteTokenService);
+    const contracts = createOverrideContractsModule(remoteTokenService);
     const moduleRef = await Test.createTestingModule({
       imports: [contracts.module, TokenModule],
     }).compile();
@@ -56,7 +56,7 @@ describe('TokenModule contract wiring', () => {
     await request(app.getHttpServer()).get('/tokens').expect(200, { data: [], total: 0 });
 
     expect(remoteTokenService.listUserTokens).toHaveBeenCalledWith(
-      expect.objectContaining({ actorId: 'saas-user-1', actorKind: 'local_user' }),
+      expect.objectContaining({ actorId: 'override-user-1', actorKind: 'local_user' }),
     );
     expect(contracts.resolveFromHttp).toHaveBeenCalledTimes(1);
     expect(contracts.resolveProject).toHaveBeenCalledTimes(1);

@@ -1,5 +1,5 @@
 // LimiterKeyStrategy — adapter extension point
-// See docs/specs/08-saas-adapter-boundary.md §3.7
+// See docs/specs/08-adapter-extension-points.md §3.7
 //
 // Generates the rate-limit key for a model call. Runtime LLM/probe callers build the key via this
 // strategy and pass it down as an OPAQUE string; `@proofhound/limiter` and
@@ -7,7 +7,7 @@
 //
 // Keyed by (project, modelId): actor is intentionally NOT part of the key. OSS default
 // `LocalLimiterKeyStrategy` returns `model:<modelId>` (per-model counting space, ignoring project).
-// SaaS may return `org:<orgId>:model:<modelId>` (deriving org from the project) to isolate the
+// A replacement implementation may return `org:<orgId>:model:<modelId>` (deriving org from the project) to isolate the
 // counting space per tenant.
 
 import type { ProjectContext } from '../actor-context';

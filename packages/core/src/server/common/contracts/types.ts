@@ -1,8 +1,8 @@
 // Thin transport-agnostic shapes consumed by the resolver abstract classes.
-// See docs/specs/08-saas-adapter-boundary.md §3.1-3.3
+// See docs/specs/08-adapter-extension-points.md §3.1-3.3
 //
-// Stays decoupled from concrete express / @modelcontextprotocol SDK types; both OSS / SaaS
-// resolver implementations must avoid importing third-party transport-layer types directly.
+// Stays decoupled from concrete express / @modelcontextprotocol SDK types; both OSS and
+// replacement resolver implementations must avoid importing third-party transport-layer types directly.
 
 /**
  * Abstract HTTP request shape. express.Request satisfies this structure.
@@ -15,7 +15,7 @@ export interface HttpRequestLike {
 
 /**
  * Abstract MCP request metadata. OSS does not actually wire MCP transport yet,
- * so this type is a placeholder; the real SDK shape will be more refined when SaaS lands,
+ * so this type is a placeholder; the real SDK shape will be more refined when a replacement implementation lands,
  * and the implementation side chooses to extract token from headers / meta / authInfo.
  */
 export interface McpRequestMetadataLike {
@@ -34,7 +34,7 @@ export interface McpRequestMetadataLike {
 /**
  * Hint for ProjectContextResolver.resolve.
  * The OSS default implementation ignores all hints and always returns LOCAL_PROJECT_CONTEXT;
- * SaaS RemoteProjectContextResolver reads projectId / projectIdHeader / mcpMetadata.
+ * A replacement RemoteProjectContextResolver reads projectId / projectIdHeader / mcpMetadata.
  */
 export interface ProjectContextHint {
   /** Already-resolved project id from an internal row or trusted runtime boundary. */

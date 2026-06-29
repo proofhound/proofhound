@@ -13,7 +13,7 @@ export class OptimizationLauncher {
     private readonly repo: OptimizationRepository,
   ) {}
 
-  // orgId (SaaS-only; undefined in OSS) is seeded from the resolved ProjectContext (the project's org is the
+  // orgId (override-only; undefined in OSS) is seeded from the resolved ProjectContext (the project's org is the
   // rate-limit bucket, SPEC 08 §3.7) and threaded into the workflow run input, so the worker can compose an
   // org-scoped rate-limit key without re-querying. Recovery hydrates the row's project before resume.
   async launch(optimizationId: string, orgId?: string): Promise<string> {

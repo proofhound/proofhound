@@ -1,5 +1,5 @@
 // @CurrentProject — HTTP Controller param decorator
-// See docs/specs/08-saas-adapter-boundary.md §3.1
+// See docs/specs/08-adapter-extension-points.md §3.1
 //
 // `HttpActorGuard` resolves the request's ProjectContext (via the DI ProjectContextResolver) and
 // attaches it to `request.projectContext`. This decorator is a thin synchronous reader of that value,

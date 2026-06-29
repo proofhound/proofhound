@@ -534,9 +534,9 @@ describe('pickRandomSamples (SPEC 25 §2.1 first-version sampling)', () => {
   });
 });
 
-// orgId (SaaS-only; undefined in OSS) is threaded runWorkflow(optimizationId, orgId) → loadConfigStep(optimizationId, orgId)
+// orgId (override-only; undefined in OSS) is threaded runWorkflow(optimizationId, orgId) → loadConfigStep(optimizationId, orgId)
 // → loadConfigImpl, which composes the analysis rate-limit key via limiterKeyStrategy.buildModelKey. The key must carry
-// orgId so a SaaS LimiterKeyStrategy can isolate the per-tenant counting space; OSS passes undefined and the local
+// orgId so a replacement implementation's LimiterKeyStrategy can isolate the per-tenant counting space; OSS passes undefined and the local
 // strategy ignores it (key behavior unchanged). Driven through the real loadConfigImpl with repo / model loads stubbed.
 describe('OptimizationWorkflow.loadConfigImpl — orgId 透传 analysisLimiterKey', () => {
   function buildRegistrar() {
@@ -996,7 +996,7 @@ describe('OptimizationWorkflow.withOptimizationExecutionSlot — quota hook', ()
   });
 });
 
-// orgId (SaaS-only; undefined in OSS) threads runWorkflow(optimizationId, orgId) → loadConfigStep → snapshot.orgId,
+// orgId (override-only; undefined in OSS) threads runWorkflow(optimizationId, orgId) → loadConfigStep → snapshot.orgId,
 // and runImpl must forward that snapshot.orgId as the 2nd arg of the child experiment launch
 // DBOS.startWorkflow(this.experimentWorkflow.runWorkflow, { workflowID })(experimentId, snapshot.orgId).
 // This proves the per-project (org) rate-limit bucket (SPEC 08 §3.7) reaches the child experiment workflow.

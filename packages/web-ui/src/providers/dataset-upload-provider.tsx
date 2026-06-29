@@ -19,7 +19,7 @@ export interface DatasetUploadOptions {
 }
 
 // Swappable dataset upload transport (08 §3.13 frontend counterpart). OSS defaults to the multipart
-// `POST /datasets/upload` client; a SaaS shell injects its own (e.g. browser-direct-to-object-storage)
+// `POST /datasets/upload` client; a replacement shell injects its own (e.g. browser-direct-to-object-storage)
 // through `WebContracts.datasetUpload`, reusing the rest of the dataset upload screen.
 export type DatasetUploadAdapter = (
   projectId: string,
@@ -57,12 +57,12 @@ export function DatasetUploadProvider({
   return <DatasetUploadContext.Provider value={value}>{children}</DatasetUploadContext.Provider>;
 }
 
-/** The active dataset upload transport (OSS default = multipart client; SaaS = injected adapter). */
+/** The active dataset upload transport (OSS default = multipart client; override = injected adapter). */
 export function useDatasetUploadAdapter(): DatasetUploadAdapter {
   return useContext(DatasetUploadContext).adapter;
 }
 
-/** The UI pre-check upload-size cap (OSS default = DATASET_UPLOAD_MAX_BYTES; SaaS may set per plan). */
+/** The UI pre-check upload-size cap (OSS default = DATASET_UPLOAD_MAX_BYTES; a replacement implementation may set per plan). */
 export function useDatasetUploadMaxBytes(): number {
   return useContext(DatasetUploadContext).maxBytes;
 }

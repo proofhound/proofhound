@@ -1,9 +1,9 @@
 // LocalAccessControlService — OSS default implementation of AccessControlService
-// See docs/specs/08-saas-adapter-boundary.md §3.6
+// See docs/specs/08-adapter-extension-points.md §3.6
 //
 // OSS self-hosted single workspace: local_user (UI session) and system_* (MCP / webhook) pass everything;
 // script (API token) is also a local-owner credential but cannot manage platform-level resources (e.g. token
-// CRUD) to avoid token-laundering. `project` is ignored here; the SaaS RbacAccessControl reads it.
+// CRUD) to avoid token-laundering. `project` is ignored here; a replacement RbacAccessControl reads it.
 
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import type { AccessAction } from '../access-control';

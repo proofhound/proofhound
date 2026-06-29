@@ -36,7 +36,7 @@ export const projects = phCore.table(
 //   - scope='webhook' per-connector inbound credential; project_id / connector_id required; lifecycle attached to the connector
 // The `connector_id` foreign key constraint is appended in the migration via raw SQL (FK pointing to ph_assets.connectors.id);
 // not declared via .references() here, to avoid a circular import with ph_assets/index.ts.
-// See docs/specs/06-database-schema.md §3.2 and docs/specs/08-saas-adapter-boundary.md §3.4.
+// See docs/specs/06-database-schema.md §3.2 and docs/specs/08-adapter-extension-points.md §3.4.
 export const tokens = phCore.table(
   'tokens',
   {

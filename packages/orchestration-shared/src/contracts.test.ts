@@ -95,7 +95,7 @@ describe('orchestration-shared contracts', () => {
     expect(llmJobPayloadSchema.safeParse({ ...base, webhookTokenId: 'nope' }).success).toBe(false);
   });
 
-  it('keeps an optional UUID orgId on LLM jobs, parses fine without it, and rejects a non-UUID (SaaS-only attribution)', () => {
+  it('keeps an optional UUID orgId on LLM jobs, parses fine without it, and rejects a non-UUID (override-only attribution)', () => {
     const base = {
       projectId: 'a1b2c3d4-e5f6-4789-a012-345678901111',
       source: 'experiment' as const,
@@ -118,7 +118,7 @@ describe('orchestration-shared contracts', () => {
     expect(llmJobPayloadSchema.safeParse({ ...base, orgId: 'not-a-uuid' }).success).toBe(false);
   });
 
-  it('keeps an optional UUID orgId on probe jobs, parses fine without it, and rejects a non-UUID (SaaS-only attribution)', () => {
+  it('keeps an optional UUID orgId on probe jobs, parses fine without it, and rejects a non-UUID (override-only attribution)', () => {
     const base = { modelId: 'a1b2c3d4-e5f6-4789-a012-345678904444' };
     const orgId = 'a1b2c3d4-e5f6-4789-a012-3456789055aa';
     const withOrg = probeJobPayloadSchema.safeParse({ ...base, orgId });

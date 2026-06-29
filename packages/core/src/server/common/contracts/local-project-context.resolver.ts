@@ -1,8 +1,8 @@
 // LocalProjectContextResolver — OSS default implementation
-// See docs/specs/08-saas-adapter-boundary.md §3.1
+// See docs/specs/08-adapter-extension-points.md §3.1
 //
 // OSS has a single workspace; ignore all hints and always return LOCAL_PROJECT_CONTEXT.
-// The SaaS form is overridden by RemoteProjectContextResolver in a separate repo.
+// A replacement implementation overrides this with RemoteProjectContextResolver in a separate repo.
 
 import { Injectable } from '@nestjs/common';
 import { LOCAL_PROJECT_CONTEXT, type ProjectContext } from '@proofhound/shared';

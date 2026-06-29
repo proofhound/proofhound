@@ -155,7 +155,7 @@ describe('ModelService', () => {
     crypto = makeCrypto();
     limiter = makeLimiter();
     limiterKeyStrategy = {
-      // A SaaS-shaped key strategy: derive the org-scoped bucket from the project (SPEC 08 §3.7) when an
+      // A replacement-shaped key strategy: derive the org-scoped bucket from the project (SPEC 08 §3.7) when an
       // orgId is carried, otherwise fall back to the project key. Lets tests prove the project's orgId
       // reaches buildModelKey. OSS LocalLimiterKeyStrategy ignores the project and returns `model:<id>`.
       buildModelKey: vi.fn((project: { projectId: string; orgId?: string }, modelId: string) =>
@@ -618,10 +618,10 @@ describe('ModelService', () => {
     expect(repo.updateProbeOutcome).not.toHaveBeenCalled();
   });
 
-  // orgId (SaaS-only; undefined in OSS) is the resolved project's rate-limit bucket (SPEC 08 §3.7). It is
+  // orgId (override-only; undefined in OSS) is the resolved project's rate-limit bucket (SPEC 08 §3.7). It is
   // sourced from the @CurrentProject ProjectContext at the controller and threaded all the way to
   // buildModelKey — on the probe WRITE path and the usage-snapshot READ path — so both hit the same key.
-  it('threads the project orgId into the probe limiter key (SaaS bucket, SPEC 08 §3.7)', async () => {
+  it('threads the project orgId into the probe limiter key (override bucket, SPEC 08 §3.7)', async () => {
     repo.findModelAccessibleToProject.mockResolvedValue(fakeRow());
     (testModelConnectivity as Mock).mockResolvedValue({
       ok: true,

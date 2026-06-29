@@ -33,7 +33,7 @@ export const runtimeLimitsSchema = z.object({
   tpmLimit: z.number().int().positive().optional(),
   concurrency: z.number().int().positive().optional(),
 });
-// Per-call runtime caps a RuntimeLimitsProvider may merge before enqueue (SaaS org-plan ceilings); OSS leaves them untouched.
+// Per-call runtime caps a RuntimeLimitsProvider may merge before enqueue (a replacement implementation's org-plan ceilings); OSS leaves them untouched.
 export type RuntimeLimits = z.infer<typeof runtimeLimitsSchema>;
 
 // Per-sample LLM call internal retry cap; does not affect BullMQ job-level attempts.
@@ -57,7 +57,7 @@ const llmAdmissionContextSchema = z.object({
 
 export const llmJobPayloadSchema = z.object({
   projectId: z.string().uuid(),
-  // SaaS-only org attribution: injected by the enqueue side (launcher → workflow → step / release runner)
+  // Override-only org attribution: injected by the enqueue side (launcher → workflow → step / release runner)
   // from the resolved project's org, passed through by the worker into the org-scoped rate-limit key. OSS leaves it undefined and the
   // default LocalLimiterKeyStrategy ignores it. Same enqueue-inject / worker-passthrough pattern as webhookTokenId.
   orgId: z.string().uuid().optional(),
@@ -76,7 +76,7 @@ export const llmJobPayloadSchema = z.object({
   dbosWorkflowId: z.string().optional(),
   // Webhook-entry attribution: set only when the run was triggered by a webhook token; the worker materializes it
   // into ph_runs.run_results.webhook_token_id. HTTP / MCP / internal release-runner sources leave it undefined → NULL.
-  // See docs/specs/08-saas-adapter-boundary.md §3.4 / §5.
+  // See docs/specs/08-adapter-extension-points.md §3.4 / §5.
   webhookTokenId: z.string().uuid().nullable().optional(),
   renderedPrompt: renderedPromptSchema,
   inputVariables: z.unknown().optional(),

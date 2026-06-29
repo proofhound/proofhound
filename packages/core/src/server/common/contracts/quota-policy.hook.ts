@@ -1,5 +1,5 @@
 // QuotaPolicyHook — adapter extension point
-// See docs/specs/08-saas-adapter-boundary.md §3.11
+// See docs/specs/08-adapter-extension-points.md §3.11
 //
 // OSS has no hosted plan envelope, so the local implementation is a no-op.
 // Hosted deployments can override this hook to enforce resource quotas at the

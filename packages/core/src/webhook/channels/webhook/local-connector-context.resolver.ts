@@ -1,5 +1,5 @@
 // LocalConnectorContextResolver — OSS default for ConnectorContextResolver (§3.4)
-// See docs/specs/08-saas-adapter-boundary.md §3.4 and docs/specs/09-mcp-server.md is unrelated.
+// See docs/specs/08-adapter-extension-points.md §3.4 and docs/specs/09-mcp-server.md is unrelated.
 //
 // Extracted from the previously-inline WebhookService.authorizeConnector. Validates inbound webhook
 // credentials and produces { connector, projectContext, actorContext, webhookTokenId } in one shot —

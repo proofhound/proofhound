@@ -26,8 +26,8 @@ import type { ProofHoundRuntimeModuleOptions } from '../shared/runtime-module-op
 
 // ProofHoundServerModule — the shared server root module, assembled as a dynamic module via forRoot
 // so the `contracts` adapter bindings are supplied at boot instead of hard-coded. OSS passes
-// LocalContractsModule (Local* defaults); a SaaS shell passes its own SaasContractsModule
-// (Remote* implementations). See docs/specs/08-saas-adapter-boundary.md §2.
+// LocalContractsModule (Local* defaults); a replacement implementation's shell passes its own override `contracts` module
+// (Remote* implementations). See docs/specs/08-adapter-extension-points.md §2.
 export type ProofHoundServerModuleOptions = ProofHoundRuntimeModuleOptions;
 
 @Module({})

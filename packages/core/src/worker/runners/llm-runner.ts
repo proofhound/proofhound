@@ -82,7 +82,7 @@ export function createLlmRunner(deps: LlmRunnerDependencies) {
         deps.logger,
       );
     const model = await loadModelInvocationConfig(deps, input.modelId);
-    // Fold any deployment-level runtime caps (a SaaS org plan's ceiling, SPEC 08 §3.10) into the per-call limits at the
+    // Fold any deployment-level runtime caps (a replacement implementation's org plan ceiling, SPEC 08 §3.10) into the per-call limits at the
     // single worker enforcement point, so every job source (experiment / optimization child / release / webhook) is
     // capped uniformly. OSS LocalRuntimeLimitsProvider is a pass-through → mergedLimits === input.limits.
     const mergedLimits = await deps.runtimeLimitsProvider.mergeLlmLimits({

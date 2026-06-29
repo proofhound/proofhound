@@ -14,7 +14,7 @@ export interface UserTokenRowWithCreator extends UserTokenRow {
 }
 
 // The repository only handles rows where scope='user'. Webhook rows are self-managed by ConnectorRepository; this repo does not read or write them.
-// See docs/specs/06-database-schema.md §3.2 / docs/specs/08-saas-adapter-boundary.md §3.5.
+// See docs/specs/06-database-schema.md §3.2 / docs/specs/08-adapter-extension-points.md §3.5.
 @Injectable()
 export class TokenRepository {
   constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}

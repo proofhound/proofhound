@@ -432,7 +432,7 @@ describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', 
     }
   }
 
-  it('applies min(model, planCap) before invokeLLM (SaaS RuntimeLimitsProvider lowers concurrency)', async () => {
+  it('applies min(model, planCap) before invokeLLM (a replacement RuntimeLimitsProvider lowers concurrency)', async () => {
     invokeLLMMock.mockResolvedValue({
       content: '{}',
       parsed: {},

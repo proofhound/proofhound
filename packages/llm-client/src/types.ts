@@ -70,7 +70,7 @@ export interface LLMCallContext {
 export interface RunResultContext {
   id: string;
   projectId: string;
-  /** SaaS-only project org attribution; OSS callers leave it unset. */
+  /** Override-only project org attribution; OSS callers leave it unset. */
   orgId?: string | null;
   source: LLMSource;
   sourceId: string;
@@ -159,7 +159,7 @@ export type LLMJudgmentStatus = 'correct' | 'incorrect' | 'parse_error' | 'judge
 export interface LLMRunResultRecord {
   id: string;
   projectId: string;
-  /** SaaS-only project org attribution; OSS callers leave it unset. */
+  /** Override-only project org attribution; OSS callers leave it unset. */
   orgId?: string | null;
   source: LLMSource;
   sourceId: string;

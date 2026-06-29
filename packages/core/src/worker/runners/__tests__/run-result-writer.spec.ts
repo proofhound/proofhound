@@ -78,7 +78,7 @@ describe('DrizzleRunResultWriter', () => {
     expect(query!.params).toContain('99999999-9999-4999-8999-999999999999');
   });
 
-  it('passes orgId into storage quota checks when the run_result carries SaaS project context', async () => {
+  it('passes orgId into storage quota checks when the run_result carries an override project context', async () => {
     const db = {
       execute: vi.fn(async () => []),
     };

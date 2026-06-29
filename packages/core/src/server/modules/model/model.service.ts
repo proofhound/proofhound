@@ -83,10 +83,10 @@ export class ModelService {
   // -------------------------------------------------------------------------
   // Local in-process model
   // -------------------------------------------------------------------------
-  // orgId on the project-scoped read methods (SaaS-only; undefined in OSS) is sourced from the resolved
+  // orgId on the project-scoped read methods (override-only; undefined in OSS) is sourced from the resolved
   // ProjectContext — the project's org is the rate-limit bucket (SPEC 08 §3.7). It is threaded into
   // toProjectModelListItem → fetchUsageSnapshot so the usage-snapshot READ key matches the worker's WRITE
-  // key under a SaaS strategy; OSS leaves it undefined so the key stays `model:<id>`.
+  // key under a replacement strategy; OSS leaves it undefined so the key stays `model:<id>`.
   async listProjectModels(
     projectId: string,
     actor: CurrentUserPayload,
@@ -177,7 +177,7 @@ export class ModelService {
     };
 
     const result = await this.runConnectivityProbe(
-      // orgId (SaaS-only; undefined in OSS) sourced from the resolved ProjectContext — the project's org
+      // orgId (override-only; undefined in OSS) sourced from the resolved ProjectContext — the project's org
       // is the rate-limit bucket (SPEC 08 §3.7), not the actor's org.
       { projectId, orgId, source: 'local' },
       model,
@@ -347,7 +347,7 @@ export class ModelService {
     const row = await this.repo.findModelAccessibleToProject(projectId, modelId);
     if (!row) throw new NotFoundException(`Model ${modelId} not found`);
     await this.assertProbeWorkflowStart({ projectId, orgId, source: 'local' }, actor);
-    // orgId (SaaS-only; undefined in OSS) sourced from the resolved ProjectContext — the project's org
+    // orgId (override-only; undefined in OSS) sourced from the resolved ProjectContext — the project's org
     // is the rate-limit bucket (SPEC 08 §3.7), not the actor's org.
     return this.probeAndRecord({ projectId, orgId, source: 'local' }, row, actor.sub, source, 'local');
   }
@@ -661,9 +661,9 @@ export class ModelService {
   // -------------------------------------------------------------------------
   // Mapping: DB row → DTO
   // -------------------------------------------------------------------------
-  // orgId (SaaS-only; undefined in OSS) is the resolved project's org — the rate-limit bucket (SPEC 08
+  // orgId (override-only; undefined in OSS) is the resolved project's org — the rate-limit bucket (SPEC 08
   // §3.7). It is carried into the usage-snapshot READ key so it matches the worker's WRITE key under a
-  // SaaS strategy; OSS leaves it undefined so the key stays `model:<id>`.
+  // replacement strategy; OSS leaves it undefined so the key stays `model:<id>`.
   private async toProjectModelListItem(row: ProjectVisibleModelRow, orgId?: string): Promise<ProjectModelListItemDto> {
     const project: ProjectContext = row.projectId
       ? { projectId: row.projectId, source: 'local', orgId }

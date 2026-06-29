@@ -1,6 +1,6 @@
 // Run-result payload field types (SPEC 30 §9). OSS stores all four large fields inline in
 // `run_results`; there is no shard codec / object-storage offload in the OSS trunk — offload is a
-// SaaS concern bound behind the `RunResultPayloadReader` adapter (08 §3.14).
+// concern handled by a replacement implementation bound behind the `RunResultPayloadReader` adapter (08 §3.14).
 
 /** The four large fields of a run result. `null` = absent / genuinely empty. */
 export interface RunResultPayloadFields {
@@ -12,7 +12,7 @@ export interface RunResultPayloadFields {
 
 /**
  * Stored in `run_results.payload_ref`. Always `NULL` in OSS (a reserved, storage-agnostic slot);
- * a SaaS reader interprets its own ref shape. OSS code never reads it, so it is opaque here.
+ * a replacement reader interprets its own ref shape. OSS code never reads it, so it is opaque here.
  */
 export type RunResultPayloadRef = unknown;
 

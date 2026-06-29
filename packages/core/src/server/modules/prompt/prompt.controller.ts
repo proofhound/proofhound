@@ -204,7 +204,7 @@ export class PromptController {
     @CurrentUser() actor: CurrentUserPayload,
     @CurrentProject() project: ProjectContext,
   ) {
-    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); SaaS-only, undefined in OSS.
+    // project.orgId is the rate-limit bucket (SPEC 08 §3.7); override-only, undefined in OSS.
     return this.promptTryRunService.tryRun(
       project.projectId,
       this.parsePromptId(promptId),

@@ -55,7 +55,7 @@ describe('RunResultRetentionSweeper', () => {
     expect(runResults.sweepReleaseRunResultRetention).toHaveBeenCalledTimes(1);
   });
 
-  it('does not register an interval when SaaS uses an external scheduler', () => {
+  it('does not register an interval when a replacement implementation uses an external scheduler', () => {
     process.env['RUN_RESULT_RETENTION_SWEEP_MODE'] = 'external';
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
     const { sweeper } = sweeperWith(async () => ({ targets: 0, runResults: 0, estimatedReclaimableBytes: 0 }));

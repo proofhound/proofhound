@@ -59,7 +59,7 @@ export class PromptTryRunService {
     promptId: string,
     rawDto: unknown,
     actor: CurrentUserPayload,
-    // orgId (SaaS-only; undefined in OSS) is sourced from the resolved ProjectContext — the project's org
+    // orgId (override-only; undefined in OSS) is sourced from the resolved ProjectContext — the project's org
     // is the rate-limit bucket (SPEC 08 §3.7), not the actor's org. OSS leaves it undefined so the
     // LocalLimiterKeyStrategy key stays `model:<id>`.
     orgId?: string,

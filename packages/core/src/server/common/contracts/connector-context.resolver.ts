@@ -1,5 +1,5 @@
 // ConnectorContextResolver — adapter extension point
-// See docs/specs/08-saas-adapter-boundary.md §3.4
+// See docs/specs/08-adapter-extension-points.md §3.4
 //
 // Resolves `(:webhookSlug, :pathName) + webhook token` into a connector context, then produces a
 // ProjectContext + a system actor in one shot. The webhook entry does NOT go through
@@ -10,7 +10,7 @@
 // never call each other (§8 red line).
 //
 // OSS default `LocalConnectorContextResolver` lives in the webhook runtime (it depends on
-// WebhookRepository); SaaS `RemoteConnectorContextResolver` may add HMAC / multi-tenant isolation.
+// WebhookRepository); a replacement `RemoteConnectorContextResolver` may add HMAC / multi-tenant isolation.
 //
 // `ConnectorRecord` is defined structurally here so this abstract stays free of any webhook-runtime
 // import (keeping the dependency acyclic); the webhook runtime's connector row satisfies it.

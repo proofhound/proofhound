@@ -13,7 +13,7 @@
 //
 // Last-used touch: fire-and-forget; errors are swallowed with a warning and never block the response.
 //
-// See docs/specs/08-saas-adapter-boundary.md §3.2 / §3.3 / §3.5
+// See docs/specs/08-adapter-extension-points.md §3.2 / §3.3 / §3.5
 
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';

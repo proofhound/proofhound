@@ -110,7 +110,7 @@ export const runResults = phRuns.table(
     bullmqJobId: text('bullmq_job_id'),
     // Webhook-entry attribution: only filled when the call was triggered by a webhook token
     // (HTTP / MCP entries leave it NULL). ON DELETE SET NULL keeps run_result audit rows after token revocation.
-    // See docs/specs/08-saas-adapter-boundary.md §3.4 / §5.
+    // See docs/specs/08-adapter-extension-points.md §3.4 / §5.
     webhookTokenId: uuid('webhook_token_id').references((): AnyPgColumn => tokens.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

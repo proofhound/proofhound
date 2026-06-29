@@ -1,11 +1,11 @@
-// ActorKind — see docs/specs/08-saas-adapter-boundary.md §3.2 / §3.3 / §3.4
+// ActorKind — see docs/specs/08-adapter-extension-points.md §3.2 / §3.3 / §3.4
 //
 // Each value maps to a single entry channel; OSS does NOT mix channels:
 //   - 'script':         HTTP API channel, Authorization: Bearer ph_*; actorId = user-token row id
 //   - 'local_user':     HTTP UI channel; OSS deployment formation A (LOCAL_ACTOR fallback) or B
-//                       (trusted-header), actorId = LOCAL_ACTOR_ID; SaaS RemoteActorContextResolver
+//                       (trusted-header), actorId = LOCAL_ACTOR_ID; a replacement RemoteActorContextResolver
 //                       overrides to use Supabase JWT sub as actorId
-//   - 'system_mcp':     MCP channel; actorId = user-token row id (OSS) or org-mcp-token id (SaaS)
+//   - 'system_mcp':     MCP channel; actorId = user-token row id (OSS) or org-mcp-token id (override implementation)
 //   - 'system_webhook': Webhook channel; actorId = connectorId
 //   - 'system_release_runner': Internal release runner tick; actorId = release line id
 //   - 'system_workflow_recovery': Internal DBOS recovery tick; actorId = workflow business row id
@@ -21,7 +21,7 @@ export interface ActorContext {
   actorId: string;
   actorKind: ActorKind;
   projectId?: string;
-  /** SaaS-only: the org this actor is pinned to (e.g. an org-scoped API token). OSS never sets it. */
+  /** override-only: the org this actor is pinned to (e.g. an org-scoped API token). OSS never sets it. */
   orgId?: string;
 }
 

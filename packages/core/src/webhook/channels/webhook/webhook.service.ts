@@ -79,7 +79,7 @@ export class WebhookService {
         input.pathName,
         parseBearerToken(input.authorization),
       );
-    // Webhook ingress is an entry: authorize the workflow start before enqueuing (OSS no-op; SaaS RBAC).
+    // Webhook ingress is an entry: authorize the workflow start before enqueuing (OSS no-op; a replacement implementation may enforce RBAC).
     await this.workflowAuth.assertCanStart(actorContext, projectContext, 'llm');
     const releaseLine = await this.repo.findActiveReleaseForConnector(connector.id);
     if (!releaseLine) {
@@ -398,7 +398,7 @@ function buildLlmPayload(
   runResultId: string,
   webhookTokenId: string,
   webhookAsyncCall: WebhookAsyncCallContext | undefined,
-  // SaaS-only org attribution: the ConnectorContextResolver already resolved the project's org for this webhook,
+  // Override-only org attribution: the ConnectorContextResolver already resolved the project's org for this webhook,
   // so thread it onto the release payload (OSS LocalConnectorContextResolver yields undefined → no behavior change).
   orgId: string | undefined,
 ): LlmJobPayload {

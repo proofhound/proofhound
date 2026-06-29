@@ -1,5 +1,5 @@
 // TokenService — adapter extension point (DI token) for user-token CRUD.
-// See docs/specs/08-saas-adapter-boundary.md §3.5.
+// See docs/specs/08-adapter-extension-points.md §3.5.
 //
 // Handles only `scope='user'` rows; `scope='webhook'` is managed by the connector resource (§3.4).
 // Token → ActorContext validation (hash / expiry) lives in LocalUserTokenVerifier, not here.

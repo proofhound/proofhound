@@ -40,7 +40,7 @@ describe('mcp-context', () => {
     expect(resolveMcpProjectContext({ actorUserId: 'tok-1', actor })).toEqual({ projectId: 'p-9', source: 'local' });
   });
 
-  it('resolveMcpProjectContext carries orgId for org-pinned MCP actors (SaaS rate-limit bucket, SPEC 08 §3.7)', () => {
+  it('resolveMcpProjectContext carries orgId for org-pinned MCP actors (override rate-limit bucket, SPEC 08 §3.7)', () => {
     const orgActor: CurrentUserPayload = { ...actor, orgId: '00000000-0000-4000-8000-000000000111' };
     expect(resolveMcpProjectContext({ actorUserId: 'tok-1', actor: orgActor })).toEqual({
       projectId: 'p-9',

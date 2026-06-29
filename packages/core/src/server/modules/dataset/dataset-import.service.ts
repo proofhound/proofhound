@@ -193,7 +193,7 @@ export class LocalDatasetUploadService extends DatasetUploadInterface implements
     );
   }
 
-  // Emit the same usage-metering events as the dataset service did, so SaaS billing/usage stays intact.
+  // Emit the same usage-metering events as the dataset service did, so a replacement implementation's billing/usage stays intact.
   // OSS binds NoopUsageMeteringHook, so this is a no-op locally.
   private async recordImportCompleted(
     projectId: string,

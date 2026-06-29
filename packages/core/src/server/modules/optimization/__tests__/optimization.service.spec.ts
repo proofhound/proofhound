@@ -1803,7 +1803,7 @@ describe('OptimizationService', () => {
           createdBy: actor.sub,
         }),
       );
-      // orgId is SaaS-only; the OSS test actor has none, so launch is invoked with orgId=undefined.
+      // orgId is override-only; the OSS test actor has none, so launch is invoked with orgId=undefined.
       expect(launcher.launch).toHaveBeenCalledWith('new-id-001', undefined);
       expect(result.id).toBe('new-id-001');
       expect(result.status).toBe('running');
@@ -2161,7 +2161,7 @@ describe('OptimizationService', () => {
           finishedAt: null,
         }),
       );
-      // orgId is SaaS-only; the OSS test actor has none, so resume is invoked with orgId=undefined.
+      // orgId is override-only; the OSS test actor has none, so resume is invoked with orgId=undefined.
       expect(launcher.resume).toHaveBeenCalledWith(baseRow().id, undefined);
     });
 

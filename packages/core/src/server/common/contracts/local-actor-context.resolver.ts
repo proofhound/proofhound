@@ -1,11 +1,11 @@
 // LocalActorContextResolver — default implementation for the HTTP entry
-// See docs/specs/08-saas-adapter-boundary.md §3.2 (channel-aware dual entry)
+// See docs/specs/08-adapter-extension-points.md §3.2 (channel-aware dual entry)
 //
 // HTTP entry handles two channels in one resolver (per-request dispatch):
 //   1. API channel (Authorization: Bearer ph_*):
 //      - sha256 hash compare against ph_core.tokens scope='user' via LocalUserTokenVerifier
 //      - JWT-shape token (Bearer eyJ*) is rejected with 401 unsupported_credential
-//        (SaaS adapter override path; OSS does not issue JWTs)
+//        (replacement adapter override path; OSS does not issue JWTs)
 //      - Returns actorKind='script', actorId=tokenId
 //   2. UI channel:
 //      - Reads trusted deployment header (default X-Forwarded-User; configurable via
@@ -39,7 +39,7 @@ export class LocalActorContextResolver extends ActorContextResolver {
     if (authHeader) {
       const token = this.parseBearer(authHeader);
 
-      // JWT shape: OSS does not validate JWTs — that path belongs to SaaS RemoteActorContextResolver
+      // JWT shape: OSS does not validate JWTs — that path belongs to a replacement RemoteActorContextResolver
       if (looksLikeJwt(token)) {
         throw new UnauthorizedException('unsupported_credential');
       }

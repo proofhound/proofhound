@@ -7,7 +7,7 @@ import { createContext, useContext, type ReactNode } from 'react';
  *
  * OSS self-hosted serves product screens at flat paths (`/models/new`,
  * `/releases`), so the default is identity. A hosting shell whose routes live
- * under a different prefix — e.g. the SaaS multi-tenant console at
+ * under a different prefix — e.g. a replacement implementation's multi-tenant console at
  * `/app/org/:orgId/project/:projectId/...` — injects a resolver that rewrites
  * these flat product paths to its scoped routes, so the in-screen `<Link>` and
  * `useRouter()` navigate straight to the correct URL in a single hop.

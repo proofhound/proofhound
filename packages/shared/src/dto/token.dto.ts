@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // Single user-facing token model: the same token can be used for both HTTP API and MCP.
-// See docs/specs/06-database-schema.md §3.2 / docs/specs/08-saas-adapter-boundary.md §3.5.
+// See docs/specs/06-database-schema.md §3.2 / docs/specs/08-adapter-extension-points.md §3.5.
 //
 // Webhook tokens (per-connector) are not handled in this file; they are self-managed by the connector DTO and service.
 

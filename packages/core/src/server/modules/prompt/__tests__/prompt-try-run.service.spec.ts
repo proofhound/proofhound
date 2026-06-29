@@ -104,7 +104,7 @@ function buildService(overrides?: {
     limiter as never,
     new LocalAccessControlService(),
     {
-      // SaaS-shaped key strategy: derive the org bucket from the project (SPEC 08 §3.7) when an orgId is
+      // Replacement-shaped key strategy: derive the org bucket from the project (SPEC 08 §3.7) when an orgId is
       // carried. Lets the test prove the project's orgId reaches buildModelKey. OSS ignores it → `model:<id>`.
       buildModelKey: vi.fn((project: { projectId: string; orgId?: string }, modelId: string) =>
         project.orgId ? `org:${project.orgId}:model:${modelId}` : `project:${project.projectId}:model:${modelId}`,
@@ -190,7 +190,7 @@ describe('PromptTryRunService', () => {
     );
   });
 
-  it('threads the project orgId into the limiter key (SaaS rate-limit bucket, SPEC 08 §3.7)', async () => {
+  it('threads the project orgId into the limiter key (override rate-limit bucket, SPEC 08 §3.7)', async () => {
     llmClient.invokeLLM.mockResolvedValue({
       content: '{"answer":"hi"}',
       rawResponse: {},

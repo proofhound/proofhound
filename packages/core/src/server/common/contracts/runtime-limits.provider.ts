@@ -1,8 +1,8 @@
 // RuntimeLimitsProvider — adapter extension point
-// See docs/specs/08-saas-adapter-boundary.md §3.10
+// See docs/specs/08-adapter-extension-points.md §3.10
 //
 // Lets a deployment fold deployment-level runtime caps into a call's per-call RPM/TPM/concurrency
-// limits before enqueueing or direct invocation — e.g. a SaaS org plan's concurrency ceiling. It carries NO billing
+// limits before enqueueing or direct invocation — e.g. a replacement implementation's org plan concurrency ceiling. It carries NO billing
 // semantics: it only translates an already-resolved ProjectContext (+ model / source) into an optional
 // limits override. The OSS default `LocalRuntimeLimitsProvider` is a genuine pass-through (returns the
 // caller's limits unchanged) and is invoked before every LLM enqueue/direct call, so OSS behavior is identical.

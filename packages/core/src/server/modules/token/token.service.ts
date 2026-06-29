@@ -23,9 +23,9 @@ export { TokenService };
 export type { ActionSource };
 
 // User token = the single local-admin-console user credential; the same token can be used for both the HTTP API and MCP.
-// OSS does not bind project_id; the SaaS form may attach project later, but this service does not write it.
+// OSS does not bind project_id; a replacement implementation may attach project later, but this service does not write it.
 // Rows with scope='webhook' are not handled by this service. OSS binds this default in LocalContractsModule;
-// TokenModule itself only consumes the edition-supplied TokenService so SaaS can replace it via forRoot({ contracts }).
+// TokenModule itself only consumes the edition-supplied TokenService so a replacement implementation can replace it via forRoot({ contracts }).
 // See docs/specs/06-database-schema.md §3.2.
 @Injectable()
 export class LocalTokenService extends TokenService {

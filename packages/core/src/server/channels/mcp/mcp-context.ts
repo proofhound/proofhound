@@ -1,5 +1,5 @@
 // mcp-context — actor / project context adapter for MCP tool entrypoints
-// See docs/specs/08-saas-adapter-boundary.md §3.3 and docs/specs/09-mcp-server.md.
+// See docs/specs/08-adapter-extension-points.md §3.3 and docs/specs/09-mcp-server.md.
 //
 // The MCP transport (mcp.transport.ts) authenticates and authorizes each request, then builds the
 // McpToolContext via `McpDispatchContextFactory.build(metadata)` BEFORE dispatching a tool, so every
@@ -35,7 +35,7 @@ export function resolveMcpProjectContext(ctx: McpToolContext): ProjectContext {
     projectId: actor.projectId ?? LOCAL_PROJECT_CONTEXT.projectId,
     source: 'local',
   };
-  // orgId (SaaS-only; undefined in OSS) is the project's rate-limit bucket (SPEC 08 §3.7). Carry it so
+  // orgId (override-only; undefined in OSS) is the project's rate-limit bucket (SPEC 08 §3.7). Carry it so
   // MCP tool handlers feed the same org into services as the HTTP @CurrentProject path does.
   if (actor.orgId !== undefined) project.orgId = actor.orgId;
   return project;
