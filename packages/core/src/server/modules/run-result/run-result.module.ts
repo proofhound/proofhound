@@ -9,8 +9,8 @@ import { RunResultService } from './run-result.service';
   imports: [DatabaseModule],
   controllers: [RunResultController, ReleaseRunResultController],
   providers: [RunResultRepository, RunResultService, RunResultRetentionSweeper],
-  // RunResultPayloadReader / DatasetSamplePayloadReader are provided globally by the contracts module
-  // (08 §3.14); modules inject them directly. There is no object-storage compaction in the OSS trunk.
+  // Run-result payloads are stored and read inline from the row; there is no read seam or object-storage
+  // compaction in the OSS trunk (SPEC 30 §9).
   exports: [RunResultService],
 })
 export class RunResultModule {}

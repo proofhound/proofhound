@@ -90,7 +90,7 @@ Pagination query parameters:
 
 Results are shown in descending order of creation time by default, i.e. the most recently written run results appear first.
 
-The export endpoint accepts the same filters and format `csv | jsonl`. It exports all matching rows, not only the current `page` / `pageSize`, and uses stable keyset pagination ordered by `(created_at ASC, id ASC)` so large experiment result sets can be streamed without loading them all into memory. Export rows include the full rendered prompt, input variables, raw response, and parsed output; offloaded fields are rehydrated through `RunResultPayloadReader`.
+The export endpoint accepts the same filters and format `csv | jsonl`. It exports all matching rows, not only the current `page` / `pageSize`, and uses stable keyset pagination ordered by `(created_at ASC, id ASC)` so large experiment result sets can be streamed without loading them all into memory. Export rows include the full rendered prompt, input variables, raw response, and parsed output, read inline from each row.
 
 MCP:
 
@@ -127,7 +127,7 @@ Pagination query parameters:
 
 Results are shown in descending order of creation time by default, i.e. the most recently written run results appear first.
 
-The release export endpoint accepts the same release filters and format `csv | jsonl`. It exports all matching rows across the selected source events / release versions / lanes / time window, not only the visible page, and streams batches ordered by `(created_at ASC, id ASC)`. Export rows include release version label, prompt version, model, lane, rendered prompt, input variables, raw response, parsed output, and engineering metrics; offloaded payload fields are rehydrated through `RunResultPayloadReader`.
+The release export endpoint accepts the same release filters and format `csv | jsonl`. It exports all matching rows across the selected source events / release versions / lanes / time window, not only the visible page, and streams batches ordered by `(created_at ASC, id ASC)`. Export rows include release version label, prompt version, model, lane, rendered prompt, input variables, raw response, parsed output, and engineering metrics, read inline from each row.
 
 MCP:
 
@@ -181,12 +181,10 @@ The run results list refreshes by polling alongside its parent page. While an ex
 
 ## 9. Sample/payload storage (OSS inline)
 
-OSS stores every run-result field inline in `ph_runs.run_results` (PostgreSQL). The large fields — `rendered_prompt`, `input_variables`, `raw_response`, `parsed_output` — are written and read directly from the row; there is no tiering, sharding, or object storage in the OSS trunk.
-
-All run-result payload reads go through the `RunResultPayloadReader` adapter ([08 §3.14](08-adapter-extension-points.md)); the OSS default returns the inline value. `run_results.payload_ref jsonb` and `compaction_generation int` are reserved columns, **always `NULL` / `0` in OSS** — kept so the storage layer can be extended behind the reader adapter without a schema change. OSS code never writes them and never reads object storage.
+OSS stores every run-result field inline in `ph_runs.run_results` (PostgreSQL). The large fields — `rendered_prompt`, `input_variables`, `raw_response`, `parsed_output` — are written and read directly from the row; there is no tiering, sharding, object storage, or payload-read seam in the OSS trunk.
 
 ### 9.1 Read paths
 
-- **List** serves preview-only (`input_preview` / `output_preview` / `decision_output`); it does not select the four big fields.
-- **Detail**, every **background business read** (optimization analysis/generate reuse, canary/release output mapping, webhook receipts, annotation detail, strategy analysis), and **export** go through the `RunResultPayloadReader` seam (`readRenderedPrompt` / `readInputVariables` / `readRawResponse` / `readParsedOutput` + batch variants), so they share one read entry point. The OSS default finds the value inline. Export rehydrates with `hydrateMany` over bounded keyset batches and streams CSV / JSONL.
+- **List** returns a preview computed on read from the inline fields (`input_variables` / `decision_output` / `parsed_output` / `raw_response`); it does not return the full big fields in the list payload.
+- **Detail**, every **background business read** (optimization analysis/generate reuse, canary/release output mapping, webhook receipts, annotation detail, strategy analysis), and **export** read the inline fields directly from the row. Export keyset-paginates over bounded batches and streams CSV / JSONL.
 - The DB can `ILIKE` the inline fields for search.

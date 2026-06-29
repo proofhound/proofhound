@@ -14,39 +14,10 @@ import type {
 } from '@proofhound/shared';
 import { sql, type SQL } from 'drizzle-orm';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import type { RunResultPayloadRef } from '../run-result/run-result-payload';
-import { RunResultPayloadReader } from '../run-result/run-result-payload.reader';
 
 @Injectable()
 export class AnnotationRepository {
-  constructor(
-    @Inject(DATABASE_CLIENT) private readonly db: DbClient,
-    private readonly payloadReader: RunResultPayloadReader,
-  ) {}
-
-  // The joined run_result's large fields may be offloaded once the experiment is compacted
-  // (SPEC 30 §9); resolve them through the seam before mapping each annotation sample. Pure
-  // pass-through when storage is disabled / the row was never compacted.
-  private async hydrateSampleRows(rows: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
-    const hydrated = await this.payloadReader.hydrateMany(
-      rows.map((r) => ({
-        renderedPrompt: r['rendered_prompt'] ?? null,
-        inputVariables: r['input_variables'] ?? null,
-        rawResponse: (r['raw_response'] as string | null) ?? null,
-        parsedOutput: r['parsed_output'] ?? null,
-        payloadRef: (r['payload_ref'] as RunResultPayloadRef | null) ?? null,
-      })),
-    );
-    rows.forEach((r, i) => {
-      const h = hydrated[i];
-      if (!h) return;
-      r['rendered_prompt'] = h.renderedPrompt;
-      r['input_variables'] = h.inputVariables;
-      r['raw_response'] = h.rawResponse;
-      r['parsed_output'] = h.parsedOutput;
-    });
-    return rows;
-  }
+  constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
 
   async findProject(projectId: string): Promise<{ id: string } | null> {
     const rows = await this.db.execute(sql`
@@ -435,7 +406,7 @@ export class AnnotationRepository {
       LIMIT ${filter.limit}
       OFFSET ${filter.offset}
     `);
-    return (await this.hydrateSampleRows(unwrapRows<Record<string, unknown>>(rows))).map(mapSampleRow);
+    return unwrapRows<Record<string, unknown>>(rows).map(mapSampleRow);
   }
 
   async countSamples(taskId: string, status?: AnnotationSampleStatusDto): Promise<number> {
@@ -471,7 +442,7 @@ export class AnnotationRepository {
       ${sampleSelectSql(sql`FROM claimed annotation`)}
       ORDER BY annotation.created_at ASC
     `);
-    return (await this.hydrateSampleRows(unwrapRows<Record<string, unknown>>(rows))).map(mapSampleRow);
+    return unwrapRows<Record<string, unknown>>(rows).map(mapSampleRow);
   }
 
   async submitSample(
@@ -535,7 +506,7 @@ export class AnnotationRepository {
       ${sampleSelectSql(sql`FROM updated annotation`)}
       LIMIT 1
     `);
-    return (await this.hydrateSampleRows(unwrapRows<Record<string, unknown>>(rows))).map(mapSampleRow)[0] ?? null;
+    return unwrapRows<Record<string, unknown>>(rows).map(mapSampleRow)[0] ?? null;
   }
 
   async releaseSample(taskId: string, annotationId: string, actorUserId: string): Promise<AnnotationSampleDto | null> {
@@ -555,7 +526,7 @@ export class AnnotationRepository {
       ${sampleSelectSql(sql`FROM updated annotation`)}
       LIMIT 1
     `);
-    return (await this.hydrateSampleRows(unwrapRows<Record<string, unknown>>(rows))).map(mapSampleRow)[0] ?? null;
+    return unwrapRows<Record<string, unknown>>(rows).map(mapSampleRow)[0] ?? null;
   }
 }
 
@@ -669,7 +640,6 @@ function sampleSelectSql(fromSql: SQL): SQL {
       rr.expected_output,
       rr.raw_response,
       rr.parsed_output,
-      rr.payload_ref,
       rr.latency_ms,
       rr.input_tokens,
       rr.output_tokens

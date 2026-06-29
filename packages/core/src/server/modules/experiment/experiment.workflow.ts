@@ -23,8 +23,6 @@ import {
   type FindTerminalLlmJobsResult,
   type StoppedLlmTerminalJob,
 } from '../../infrastructure/orchestration/bullmq.service';
-import { DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
-import { type DatasetSamplePayloadRef } from '../dataset/dataset-sample-payload';
 import { RunResultService } from '../run-result/run-result.service';
 import { aggregateExperimentMetrics } from './experiment.aggregator';
 import { renderPromptForSample } from './experiment.renderer';
@@ -95,7 +93,6 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
     private readonly bullmq: BullmqService,
     private readonly runResults: RunResultService,
-    private readonly datasetSampleReader: DatasetSamplePayloadReader,
     private readonly runResultWriter: DrizzleRunResultWriter,
   ) {
     super('experiment-workflow');
@@ -634,15 +631,10 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
   ): Promise<Array<{ id: string; data: Record<string, unknown> | null }>> {
     if (sampleIds.length === 0) return [];
     const rows = await this.db
-      .select({ id: datasetSamples.id, data: datasetSamples.data, payloadRef: datasetSamples.payloadRef })
+      .select({ id: datasetSamples.id, data: datasetSamples.data })
       .from(datasetSamples)
       .where(inArrayUuids(datasetSamples.id, sampleIds));
-    // Sample data may be offloaded to a shard once promote tiers it out (SPEC 22 §7.3); resolve it
-    // through the seam (inline when present, else batched shard read). Pass-through when disabled.
-    const hydrated = await this.datasetSampleReader.hydrateMany(
-      rows.map((r) => ({ data: r.data, payloadRef: (r.payloadRef as DatasetSamplePayloadRef | null) ?? null })),
-    );
-    return rows.map((r, i) => ({ id: r.id, data: (hydrated[i] as Record<string, unknown> | null) ?? null }));
+    return rows.map((r) => ({ id: r.id, data: (r.data as Record<string, unknown> | null) ?? null }));
   }
 }
 

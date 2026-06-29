@@ -11,35 +11,17 @@ export const DATASET_IMPORT_ZIP_MAX_FILE_BYTES = DATASET_UPLOAD_MAX_BYTES;
 export const datasetImportSourceFormatSchema = z.enum(['jsonl', 'csv', 'tsv', 'json', 'zip']);
 export type DatasetImportSourceFormat = z.infer<typeof datasetImportSourceFormatSchema>;
 
-export const datasetImportStateSchema = z.enum([
-  'created',
-  'uploading',
-  'uploaded',
-  'queued',
-  'parsing',
-  'importing',
-  'completed',
-  'failed',
-  'aborted',
-]);
+export const datasetImportStateSchema = z.enum(['created', 'importing', 'completed', 'failed', 'aborted']);
 export type DatasetImportState = z.infer<typeof datasetImportStateSchema>;
 
 // Backward-compatible alias while callers migrate terminology from "status" to "state".
 export const datasetImportStatusSchema = datasetImportStateSchema;
 export type DatasetImportStatus = DatasetImportState;
 
-export const datasetImportModeSchema = z.enum(['batch', 'raw_object']);
-export type DatasetImportMode = z.infer<typeof datasetImportModeSchema>;
-
 export const datasetImportProgressPhaseSchema = z.enum([
   'created',
-  'uploading',
-  'uploaded',
-  'queued',
-  'parsing',
   'importing',
   'finalizing',
-  'offloading',
   'committing',
   'completed',
   'failed',
@@ -98,7 +80,6 @@ export const datasetImportItemSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
   datasetId: z.string().uuid().nullable(),
-  importMode: datasetImportModeSchema.default('batch'),
   name: z.string(),
   description: z.string().nullable(),
   fileName: z.string(),
@@ -120,8 +101,6 @@ export const datasetImportProgressSchema = z.object({
   importedRows: z.number().int().nonnegative(),
   totalRows: z.number().int().nonnegative().nullable(),
   totalBytes: z.number().int().nonnegative().nullable(),
-  totalShards: z.number().int().nonnegative().nullable(),
-  completedShards: z.number().int().nonnegative().nullable(),
   committedRows: z.number().int().nonnegative(),
   percentage: z.number().min(0).max(100).nullable(),
 });
@@ -132,8 +111,6 @@ export const datasetImportStatusDtoSchema = datasetImportItemSchema.extend({
   progress: datasetImportProgressSchema,
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
-  jobId: z.string().nullable(),
-  rawUploadCompletedAt: z.string().datetime().nullable(),
   queuedAt: z.string().datetime().nullable(),
   startedAt: z.string().datetime().nullable(),
   completedAt: z.string().datetime().nullable(),

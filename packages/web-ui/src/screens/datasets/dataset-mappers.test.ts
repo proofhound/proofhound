@@ -11,7 +11,6 @@ function makeDataset(overrides: Partial<DatasetListItemDto> = {}): DatasetListIt
     description: null,
     createdBy: 'u-1',
     createdByDisplayName: 'Alice',
-    storagePrefix: 'datasets/p-1/demo.jsonl',
     fieldSchema: [],
     sampleCount: 0,
     hasImages: false,

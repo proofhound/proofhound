@@ -25,17 +25,9 @@ import { LocalMcpAuthResolver } from './local-mcp-auth.resolver';
 import { LocalProjectContextResolver } from './local-project-context.resolver';
 import { LocalUserTokenVerifier } from './local-user-token.verifier';
 import { McpAuthResolver } from './mcp-auth.resolver';
-import {
-  DatasetSamplePayloadReader,
-  InlineDatasetSamplePayloadReader,
-} from '../../modules/dataset/dataset-sample-payload';
-import {
-  RunResultPayloadReader,
-  InlineRunResultPayloadReader,
-} from '../../modules/run-result/run-result-payload.reader';
 import { DatasetImportRepository } from '../../modules/dataset/dataset-import.repository';
 import { LocalDatasetUploadService } from '../../modules/dataset/dataset-import.service';
-import { DatasetUploadInterface } from '../../modules/dataset/dataset-upload.interface';
+import { DatasetUploadService } from '../../modules/dataset/dataset-upload.contract';
 import { ProjectContextResolver } from './project-context.resolver';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from './quota-policy.hook';
 import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from './runtime-limits.provider';
@@ -61,10 +53,8 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
     { provide: UsageMeteringHook, useClass: NoopUsageMeteringHook },
     { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
-    { provide: DatasetSamplePayloadReader, useClass: InlineDatasetSamplePayloadReader },
-    { provide: RunResultPayloadReader, useClass: InlineRunResultPayloadReader },
     DatasetImportRepository,
-    { provide: DatasetUploadInterface, useClass: LocalDatasetUploadService },
+    { provide: DatasetUploadService, useClass: LocalDatasetUploadService },
   ],
   exports: [
     ProjectContextResolver,
@@ -78,9 +68,7 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     QuotaPolicyHook,
     UsageMeteringHook,
     WorkflowAuthorizationHook,
-    DatasetSamplePayloadReader,
-    RunResultPayloadReader,
-    DatasetUploadInterface,
+    DatasetUploadService,
     LocalUserTokenVerifier,
   ],
 })

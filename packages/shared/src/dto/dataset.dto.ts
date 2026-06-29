@@ -109,7 +109,6 @@ export const datasetListItemSchema = z.object({
   categoryDistribution: datasetCategoryDistributionSchema,
   references: datasetReferencesSchema,
   hasImages: z.boolean(),
-  storagePrefix: z.string().nullable(),
   createdBy: z.string().uuid(),
   createdByDisplayName: z.string().nullable(),
   createdAt: z.string().datetime(),

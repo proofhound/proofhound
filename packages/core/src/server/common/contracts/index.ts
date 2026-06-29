@@ -14,19 +14,9 @@ export * from './quota-policy.hook';
 export * from './usage-metering.hook';
 export * from './workflow-authorization.hook';
 export {
-  DatasetSamplePayloadReader,
-  InlineDatasetSamplePayloadReader,
-  type DatasetSamplePayloadRow,
-  type DatasetSamplePayloadRef,
-} from '../../modules/dataset/dataset-sample-payload';
-export {
-  RunResultPayloadReader,
-  InlineRunResultPayloadReader,
-} from '../../modules/run-result/run-result-payload.reader';
-export {
-  DatasetUploadInterface,
+  DatasetUploadService,
   type DatasetUploadInput,
-} from '../../modules/dataset/dataset-upload.interface';
+} from '../../modules/dataset/dataset-upload.contract';
 export * from './http-actor.guard';
 export * from './local-project-context.resolver';
 export * from './local-actor-context.resolver';

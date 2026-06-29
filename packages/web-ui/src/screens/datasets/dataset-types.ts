@@ -37,7 +37,6 @@ export interface ProjectDataset {
   name: string;
   description: string;
   owner: string;
-  uploadSource: string;
   modalities: DatasetModality[];
   hasImages: boolean;
   status: DatasetStatus;

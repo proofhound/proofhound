@@ -4,10 +4,6 @@ import { alias } from 'drizzle-orm/pg-core';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import { DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
-import { type DatasetSamplePayloadRef } from '../dataset/dataset-sample-payload';
-import type { RunResultPayloadRef } from '../run-result/run-result-payload';
-import { RunResultPayloadReader } from '../run-result/run-result-payload.reader';
 
 const {
   optimizationRoundSteps,
@@ -275,11 +271,7 @@ export interface RoundStepUpsertInput {
 
 @Injectable()
 export class OptimizationRepository {
-  constructor(
-    @Inject(DATABASE_CLIENT) private readonly db: DbClient,
-    private readonly payloadReader: RunResultPayloadReader,
-    private readonly datasetSampleReader: DatasetSamplePayloadReader,
-  ) {}
+  constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
 
   private readonly selectFields = {
     id: optimizations.id,
@@ -1063,15 +1055,11 @@ export class OptimizationRepository {
 
   async loadDatasetSamples(datasetId: string): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
     const rows = await this.db
-      .select({ id: datasetSamples.id, data: datasetSamples.data, payloadRef: datasetSamples.payloadRef })
+      .select({ id: datasetSamples.id, data: datasetSamples.data })
       .from(datasetSamples)
       .where(eq(datasetSamples.datasetId, datasetId))
       .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id));
-    // Sample data may be offloaded once promote tiers it out (SPEC 22 §7.3); resolve through the seam.
-    const hydrated = await this.datasetSampleReader.hydrateMany(
-      rows.map((r) => ({ data: r.data, payloadRef: (r.payloadRef as DatasetSamplePayloadRef | null) ?? null })),
-    );
-    return rows.map((r, i) => ({ id: r.id, data: (hydrated[i] as Record<string, unknown> | null) ?? {} }));
+    return rows.map((r) => ({ id: r.id, data: (r.data as Record<string, unknown> | null) ?? {} }));
   }
 
   async findPreviousRoundRunResults(input: {
@@ -1108,30 +1096,18 @@ export class OptimizationRepository {
         isCorrect: runResults.isCorrect,
         errorMessage: runResults.errorMessage,
         rawResponse: runResults.rawResponse,
-        payloadRef: runResults.payloadRef,
       })
       .from(runResults)
       .where(and(eq(runResults.source, 'experiment'), eq(runResults.sourceId, experimentId)));
 
-    // The experiment source offloads parsed_output + raw_response (SPEC 30 §9.4), so the strategy's
-    // failure analysis must resolve them through the seam (inline pre-compaction, else from the shard).
-    const hydrated = await this.payloadReader.hydrateMany(
-      rows.map((r) => ({
-        renderedPrompt: null,
-        inputVariables: null,
-        rawResponse: r.rawResponse,
-        parsedOutput: r.parsedOutput,
-        payloadRef: (r.payloadRef as RunResultPayloadRef | null) ?? null,
-      })),
-    );
-    return rows.map((r, i) => ({
+    return rows.map((r) => ({
       id: r.id,
       sampleId: r.sampleId,
       decisionOutput: r.decisionOutput,
       isCorrect: r.isCorrect,
       errorMessage: r.errorMessage,
-      parsedOutput: hydrated[i]?.parsedOutput ?? r.parsedOutput,
-      rawResponse: hydrated[i]?.rawResponse ?? r.rawResponse,
+      parsedOutput: r.parsedOutput,
+      rawResponse: r.rawResponse,
     }));
   }
 

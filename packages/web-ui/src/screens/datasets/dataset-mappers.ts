@@ -14,11 +14,6 @@ export function toUiFieldRole(field: DatasetFieldSchemaDto): DatasetFieldRole {
   return 'metadata';
 }
 
-function getStorageFileName(storagePrefix: string | null) {
-  if (!storagePrefix) return '-';
-  return storagePrefix.split('/').filter(Boolean).at(-1) ?? storagePrefix;
-}
-
 function toCategoryPercent(count: number, total: number) {
   if (total <= 0) return 0;
   return Math.round((count / total) * 1000) / 10;
@@ -56,7 +51,6 @@ export function toProjectDataset(dataset: DatasetListItemDto): ProjectDataset {
     name: dataset.name,
     description: dataset.description ?? '',
     owner: dataset.createdByDisplayName ?? dataset.createdBy,
-    uploadSource: getStorageFileName(dataset.storagePrefix),
     modalities: deriveDatasetModalities(dataset.fieldSchema),
     hasImages: dataset.hasImages,
     status: dataset.status,

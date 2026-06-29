@@ -163,7 +163,6 @@ export class DatasetService {
     const fieldSchema = buildDatasetFieldSchema(dto.fieldMappings, dto.samples);
     const externalIdFieldName = dto.fieldMappings.find((field) => field.role === 'id')?.name ?? null;
     const hasImages = fieldSchema.some((field) => ['image', 'image_url', 'image_base64'].includes(field.role));
-    const storagePrefix = `datasets/${projectId}/raw/${datasetId}/${dto.uploadSource.fileName}`;
     await this.quotaPolicy.assertCanStore({
       actor: toActorContext(actor),
       bytes: estimateDatasetCreateBytes(dto),
@@ -178,7 +177,6 @@ export class DatasetService {
       dto,
       fieldSchema,
       hasImages,
-      storagePrefix,
       externalIdFieldName,
     });
     await this.recordDatasetStorageEvents(row, actor.sub, 'dataset.created', {
@@ -337,7 +335,6 @@ export class DatasetService {
     const deletedAt = new Date();
     await this.recordDatasetStorageEvents({ ...row, updatedAt: deletedAt, deletedAt }, actor.sub, 'dataset.deleted', {
       sampleCount: row.sampleCount,
-      storagePrefix: row.storagePrefix,
     });
   }
 
@@ -388,7 +385,6 @@ export class DatasetService {
       name: row.name,
       sampleCount: row.sampleCount,
       hasImages: row.hasImages,
-      storagePrefix: row.storagePrefix,
       updatedAt: row.updatedAt.toISOString(),
       ...payload,
     });
@@ -396,7 +392,6 @@ export class DatasetService {
       reason: eventType,
       datasetId: row.id,
       sampleCount: row.sampleCount,
-      storagePrefix: row.storagePrefix,
       updatedAt: row.updatedAt.toISOString(),
       ...payload,
     });
@@ -519,7 +514,6 @@ export class DatasetService {
       categoryDistribution,
       references,
       hasImages: row.hasImages,
-      storagePrefix: row.storagePrefix,
       createdBy: row.createdBy,
       createdByDisplayName: row.createdByDisplayName ?? null,
       createdAt: row.createdAt.toISOString(),

@@ -233,7 +233,6 @@ CREATE TABLE ph_assets.datasets (
   sample_count   INTEGER NOT NULL DEFAULT 0,
   field_schema   JSONB NOT NULL DEFAULT '[]'::jsonb,
   has_images     BOOLEAN NOT NULL DEFAULT FALSE,
-  storage_prefix TEXT,
   created_by     UUID NOT NULL,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -257,13 +256,13 @@ CREATE TABLE ph_assets.dataset_samples (
 
 `dataset_samples` is one of the few tables that allow physical deletion, to support re-upload and bulk clearing of samples.
 
-`datasets.storage_prefix` is no longer written on the import path without object storage; the column is retained only for backward compatibility, and new datasets do not depend on it (see [04 §4](04-postgresql.md#4-storage)). `datasets.status` is the formal dataset existence state (`active` / `archived`) and is independent from import progress. During import, samples only land in the staging table below, and the formal tables always contain only complete datasets.
+`datasets.status` is the formal dataset existence state (`active` / `archived`) and is independent from import progress. During import, samples only land in the staging table below, and the formal tables always contain only complete datasets.
 
 #### 4.3.1 `ph_assets.dataset_imports` / `dataset_import_samples`
 
 `dataset_imports` anchors a dataset upload's staging rows and `dataset_import_samples` is the temporary staging before all rows are promoted. On successful promotion, the staged samples are atomically promoted to `dataset_samples` and a `datasets` row is created within a single transaction (see [22 §3.1.1](22-datasets.md#311-the-oss-upload-path-single-synchronous)).
 
-**OSS uses this synchronously and transiently**: a single multipart upload request creates the import row, stream-parses the Multer temp file into staging, promotes, and resolves the row — all within the request. The `raw_upload_*` / `raw_object_ref` columns, `import_mode='raw_object'`, `job_id`, and the `uploading` / `uploaded` / `queued` / `parsing` async states are **reserved dormant slots** (retained for backward compatibility and a non-OSS async / browser-direct-upload importer); OSS never writes them, and the CHECK constraints keep the values so an external consumer can reuse the table **without a migration**.
+**OSS uses this synchronously and transiently**: a single multipart upload request creates the import row, stream-parses the Multer temp file into staging, promotes, and resolves the row — all within the request. There is no async / browser-direct / raw-object import path in the OSS trunk; a consumer that needs one carries its own transfer columns and states in its own schema rather than reserving dormant slots here.
 
 ```sql
 CREATE TABLE ph_assets.dataset_imports (
@@ -277,14 +276,7 @@ CREATE TABLE ph_assets.dataset_imports (
   file_size_bytes     BIGINT NOT NULL,
   content_type        TEXT,
   source_format       TEXT NOT NULL CHECK (source_format IN ('jsonl', 'csv', 'tsv', 'json', 'zip')),
-  import_mode         TEXT NOT NULL DEFAULT 'batch'
-                      CHECK (import_mode IN ('batch', 'raw_object')),
-  raw_upload_session_id TEXT,
-  raw_upload_expires_at TIMESTAMPTZ,
-  raw_object_ref      JSONB,
-  raw_upload_completed_at TIMESTAMPTZ,
   progress            JSONB NOT NULL DEFAULT '{}'::jsonb,
-  job_id              TEXT,
   error_code          TEXT,
   error_message       TEXT,
   queued_at           TIMESTAMPTZ,
@@ -296,8 +288,7 @@ CREATE TABLE ph_assets.dataset_imports (
   received_rows       INTEGER NOT NULL DEFAULT 0,
   status              TEXT NOT NULL DEFAULT 'created'
                       CHECK (status IN (
-                        'created', 'uploading', 'uploaded', 'queued',
-                        'parsing', 'importing', 'completed', 'failed', 'aborted'
+                        'created', 'importing', 'completed', 'failed', 'aborted'
                       )),
   created_by          UUID NOT NULL,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -307,14 +298,10 @@ CREATE TABLE ph_assets.dataset_imports (
 CREATE INDEX idx_dataset_imports_project_status
   ON ph_assets.dataset_imports (project_id, status);
 
-CREATE INDEX idx_dataset_imports_job_id
-  ON ph_assets.dataset_imports (job_id)
-  WHERE job_id IS NOT NULL;
-
--- sweep scans pre-worker sessions that have had no heartbeat for a long time
+-- sweep scans importing sessions that have had no heartbeat for a long time
 CREATE INDEX idx_dataset_imports_stale
   ON ph_assets.dataset_imports (status, updated_at)
-  WHERE status IN ('created', 'uploading', 'uploaded');
+  WHERE status = 'importing';
 
 CREATE TABLE ph_assets.dataset_import_samples (
   import_id   UUID NOT NULL REFERENCES ph_assets.dataset_imports(id) ON DELETE CASCADE,
@@ -327,12 +314,11 @@ CREATE TABLE ph_assets.dataset_import_samples (
 
 Fields and lifecycle:
 
-- `import_mode='batch'` is the OSS path: the server-side stream parser writes staging rows from the Multer temp file within the upload request (there is no client batch endpoint in OSS).
-- `import_mode='raw_object'` and the `raw_upload_session_id` / `raw_upload_expires_at` / `raw_object_ref` / `raw_upload_completed_at` columns are **reserved dormant slots** for a browser-direct + async-worker import; OSS never writes them.
-- `status`: OSS uses the synchronous subset `created` → `importing` → `completed` / `failed`. The remaining async states are reserved for a non-OSS importer. `failed` rows are short-lived for error reporting; staging rows are cleared best-effort.
-- `progress` is a user-facing progress snapshot for long server-side work after parsing: it stores a visible `phase` and `committedRows` counter so the upload page can poll the session during promotion. It is informational for rendering, but a `finalizing` / `committing` `phase` also tells abort cleanup to request cancellation instead of deleting staging under an active promotion transaction; `status` remains the authoritative lifecycle state. (`totalShards` / `completedShards` and an `offloading` phase are reserved for a non-OSS sharded-offload importer; OSS does not populate them.)
+- The OSS import path is server-side and synchronous: the stream parser writes staging rows from the Multer temp file within the upload request (there is no client batch endpoint, async worker, or raw-object transfer in OSS).
+- `status`: OSS uses `importing` → `completed` / `failed` (and `aborted` on cancel). `failed` rows are short-lived for error reporting; staging rows are cleared best-effort.
+- `progress` is a user-facing progress snapshot for long server-side work after parsing: it stores a visible `phase` and `committedRows` counter so the upload page can poll the session during promotion. It is informational for rendering, but a `finalizing` / `committing` `phase` also tells abort cleanup to request cancellation instead of deleting staging under an active promotion transaction; `status` remains the authoritative lifecycle state.
 - `dataset_id` is NULL during import and is backfilled to point to the newly created dataset after a successful `complete` promotion.
-- `received_rows` is the count of staged parsed rows and also serves as progress; `updated_at` is the heartbeat advanced on batch writes and state transitions. `job_id` links a raw import to its BullMQ job for idempotent queueing/debugging. Lifecycle timestamps support status display without scanning worker logs.
+- `received_rows` is the count of staged parsed rows and also serves as progress; `updated_at` is the heartbeat advanced on batch writes and state transitions. Lifecycle timestamps support status display without scanning worker logs.
 - `field_mappings` is submitted by the frontend field wizard when the session is created, and `complete` finalizes `datasets.field_schema` based on it.
 - `dataset_import_samples` is temporary staging: the primary key `(import_id, row_index)` provides idempotency for single-batch resends; it hangs under the session via `ON DELETE CASCADE`, so deleting the session clears the staged samples. After successful promotion, failure, or abort, staged samples are explicitly cleared.
 - OSS cleanup: a cancelled / failed upload rolls back staging and deletes the Multer temp file in `finally`; orphaned temp files from a crashed request are removed by a startup temp-file sweep. There is no object-storage `sweepPendingUploads` in OSS (no object storage).

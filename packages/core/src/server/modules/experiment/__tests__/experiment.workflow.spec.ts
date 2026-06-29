@@ -27,11 +27,7 @@ import {
   readExpectedField,
   type ExperimentPlan,
 } from '../experiment.workflow';
-import { InlineDatasetSamplePayloadReader } from '../../dataset/dataset-sample-payload';
 import { describe, expect, it, vi } from 'vitest';
-
-// OSS default: the dataset-sample reader is a pure inline pass-through.
-const datasetSampleReader = new InlineDatasetSamplePayloadReader();
 
 const PLAN: ExperimentPlan = {
   experimentId: 'exp-1',
@@ -51,7 +47,7 @@ function buildRegistrar() {
   const bullmq = {} as never;
   const runResults = {} as never;
   const runResultWriter = {} as never;
-  const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, datasetSampleReader, runResultWriter);
+  const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, runResultWriter);
 
   const finalize = vi.fn().mockResolvedValue(undefined);
   const markStarted = vi.fn().mockResolvedValue(undefined);
@@ -262,7 +258,6 @@ describe('ExperimentWorkflow.pollUntilBatchDoneImpl — stop 清理队列', () =
       db,
       bullmq,
       runResults as never,
-      datasetSampleReader,
       runResultWriter as never,
     );
     const r = registrar as unknown as Record<string, unknown>;
@@ -452,7 +447,7 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
     const bullmq = { enqueueLlmJob } as never;
     const runResults = {} as never;
     const runResultWriter = {} as never;
-    const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, datasetSampleReader, runResultWriter);
+    const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, runResultWriter);
 
     const r = registrar as unknown as Record<string, unknown>;
     r['finalizeStep'] = vi.fn().mockResolvedValue(undefined);

@@ -8,7 +8,6 @@ function makeDataset(fields: ProjectDataset['fields']): ProjectDataset {
     name: 'Dataset',
     description: '',
     owner: 'owner',
-    uploadSource: 'local.jsonl',
     modalities: ['text', 'image'],
     hasImages: true,
     status: 'active',

@@ -1,4 +1,4 @@
-// LocalDatasetUploadService — OSS default DatasetUploadInterface (08 §3.13, SPEC 22 §3.1.1).
+// LocalDatasetUploadService — OSS default DatasetUploadService (08 §3.13, SPEC 22 §3.1.1).
 //
 // Receives a Multer temp file, stream-parses it, applies the field mapping, writes bounded staging
 // batches, then atomically promotes into a dataset (inline DB). Synchronous in the server process —
@@ -42,7 +42,7 @@ import {
   type DatasetImportRow,
 } from './dataset-import.repository';
 import { parseRawDatasetRows } from './dataset-import-raw-parser';
-import { DatasetUploadInterface, type DatasetUploadInput } from './dataset-upload.interface';
+import { DatasetUploadService, type DatasetUploadInput } from './dataset-upload.contract';
 
 const TYPE_INFERENCE_SAMPLE_LIMIT = 500;
 const STAGING_BATCH_ROWS = 1_000;
@@ -53,7 +53,7 @@ const IMAGE_ROLES = new Set(['image', 'image_url', 'image_base64']);
 const DEFAULT_DATASET_UPLOAD_MAX_BYTES = DATASET_UPLOAD_MAX_BYTES;
 
 @Injectable()
-export class LocalDatasetUploadService extends DatasetUploadInterface implements OnModuleInit, OnModuleDestroy {
+export class LocalDatasetUploadService extends DatasetUploadService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = createLogger('dataset-upload.service', { service: 'server' });
   private sweepTimer: NodeJS.Timeout | null = null;
   private sweeping = false;
@@ -300,7 +300,6 @@ export class LocalDatasetUploadService extends DatasetUploadInterface implements
       id: row.id,
       projectId: row.projectId,
       datasetId: row.datasetId,
-      importMode: 'batch',
       name: row.name,
       description: row.description,
       fileName: row.fileName,
@@ -313,8 +312,6 @@ export class LocalDatasetUploadService extends DatasetUploadInterface implements
       progress: buildImportProgress(row, state),
       errorCode: row.errorCode,
       errorMessage: row.errorMessage,
-      jobId: row.jobId,
-      rawUploadCompletedAt: isoOrNull(row.rawUploadCompletedAt),
       queuedAt: isoOrNull(row.queuedAt),
       startedAt: isoOrNull(row.startedAt),
       completedAt: isoOrNull(row.completedAt),
@@ -377,8 +374,6 @@ function buildImportProgress(row: DatasetImportRow, state: DatasetImportState) {
     importedRows: committedRows,
     totalRows: row.declaredTotalRows,
     totalBytes,
-    totalShards: null,
-    completedShards: null,
     committedRows,
     percentage: state === 'completed' ? 100 : null,
   };

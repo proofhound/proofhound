@@ -1,6 +1,6 @@
 # 04 · PostgreSQL Usage Conventions
 
-This document describes the database and frontend refresh responsibilities for the open-source self-hosted edition. Guiding principle: the database uses native PostgreSQL, and the business runtime does not depend on managed-platform proprietary capabilities. The OSS trunk stores all business data — datasets and run results included — inline in PostgreSQL; it contains no object-storage mechanism (external storage is reachable only behind the dataset-upload / payload-reader adapters, [08](08-adapter-extension-points.md) §3.13/§3.14, and is out of scope for the OSS runtime).
+This document describes the database and frontend refresh responsibilities for the open-source self-hosted edition. Guiding principle: the database uses native PostgreSQL, and the business runtime does not depend on managed-platform proprietary capabilities. The OSS trunk stores all business data — datasets and run results included — inline in PostgreSQL; it contains no object-storage mechanism (external storage is reachable only behind the dataset-upload adapter, [08](08-adapter-extension-points.md) §3.13, and is out of scope for the OSS runtime).
 
 ## 1. Infrastructure in Use
 
@@ -53,7 +53,7 @@ For public-facing deployments, UI channel authentication is handled by deploymen
 
 Dataset import is PostgreSQL-first and fully inline. The OSS upload path is a single synchronous request: a `multipart/form-data` file upload is stream-parsed into PostgreSQL staging tables (`ph_assets.dataset_imports` / `dataset_import_samples`) and atomically promoted into a formal dataset only after parsing / validation succeeds. See [22 §3.1.1](22-datasets.md#311-the-oss-upload-path-single-synchronous) and [06 §4.3.1](06-database-schema.md#431-ph_assetsdataset_imports--dataset_import_samples).
 
-The OSS trunk has no object-storage runtime: there is no browser-direct upload session, no worker object read-back, and no payload tiering. Larger files, resumable / async upload, and external object storage are reachable only by replacing the dataset-upload and payload-reader adapters ([08](08-adapter-extension-points.md) §3.13/§3.14); the OSS default upload and reader stay inline. Metadata registration and business validation always go through NestJS; entrypoint authentication is never delegated to storage-layer signatures.
+The OSS trunk has no object-storage runtime: there is no browser-direct upload session, no worker object read-back, and no payload tiering. Run-result and dataset-sample payloads are stored and read inline in PostgreSQL directly — there is no payload-read seam. Larger files, resumable / async upload, and external object storage are reachable only by replacing the dataset-upload adapter ([08](08-adapter-extension-points.md) §3.13); the OSS default upload stays inline. Metadata registration and business validation always go through NestJS; entrypoint authentication is never delegated to storage-layer signatures.
 
 ## 5. Frontend Refresh
 
@@ -78,7 +78,7 @@ The OSS trunk has no object-storage runtime: there is no browser-direct upload s
 | Layer      | Replacement Method                                                                                                                 |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | PostgreSQL | Any standard PostgreSQL 14+, replace `DATABASE_URL`                                                                               |
-| Storage    | OSS keeps payloads inline in PostgreSQL; external storage is introduced only behind the upload / payload-reader adapters ([08](08-adapter-extension-points.md) §3.13/§3.14), not in the OSS runtime |
+| Storage    | OSS keeps payloads inline in PostgreSQL; external storage is introduced only behind the upload adapter ([08](08-adapter-extension-points.md) §3.13), not in the OSS runtime |
 
 ## 8. Mapping to Business SPECs
 

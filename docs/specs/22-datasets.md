@@ -143,14 +143,12 @@ Field roles determine the platform's runtime behavior:
 
 ## 7. Sample storage
 
-OSS stores every sample fully inline in `ph_assets.dataset_samples.data` (PostgreSQL); `data` is always present and is the system of record. There is no object-storage tiering, sharding, or offload in the OSS trunk.
-
-`dataset_samples` keeps a `payload_ref jsonb` column that is **always `NULL` in OSS** — a reserved, storage-agnostic reference slot so the storage layer can be extended behind the read seam (§7.1) without an OSS schema change. OSS code never writes `payload_ref` and never reads object storage.
+OSS stores every sample fully inline in `ph_assets.dataset_samples.data` (PostgreSQL); `data` is `NOT NULL` and is the system of record. There is no object-storage tiering, sharding, offload, or payload-read seam in the OSS trunk — `data` is read directly.
 
 ### 7.1 Read path
 
-Sample payloads are read through the `DatasetSamplePayloadReader` adapter (see [08 §3.14](08-adapter-extension-points.md)); the OSS default returns the inline `data`.
+Sample payloads are read inline from `dataset_samples.data` directly.
 
-- **List / search / distribution** stay entirely in the DB: list reads the row projection; search uses `data::text ILIKE`; classification / label distribution group by the role scalar columns materialized at promote.
-- **Worker sampling** (experiment rendering, optimization rounds) and **export** go through the reader. Export keyset-paginates `dataset_samples` in stable `(created_at, id)` order and streams CSV / JSONL without building a whole-file buffer.
+- **List / search / distribution** stay entirely in the DB: list reads `data`; search uses `data::text ILIKE`; classification / label distribution group by `data ->> <field>` on the configurable field.
+- **Worker sampling** (experiment rendering, optimization rounds) and **export** read `data` directly. Export keyset-paginates `dataset_samples` in stable `(created_at, id)` order and streams CSV / JSONL without building a whole-file buffer.
 </content>

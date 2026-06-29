@@ -109,7 +109,6 @@ export const datasets = phAssets.table(
       .notNull()
       .default(sql`'[]'::jsonb`),
     hasImages: boolean('has_images').notNull().default(false),
-    storagePrefix: text('storage_prefix'),
     status: text('status').notNull().default('active'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdBy: uuid('created_by').notNull(),
@@ -137,20 +136,8 @@ export const datasetSamples = phAssets.table(
     datasetId: uuid('dataset_id')
       .notNull()
       .references(() => datasets.id, { onDelete: 'cascade' }),
-    // The full sample content tiers out to object-storage shards when configured (SPEC 22 §X /
-    // SPEC 30 §9 mirror). `data` becomes a droppable inline cache; the queryable projection below
-    // (preview + role scalars + index_values + pointer) stays in the DB so list / search /
-    // distribution never read a shard. NULL `payload_ref` means the row is still fully inline.
-    data: jsonb('data'),
-    payloadRef: jsonb('payload_ref'),
-    // Front ~1KB of the sample text, for the search fallback once `data` is offloaded.
-    searchPreview: text('search_preview'),
-    // Materialized role scalars (from datasets.field_schema) so distribution / filtering stay in SQL.
-    expectedOutputScalar: text('expected_output_scalar'),
-    labelScalar: text('label_scalar'),
-    categoryScalar: text('category_scalar'),
-    // General sidecar for any other configurable distribution / filter field (a small subset, not the row).
-    indexValues: jsonb('index_values'),
+    // The full sample content is stored inline in PostgreSQL (SPEC 22 §7); `data` is the system of record.
+    data: jsonb('data').notNull(),
     externalId: text('external_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -160,15 +147,6 @@ export const datasetSamples = phAssets.table(
     index('idx_dataset_samples_ext')
       .on(t.datasetId, t.externalId)
       .where(sql`${t.externalId} IS NOT NULL`),
-    index('idx_dataset_samples_expected')
-      .on(t.datasetId, t.expectedOutputScalar)
-      .where(sql`${t.expectedOutputScalar} IS NOT NULL`),
-    index('idx_dataset_samples_label')
-      .on(t.datasetId, t.labelScalar)
-      .where(sql`${t.labelScalar} IS NOT NULL`),
-    index('idx_dataset_samples_category')
-      .on(t.datasetId, t.categoryScalar)
-      .where(sql`${t.categoryScalar} IS NOT NULL`),
   ],
 );
 
@@ -193,17 +171,11 @@ export const datasetImports = phAssets.table(
     fileSizeBytes: bigint('file_size_bytes', { mode: 'number' }).notNull(),
     contentType: text('content_type'),
     sourceFormat: text('source_format').notNull(),
-    importMode: text('import_mode').notNull().default('batch'),
-    rawUploadSessionId: text('raw_upload_session_id'),
-    rawUploadExpiresAt: timestamp('raw_upload_expires_at', { withTimezone: true }),
-    rawUploadCompletedAt: timestamp('raw_upload_completed_at', { withTimezone: true }),
-    rawObjectRef: jsonb('raw_object_ref'),
     progress: jsonb('progress')
       .notNull()
       .default(sql`'{}'::jsonb`),
     declaredTotalRows: integer('declared_total_rows'),
     receivedRows: integer('received_rows').notNull().default(0),
-    jobId: text('job_id'),
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
     status: text('status').notNull().default('created'),
@@ -219,10 +191,9 @@ export const datasetImports = phAssets.table(
   },
   (t) => [
     check('dataset_imports_source_format_check', sql`${t.sourceFormat} IN ('jsonl', 'csv', 'tsv', 'json', 'zip')`),
-    check('dataset_imports_import_mode_check', sql`${t.importMode} IN ('batch', 'raw_object')`),
     check(
       'dataset_imports_status_check',
-      sql`${t.status} IN ('created', 'uploading', 'uploaded', 'queued', 'parsing', 'importing', 'completed', 'failed', 'aborted')`,
+      sql`${t.status} IN ('created', 'importing', 'completed', 'failed', 'aborted')`,
     ),
     index('idx_dataset_imports_project_status').on(t.projectId, t.status),
     index('idx_dataset_imports_stale')

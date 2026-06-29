@@ -10,7 +10,7 @@ export interface DatasetUploadOptions {
 // OSS dataset upload (SPEC 22 §3.1.1): a single multipart request to `POST /datasets/upload`. The
 // browser sends the original file + metadata; the server parses, stages, and promotes synchronously
 // and returns the completed import status. There is no client-side batching, raw object upload, or
-// import-status polling — those are override-only capabilities behind the DatasetUploadInterface adapter.
+// import-status polling — those are override-only capabilities behind the DatasetUploadService adapter.
 export const datasetImportClient = {
   uploadDataset: (
     _projectId: string,

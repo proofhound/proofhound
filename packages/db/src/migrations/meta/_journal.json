@@ -183,6 +183,13 @@
       "when": 1781703600000,
       "tag": "0025_optimization_objective_status",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1781707200000,
+      "tag": "0026_drop_offload_residual_columns",
+      "breakpoints": true
     }
   ]
 }

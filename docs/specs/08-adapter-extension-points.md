@@ -40,11 +40,11 @@ The OSS must guarantee the following contracts:
 
 DI tokens uniformly use abstract class form (e.g. `ProjectContextResolver`), not Symbol—cross-package shared Symbol token behavior is unstable. The `contracts` module passed to each runtime root's `forRoot({ contracts })` is the only edition-variable input, keeping the seam to a single assembly-time point rather than a runtime branch. Any concrete local default, repository, or shared infra module that an external consumer needs to assemble its own `contracts` module must be exposed through a stable `@proofhound/core/*` subpath; an external consumer must not deep-import `packages/core/src/*`.
 
-All twelve extension points (§3.1–§3.12) are abstract-class DI tokens with an OSS `Local*` or no-op default, bound in the `contracts` module supplied to each runtime root (OSS: `LocalContractsModule`). Feature modules consume those providers and do not bind local defaults that would shadow them. The shared infra and local-default building blocks needed by an external `contracts` module are exported from `@proofhound/core/infra` and `@proofhound/core/contracts`, respectively. The one exception is `HttpActorGuard` (§3.9), an executable base class instantiated from `@UseGuards` metadata rather than a provider.
+All thirteen extension points (§3.1–§3.13) are abstract-class DI tokens with an OSS `Local*` or no-op default, bound in the `contracts` module supplied to each runtime root (OSS: `LocalContractsModule`). Feature modules consume those providers and do not bind local defaults that would shadow them. The shared infra and local-default building blocks needed by an external `contracts` module are exported from `@proofhound/core/infra` and `@proofhound/core/contracts`, respectively. The one exception is `HttpActorGuard` (§3.9), an executable base class instantiated from `@UseGuards` metadata rather than a provider.
 
 ## 3. Extension point list
 
-The OSS trunk provides the following 14 extension points. Each extension point requires: interface (abstract class) + OSS default implementation + Nest module registration.
+The OSS trunk provides the following 13 extension points. Each extension point requires: interface (abstract class) + OSS default implementation + Nest module registration.
 
 | No.  | Extension point             | Entry channel                                             |
 | ---- | --------------------------- | --------------------------------------------------------- |
@@ -61,7 +61,6 @@ The OSS trunk provides the following 14 extension points. Each extension point r
 | 3.11 | `QuotaPolicyHook`           | Storage writes and execution-slot admission               |
 | 3.12 | `UsageMeteringHook`         | Best-effort domain usage event emission                   |
 | 3.13 | `DatasetUploadInterface`    | Dataset file upload + import strategy (transport + storage) |
-| 3.14 | `DatasetSamplePayloadReader` / `RunResultPayloadReader` | Payload read accessor (DB-inline vs offloaded) |
 
 ProofHound's entry credential system is divided into three categories by channel, mutually non-reusable and never parsing each other's credentials, corresponding to three parallel entry resolvers:
 
@@ -601,18 +600,7 @@ OSS contract points that keep it replaceable:
 - The import is exposed as **composable, independently-callable units** (parse-to-staging, promote-staging-to-DB) so an alternative implementation can reuse them and wrap its own steps around them. OSS does **not** ship a post-import hook — extension is by composition.
 - The **frontend counterpart** is a swappable dataset upload component slot wired through `WebContracts` (§4): OSS provides the multipart uploader + preview / field-mapping wizard; the rest of the dataset upload screen is reused.
 - This replaces a previously code-only, never-documented `ObjectStorageProvider`, which is **removed from the OSS trunk** — OSS no longer contains any object-storage mechanism.
-
-### 3.14 DatasetSamplePayloadReader / RunResultPayloadReader
-
-Resolve a stored sample / run-result payload into its content. The **OSS default returns the inline `data` directly** and never reads object storage. The ~ten consuming modules (run-result reader / compactor / repository / service, experiment repository / service / workflow, release-line, canary-release, annotation, optimization, dataset) call the abstract reader, so the read path is replaceable at one seam.
-
-| Item           | OSS default                       | Override                                            |
-| -------------- | --------------------------------- | --------------------------------------------------- |
-| Implementation | OSS inline reader (returns `data`) | a reader backed by external storage                 |
-| Bound in       | `LocalContractsModule`            | the override's `contracts` module                   |
-
-- `payload_ref` columns on `ph_assets.dataset_samples` / `ph_runs.run_results` are **reserved, always `NULL` in OSS**, so the storage layer can be extended behind this reader without an OSS schema change.
-- OSS export streams directly from the API (no signed-URL redirect).
+- Run-result and dataset-sample payloads are stored and read **inline** from their rows; there is no payload-read seam in the OSS trunk. An external storage layer is integrated by replacing this upload adapter (write side) together with the consumer's own read path, not by an OSS-side reader seam. OSS export streams directly from the API (no signed-URL redirect).
 
 ## 4. Frontend reuse strategy
 

@@ -1,15 +1,11 @@
 import type { DbClient } from '@proofhound/db';
 import type { Query, SQL } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
-import { InlineRunResultPayloadReader } from '../../run-result/run-result-payload.reader';
 import { AnnotationRepository } from '../annotation.repository';
 
-// OSS stores every run-result field inline, so the payload reader is a pure inline pass-through and
-// these query-shape tests keep their existing behaviour.
-const passThroughReader = new InlineRunResultPayloadReader();
-
+// OSS stores every run-result field inline, so the repository reads them directly from the row.
 function makeAnnotationRepo(db: DbClient): AnnotationRepository {
-  return new AnnotationRepository(db, passThroughReader);
+  return new AnnotationRepository(db);
 }
 
 const taskId = '11111111-1111-4111-8111-111111111111';

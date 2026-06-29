@@ -7,14 +7,11 @@ import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 
 const { datasetImports, datasetImportSamples, datasetSamples, datasets, projects } = schema;
 
-// Promotion phases are retained for the staging→promote lifecycle. OSS has no object-storage
-// offloading phase, but the enum is kept so a stale/aborted promotion can still be detected.
-const PROMOTION_PHASES = ['finalizing', 'offloading', 'committing'] as const;
+// Promotion phases for the staging→promote lifecycle, so a stale/aborted promotion can be detected.
+const PROMOTION_PHASES = ['finalizing', 'committing'] as const;
 
 export interface DatasetImportProgressPatch {
   phase?: DatasetImportProgressPhase;
-  totalShards?: number | null;
-  completedShards?: number | null;
   committedRows?: number | null;
   cleanupPending?: number | null;
 }
@@ -30,16 +27,9 @@ export interface DatasetImportRow {
   fileSizeBytes: number;
   contentType: string | null;
   sourceFormat: string;
-  importMode: string;
-  // Raw-upload columns are override-only dormant slots; OSS never writes them (06 §4.3.1).
-  rawUploadSessionId: string | null;
-  rawUploadExpiresAt: Date | null;
-  rawUploadCompletedAt: Date | null;
-  rawObjectRef: unknown | null;
   progress: unknown;
   declaredTotalRows: number | null;
   receivedRows: number;
-  jobId: string | null;
   errorCode: string | null;
   errorMessage: string | null;
   status: string;
@@ -129,7 +119,6 @@ export class DatasetImportRepository {
         fileSizeBytes: args.dto.sourceFile.fileSizeBytes,
         contentType: args.dto.sourceFile.contentType ?? null,
         sourceFormat: args.dto.sourceFormat,
-        importMode: 'batch',
         declaredTotalRows: args.dto.declaredTotalRows ?? null,
         status: initialStatus,
         progress: { phase: initialStatus },

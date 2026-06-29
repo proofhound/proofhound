@@ -34,7 +34,7 @@ import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
 import { CurrentProject } from '../../common/decorators/current-project.decorator';
 import type { ProjectContext } from '@proofhound/shared';
 import { DatasetService } from './dataset.service';
-import { DatasetUploadInterface } from './dataset-upload.interface';
+import { DatasetUploadService } from './dataset-upload.contract';
 
 // File-size cap for the multipart upload, read once at module load (SPEC 22 §3.1.1).
 const DATASET_UPLOAD_MAX_BYTES = (() => {
@@ -55,7 +55,7 @@ interface UploadedDatasetFile {
 export class DatasetController {
   constructor(
     private readonly datasetService: DatasetService,
-    private readonly datasetUpload: DatasetUploadInterface,
+    private readonly datasetUpload: DatasetUploadService,
   ) {}
 
   @Get()

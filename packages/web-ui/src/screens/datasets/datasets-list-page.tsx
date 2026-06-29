@@ -107,7 +107,6 @@ function getSearchText(dataset: ProjectDataset) {
     dataset.name,
     dataset.description,
     dataset.owner,
-    dataset.uploadSource,
     dataset.modalities.join(' '),
     dataset.status,
   ]

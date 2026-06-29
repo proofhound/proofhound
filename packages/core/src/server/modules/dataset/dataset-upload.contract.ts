@@ -1,4 +1,4 @@
-// DatasetUploadInterface — adapter extension point (08 §3.13): receive an uploaded dataset file,
+// DatasetUploadService — adapter extension point (08 §3.13): receive an uploaded dataset file,
 // parse it, stage the rows, and atomically promote them into a dataset.
 //
 // The OSS default (LocalDatasetUploadService) parses a Multer temp file synchronously in the server
@@ -21,7 +21,7 @@ export interface DatasetUploadInput {
   declaredTotalRows?: number | null;
 }
 
-export abstract class DatasetUploadInterface {
+export abstract class DatasetUploadService {
   abstract uploadDataset(
     projectId: string,
     input: DatasetUploadInput,

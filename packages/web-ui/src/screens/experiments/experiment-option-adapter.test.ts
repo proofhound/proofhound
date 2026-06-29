@@ -41,7 +41,6 @@ function makeDataset(overrides: Partial<DatasetListItemDto> = {}): DatasetListIt
     categoryDistribution: { field: 'risk_level', total: 0, categories: [] },
     references: { experiments: 0, optimizations: 0 },
     hasImages: false,
-    storagePrefix: null,
     createdBy: 'u-1',
     createdByDisplayName: 'Alice',
     createdAt: '2026-05-19T00:00:00.000Z',

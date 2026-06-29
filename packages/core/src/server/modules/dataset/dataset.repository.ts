@@ -4,8 +4,6 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import type { CreateDatasetDto, DatasetFieldSchemaDto } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import { DatasetSamplePayloadReader } from './dataset-sample-payload';
-import { type DatasetSamplePayloadRef } from './dataset-sample-payload';
 
 const { optimizations, datasetSamples, datasets, experiments, projects, promptVersions } = schema;
 
@@ -22,7 +20,6 @@ export interface DatasetRow {
   sampleCount: number;
   fieldSchema: unknown;
   hasImages: boolean;
-  storagePrefix: string | null;
   createdBy: string;
   createdByDisplayName?: string | null;
   createdAt: Date;
@@ -57,7 +54,6 @@ export interface CreateDatasetRecordArgs {
   dto: CreateDatasetDto;
   fieldSchema: DatasetFieldSchemaDto[];
   hasImages: boolean;
-  storagePrefix: string;
   externalIdFieldName: string | null;
 }
 
@@ -90,22 +86,7 @@ export interface HardDeleteRowsResult {
 
 @Injectable()
 export class DatasetRepository {
-  constructor(
-    @Inject(DATABASE_CLIENT) private readonly db: DbClient,
-    private readonly sampleReader: DatasetSamplePayloadReader,
-  ) {}
-
-  // Resolve each row's `data` through the seam (inline when present, else from its shard) so callers
-  // that render full sample content keep working after a dataset is offloaded (SPEC 22 §7.3).
-  private async hydrateSampleRows<T extends { data: unknown; payloadRef?: unknown }>(rows: T[]): Promise<T[]> {
-    const hydrated = await this.sampleReader.hydrateMany(
-      rows.map((r) => ({ data: r.data, payloadRef: (r.payloadRef as DatasetSamplePayloadRef | null) ?? null })),
-    );
-    rows.forEach((r, i) => {
-      r.data = hydrated[i] ?? null;
-    });
-    return rows;
-  }
+  constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
 
   private datasetSelectFields = {
     id: datasets.id,
@@ -116,7 +97,6 @@ export class DatasetRepository {
     sampleCount: datasets.sampleCount,
     fieldSchema: datasets.fieldSchema,
     hasImages: datasets.hasImages,
-    storagePrefix: datasets.storagePrefix,
     createdBy: datasets.createdBy,
     createdByDisplayName: sql<string | null>`NULL`,
     createdAt: datasets.createdAt,
@@ -188,7 +168,7 @@ export class DatasetRepository {
       .from(datasetSamples)
       .where(eq(datasetSamples.datasetId, datasetId))
       .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id));
-    return this.hydrateSampleRows(rows);
+    return rows;
   }
 
   async listDatasetSamplesBatch(
@@ -208,10 +188,9 @@ export class DatasetRepository {
       .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id))
       .limit(options.limit);
 
-    const hydrated = await this.hydrateSampleRows(rows);
-    const last = hydrated.length >= options.limit ? hydrated[hydrated.length - 1] : null;
+    const last = rows.length >= options.limit ? rows[rows.length - 1] : null;
     return {
-      rows: hydrated,
+      rows,
       nextCursor: last ? { createdAt: last.createdAt.toISOString(), id: last.id } : null,
     };
   }
@@ -223,11 +202,11 @@ export class DatasetRepository {
     options: { limit: number; offset: number; search?: string },
   ): Promise<{ rows: DatasetSampleRow[]; total: number }> {
     const searchTerm = options.search?.trim();
-    // Search matches inline data or, once a sample is offloaded, its search_preview (SPEC 22 §7.3).
+    // Search matches the inline sample data (SPEC 22 §7.1).
     const where = searchTerm
       ? and(
           eq(datasetSamples.datasetId, datasetId),
-          sql`(${datasetSamples.data}::text ILIKE ${`%${searchTerm}%`} OR ${datasetSamples.searchPreview} ILIKE ${`%${searchTerm}%`})`,
+          sql`${datasetSamples.data}::text ILIKE ${`%${searchTerm}%`}`,
         )
       : eq(datasetSamples.datasetId, datasetId);
 
@@ -245,7 +224,7 @@ export class DatasetRepository {
         .where(where),
     ]);
 
-    return { rows: await this.hydrateSampleRows(rows), total: Number(countResult[0]?.count ?? 0) };
+    return { rows, total: Number(countResult[0]?.count ?? 0) };
   }
 
   // SQL GROUP BY on the expected-output field so list/detail never load all sample rows into memory.
@@ -254,11 +233,8 @@ export class DatasetRepository {
     datasetId: string,
     fieldName: string,
   ): Promise<Array<{ label: string; count: number }>> {
-    // Read the field from inline data (scalar only), or from index_values once the sample is offloaded
-    // (index_values holds only short scalars by construction) (SPEC 22 §7.3).
-    const value = sql<
-      string | null
-    >`COALESCE(${datasetSamples.data} ->> ${fieldName}, ${datasetSamples.indexValues} ->> ${fieldName})`;
+    // Read the field from the inline sample data, scalar only (SPEC 22 §7.1).
+    const value = sql<string | null>`${datasetSamples.data} ->> ${fieldName}`;
     const label = sql<string>`btrim(${value})`;
     const rows = await this.db
       .select({ label, count: sql<number>`count(*)::int` })
@@ -266,8 +242,7 @@ export class DatasetRepository {
       .where(
         and(
           eq(datasetSamples.datasetId, datasetId),
-          sql`(jsonb_typeof(${datasetSamples.data} -> ${fieldName}) IN ('string', 'number', 'boolean')
-            OR (${datasetSamples.data} IS NULL AND ${datasetSamples.indexValues} ->> ${fieldName} IS NOT NULL))`,
+          sql`jsonb_typeof(${datasetSamples.data} -> ${fieldName}) IN ('string', 'number', 'boolean')`,
           sql`btrim(${value}) <> ''`,
         ),
       )
@@ -631,7 +606,6 @@ export class DatasetRepository {
           sampleCount: args.dto.samples.length,
           fieldSchema: args.fieldSchema,
           hasImages: args.hasImages,
-          storagePrefix: args.storagePrefix,
           createdBy: args.actorUserId,
         })
         .returning();
