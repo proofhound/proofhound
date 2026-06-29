@@ -27,7 +27,6 @@ import {
   type QuickStartModelOptionDto,
   type QuickStartModelRefDto,
 } from '@proofhound/shared';
-import { datasetImportClient } from '@proofhound/api-client';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -52,7 +51,7 @@ import {
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage, buildProviderTypeOptions } from '../../lib';
-import { useProjectContext } from '../../providers';
+import { useDatasetUploadAdapter, useProjectContext } from '../../providers';
 import {
   FORMAT_CHIPS,
   getDatasetNameFromFile,
@@ -720,6 +719,7 @@ export function QuickStartScreen() {
   const { t } = useI18n();
   const router = useRouter();
   const { projectId } = useProjectContext();
+  const uploadDataset = useDatasetUploadAdapter();
   const modelOptionsQuery = useQuickStartModelOptions();
   const createQuickStart = useCreateQuickStart();
   const [optimizationName, setOptimizationName] = useState('');
@@ -945,8 +945,9 @@ export function QuickStartScreen() {
     setDatasetImportProgress({ loadedBytes: 0, totalBytes });
     importAbortRef.current = controller;
     try {
-      // Single multipart upload: the server parses + promotes synchronously and returns the dataset id.
-      const result = await datasetImportClient.uploadDataset(projectId, file, metadata, {
+      // Goes through the dataset upload adapter (OSS default = multipart client; a replacement
+      // implementation can swap the transport) so Quick Start reuses the same seam as the upload page.
+      const result = await uploadDataset(projectId, file, metadata, {
         signal: controller.signal,
         onProgress: ({ loadedBytes }) => {
           setDatasetImportProgress({ loadedBytes: Math.min(loadedBytes, totalBytes), totalBytes });
