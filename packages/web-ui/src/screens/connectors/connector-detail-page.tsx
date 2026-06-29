@@ -2,8 +2,11 @@
 
 import { Link } from '../../components/navigation/link';
 import { useResolveHref } from '../../providers/navigation-provider';
+import { buildWebhookUrl, useWebhookEndpoint } from '../../providers/webhook-endpoint-provider';
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { useRouter } from '../../hooks/use-router';
 import { ChevronLeft, Copy, Eye, EyeOff, KeyRound, Plus, Save, Sparkles, Trash2, WandSparkles } from 'lucide-react';
 import {
   Button,
@@ -60,6 +63,7 @@ const DEFAULT_WEBHOOK_SLUG = 'webhook';
 const REQUEST_FIELD_TYPES = ['string', 'number', 'integer', 'boolean', 'object', 'array'] as const;
 type RequestFieldType = (typeof REQUEST_FIELD_TYPES)[number];
 type TokenExpiryPreset = 'never' | '7d' | '30d' | '90d' | 'custom';
+type PendingNavigation = { kind: 'href'; href: string; external: boolean } | { kind: 'back' };
 interface LatestPeekConfig {
   lastPeekPayloadSchema?: Record<string, unknown> | null;
   lastPeekMessage?: PeekConnectorMessageDto | null;
@@ -167,10 +171,14 @@ const EMPTY_TOKEN_CREATE: TokenCreateState = {
   expiryPreset: 'never',
   customExpiresAt: '',
 };
+const UNSAVED_HISTORY_GUARD_KEY = '__proofhoundConnectorUnsavedGuard';
 
 export function ConnectorDetailPage({ projectId, connectorId }: { projectId: string; connectorId: string }) {
   const { t, language } = useI18n();
+  const router = useRouter();
+  const pathname = usePathname();
   const resolveHref = useResolveHref();
+  const { webhookBaseUrl } = useWebhookEndpoint();
   const { formatDateTime, resolvedTimeZone } = useDateTimeFormatter();
   const defaultWebhookSchema = useMemo(() => getDefaultWebhookSchema(language), [language]);
   const canUseApi = isCanonicalUuid(projectId) && isCanonicalUuid(connectorId);
@@ -206,15 +214,25 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
   const [visibleTokenIds, setVisibleTokenIds] = useState<Set<string>>(() => new Set());
   const [tokenCreate, setTokenCreate] = useState<TokenCreateState>(EMPTY_TOKEN_CREATE);
   const [tokenRevokeTarget, setTokenRevokeTarget] = useState<ConnectorWebhookTokenSummaryDto | null>(null);
+  const [savedFormSignature, setSavedFormSignature] = useState('');
+  const [pendingNavigation, setPendingNavigation] = useState<PendingNavigation | null>(null);
+  const [unsavedDialogOpen, setUnsavedDialogOpen] = useState(false);
+  const allowNavigationRef = useRef(false);
+  const popGuardArmedRef = useRef(false);
   const tokenRows = useMemo<ConnectorWebhookTokenSummaryDto[]>(
     () => mergeGeneratedToken(webhookTokensQuery.data?.data ?? [], generatedTokenResult),
     [webhookTokensQuery.data?.data, generatedTokenResult],
   );
+  const formSignature = useMemo(() => serializeConnectorDetailForm(form), [form]);
+  const dirty = Boolean(connector) && savedFormSignature.length > 0 && formSignature !== savedFormSignature;
+  const isEditRoute = pathname?.endsWith('/edit') ?? false;
 
   /* eslint-disable react-hooks/set-state-in-effect -- async connector detail seeds the local edit draft once per connector id */
   useEffect(() => {
     if (!connector || connector.id === hydratedConnectorId) return;
-    setForm(connectorToState(connector, defaultWebhookSchema, defaultWebhookSlug));
+    const nextForm = connectorToState(connector, defaultWebhookSchema, defaultWebhookSlug);
+    setForm(nextForm);
+    setSavedFormSignature(serializeConnectorDetailForm(nextForm));
     setGeneratedTokenResult(null);
     setRevealedTokens({});
     setVisibleTokenIds(new Set());
@@ -228,6 +246,7 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
     () => buildWebhookApiPath(form.webhookSlug, form.webhookPathName),
     [form.webhookPathName, form.webhookSlug],
   );
+  const webhookUrl = useMemo(() => buildWebhookUrl(webhookBaseUrl, webhookApiPath), [webhookBaseUrl, webhookApiPath]);
 
   const totalRefs = referencesQuery.data?.summary
     ? referencesQuery.data.summary.canaryReleases + referencesQuery.data.summary.productionReleases
@@ -241,12 +260,12 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
         ? generatedTokenResult.plaintext
         : '<WEBHOOK_TOKEN>';
     return [
-      `curl -X POST "$PROOFHOUND_API_ORIGIN${webhookApiPath}"`,
+      `curl -X POST "${webhookUrl}"`,
       `  -H "Authorization: Bearer ${tokenLabel}"`,
       '  -H "Content-Type: application/json"',
       `  -d '${JSON.stringify(samplePayload, null, 2)}'`,
     ].join(' \\\n');
-  }, [generatedTokenResult, samplePayload, visibleTokenIds, webhookApiPath]);
+  }, [generatedTokenResult, samplePayload, visibleTokenIds, webhookUrl]);
 
   const webhookResponseExample = useMemo(
     () => buildWebhookResponseExample(form.webhookMode, language),
@@ -257,12 +276,94 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
       generatedTokenResult && visibleTokenIds.has(generatedTokenResult.id)
         ? generatedTokenResult.plaintext
         : '<WEBHOOK_TOKEN>';
-    return [
-      `curl "$PROOFHOUND_API_ORIGIN${webhookApiPath}/calls/call_20260521_001"`,
-      `  -H "Authorization: Bearer ${tokenLabel}"`,
-    ].join(' \\\n');
-  }, [generatedTokenResult, visibleTokenIds, webhookApiPath]);
+    return [`curl "${webhookUrl}/calls/call_20260521_001"`, `  -H "Authorization: Bearer ${tokenLabel}"`].join(' \\\n');
+  }, [generatedTokenResult, visibleTokenIds, webhookUrl]);
   const asyncQueryResponseExample = useMemo(() => buildWebhookAsyncQueryResponseExample(language), [language]);
+
+  const requestUnsavedNavigation = useCallback((navigation: PendingNavigation) => {
+    setPendingNavigation(navigation);
+    setUnsavedDialogOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (allowNavigationRef.current) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!dirty || popGuardArmedRef.current) return;
+    const currentState = typeof window.history.state === 'object' && window.history.state ? window.history.state : {};
+    window.history.pushState({ ...currentState, [UNSAVED_HISTORY_GUARD_KEY]: true }, '', window.location.href);
+    popGuardArmedRef.current = true;
+  }, [dirty]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      if (allowNavigationRef.current || !dirty) {
+        allowNavigationRef.current = false;
+        return;
+      }
+
+      const currentState = typeof window.history.state === 'object' && window.history.state ? window.history.state : {};
+      window.history.pushState({ ...currentState, [UNSAVED_HISTORY_GUARD_KEY]: true }, '', window.location.href);
+      popGuardArmedRef.current = true;
+      requestUnsavedNavigation({ kind: 'back' });
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [dirty, requestUnsavedNavigation]);
+
+  useEffect(() => {
+    if (!dirty) return undefined;
+
+    const onDocumentClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!(target instanceof HTMLAnchorElement)) return;
+      if (target.hasAttribute('download')) return;
+      if (target.target && target.target !== '_self') return;
+
+      const rawHref = target.getAttribute('href');
+      if (!rawHref || rawHref.startsWith('#')) return;
+
+      const url = new URL(target.href, window.location.href);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const nextPath = `${url.pathname}${url.search}${url.hash}`;
+      if (url.origin === window.location.origin && nextPath === currentPath) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      requestUnsavedNavigation({
+        kind: 'href',
+        href: url.origin === window.location.origin ? nextPath : url.toString(),
+        external: url.origin !== window.location.origin,
+      });
+    };
+
+    document.addEventListener('click', onDocumentClick, true);
+    return () => document.removeEventListener('click', onDocumentClick, true);
+  }, [dirty, requestUnsavedNavigation]);
 
   const detailLoading = useDelayedLoading(canUseApi && query.isLoading);
   if (detailLoading) {
@@ -340,15 +441,25 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
     window.setTimeout(() => setNotice(null), 2200);
   }
 
-  async function saveConnector(options?: { silent?: boolean }) {
+  async function saveConnector(options?: { silent?: boolean; navigateAfterSave?: boolean }) {
     setError(null);
     if (!connector) return null;
     try {
       const body = buildUpdatePayload(connector, form);
       const updated = await updateMutation.mutateAsync({ connectorId: connector.id, body });
+      const nextForm = connectorToState(
+        updated,
+        defaultWebhookSchema,
+        buildDefaultWebhookSlug(updated.webhookPath ?? updated.id ?? ''),
+      );
+      setForm(nextForm);
+      setSavedFormSignature(serializeConnectorDetailForm(nextForm));
       if (!options?.silent) {
         setNotice(t('connectors.detail.saveSuccess'));
         window.setTimeout(() => setNotice(null), 2200);
+      }
+      if (!options?.silent && options?.navigateAfterSave !== false && isEditRoute) {
+        router.push('/connectors');
       }
       return updated;
     } catch (err) {
@@ -358,7 +469,7 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
   }
 
   async function runQueueProbe() {
-    const updated = await saveConnector({ silent: true });
+    const updated = await saveConnector({ silent: true, navigateAfterSave: false });
     if (!updated) return;
     try {
       const result = await peekMutation.mutateAsync({ connectorId: updated.id, body: { limit: 1 } });
@@ -485,10 +596,48 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
       });
       // Hard reload after delete to reset all screen state; scope the target so
       // a hosting shell lands on its real route instead of the flat path.
+      allowNavigationRef.current = true;
       window.location.href = resolveHref('/connectors');
     } catch (err) {
       setError(getApiErrorMessage(err) ?? t('connectors.delete.confirmTitle'));
     }
+  }
+
+  function runPendingNavigation(navigation: PendingNavigation | null) {
+    if (!navigation) return;
+
+    switch (navigation.kind) {
+      case 'href':
+        allowNavigationRef.current = true;
+        if (navigation.external) window.location.assign(navigation.href);
+        else router.push(navigation.href);
+        return;
+      case 'back':
+        allowNavigationRef.current = true;
+        window.history.go(popGuardArmedRef.current ? -2 : -1);
+        return;
+    }
+  }
+
+  function closeUnsavedDialog() {
+    setUnsavedDialogOpen(false);
+    setPendingNavigation(null);
+  }
+
+  function discardAndLeave() {
+    const navigation = pendingNavigation;
+    setUnsavedDialogOpen(false);
+    setPendingNavigation(null);
+    runPendingNavigation(navigation);
+  }
+
+  async function saveAndLeave() {
+    const navigation = pendingNavigation;
+    const saved = await saveConnector({ silent: true, navigateAfterSave: false });
+    if (!saved) return;
+    setUnsavedDialogOpen(false);
+    setPendingNavigation(null);
+    runPendingNavigation(navigation);
   }
 
   return (
@@ -718,9 +867,7 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
                 (tokenCreate.expiryPreset === 'custom' && tokenCreate.customExpiresAt.trim().length === 0)
               }
             >
-              {createTokenMutation.isPending
-                ? t('connectors.token.creating')
-                : t('connectors.token.create')}
+              {createTokenMutation.isPending ? t('connectors.token.creating') : t('connectors.token.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -750,9 +897,7 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
               onClick={() => void submitRevokeToken()}
               disabled={revokeTokenMutation.isPending}
             >
-              {revokeTokenMutation.isPending
-                ? t('connectors.token.deleting')
-                : t('connectors.token.delete')}
+              {revokeTokenMutation.isPending ? t('connectors.token.deleting') : t('connectors.token.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -762,9 +907,7 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {totalRefs > 0
-                ? t('connectors.delete.referencedTitle')
-                : t('connectors.delete.confirmTitle')}
+              {totalRefs > 0 ? t('connectors.delete.referencedTitle') : t('connectors.delete.confirmTitle')}
             </DialogTitle>
             <DialogDescription>
               {totalRefs > 0 ? t('connectors.delete.referencedBody') : t('connectors.delete.confirmBody')}
@@ -805,6 +948,28 @@ export function ConnectorDetailPage({ projectId, connectorId }: { projectId: str
               }
             >
               {t('connectors.action.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={unsavedDialogOpen} onOpenChange={(open) => !open && closeUnsavedDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('connectors.detail.unsavedTitle')}</DialogTitle>
+            <DialogDescription>{t('connectors.detail.unsavedDescription')}</DialogDescription>
+          </DialogHeader>
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeUnsavedDialog}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="button" variant="ghost" onClick={discardAndLeave}>
+              {t('connectors.detail.leaveWithoutSaving')}
+            </Button>
+            <Button type="button" onClick={() => void saveAndLeave()} disabled={updateMutation.isPending}>
+              <Save className="size-4" />
+              {t('connectors.detail.saveAndLeave')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -855,6 +1020,10 @@ function ReadOnlyPill({ label, value }: { label: string; value: string }) {
       <div className="mt-1 truncate text-sm font-medium">{value}</div>
     </div>
   );
+}
+
+function serializeConnectorDetailForm(form: DetailFormState) {
+  return JSON.stringify(form);
 }
 
 function SourceBadge({ label }: { label: string }) {
@@ -994,10 +1163,7 @@ function ConnectionConfigSection({
               />
             </Field>
           </div>
-          <Field
-            label={t('connectors.form.config.saslPassword')}
-            hint={t('connectors.detail.secretHint')}
-          >
+          <Field label={t('connectors.form.config.saslPassword')} hint={t('connectors.detail.secretHint')}>
             <Input
               type="password"
               value={form.connectionSaslPassword}
@@ -1050,11 +1216,7 @@ function KafkaConfigSection({
         ) : null
       }
     >
-      <Field
-        label={t('connectors.form.config.topic')}
-        required
-        hint={t('connectors.detail.queueProbeHint')}
-      >
+      <Field label={t('connectors.form.config.topic')} required hint={t('connectors.detail.queueProbeHint')}>
         <Input value={form.configTopic} onChange={(event) => onUpdate('configTopic', event.target.value)} required />
       </Field>
       {direction === 'input' ? (
@@ -1146,11 +1308,7 @@ function RedisConfigSection({
             className="w-full"
           />
         </Field>
-        <Field
-          label={t('connectors.form.config.key')}
-          required
-          hint={t('connectors.detail.queueProbeHint')}
-        >
+        <Field label={t('connectors.form.config.key')} required hint={t('connectors.detail.queueProbeHint')}>
           <Input value={form.configKey} onChange={(event) => onUpdate('configKey', event.target.value)} required />
         </Field>
       </div>
@@ -1504,9 +1662,7 @@ function WebhookSection({
                   </TableHeader>
                   <TableBody>
                     {tokenRows.length === 0 ? (
-                      <TableEmpty>
-                        {tokensLoading ? t('common.loading') : t('connectors.token.empty')}
-                      </TableEmpty>
+                      <TableEmpty>{tokensLoading ? t('common.loading') : t('connectors.token.empty')}</TableEmpty>
                     ) : (
                       tokenRows.map((token) => (
                         <TableRow key={token.id}>
@@ -1711,7 +1867,10 @@ function PlaintextResultBanner({
 }) {
   const { t } = useI18n();
   return (
-    <div className="rounded-md border border-primary/30 bg-primary/5 p-3" data-testid="project-connector-webhook-token-plaintext-banner">
+    <div
+      className="rounded-md border border-primary/30 bg-primary/5 p-3"
+      data-testid="project-connector-webhook-token-plaintext-banner"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium">{title}</p>

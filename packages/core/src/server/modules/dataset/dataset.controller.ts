@@ -12,13 +12,19 @@ import {
   Query,
   Res,
   StreamableFile,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { tmpdir } from 'node:os';
+import { unlink } from 'node:fs/promises';
 import {
   createDatasetSchema,
   datasetExportFormatSchema,
   datasetIdParamSchema,
   datasetSamplesQuerySchema,
+  datasetUploadMetadataSchema,
   deleteDatasetSamplesSchema,
   updateDatasetMetadataSchema,
 } from '@proofhound/shared';
@@ -28,11 +34,29 @@ import { HttpActorGuard } from '../../common/contracts/http-actor.guard';
 import { CurrentProject } from '../../common/decorators/current-project.decorator';
 import type { ProjectContext } from '@proofhound/shared';
 import { DatasetService } from './dataset.service';
+import { DatasetUploadInterface } from './dataset-upload.interface';
+
+// File-size cap for the multipart upload, read once at module load (SPEC 22 §3.1.1).
+const DATASET_UPLOAD_MAX_BYTES = (() => {
+  const raw = Number(process.env['DATASET_UPLOAD_MAX_BYTES']);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 100 * 1024 * 1024;
+})();
+
+/** Minimal Multer file shape (avoids a hard @types/multer dependency). */
+interface UploadedDatasetFile {
+  path: string;
+  originalname: string;
+  size: number;
+  mimetype?: string;
+}
 
 @Controller('datasets')
 @UseGuards(HttpActorGuard)
 export class DatasetController {
-  constructor(private readonly datasetService: DatasetService) {}
+  constructor(
+    private readonly datasetService: DatasetService,
+    private readonly datasetUpload: DatasetUploadInterface,
+  ) {}
 
   @Get()
   async listDatasets(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
@@ -122,6 +146,41 @@ export class DatasetController {
     return this.datasetService.createDataset(project.projectId, parse.data, actor);
   }
 
+  // Multipart file upload (OSS UI path): the file streams to a Multer temp file, then the upload
+  // adapter parses it synchronously, stages, and promotes into a dataset (SPEC 22 §3.1.1).
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file', { dest: tmpdir(), limits: { fileSize: DATASET_UPLOAD_MAX_BYTES } }))
+  async uploadDataset(
+    @UploadedFile() file: UploadedDatasetFile | undefined,
+    @Body() rawBody: Record<string, unknown>,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
+    if (!file) {
+      throw new BadRequestException('dataset_upload_file_required');
+    }
+    const parse = datasetUploadMetadataSchema.safeParse(normalizeUploadMetadata(rawBody));
+    if (!parse.success) {
+      await unlink(file.path).catch(() => undefined);
+      throw new BadRequestException(parse.error.issues);
+    }
+    return this.datasetUpload.uploadDataset(
+      project.projectId,
+      {
+        filePath: file.path,
+        fileName: parse.data.fileName ?? file.originalname,
+        fileSizeBytes: file.size,
+        contentType: file.mimetype ?? null,
+        sourceFormat: parse.data.sourceFormat,
+        name: parse.data.name,
+        description: parse.data.description ?? null,
+        fieldMappings: parse.data.fieldMappings,
+        declaredTotalRows: parse.data.declaredTotalRows ?? null,
+      },
+      actor,
+    );
+  }
+
   @Patch(':datasetId')
   async updateDatasetMetadata(
     @Param('datasetId') datasetId: string,
@@ -197,5 +256,23 @@ export class DatasetController {
       throw new BadRequestException(parse.error.issues);
     }
     return parse.data;
+  }
+}
+
+// Multipart text fields arrive as strings; coerce the structured ones before zod validation.
+function normalizeUploadMetadata(body: Record<string, unknown>): Record<string, unknown> {
+  const declared = body['declaredTotalRows'];
+  return {
+    ...body,
+    fieldMappings: typeof body['fieldMappings'] === 'string' ? safeJsonParse(body['fieldMappings']) : body['fieldMappings'],
+    declaredTotalRows: declared != null && declared !== '' ? Number(declared) : undefined,
+  };
+}
+
+function safeJsonParse(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
   }
 }

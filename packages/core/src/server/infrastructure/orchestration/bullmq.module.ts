@@ -17,7 +17,7 @@ import { BullmqService } from './bullmq.service';
         },
       }),
     }),
-    BullModule.registerQueue({ name: 'llm' }, { name: 'probe' }, { name: 'dataset-import' }),
+    BullModule.registerQueue({ name: 'llm' }, { name: 'probe' }),
     RedisModule,
   ],
   providers: [LlmAdmissionStore, BullmqService],

@@ -17,8 +17,6 @@ import type {
   UpdateReleaseLineRunConfigInputDto,
 } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import type { StoredObjectRef } from '../../common/contracts/object-storage.provider';
-import { collectStoredObjectRefs } from '../run-result/run-result-payload-ref';
 
 const { annotationTasks, connectors, models, projects, prompts, releaseLineEvents, releaseLines, releaseVersions } =
   schema;
@@ -59,7 +57,6 @@ export interface ReleaseLineDeletionImpactRows {
 
 export interface ReleaseLineHardDeleteResult {
   deleted: number;
-  payloadRefs: StoredObjectRef[];
 }
 
 export interface ReleaseLineMirrorSnapshot {
@@ -750,50 +747,6 @@ export class ReleaseLineRepository {
 
   async hardDeleteLine(projectId: string, releaseLineId: string): Promise<ReleaseLineHardDeleteResult> {
     return this.db.transaction(async (tx) => {
-      const reclaimablePayloadRows = unwrapRows<{ payload_ref: unknown }>(
-        await tx.execute(sql`
-          WITH target_events AS (
-            SELECT id
-            FROM ph_releases.release_line_events
-            WHERE project_id = ${projectId}::uuid
-              AND release_line_id = ${releaseLineId}::uuid
-          ),
-          target_versions AS (
-            SELECT id
-            FROM ph_releases.release_versions
-            WHERE project_id = ${projectId}::uuid
-              AND release_line_id = ${releaseLineId}::uuid
-          ),
-          target_run_results AS (
-            SELECT rr.id, rr.created_at, rr.payload_ref
-            FROM ph_runs.run_results rr
-            WHERE rr.project_id = ${projectId}::uuid
-              AND rr.source = 'release'
-              AND (
-                rr.source_id IN (SELECT id FROM target_events)
-                OR rr.release_version_id IN (SELECT id FROM target_versions)
-              )
-          )
-          SELECT DISTINCT target.payload_ref
-          FROM target_run_results target
-          WHERE target.payload_ref IS NOT NULL
-            AND NOT EXISTS (
-              SELECT 1
-              FROM ph_runs.run_results other
-              WHERE other.payload_ref IS NOT NULL
-                AND COALESCE(other.payload_ref->'shard'->>'key', other.payload_ref->>'key')
-                  = COALESCE(target.payload_ref->'shard'->>'key', target.payload_ref->>'key')
-                AND NOT EXISTS (
-                  SELECT 1
-                  FROM target_run_results same_target
-                  WHERE same_target.id = other.id
-                    AND same_target.created_at = other.created_at
-                )
-            )
-        `),
-      );
-      const payloadRefs = collectStoredObjectRefs(reclaimablePayloadRows.map((row) => row.payload_ref));
-
       await tx.execute(sql`
         WITH target_events AS (
           SELECT id, prompt_id, prompt_version_id
@@ -915,7 +868,7 @@ export class ReleaseLineRepository {
         .delete(releaseLines)
         .where(and(eq(releaseLines.projectId, projectId), eq(releaseLines.id, releaseLineId)))
         .returning({ id: releaseLines.id });
-      return { deleted: deleted.length, payloadRefs: deleted.length > 0 ? payloadRefs : [] };
+      return { deleted: deleted.length };
     });
   }
 

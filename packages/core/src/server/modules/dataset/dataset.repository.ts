@@ -1,19 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull, type SQL, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import type { CreateDatasetDto, DatasetFieldSchemaDto } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
-import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
-import { offloadStagingToShards } from './dataset-sample-offload';
 import { DatasetSamplePayloadReader } from './dataset-sample-payload';
 import { type DatasetSamplePayloadRef } from './dataset-sample-payload';
 
 const { optimizations, datasetSamples, datasets, experiments, projects, promptVersions } = schema;
-
-// Per-shard batch for small-file create offload (samples are already in memory; one shard per batch).
-const CREATE_SHARD_BATCH = 200;
 
 export interface DatasetProjectAccessRow {
   id: string;
@@ -92,7 +86,6 @@ export interface DatasetDeletionImpactRows {
 
 export interface HardDeleteRowsResult {
   deleted: number;
-  payloadRefs: StoredObjectRef[];
 }
 
 @Injectable()
@@ -100,7 +93,6 @@ export class DatasetRepository {
   constructor(
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
     private readonly sampleReader: DatasetSamplePayloadReader,
-    private readonly storage: ObjectStorageProvider,
   ) {}
 
   // Resolve each row's `data` through the seam (inline when present, else from its shard) so callers
@@ -287,53 +279,6 @@ export class DatasetRepository {
 
   async hardDeleteDataset(projectId: string, datasetId: string): Promise<HardDeleteRowsResult> {
     return this.db.transaction(async (tx) => {
-      const samplePayloadRows = await tx
-        .select({ payloadRef: datasetSamples.payloadRef })
-        .from(datasetSamples)
-        .innerJoin(datasets, eq(datasets.id, datasetSamples.datasetId))
-        .where(
-          and(eq(datasets.projectId, projectId), eq(datasetSamples.datasetId, datasetId), isNull(datasets.deletedAt)),
-        );
-
-      const runResultPayloadRows = unwrapRows<{ payload_ref: unknown }>(
-        await tx.execute(sql`
-          WITH target_optimizations AS (
-            SELECT id
-            FROM ph_runs.optimizations
-            WHERE project_id = ${projectId}::uuid
-              AND dataset_id = ${datasetId}::uuid
-              AND deleted_at IS NULL
-          ),
-          target_experiments AS (
-            SELECT DISTINCT e.id
-            FROM ph_runs.experiments e
-            WHERE e.project_id = ${projectId}::uuid
-              AND e.deleted_at IS NULL
-              AND (
-                e.dataset_id = ${datasetId}::uuid
-                OR e.optimization_id IN (SELECT id FROM target_optimizations)
-              )
-          )
-          SELECT rr.payload_ref
-          FROM ph_runs.run_results rr
-          WHERE rr.payload_ref IS NOT NULL
-            AND (
-              (
-                rr.source = 'experiment'
-                AND rr.source_id IN (SELECT id FROM target_experiments)
-              )
-              OR (
-                rr.source IN ('optimization_analysis', 'optimization_generate')
-                AND rr.source_id IN (SELECT id FROM target_optimizations)
-              )
-            )
-        `),
-      );
-      const candidatePayloadRefs = collectStoredObjectRefs([
-        ...samplePayloadRows.map((row) => row.payloadRef),
-        ...runResultPayloadRows.map((row) => row.payload_ref),
-      ]);
-
       await tx.execute(sql`
         WITH target_optimizations AS (
           SELECT id
@@ -543,13 +488,7 @@ export class DatasetRepository {
         .where(and(eq(datasets.projectId, projectId), eq(datasets.id, datasetId), isNull(datasets.deletedAt)))
         .returning({ id: datasets.id });
 
-      return {
-        deleted: deleted.length,
-        payloadRefs:
-          deleted.length > 0
-            ? await filterUnreferencedPayloadRefs((query) => tx.execute(query), candidatePayloadRefs)
-            : [],
-      };
+      return { deleted: deleted.length };
     });
   }
 
@@ -659,30 +598,14 @@ export class DatasetRepository {
   }
 
   async hardDeleteSamples(datasetId: string, sampleIds: string[]): Promise<HardDeleteRowsResult> {
-    if (sampleIds.length === 0) return { deleted: 0, payloadRefs: [] };
+    if (sampleIds.length === 0) return { deleted: 0 };
 
-    return this.db.transaction(async (tx) => {
-      const payloadRows = await tx
-        .select({ payloadRef: datasetSamples.payloadRef })
-        .from(datasetSamples)
-        .where(and(eq(datasetSamples.datasetId, datasetId), inArray(datasetSamples.id, sampleIds)));
+    const deleted = await this.db
+      .delete(datasetSamples)
+      .where(and(eq(datasetSamples.datasetId, datasetId), inArray(datasetSamples.id, sampleIds)))
+      .returning({ id: datasetSamples.id });
 
-      const deleted = await tx
-        .delete(datasetSamples)
-        .where(and(eq(datasetSamples.datasetId, datasetId), inArray(datasetSamples.id, sampleIds)))
-        .returning({ id: datasetSamples.id });
-
-      return {
-        deleted: deleted.length,
-        payloadRefs:
-          deleted.length > 0
-            ? await filterUnreferencedPayloadRefs(
-                (query) => tx.execute(query),
-                collectStoredObjectRefs(payloadRows.map((row) => row.payloadRef)),
-              )
-            : [],
-      };
-    });
+    return { deleted: deleted.length };
   }
 
   async decrementDatasetSampleCount(datasetId: string, delta: number): Promise<void> {
@@ -717,47 +640,14 @@ export class DatasetRepository {
         throw new Error('Dataset insert returned no row');
       }
 
-      if (this.storage.isEnabled()) {
-        // Small-file create mirrors offload-at-promote (SPEC 22 §7.2): the samples are already in
-        // memory, so the batch reader just slices them. Object storage off → the inline insert below.
-        const samples = args.dto.samples;
-        const { storagePrefix } = await offloadStagingToShards({
+      // OSS stores every sample inline in `dataset_samples.data` (SPEC 22 §7.1); no object storage.
+      await tx.insert(datasetSamples).values(
+        args.dto.samples.map((sample) => ({
           datasetId: dataset.id,
-          sampleCount: samples.length,
-          batchSize: CREATE_SHARD_BATCH,
-          fieldSchema: args.fieldSchema,
-          readBatch: async (offset, limit) =>
-            samples.slice(offset, offset + limit).map((sample) => ({
-              data: sample,
-              externalId: this.getExternalId(sample, args.externalIdFieldName),
-            })),
-          putShard: (name, body) =>
-            this.storage.putObject(
-              {
-                project: { projectId: args.projectId, source: 'local' },
-                resourceType: 'dataset_normalized',
-                resourceId: dataset.id,
-                name,
-              },
-              body,
-              { codec: 'gzip' },
-            ),
-          insertRows: async (rows) => {
-            await tx.insert(datasetSamples).values(rows);
-          },
-        });
-        if (storagePrefix) {
-          await tx.update(datasets).set({ storagePrefix }).where(eq(datasets.id, dataset.id));
-        }
-      } else {
-        await tx.insert(datasetSamples).values(
-          args.dto.samples.map((sample) => ({
-            datasetId: dataset.id,
-            data: sample,
-            externalId: this.getExternalId(sample, args.externalIdFieldName),
-          })),
-        );
-      }
+          data: sample,
+          externalId: this.getExternalId(sample, args.externalIdFieldName),
+        })),
+      );
 
       return {
         ...dataset,
@@ -772,76 +662,4 @@ export class DatasetRepository {
     if (value === undefined || value === null) return null;
     return String(value);
   }
-}
-
-function collectStoredObjectRefs(values: unknown[]): StoredObjectRef[] {
-  const refs = new Map<string, StoredObjectRef>();
-  for (const value of values) {
-    const ref = toStoredObjectRef(value);
-    if (!ref) continue;
-    refs.set(refIdentity(ref), ref);
-  }
-  return [...refs.values()];
-}
-
-function toStoredObjectRef(value: unknown): StoredObjectRef | null {
-  if (isStoredObjectRef(value)) return value;
-  if (isRecord(value) && isStoredObjectRef(value['shard'])) return value['shard'];
-  return null;
-}
-
-function isStoredObjectRef(value: unknown): value is StoredObjectRef {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value['provider'] === 'string' &&
-    typeof value['key'] === 'string' &&
-    typeof value['bytes'] === 'number' &&
-    typeof value['resourceType'] === 'string' &&
-    typeof value['resourceId'] === 'string'
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-async function filterUnreferencedPayloadRefs(
-  execute: (query: SQL) => Promise<unknown>,
-  refs: StoredObjectRef[],
-): Promise<StoredObjectRef[]> {
-  if (refs.length === 0) return [];
-
-  const byKey = new Map(refs.map((ref) => [ref.key, ref]));
-  const keys = [...byKey.keys()];
-  const rows = unwrapRows<{ key: string | null }>(
-    await execute(sql`
-      SELECT DISTINCT COALESCE(payload_ref->'shard'->>'key', payload_ref->>'key') AS key
-      FROM ph_assets.dataset_samples
-      WHERE COALESCE(payload_ref->'shard'->>'key', payload_ref->>'key') IN (${sql.join(
-        keys.map((key) => sql`${key}`),
-        sql`, `,
-      )})
-      UNION
-      SELECT DISTINCT COALESCE(payload_ref->'shard'->>'key', payload_ref->>'key') AS key
-      FROM ph_runs.run_results
-      WHERE COALESCE(payload_ref->'shard'->>'key', payload_ref->>'key') IN (${sql.join(
-        keys.map((key) => sql`${key}`),
-        sql`, `,
-      )})
-    `),
-  );
-  const stillReferenced = new Set(rows.map((row) => row.key).filter((key): key is string => typeof key === 'string'));
-  return refs.filter((ref) => !stillReferenced.has(ref.key));
-}
-
-function refIdentity(ref: StoredObjectRef): string {
-  return `${ref.provider}:${ref.bucket ?? ''}:${ref.key}`;
-}
-
-function unwrapRows<T = unknown>(result: unknown): T[] {
-  if (Array.isArray(result)) return result as T[];
-  if (result && typeof result === 'object' && Array.isArray((result as { rows?: unknown }).rows)) {
-    return (result as { rows: T[] }).rows;
-  }
-  return [];
 }

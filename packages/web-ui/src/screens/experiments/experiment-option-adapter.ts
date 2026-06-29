@@ -25,6 +25,7 @@ type DateTimeFormatter = (value: string | null | undefined) => string;
 
 const IMAGE_PROMPT_VARIABLE_TYPES = new Set<PromptVariableTypeDto>(['image', 'image_url', 'image_base64']);
 const IMAGE_DATASET_FIELD_ROLES = new Set<DatasetFieldSchemaDto['role']>(['image', 'image_url', 'image_base64']);
+const OWNER_HANDLE_EMPTY = '—';
 
 export function hasImagePromptVariables(
   variables: ReadonlyArray<{ type: string }>,
@@ -83,6 +84,16 @@ export function getModelImageEncodings(capability: ModelImageCapability | undefi
 }
 
 export type EncodingMode = 'url' | 'base64';
+
+export function formatOwnerHandle(displayName: string | null | undefined, createdBy?: string | null) {
+  const normalizedDisplayName = displayName?.trim();
+  if (normalizedDisplayName) return `@${normalizedDisplayName}`;
+
+  const normalizedOwnerId = createdBy?.trim();
+  if (normalizedOwnerId) return `@${normalizedOwnerId.slice(0, 8)}`;
+
+  return OWNER_HANDLE_EMPTY;
+}
 
 function formatOptionDateTime(value: string | null | undefined, formatter?: DateTimeFormatter) {
   return formatter ? formatter(value) : formatDateTime(value);
@@ -145,7 +156,7 @@ export function mapPromptVersionToOption(
     name: prompt.name,
     version: `v${version.versionNumber}`,
     isLatest: version.versionNumber === prompt.latestVersionNumber,
-    ownerHandle: version.createdByDisplayName ? `@${version.createdByDisplayName}` : '@unknown',
+    ownerHandle: formatOwnerHandle(version.createdByDisplayName, version.createdBy),
     updatedAgo: formatOptionDateTime(version.createdAt, formatter),
     variableCount: version.variables.length,
     defaultDatasetId: prompt.defaultDatasetId ?? '',

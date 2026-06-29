@@ -9,6 +9,7 @@ import { NavigationProvider } from './navigation-provider';
 import { ProjectContextProvider } from './project-context-provider';
 import { RefineProvider } from './refine-provider';
 import { RuntimeLimitsProvider } from './runtime-limits-provider';
+import { WebhookEndpointProvider } from './webhook-endpoint-provider';
 import type { WebContracts } from '../contracts';
 
 export function ProofHoundWebProvider({
@@ -44,9 +45,11 @@ export function ProofHoundWebProvider({
         <UiStringsBridge>
           <ProjectContextProvider value={contracts.projectContext}>
             <RuntimeLimitsProvider value={contracts.runtimeLimits}>
-              <NavigationProvider resolveHref={contracts.resolveHref}>
-                <RefineProvider>{children}</RefineProvider>
-              </NavigationProvider>
+              <WebhookEndpointProvider value={{ webhookBaseUrl: contracts.webhookBaseUrl }}>
+                <NavigationProvider resolveHref={contracts.resolveHref}>
+                  <RefineProvider>{children}</RefineProvider>
+                </NavigationProvider>
+              </WebhookEndpointProvider>
             </RuntimeLimitsProvider>
           </ProjectContextProvider>
         </UiStringsBridge>

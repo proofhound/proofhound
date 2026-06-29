@@ -1,13 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { Readable } from 'node:stream';
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-  Optional,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { createLogger } from '@proofhound/logger';
 import {
   createExperimentSchema,
@@ -38,8 +31,6 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
-import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
-import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import { createZipStream } from '../../common/zip-stream';
 import { WorkflowAuthorizationHook } from '../../common/contracts/workflow-authorization.hook';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
@@ -85,7 +76,6 @@ export class ExperimentService {
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
     private readonly accessControl: AccessControlService,
     private readonly workflowAuth: WorkflowAuthorizationHook,
-    @Optional() private readonly objectStorage?: ObjectStorageProvider,
   ) {}
 
   async createExperiment(
@@ -241,7 +231,6 @@ export class ExperimentService {
     if (result.deleted === 0) {
       throw new NotFoundException(`Experiment ${experimentId} not found`);
     }
-    await this.cleanupPayloadRefs(result.payloadRefs, { projectId, experimentId, operation: 'experiment.delete' });
   }
 
   async exportExperiments(
@@ -308,15 +297,6 @@ export class ExperimentService {
   private async getWritableProject(projectId: string, actor: CurrentUserPayload): Promise<ExperimentProjectAccessRow> {
     await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'project_write');
     return this.getAccessibleProject(projectId, actor);
-  }
-
-  private async cleanupPayloadRefs(refs: StoredObjectRef[], context: Record<string, unknown>): Promise<void> {
-    if (refs.length === 0 || !this.objectStorage?.isEnabled()) return;
-    try {
-      await this.objectStorage.deleteObjects(refs);
-    } catch (err) {
-      this.logger.warn({ ...context, refs: refs.length, err }, 'object_storage_payload_cleanup_failed');
-    }
   }
 
   private async createExperimentOrThrowNameConflict(args: {

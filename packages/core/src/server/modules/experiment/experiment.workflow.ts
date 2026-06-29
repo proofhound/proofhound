@@ -25,7 +25,6 @@ import {
 } from '../../infrastructure/orchestration/bullmq.service';
 import { DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
 import { type DatasetSamplePayloadRef } from '../dataset/dataset-sample-payload';
-import { RunResultCompactor } from '../run-result/run-result-compactor';
 import { RunResultService } from '../run-result/run-result.service';
 import { aggregateExperimentMetrics } from './experiment.aggregator';
 import { renderPromptForSample } from './experiment.renderer';
@@ -86,7 +85,6 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     runResultIds: string[],
   ) => Promise<{ terminalCount: number; failedCount: number; control: 'stop' | 'cancel' | null }>;
   private readonly aggregateMetricsStep: (experimentId: string) => Promise<void>;
-  private readonly compactRunResultsStep: (experimentId: string, projectId: string) => Promise<void>;
   private readonly finalizeStep: (
     experimentId: string,
     kind: 'success' | 'failed' | 'stopped',
@@ -97,7 +95,6 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
     private readonly bullmq: BullmqService,
     private readonly runResults: RunResultService,
-    private readonly compactor: RunResultCompactor,
     private readonly datasetSampleReader: DatasetSamplePayloadReader,
     private readonly runResultWriter: DrizzleRunResultWriter,
   ) {
@@ -117,9 +114,6 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
     });
     this.aggregateMetricsStep = DBOS.registerStep(this.aggregateMetricsImpl.bind(this), {
       name: 'experiment.aggregateMetrics',
-    });
-    this.compactRunResultsStep = DBOS.registerStep(this.compactRunResultsImpl.bind(this), {
-      name: 'experiment.compactRunResults',
     });
     this.finalizeStep = DBOS.registerStep(this.finalizeImpl.bind(this), { name: 'experiment.finalize' });
 
@@ -161,7 +155,6 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
         );
         const control = await this.readControlStateStep(experimentId);
         if (control === 'stop' || control === 'cancel') {
-          await this.compactRunResultsStep(experimentId, plan.projectId);
           await this.finalizeStep(experimentId, 'stopped');
           return;
         }
@@ -192,7 +185,6 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
         // Control signals observed inside poll remove queued-but-not-started LLM jobs and then wait for already-started
         // jobs in the batch to write terminal run_results before stopping at the batch boundary.
         if (counts.control === 'stop' || counts.control === 'cancel') {
-          await this.compactRunResultsStep(experimentId, plan.projectId);
           await this.finalizeStep(experimentId, 'stopped');
           return;
         }
@@ -202,12 +194,10 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
 
       // All samples failed → the experiment as a whole is failed; partial failures still count as success (failed_samples is already reflected in metrics)
       if (totalTerminal > 0 && totalFailed === totalTerminal) {
-        await this.compactRunResultsStep(experimentId, plan.projectId);
         await this.finalizeStep(experimentId, 'failed', 'all_samples_failed');
         return;
       }
 
-      await this.compactRunResultsStep(experimentId, plan.projectId);
       await this.finalizeStep(experimentId, 'success');
     } catch (error) {
       this.logger.error({ experimentId, error: (error as Error).message }, 'experiment_workflow_failed');
@@ -577,24 +567,6 @@ export class ExperimentWorkflowRegistrar extends ConfiguredInstance {
       { experimentId, totalCount, failedCount, accuracy: metrics?.accuracy ?? null },
       'step_aggregate_metrics_done',
     );
-  }
-
-  // Tier this experiment's run-result large fields into object-storage shards (SPEC 30 §9.3). The run
-  // is the natural batch boundary; all rows are terminal here. A no-op when object storage is disabled.
-  // Best-effort: a compaction failure must not fail an otherwise-successful experiment — rows stay
-  // inline and the periodic compactor retries later — so it is caught and logged, never rethrown.
-  private async compactRunResultsImpl(experimentId: string, projectId: string): Promise<void> {
-    try {
-      const result = await this.compactor.compact({ projectId, source: 'experiment', sourceId: experimentId });
-      if (result.compactedRows > 0) {
-        this.logger.info(
-          { experimentId, compactedRows: result.compactedRows, shards: result.shards, generation: result.generation },
-          'step_compact_run_results_done',
-        );
-      }
-    } catch (error) {
-      this.logger.error({ experimentId, error: (error as Error).message }, 'step_compact_run_results_failed');
-    }
   }
 
   private async finalizeImpl(

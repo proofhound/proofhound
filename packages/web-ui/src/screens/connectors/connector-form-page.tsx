@@ -2,8 +2,8 @@
 
 import { Link } from '../../components/navigation/link';
 import { useRouter } from '../../hooks/use-router';
-import { useEffect, useState } from 'react';
-import { ChevronLeft, Copy } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, Copy, Sparkles } from 'lucide-react';
 import {
   Button,
   Dialog,
@@ -19,13 +19,14 @@ import {
   cn,
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
-import { useConnector, useCreateConnector, useUpdateConnector } from '../../hooks';
+import { useConnector, useCreateConnector, usePeekConnector, useUpdateConnector } from '../../hooks';
 import { useDelayedLoading } from '../../hooks';
 import { useI18n } from '../../i18n';
 import { getApiErrorMessage, isCanonicalUuid } from '../../lib';
 import type { ConnectorDirection, ConnectorType, CreateConnectorDto } from '@proofhound/shared';
 
 type Mode = 'create' | 'edit';
+type SubmitIntent = 'save' | 'probe';
 
 interface FormState {
   name: string;
@@ -108,6 +109,8 @@ export function ConnectorFormPage({
   );
   const createMutation = useCreateConnector(projectId);
   const updateMutation = useUpdateConnector(projectId);
+  const peekMutation = usePeekConnector(projectId);
+  const submitIntentRef = useRef<SubmitIntent>('save');
 
   const [state, setState] = useState<FormState>(EMPTY_STATE);
   const [error, setError] = useState<string | null>(null);
@@ -286,7 +289,7 @@ export function ConnectorFormPage({
     };
   }
 
-  async function submit() {
+  async function submit(intent: SubmitIntent) {
     setError(null);
     try {
       if (mode === 'create') {
@@ -300,6 +303,11 @@ export function ConnectorFormPage({
             plaintext: created.initialWebhookToken.plaintext,
             createdConnectorId: created.id,
           });
+          return;
+        }
+        if (intent === 'probe' && isQueueInputConnector(payload.type, payload.direction)) {
+          await peekMutation.mutateAsync({ connectorId: created.id, body: { limit: 1 } });
+          router.push(`/connectors/${created.id}`);
           return;
         }
         router.push(`/connectors`);
@@ -345,7 +353,7 @@ export function ConnectorFormPage({
           body.config = { targetUrl: state.webhookTargetUrl.trim(), method: state.webhookMethod };
         }
         await updateMutation.mutateAsync({ connectorId, body: body as never });
-        router.push(`/connectors/${connectorId}`);
+        router.push(`/connectors`);
       }
     } catch (err) {
       setError(getApiErrorMessage(err) ?? 'request failed');
@@ -358,6 +366,9 @@ export function ConnectorFormPage({
   const isInitialLoading = useDelayedLoading(
     mode === 'edit' && existingQuery.isLoading && !existingQuery.data,
   );
+  const canSaveAndProbe =
+    mode === 'create' && isQueueInputConnector(state.type, state.direction);
+  const saving = createMutation.isPending || updateMutation.isPending || peekMutation.isPending;
 
   if (isInitialLoading) {
     return (
@@ -389,7 +400,9 @@ export function ConnectorFormPage({
           className="mt-6 space-y-5"
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            const intent = submitIntentRef.current;
+            submitIntentRef.current = 'save';
+            void submit(intent);
           }}
         >
           {/* direction */}
@@ -756,14 +769,29 @@ export function ConnectorFormPage({
             <Button type="button" variant="ghost" onClick={() => router.push(`/connectors`)}>
               {t('connectors.form.cancel')}
             </Button>
+            {canSaveAndProbe ? (
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={saving}
+                onClick={() => {
+                  submitIntentRef.current = 'probe';
+                }}
+                data-testid="project-connector-save-probe"
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                {peekMutation.isPending ? t('connectors.peek.running') : t('connectors.form.saveAndProbe')}
+              </Button>
+            ) : null}
             <Button
               type="submit"
-              disabled={createMutation.isPending || updateMutation.isPending}
+              disabled={saving}
+              onClick={() => {
+                submitIntentRef.current = 'save';
+              }}
               data-testid="project-connector-submit"
             >
-              {createMutation.isPending || updateMutation.isPending
-                ? t('connectors.form.submitting')
-                : t('connectors.form.submit')}
+              {saving ? t('connectors.form.submitting') : t('connectors.form.submit')}
             </Button>
           </div>
         </form>
@@ -832,4 +860,8 @@ export function ConnectorFormPage({
       </div>
     </Main>
   );
+}
+
+function isQueueInputConnector(type: ConnectorType, direction: ConnectorDirection) {
+  return direction === 'input' && (type === 'redis' || type === 'kafka');
 }

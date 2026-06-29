@@ -14,7 +14,6 @@ import { CanaryReleaseService } from '../../modules/canary-release/canary-releas
 import { ConnectorModule } from '../../modules/connector/connector.module';
 import { ConnectorService } from '../../modules/connector/connector.service';
 import { DatasetModule } from '../../modules/dataset/dataset.module';
-import { DatasetImportService } from '../../modules/dataset/dataset-import.service';
 import { DatasetService } from '../../modules/dataset/dataset.service';
 import { ExperimentModule } from '../../modules/experiment/experiment.module';
 import { ExperimentService } from '../../modules/experiment/experiment.service';
@@ -39,7 +38,6 @@ import {
   createAnnotationTools,
   createCanaryReleaseTools,
   createConnectorTools,
-  createDatasetImportTools,
   createDatasetTools,
   createExperimentTools,
   createModelTools,
@@ -83,7 +81,6 @@ import type { McpToolDefinition } from './mcp.types';
         annotation: AnnotationService,
         canary: CanaryReleaseService,
         connector: ConnectorService,
-        datasetImport: DatasetImportService,
         dataset: DatasetService,
         experiment: ExperimentService,
         model: ModelService,
@@ -99,7 +96,6 @@ import type { McpToolDefinition } from './mcp.types';
         ...createAnnotationTools(annotation),
         ...createCanaryReleaseTools(canary),
         ...createConnectorTools(connector),
-        ...createDatasetImportTools(datasetImport),
         ...createDatasetTools(dataset),
         ...createExperimentTools(experiment),
         ...createModelTools(model),
@@ -115,7 +111,6 @@ import type { McpToolDefinition } from './mcp.types';
         AnnotationService,
         CanaryReleaseService,
         ConnectorService,
-        DatasetImportService,
         DatasetService,
         ExperimentService,
         ModelService,

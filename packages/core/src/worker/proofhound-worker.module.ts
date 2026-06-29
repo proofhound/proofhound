@@ -1,13 +1,11 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-import { DatasetRawImportConsumer } from './consumers/dataset-raw-import.consumer';
 import { LlmConsumer, llmConsumerProviders } from './consumers/llm.consumer';
 import { ProbeConsumer } from './consumers/probe.consumer';
 import { DatabaseModule } from '../shared/database/database.module';
 import { LlmAdmissionStore } from '../shared/llm-admission/llm-admission.store';
 import { RedisModule } from '../shared/redis/redis.module';
 import type { ProofHoundRuntimeModuleOptions } from '../shared/runtime-module-options';
-import { DatasetImportRepository } from '../server/modules/dataset/dataset-import.repository';
 import { LlmAdmissionDispatcher } from './llm-admission-dispatcher';
 
 export type ProofHoundWorkerModuleOptions = ProofHoundRuntimeModuleOptions;
@@ -30,17 +28,10 @@ export class ProofHoundWorkerModule {
             },
           }),
         }),
-        BullModule.registerQueue({ name: 'llm' }, { name: 'probe' }, { name: 'dataset-import' }),
+        // Dataset import is synchronous in the server process (SPEC 22 §3.1.1); no dataset-import queue.
+        BullModule.registerQueue({ name: 'llm' }, { name: 'probe' }),
       ],
-      providers: [
-        DatasetImportRepository,
-        LlmAdmissionStore,
-        LlmAdmissionDispatcher,
-        ...llmConsumerProviders,
-        LlmConsumer,
-        ProbeConsumer,
-        DatasetRawImportConsumer,
-      ],
+      providers: [LlmAdmissionStore, LlmAdmissionDispatcher, ...llmConsumerProviders, LlmConsumer, ProbeConsumer],
     };
   }
 }

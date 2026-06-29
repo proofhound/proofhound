@@ -83,7 +83,7 @@ The three limits are mutually independent:
 | TPM         | Input + output tokens in the most recent 60-second sliding window                                 |
 | Concurrency | Number of in-flight requests at the same time (the concurrency limit when auto concurrency is on) |
 
-RPM / TPM allow `-1` to indicate no limit at the model layer; a positive runtime / deployment / plan cap from `RuntimeLimitsProvider` still applies when the model layer is unlimited. Concurrency must be `1..999`. All entries share the same effective quota, counted uniformly by the centralized Redis rate limiter through the opaque key produced by `LimiterKeyStrategy` ([08 §3.7](08-saas-adapter-boundary.md#37-limiterkeystrategy)); the OSS default key is `model:<modelId>`.
+RPM / TPM allow `-1` to indicate no limit at the model layer; a positive runtime / deployment cap from `RuntimeLimitsProvider` still applies when the model layer is unlimited. Concurrency must be `1..999`. All entries share the same effective quota, counted uniformly by the centralized Redis rate limiter through the opaque key produced by `LimiterKeyStrategy` ([08 §3.7](08-adapter-extension-points.md#37-limiterkeystrategy)); the OSS default key is `model:<modelId>`.
 
 Experiment- / optimization-level rate limits can only tighten downward; they cannot exceed the model's limits.
 

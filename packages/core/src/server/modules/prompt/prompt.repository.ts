@@ -12,6 +12,7 @@ import {
   type UpdatePromptDraftVersionDto,
 } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
+import { LOCAL_ACTOR_ID } from '../../common/actor-context';
 
 const {
   optimizations,
@@ -133,7 +134,7 @@ export class PromptRepository {
     defaultDatasetId: prompts.defaultDatasetId,
     defaultDatasetName: datasets.name,
     createdBy: prompts.createdBy,
-    createdByDisplayName: sql<string | null>`NULL`,
+    createdByDisplayName: sql<string | null>`CASE WHEN ${prompts.createdBy} = CAST(${LOCAL_ACTOR_ID} AS uuid) THEN 'Local User' ELSE NULL END`,
     createdAt: prompts.createdAt,
     updatedAt: prompts.updatedAt,
     archivedAt: prompts.archivedAt,
@@ -154,7 +155,7 @@ export class PromptRepository {
     changeReason: promptVersions.changeReason,
     isFrozen: promptVersions.isFrozen,
     createdBy: promptVersions.createdBy,
-    createdByDisplayName: sql<string | null>`NULL`,
+    createdByDisplayName: sql<string | null>`CASE WHEN ${promptVersions.createdBy} = CAST(${LOCAL_ACTOR_ID} AS uuid) THEN 'Local User' ELSE NULL END`,
     createdAt: promptVersions.createdAt,
     frozenAt: promptVersions.frozenAt,
   };

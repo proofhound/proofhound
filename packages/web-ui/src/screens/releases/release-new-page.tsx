@@ -38,6 +38,7 @@ import { capConcurrencyValue, resolveEffectiveConcurrencyLimit, useRuntimeLimits
 import { composePromptPreview } from '../prompts/prompt-preview';
 import { renderPromptPreviewParts } from '../prompts/prompt-preview-parts';
 import { VARIABLE_TONE_CLASSES } from '../prompts/prompt-ui';
+import { formatOwnerHandle } from '../experiments/experiment-option-adapter';
 import { FieldMappingTable, FilterRulesBuilder, ReadOnlyFilterRules } from './release-input-route-editor';
 import { deriveRecordCategoryOptions, releaseRecordModeFromCategories } from './release-new-model';
 
@@ -592,8 +593,7 @@ function PromptRow({
           <Tag>{prompt.latestVersionStatus}</Tag>
         </div>
         <div className="mt-1 text-[11.5px] text-muted-foreground">
-          {prompt.createdByDisplayName ? `@${prompt.createdByDisplayName}` : '@unknown'} ·{' '}
-          {formatDateTime(prompt.updatedAt)}
+          {formatOwnerHandle(prompt.createdByDisplayName, prompt.createdBy)} · {formatDateTime(prompt.updatedAt)}
         </div>
       </div>
     </button>
@@ -1341,7 +1341,7 @@ export function ReleaseNewPage({ projectId, initialName }: ReleaseNewPageProps) 
     const query = promptSearch.trim().toLowerCase();
     if (!query) return prompts;
     return prompts.filter((prompt) =>
-      [prompt.name, prompt.createdByDisplayName ?? '', `v${prompt.latestVersionNumber}`]
+      [prompt.name, prompt.createdByDisplayName ?? '', prompt.createdBy, `v${prompt.latestVersionNumber}`]
         .join(' ')
         .toLowerCase()
         .includes(query),

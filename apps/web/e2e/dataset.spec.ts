@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { SERVER_URL } from './support/api';
 
 // Mirrors dataset-upload.spec.ts (JSONL) for the CSV happy path: it exercises the real
-// in-browser parse -> dataset import session -> list flow, so it needs the API server + database
+// in-browser preview -> single multipart upload -> list flow, so it needs the API server + database
 // running (e.g. `pnpm dev`). It self-cleans the dataset it creates via the REST API.
 const fixturePath = resolve('e2e/fixtures/dataset-smoke.csv');
 // The visually-hidden file input (the folder input has no `accept`).
@@ -26,13 +26,15 @@ test('uploads a CSV dataset and lands on the list', async ({ page }) => {
     const importButton = page.getByRole('button', { name: /Import/ });
     await expect(importButton).toBeEnabled();
 
-    const createDatasetResponse = page.waitForResponse(
-      (response) => response.request().method() === 'POST' && response.url().endsWith('/datasets'),
+    const uploadResponse = page.waitForResponse(
+      (response) => response.request().method() === 'POST' && response.url().endsWith('/datasets/upload'),
     );
     await importButton.click();
-    const created = await createDatasetResponse;
+    const created = await uploadResponse;
     expect(created.status()).toBe(201);
-    datasetId = ((await created.json()) as { dataset: { id: string } }).dataset.id;
+    const uploaded = (await created.json()) as { datasetId: string | null; state: string };
+    expect(uploaded.state).toBe('completed');
+    datasetId = uploaded.datasetId ?? '';
     expect(datasetId).not.toBe('');
 
     // Lands back on the list with the new dataset visible.

@@ -17,8 +17,8 @@ This repository carries only OSS self-hosted capabilities. Future SaaS / control
 | Frontend      | Next.js + TypeScript + Refine + shadcn/ui + Tailwind                                                                                                                                                                                                                                                                     |
 | Backend       | NestJS + TypeScript monolith, split along Module boundaries                                                                                                                                                                                                                                                              |
 | Database      | Native PostgreSQL + Drizzle ORM, schema prefix `ph_*`                                                                                                                                                                                                                                                                    |
-| Auth          | Dual-channel HTTP entry (API `Authorization: Bearer ph_*` user token / UI deployment-layer trusted header or LOCAL_ACTOR fallback); MCP entry user token; Webhook entry per-connector webhook token; OSS ships no built-in login system, deployment forms A/B/C detailed in [08](docs/specs/08-saas-adapter-boundary.md) |
-| Storage       | Current OSS main path stores datasets / results in PostgreSQL; object storage is reserved until a real consumer exists                                                                                                                                                                                                   |
+| Auth          | Dual-channel HTTP entry (API `Authorization: Bearer ph_*` user token / UI deployment-layer trusted header or LOCAL_ACTOR fallback); MCP entry user token; Webhook entry per-connector webhook token; OSS ships no built-in login system, deployment forms A/B/C detailed in [08](docs/specs/08-adapter-extension-points.md) |
+| Storage       | OSS stores datasets / run results inline in PostgreSQL; object storage is a SaaS-only concern behind the dataset-upload + payload-reader adapters ([08](docs/specs/08-adapter-extension-points.md) §3.13/§3.14), never in the OSS trunk                                                                                                                                                                                                   |
 | Realtime      | React Query polling + NestJS SSE (business orchestration streaming)                                                                                                                                                                                                                                                      |
 | Orchestration | DBOS + BullMQ + Node.js LLM Worker                                                                                                                                                                                                                                                                                       |
 | Rate limit    | Redis centralized rate limiting (RPM / TPM / concurrency)                                                                                                                                                                                                                                                                |
@@ -74,11 +74,14 @@ When an OSS change must be verified in the SaaS repo before a formal npm release
 From the OSS branch worktree:
 
 ```bash
-OSS_PACK_DIR="${TMPDIR:-/tmp}/proofhound-oss-packs"
+OSS_PACK_DIR="$PWD/.npm_packages"
+mkdir -p "$OSS_PACK_DIR"
 pnpm build
 pnpm packages:pack "$OSS_PACK_DIR"
 pnpm packages:pack:check
 ```
+
+Tarballs for SaaS validation must live under this OSS worktree's project-local `.npm_packages/` directory. Do not place them under `/tmp` or any other machine-global scratch directory; keeping them under the project makes the active tarball set visible and reproducible for the current worktree.
 
 Then in the SaaS `worktrees/dev` checkout, temporarily point `pnpm.overrides` for the needed `@proofhound/*` packages at the generated `file:$OSS_PACK_DIR/proofhound-<package>-<version>.tgz` tarballs, run `pnpm install`, and execute the SaaS checks or manual flow being debugged.
 
@@ -96,12 +99,12 @@ If SaaS validation reveals a bug, fix it in the same OSS branch worktree, rerun 
 | Change models / datasets / prompts / experiments / optimizations     | [21](docs/specs/21-models.md) + [22](docs/specs/22-datasets.md) + [23](docs/specs/23-prompts.md) + [24](docs/specs/24-experiments.md) + [25](docs/specs/25-optimizations.md) |
 | Change connectors / releases / run results                           | [26](docs/specs/26-connectors.md) + [27](docs/specs/27-releases.md) + [30](docs/specs/30-run-results.md)                                                                     |
 | Change quick start / settings page                                   | [33](docs/specs/33-quick-start.md) + [34](docs/specs/34-settings.md)                                                                                                         |
-| Change entry authentication / token system / SaaS adapter interfaces | [08](docs/specs/08-saas-adapter-boundary.md)                                                                                                                                 |
+| Change entry authentication / token system / adapter extension points | [08](docs/specs/08-adapter-extension-points.md)                                                                                                                                 |
 
 ## 4. OSS / SaaS Boundary
 
 - The current repository prioritizes serving the complete, usable closed loop of the open-source self-hosted edition; any new architecture must be able to explain how it improves current OSS functionality, maintainability, or the local data boundary.
-- Thin interfaces such as `project_id`, `ProjectContext`, `ActorContext`, `accessControl`, Provider interfaces, and API / MCP boundaries may be kept as future external SaaS control plane integration points; these interfaces must have an open-source default implementation that is genuinely used by current code paths. The full contract of the adapter extension points (`ProjectContextResolver` / `ActorContextResolver` / `McpAuthResolver` / `ConnectorContextResolver` / `TokenService` / `AccessControlService` / `LimiterKeyStrategy` / `RuntimeLimitsProvider` / `WorkflowAuthorizationHook`) is in [08 Control Plane Adapter Boundary](docs/specs/08-saas-adapter-boundary.md).
+- Thin interfaces such as `project_id`, `ProjectContext`, `ActorContext`, `accessControl`, Provider interfaces, and API / MCP boundaries may be kept as future external SaaS control plane integration points; these interfaces must have an open-source default implementation that is genuinely used by current code paths. The full contract of the adapter extension points (`ProjectContextResolver` / `ActorContextResolver` / `McpAuthResolver` / `ConnectorContextResolver` / `TokenService` / `AccessControlService` / `LimiterKeyStrategy` / `RuntimeLimitsProvider` / `WorkflowAuthorizationHook`) is in [08 Adapter extension points](docs/specs/08-adapter-extension-points.md).
 - SaaS-exclusive capabilities such as organization / member / role permissions, tenant billing, plan quotas, hosted login, approvals, auditing, platform monitoring, alerting, and multi-project control plane are not implemented in this repository, nor pre-embedded via hidden menus, edition flags, empty migrations, empty Services, empty UI, or unused dependencies.
 - The integration assumption between future SaaS and OSS is to connect through stable API / MCP / Provider / deployment configuration, rather than maintaining a hosted-only branch, a commercial-edition toggle, or a dual-form product in the same repository.
 - If an abstraction only serves future SaaS and has no genuine caller or default behavior in the current OSS, do not add it yet; when uncertain, ask ZiqiXiao first.

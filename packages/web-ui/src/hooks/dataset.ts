@@ -1,9 +1,10 @@
-import { datasetClient, type DatasetTransferOptions } from '@proofhound/api-client';
+import { datasetClient, datasetImportClient, type DatasetTransferOptions } from '@proofhound/api-client';
 import type {
   CreateDatasetDto,
   DatasetDeletionImpactDto,
   DatasetExportFormatDto,
   DatasetListItemDto,
+  DatasetUploadMetadataDto,
   DeleteDatasetSamplesDto,
   UpdateDatasetMetadataDto,
 } from '@proofhound/shared';
@@ -11,6 +12,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface CreateDatasetVariables extends DatasetTransferOptions {
   body: CreateDatasetDto;
+}
+
+interface UploadDatasetVariables {
+  file: Blob;
+  metadata: DatasetUploadMetadataDto;
+  signal?: AbortSignal;
+  onProgress?: (progress: { loadedBytes: number; totalBytes: number | null }) => void;
 }
 
 interface DownloadDatasetVariables extends DatasetTransferOptions {
@@ -81,6 +89,20 @@ export function useCreateDataset(projectId: string) {
   return useMutation({
     mutationFn: ({ body, onProgress }: CreateDatasetVariables) =>
       datasetClient.createDataset(projectId, body, { onProgress }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['datasets', projectId] });
+    },
+  });
+}
+
+// Single multipart upload (SPEC 22 §3.1.1): the browser POSTs the original file + metadata once and
+// the server parses, stages, and promotes synchronously, returning the completed import status.
+export function useUploadDataset(projectId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ file, metadata, signal, onProgress }: UploadDatasetVariables) =>
+      datasetImportClient.uploadDataset(projectId, file, metadata, { signal, onProgress }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['datasets', projectId] });
     },

@@ -2,7 +2,7 @@
 //   - all samples failed → finalize('failed', 'all_samples_failed')
 //   - partial failure   → finalize('success')
 //   - all succeed       → finalize('success')
-//   - control_state=stop / legacy cancel → compact run results, then finalize(stopped)
+//   - control_state=stop / legacy cancel → finalize(stopped)
 //
 // Mock @dbos-inc/dbos-sdk: registerStep/registerWorkflow degrade to identity, sleepSeconds is a noop,
 // so runImpl's this.xxxStep(...) calls the matching private impl directly; then use vi.spyOn to swap the private impl
@@ -27,14 +27,11 @@ import {
   readExpectedField,
   type ExperimentPlan,
 } from '../experiment.workflow';
-import type { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
-import { DatasetSamplePayloadReader } from '../../dataset/dataset-sample-payload';
+import { InlineDatasetSamplePayloadReader } from '../../dataset/dataset-sample-payload';
 import { describe, expect, it, vi } from 'vitest';
 
-// Object storage disabled → the dataset-sample reader is a pure inline pass-through.
-const datasetSampleReader = new DatasetSamplePayloadReader({
-  isEnabled: () => false,
-} as unknown as ObjectStorageProvider);
+// OSS default: the dataset-sample reader is a pure inline pass-through.
+const datasetSampleReader = new InlineDatasetSamplePayloadReader();
 
 const PLAN: ExperimentPlan = {
   experimentId: 'exp-1',
@@ -53,30 +50,20 @@ function buildRegistrar() {
   const db = {} as never;
   const bullmq = {} as never;
   const runResults = {} as never;
-  const compactor = {} as never;
   const runResultWriter = {} as never;
-  const registrar = new ExperimentWorkflowRegistrar(
-    db,
-    bullmq,
-    runResults,
-    compactor,
-    datasetSampleReader,
-    runResultWriter,
-  );
+  const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, datasetSampleReader, runResultWriter);
 
   const finalize = vi.fn().mockResolvedValue(undefined);
   const markStarted = vi.fn().mockResolvedValue(undefined);
   const clearResume = vi.fn().mockResolvedValue(undefined);
   const aggregate = vi.fn().mockResolvedValue(undefined);
-  const compact = vi.fn().mockResolvedValue(undefined);
 
   (registrar as unknown as Record<string, unknown>)['finalizeStep'] = finalize;
   (registrar as unknown as Record<string, unknown>)['markStartedStep'] = markStarted;
   (registrar as unknown as Record<string, unknown>)['clearResumeStep'] = clearResume;
   (registrar as unknown as Record<string, unknown>)['aggregateMetricsStep'] = aggregate;
-  (registrar as unknown as Record<string, unknown>)['compactRunResultsStep'] = compact;
 
-  return { registrar, finalize, markStarted, aggregate, compact };
+  return { registrar, finalize, markStarted, aggregate };
 }
 
 describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
@@ -139,8 +126,8 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
     expect(finalize).toHaveBeenCalledWith('exp-1', 'success');
   });
 
-  it('control_state=stop → compact 后 finalize(stopped) 不再 enqueue 下一 batch', async () => {
-    const { registrar, finalize, compact } = buildRegistrar();
+  it('control_state=stop → finalize(stopped) 不再 enqueue 下一 batch', async () => {
+    const { registrar, finalize } = buildRegistrar();
     const r = registrar as unknown as Record<string, unknown>;
     r['loadPlanStep'] = vi.fn().mockResolvedValue({ ...PLAN, totalSamples: 2, batchSize: 1 });
     r['readControlStateStep'] = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce('stop');
@@ -152,13 +139,11 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
     await (registrar as unknown as { runWorkflow: (id: string) => Promise<void> }).runWorkflow('exp-1');
 
     expect(enqueue).toHaveBeenCalledTimes(1); // After the first batch is enqueued, the second batch is intercepted by stop
-    expect(compact).toHaveBeenCalledWith('exp-1', 'prj-1');
-    expect(compact.mock.invocationCallOrder[0]).toBeLessThan(finalize.mock.invocationCallOrder[0]!);
     expect(finalize).toHaveBeenCalledWith('exp-1', 'stopped');
   });
 
-  it('legacy control_state=cancel → compact 后 finalize(stopped)', async () => {
-    const { registrar, finalize, compact } = buildRegistrar();
+  it('legacy control_state=cancel → finalize(stopped)', async () => {
+    const { registrar, finalize } = buildRegistrar();
     const r = registrar as unknown as Record<string, unknown>;
     r['loadPlanStep'] = vi.fn().mockResolvedValue({ ...PLAN, totalSamples: 2, batchSize: 1 });
     r['readControlStateStep'] = vi.fn().mockResolvedValueOnce('cancel');
@@ -168,13 +153,11 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
 
     await (registrar as unknown as { runWorkflow: (id: string) => Promise<void> }).runWorkflow('exp-1');
 
-    expect(compact).toHaveBeenCalledWith('exp-1', 'prj-1');
-    expect(compact.mock.invocationCallOrder[0]).toBeLessThan(finalize.mock.invocationCallOrder[0]!);
     expect(finalize).toHaveBeenCalledWith('exp-1', 'stopped');
   });
 
-  it('poll 内返回 control=stop → compact 后 finalize(stopped) 不再 enqueue 下一 batch', async () => {
-    const { registrar, finalize, compact } = buildRegistrar();
+  it('poll 内返回 control=stop → finalize(stopped) 不再 enqueue 下一 batch', async () => {
+    const { registrar, finalize } = buildRegistrar();
     const r = registrar as unknown as Record<string, unknown>;
     r['loadPlanStep'] = vi.fn().mockResolvedValue({ ...PLAN, totalSamples: 2, batchSize: 1 });
     r['readControlStateStep'] = vi.fn().mockResolvedValue(null);
@@ -186,13 +169,11 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
     await (registrar as unknown as { runWorkflow: (id: string) => Promise<void> }).runWorkflow('exp-1');
 
     expect(enqueue).toHaveBeenCalledTimes(1);
-    expect(compact).toHaveBeenCalledWith('exp-1', 'prj-1');
-    expect(compact.mock.invocationCallOrder[0]).toBeLessThan(finalize.mock.invocationCallOrder[0]!);
     expect(finalize).toHaveBeenCalledWith('exp-1', 'stopped');
   });
 
-  it('poll 内返回 legacy control=cancel → compact 后 finalize(stopped)', async () => {
-    const { registrar, finalize, compact } = buildRegistrar();
+  it('poll 内返回 legacy control=cancel → finalize(stopped)', async () => {
+    const { registrar, finalize } = buildRegistrar();
     const r = registrar as unknown as Record<string, unknown>;
     r['loadPlanStep'] = vi.fn().mockResolvedValue({ ...PLAN, totalSamples: 2, batchSize: 1 });
     r['readControlStateStep'] = vi.fn().mockResolvedValue(null);
@@ -204,8 +185,6 @@ describe('ExperimentWorkflow.runImpl — finalize 决策', () => {
 
     await (registrar as unknown as { runWorkflow: (id: string) => Promise<void> }).runWorkflow('exp-1');
 
-    expect(compact).toHaveBeenCalledWith('exp-1', 'prj-1');
-    expect(compact.mock.invocationCallOrder[0]).toBeLessThan(finalize.mock.invocationCallOrder[0]!);
     expect(finalize).toHaveBeenCalledWith('exp-1', 'stopped');
   });
 
@@ -278,13 +257,11 @@ describe('ExperimentWorkflow.pollUntilBatchDoneImpl — stop 清理队列', () =
     for (const counts of options.terminalCounts) {
       runResults.countBatchTerminal.mockResolvedValueOnce(counts);
     }
-    const compactor = {} as never;
     const runResultWriter = { writeRunResult: vi.fn().mockResolvedValue(undefined) };
     const registrar = new ExperimentWorkflowRegistrar(
       db,
       bullmq,
       runResults as never,
-      compactor,
       datasetSampleReader,
       runResultWriter as never,
     );
@@ -474,22 +451,13 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
     const db = {} as never;
     const bullmq = { enqueueLlmJob } as never;
     const runResults = {} as never;
-    const compactor = {} as never;
     const runResultWriter = {} as never;
-    const registrar = new ExperimentWorkflowRegistrar(
-      db,
-      bullmq,
-      runResults,
-      compactor,
-      datasetSampleReader,
-      runResultWriter,
-    );
+    const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, datasetSampleReader, runResultWriter);
 
     const r = registrar as unknown as Record<string, unknown>;
     r['finalizeStep'] = vi.fn().mockResolvedValue(undefined);
     r['markStartedStep'] = vi.fn().mockResolvedValue(undefined);
     r['aggregateMetricsStep'] = vi.fn().mockResolvedValue(undefined);
-    r['compactRunResultsStep'] = vi.fn().mockResolvedValue(undefined);
     r['loadPlanStep'] = vi.fn().mockResolvedValue({ ...PLAN, totalSamples: 1, batchSize: 1 });
     r['readControlStateStep'] = vi.fn().mockResolvedValue(null);
     r['loadSampleIdBatchStep'] = vi.fn().mockResolvedValueOnce(['s1']);

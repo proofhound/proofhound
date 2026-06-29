@@ -4,20 +4,12 @@ import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import type { CreateDatasetImportDto, DatasetFieldSchemaDto, DatasetImportProgressPhase } from '@proofhound/shared';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
-import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
-import { offloadStagingToShards } from './dataset-sample-offload';
 
 const { datasetImports, datasetImportSamples, datasetSamples, datasets, projects } = schema;
 
-// Per-shard batch for offload-at-promote. Bounded so a batch's data stays in memory only briefly
-// (large image/base64 samples make per-row size unpredictable); each batch becomes one R2 shard.
-const PROMOTE_SHARD_BATCH = 200;
+// Promotion phases are retained for the staging→promote lifecycle. OSS has no object-storage
+// offloading phase, but the enum is kept so a stale/aborted promotion can still be detected.
 const PROMOTION_PHASES = ['finalizing', 'offloading', 'committing'] as const;
-const DEFAULT_PROMOTE_OFFLOAD_CONCURRENCY = 1;
-const MAX_PROMOTE_OFFLOAD_CONCURRENCY = 16;
-const PROMOTE_OFFLOAD_CONCURRENCY_ENV = 'DATASET_PROMOTE_STORAGE_CONCURRENCY';
-const PROMOTE_OFFLOAD_CONCURRENCY_FALLBACK_ENV = 'DATASET_IMPORT_OFFLOAD_CONCURRENCY';
 
 export interface DatasetImportProgressPatch {
   phase?: DatasetImportProgressPhase;
@@ -39,10 +31,11 @@ export interface DatasetImportRow {
   contentType: string | null;
   sourceFormat: string;
   importMode: string;
+  // Raw-upload columns are SaaS-only dormant slots; OSS never writes them (06 §4.3.1).
   rawUploadSessionId: string | null;
   rawUploadExpiresAt: Date | null;
   rawUploadCompletedAt: Date | null;
-  rawObjectRef: StoredObjectRef | null;
+  rawObjectRef: unknown | null;
   progress: unknown;
   declaredTotalRows: number | null;
   receivedRows: number;
@@ -65,12 +58,7 @@ export interface CreateDatasetImportArgs {
   projectId: string;
   actorUserId: string;
   dto: CreateDatasetImportDto;
-  importMode?: 'batch' | 'raw_object';
-  initialStatus?: 'created' | 'uploading';
-  rawUploadSession?: {
-    sessionId: string;
-    expiresAt: string;
-  };
+  initialStatus?: 'importing';
 }
 
 export interface BatchSampleRow {
@@ -107,10 +95,7 @@ export class DatasetImportAbortedError extends Error {
 
 @Injectable()
 export class DatasetImportRepository {
-  constructor(
-    @Inject(DATABASE_CLIENT) private readonly db: DbClient,
-    private readonly storage: ObjectStorageProvider,
-  ) {}
+  constructor(@Inject(DATABASE_CLIENT) private readonly db: DbClient) {}
 
   async findProjectAccess(projectId: string): Promise<{ id: string } | null> {
     const rows = await this.db
@@ -131,7 +116,7 @@ export class DatasetImportRepository {
   }
 
   async createImport(args: CreateDatasetImportArgs): Promise<DatasetImportRow> {
-    const initialStatus = args.initialStatus ?? (args.importMode === 'raw_object' ? 'created' : 'uploading');
+    const initialStatus = args.initialStatus ?? 'importing';
     const [row] = await this.db
       .insert(datasetImports)
       .values({
@@ -144,9 +129,7 @@ export class DatasetImportRepository {
         fileSizeBytes: args.dto.sourceFile.fileSizeBytes,
         contentType: args.dto.sourceFile.contentType ?? null,
         sourceFormat: args.dto.sourceFormat,
-        importMode: args.importMode ?? 'batch',
-        rawUploadSessionId: args.rawUploadSession?.sessionId ?? null,
-        rawUploadExpiresAt: args.rawUploadSession?.expiresAt ? new Date(args.rawUploadSession.expiresAt) : null,
+        importMode: 'batch',
         declaredTotalRows: args.dto.declaredTotalRows ?? null,
         status: initialStatus,
         progress: { phase: initialStatus },
@@ -229,8 +212,6 @@ export class DatasetImportRepository {
         status: 'importing',
         progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
           phase: 'finalizing',
-          totalShards: null,
-          completedShards: null,
           committedRows: 0,
         })}::jsonb`,
         updatedAt: now,
@@ -239,7 +220,7 @@ export class DatasetImportRepository {
         and(
           eq(datasetImports.projectId, projectId),
           eq(datasetImports.id, importId),
-          sql`${datasetImports.status} IN ('uploading', 'parsing', 'importing')`,
+          sql`${datasetImports.status} IN ('importing')`,
           sql`(${phase} NOT IN (${promotionPhaseList()}) OR ${stalePromotion})`,
         ),
       )
@@ -247,141 +228,78 @@ export class DatasetImportRepository {
     return (row as DatasetImportRow | undefined) ?? null;
   }
 
-  // Atomic promote: create the dataset row, bulk-copy staging rows into dataset_samples, mark the session completed, drop staging.
+  // Atomic promote: create the dataset row, bulk-copy staging rows into dataset_samples (inline),
+  // mark the session completed, drop staging. OSS stores samples inline — no object-storage offload.
   async promote(args: PromoteDatasetImportArgs): Promise<{ sampleCount: number }> {
-    const writtenShardRefs: StoredObjectRef[] = [];
-    try {
-      return await this.db.transaction(async (tx) => {
-        const assertNotAbortRequested = async () => {
-          const [importRow] = await tx
-            .select({ status: datasetImports.status })
-            .from(datasetImports)
-            .where(eq(datasetImports.id, args.importId))
-            .limit(1);
-          if (importRow?.status === 'aborted') throw new DatasetImportAbortedError();
-        };
-
-        await assertNotAbortRequested();
-        const [countRow] = await tx
-          .select({ count: sql<number>`count(*)::int` })
-          .from(datasetImportSamples)
-          .where(eq(datasetImportSamples.importId, args.importId));
-        const sampleCount = Number(countRow?.count ?? 0);
-        if (sampleCount === 0) throw new DatasetImportEmptyError();
-        await args.onProgress?.({ phase: 'finalizing', committedRows: 0 });
-        await assertNotAbortRequested();
-
-        const taken = await tx
-          .select({ id: datasets.id })
-          .from(datasets)
-          .where(and(eq(datasets.projectId, args.projectId), eq(datasets.name, args.name), isNull(datasets.deletedAt)))
+    return this.db.transaction(async (tx) => {
+      const assertNotAbortRequested = async () => {
+        const [importRow] = await tx
+          .select({ status: datasetImports.status })
+          .from(datasetImports)
+          .where(eq(datasetImports.id, args.importId))
           .limit(1);
-        if (taken.length > 0) throw new DatasetNameTakenError();
-        await assertNotAbortRequested();
+        if (importRow?.status === 'aborted') throw new DatasetImportAbortedError();
+      };
 
-        await tx.insert(datasets).values({
-          id: args.datasetId,
-          projectId: args.projectId,
-          name: args.name,
-          description: args.description,
-          sampleCount,
-          fieldSchema: args.fieldSchema,
-          hasImages: args.hasImages,
-          createdBy: args.actorUserId,
-        });
+      await assertNotAbortRequested();
+      const [countRow] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(datasetImportSamples)
+        .where(eq(datasetImportSamples.importId, args.importId));
+      const sampleCount = Number(countRow?.count ?? 0);
+      if (sampleCount === 0) throw new DatasetImportEmptyError();
+      await args.onProgress?.({ phase: 'finalizing', committedRows: 0 });
+      await assertNotAbortRequested();
 
-        if (this.storage.isEnabled()) {
-          // Offload-at-promote (SPEC 22 §7.2): stream staging into shards + projected rows. The pure
-          // orchestration lives in dataset-sample-offload.ts; here we just bind the tx / storage I/O.
-          const project = { projectId: args.projectId, source: 'local' as const };
-          const totalShards = Math.ceil(sampleCount / PROMOTE_SHARD_BATCH);
-          await args.onProgress?.({ phase: 'offloading', totalShards, completedShards: 0, committedRows: 0 });
-          const { storagePrefix } = await offloadStagingToShards({
-            datasetId: args.datasetId,
-            sampleCount,
-            batchSize: PROMOTE_SHARD_BATCH,
-            concurrency: resolvePromoteOffloadConcurrency(),
-            fieldSchema: args.fieldSchema,
-            onProgress: async ({ completedShards, processedRows }) => {
-              await args.onProgress?.({
-                phase: 'offloading',
-                totalShards,
-                completedShards,
-                committedRows: processedRows,
-              });
-            },
-            readBatch: async (offset, limit) => {
-              await assertNotAbortRequested();
-              return tx
-                .select({ data: datasetImportSamples.data, externalId: datasetImportSamples.externalId })
-                .from(datasetImportSamples)
-                .where(eq(datasetImportSamples.importId, args.importId))
-                .orderBy(asc(datasetImportSamples.rowIndex))
-                .limit(limit)
-                .offset(offset);
-            },
-            putShard: (name, body) =>
-              this.storage
-                .putObject({ project, resourceType: 'dataset_normalized', resourceId: args.datasetId, name }, body, {
-                  codec: 'gzip',
-                })
-                .then((ref) => {
-                  writtenShardRefs.push(ref);
-                  return ref;
-                }),
-            insertRows: async (rows) => {
-              await assertNotAbortRequested();
-              await tx.insert(datasetSamples).values(rows);
-            },
-          });
-          await assertNotAbortRequested();
-          if (storagePrefix) {
-            await tx.update(datasets).set({ storagePrefix }).where(eq(datasets.id, args.datasetId));
-          }
-          await args.onProgress?.({
-            phase: 'committing',
-            totalShards,
-            completedShards: totalShards,
-            committedRows: sampleCount,
-          });
-        } else {
-          await args.onProgress?.({ phase: 'committing', committedRows: 0 });
-          await assertNotAbortRequested();
-          await tx.execute(sql`
-          INSERT INTO ph_assets.dataset_samples (dataset_id, data, external_id)
-          SELECT ${args.datasetId}::uuid, data, external_id
-          FROM ph_assets.dataset_import_samples
-          WHERE import_id = ${args.importId}::uuid
-        `);
-        }
+      const taken = await tx
+        .select({ id: datasets.id })
+        .from(datasets)
+        .where(and(eq(datasets.projectId, args.projectId), eq(datasets.name, args.name), isNull(datasets.deletedAt)))
+        .limit(1);
+      if (taken.length > 0) throw new DatasetNameTakenError();
+      await assertNotAbortRequested();
 
-        await assertNotAbortRequested();
-        const [completed] = await tx
-          .update(datasetImports)
-          .set({
-            status: 'completed',
-            datasetId: args.datasetId,
-            progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
-              phase: 'completed',
-              committedRows: sampleCount,
-            })}::jsonb`,
-            completedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(and(eq(datasetImports.id, args.importId), sql`${datasetImports.status} <> 'aborted'`))
-          .returning({ id: datasetImports.id });
-        if (!completed) throw new DatasetImportAbortedError();
-
-        await tx.delete(datasetImportSamples).where(eq(datasetImportSamples.importId, args.importId));
-
-        return { sampleCount };
+      await tx.insert(datasets).values({
+        id: args.datasetId,
+        projectId: args.projectId,
+        name: args.name,
+        description: args.description,
+        sampleCount,
+        fieldSchema: args.fieldSchema,
+        hasImages: args.hasImages,
+        createdBy: args.actorUserId,
       });
-    } catch (error) {
-      if (writtenShardRefs.length > 0) {
-        await this.storage.deleteObjects(writtenShardRefs).catch(() => undefined);
-      }
-      throw error;
-    }
+
+      await args.onProgress?.({ phase: 'committing', committedRows: 0 });
+      await assertNotAbortRequested();
+      await tx.execute(sql`
+        INSERT INTO ph_assets.dataset_samples (dataset_id, data, external_id)
+        SELECT ${args.datasetId}::uuid, data, external_id
+        FROM ph_assets.dataset_import_samples
+        WHERE import_id = ${args.importId}::uuid
+      `);
+
+      await assertNotAbortRequested();
+      const [completed] = await tx
+        .update(datasetImports)
+        .set({
+          status: 'completed',
+          datasetId: args.datasetId,
+          progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
+            phase: 'completed',
+            committedRows: sampleCount,
+          })}::jsonb`,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(datasetImports.id, args.importId), sql`${datasetImports.status} <> 'aborted'`))
+        .returning({ id: datasetImports.id });
+      if (!completed) throw new DatasetImportAbortedError();
+
+      await tx.delete(datasetImportSamples).where(eq(datasetImportSamples.importId, args.importId));
+
+      return { sampleCount };
+    });
   }
 
   async deleteImport(projectId: string, importId: string): Promise<number> {
@@ -398,7 +316,7 @@ export class DatasetImportRepository {
       .from(datasetImports)
       .where(
         and(
-          sql`(${datasetImports.status} IN ('created', 'uploading', 'uploaded') OR (${datasetImports.importMode} = 'batch' AND ${datasetImports.status} = 'importing') OR (${datasetImports.status} = 'aborted' AND ${datasetImports.progress}->>'cleanupPending' = '1'))`,
+          sql`(${datasetImports.status} = 'importing' OR (${datasetImports.status} = 'aborted' AND ${datasetImports.progress}->>'cleanupPending' = '1'))`,
           sql`COALESCE(${datasetImports.progress}->>'phase', ${datasetImports.status}) NOT IN (${sql.join(
             PROMOTION_PHASES.map((phase) => sql`${phase}`),
             sql`, `,
@@ -416,100 +334,6 @@ export class DatasetImportRepository {
       .where(inArray(datasetImports.id, ids))
       .returning({ id: datasetImports.id });
     return deleted.length;
-  }
-
-  async markRawObjectRef(
-    projectId: string,
-    importId: string,
-    rawObjectRef: StoredObjectRef,
-  ): Promise<DatasetImportRow | null> {
-    const [row] = await this.db
-      .update(datasetImports)
-      .set({ rawObjectRef, updatedAt: new Date() })
-      .where(and(eq(datasetImports.projectId, projectId), eq(datasetImports.id, importId)))
-      .returning();
-    return (row as DatasetImportRow | undefined) ?? null;
-  }
-
-  async markRawUploadCompleted(
-    projectId: string,
-    importId: string,
-    rawObjectRef: StoredObjectRef,
-  ): Promise<DatasetImportRow | null> {
-    const now = new Date();
-    const [row] = await this.db
-      .update(datasetImports)
-      .set({
-        rawObjectRef,
-        status: 'uploaded',
-        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
-          phase: 'uploaded',
-        })}::jsonb`,
-        rawUploadCompletedAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(datasetImports.projectId, projectId),
-          eq(datasetImports.id, importId),
-          sql`${datasetImports.status} IN ('created', 'uploading', 'uploaded')`,
-        ),
-      )
-      .returning();
-    return (row as DatasetImportRow | undefined) ?? null;
-  }
-
-  async markQueued(projectId: string, importId: string, jobId: string): Promise<DatasetImportRow | null> {
-    const now = new Date();
-    const [row] = await this.db
-      .update(datasetImports)
-      .set({
-        status: 'queued',
-        jobId,
-        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
-          phase: 'queued',
-        })}::jsonb`,
-        queuedAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(datasetImports.projectId, projectId),
-          eq(datasetImports.id, importId),
-          sql`${datasetImports.status} IN ('uploaded', 'queued')`,
-        ),
-      )
-      .returning();
-    return (row as DatasetImportRow | undefined) ?? null;
-  }
-
-  async markParsing(projectId: string, importId: string): Promise<DatasetImportRow | null> {
-    const now = new Date();
-    const [row] = await this.db
-      .update(datasetImports)
-      .set({
-        status: 'parsing',
-        progress: sql`COALESCE(${datasetImports.progress}, '{}'::jsonb) || ${JSON.stringify({
-          phase: 'parsing',
-        })}::jsonb`,
-        startedAt: now,
-        updatedAt: now,
-        errorCode: null,
-        errorMessage: null,
-      })
-      .where(
-        and(
-          eq(datasetImports.projectId, projectId),
-          eq(datasetImports.id, importId),
-          sql`${datasetImports.status} IN ('uploaded', 'queued', 'parsing', 'importing')`,
-          sql`COALESCE(${datasetImports.progress}->>'phase', ${datasetImports.status}) NOT IN (${sql.join(
-            PROMOTION_PHASES.map((phase) => sql`${phase}`),
-            sql`, `,
-          )})`,
-        ),
-      )
-      .returning();
-    return (row as DatasetImportRow | undefined) ?? null;
   }
 
   async markFailed(projectId: string, importId: string, errorCode: string, errorMessage: string): Promise<void> {
@@ -551,7 +375,7 @@ export class DatasetImportRepository {
         and(
           eq(datasetImports.projectId, projectId),
           eq(datasetImports.id, importId),
-          sql`${datasetImports.status} IN ('created', 'uploading', 'uploaded', 'queued', 'parsing', 'importing')`,
+          sql`${datasetImports.status} IN ('importing')`,
         ),
       )
       .returning();
@@ -598,11 +422,4 @@ function promotionPhaseList() {
     PROMOTION_PHASES.map((phase) => sql`${phase}`),
     sql`, `,
   );
-}
-
-export function resolvePromoteOffloadConcurrency(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env[PROMOTE_OFFLOAD_CONCURRENCY_ENV] ?? env[PROMOTE_OFFLOAD_CONCURRENCY_FALLBACK_ENV];
-  const parsed = Number(raw);
-  if (!Number.isInteger(parsed) || parsed <= 0) return DEFAULT_PROMOTE_OFFLOAD_CONCURRENCY;
-  return Math.min(parsed, MAX_PROMOTE_OFFLOAD_CONCURRENCY);
 }

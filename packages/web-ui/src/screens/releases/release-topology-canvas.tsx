@@ -429,9 +429,10 @@ function clampTrafficRatio(value: number | null | undefined) {
 
 function getTrafficState(line: ReleaseLineView) {
   const hasProduction = Boolean(line.production?.currentEvent);
-  const canaryRatio = line.canary ? clampTrafficRatio(line.canary.trafficRatio) : 0;
+  const canaryIsRunning = line.canary?.status === 'running';
+  const canaryRatio = canaryIsRunning ? clampTrafficRatio(line.canary?.trafficRatio) : 0;
   const productionRatio = hasProduction
-    ? !line.canary || line.canary.trafficMode === 'dual_run'
+    ? !line.canary || !canaryIsRunning || line.canary.trafficMode === 'dual_run'
       ? 1
       : Math.max(0, 1 - canaryRatio)
     : 0;
@@ -440,7 +441,7 @@ function getTrafficState(line: ReleaseLineView) {
     productionRatio,
     canaryRatio,
     productionHasTraffic: productionRatio > 0,
-    canaryHasTraffic: Boolean(line.canary) && canaryRatio > 0,
+    canaryHasTraffic: canaryIsRunning && canaryRatio > 0,
   };
 }
 
@@ -3120,6 +3121,7 @@ function ReleaseLaneDetailCards({
   tone,
   labels,
   identityRows,
+  trafficEditor,
   runtimeEditor,
   metadataCard,
   routeEditor,
@@ -3127,6 +3129,7 @@ function ReleaseLaneDetailCards({
   tone: ReleaseTopologyTone;
   labels: ReturnType<typeof useTopologyLabels>;
   identityRows: InspectorRow[];
+  trafficEditor?: ReactNode;
   runtimeEditor?: ReactNode;
   metadataCard: ReactNode;
   routeEditor?: ReactNode;
@@ -3135,6 +3138,7 @@ function ReleaseLaneDetailCards({
     <>
       <div className="mt-4 space-y-3">
         <InspectorRowsCard rows={identityRows} tone={tone} title={labels.laneIdentityTitle} />
+        {trafficEditor}
         {runtimeEditor}
         {metadataCard}
       </div>
@@ -3229,7 +3233,7 @@ function buildInspectorDetail({
       content: (
         <>
           <TrafficRatioControl
-            key={`${line.canary?.id ?? 'no-canary'}:${line.canary?.trafficRatio ?? 0}`}
+            key={`${line.canary?.id ?? 'no-canary'}:${line.canary?.status ?? 'none'}:${line.canary?.trafficMode ?? 'none'}:${line.canary?.trafficRatio ?? 0}`}
             line={line}
             labels={labels}
             onUpdateTrafficRatio={onUpdateTrafficRatio}
@@ -3400,11 +3404,25 @@ function buildInspectorDetail({
               mono: false,
             },
             {
+              label: labels.status,
+              value: canary.status,
+              mono: false,
+            },
+            {
               label: labels.termination,
               value: formatCanaryStopConditions(canary.runConfig, labels),
               mono: false,
             },
           ]}
+          trafficEditor={
+            <TrafficRatioControl
+              key={`canary-traffic:${canary.id}:${canary.status}:${canary.trafficMode}:${canary.trafficRatio}`}
+              line={line}
+              labels={labels}
+              onUpdateTrafficRatio={onUpdateTrafficRatio}
+              pending={trafficRatioPending}
+            />
+          }
           runtimeEditor={
             <RuntimeConfigEditor
               key={`canary:${canary.id}:${canary.updatedAt}`}

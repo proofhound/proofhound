@@ -1,5 +1,5 @@
 // RunResultRetentionSweeper — periodic rotation for release run results whose release event sets
-// retention_days. NULL retention stays permanent; the service handles object-storage cleanup.
+// retention_days. NULL retention stays permanent. OSS deletes run-result rows inline (no object storage).
 import { Injectable, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { createLogger } from '@proofhound/logger';
 import { RunResultService } from './run-result.service';

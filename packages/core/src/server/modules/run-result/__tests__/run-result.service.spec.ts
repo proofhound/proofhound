@@ -7,7 +7,6 @@ import type {
   RunResultReleaseListQueryDto,
 } from '@proofhound/shared';
 import type { CurrentUserPayload } from '../../../common/decorators/current-user.decorator';
-import type { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
 import type { ReleaseRunResultExportItem, RunResultRepository } from '../run-result.repository';
 import { RunResultService } from '../run-result.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
@@ -294,11 +293,11 @@ describe('RunResultService', () => {
         runResultRowBytes: 100,
         annotationBytes: 10,
         dbBytes: 110,
-        objectBytes: 200,
-        reclaimableObjectBytes: 200,
+        objectBytes: 0,
+        reclaimableObjectBytes: 0,
         deferredObjectBytes: 0,
-        estimatedMatchedBytes: 310,
-        estimatedReclaimableBytes: 310,
+        estimatedMatchedBytes: 110,
+        estimatedReclaimableBytes: 110,
       };
       const repo = buildRepo({ previewReleaseCleanup: vi.fn().mockResolvedValue(expected) });
       const service = new RunResultService(repo, new LocalAccessControlService());
@@ -308,53 +307,27 @@ describe('RunResultService', () => {
       expect(repo.previewReleaseCleanup).toHaveBeenCalledWith(PROJECT_ID, cleanupFilter);
     });
 
-    it('deletes release cleanup payload refs after the DB transaction result', async () => {
-      const payloadRef = {
-        provider: 'test',
-        key: 'run_result_shard/source/gen1/shard-0.jsonl.gz',
-        bytes: 128,
-        resourceType: 'run_result_shard',
-        resourceId: '55555555-5555-4555-8555-555555555555',
-      };
-      const repo = buildRepo({
-        deleteReleaseCleanup: vi.fn().mockResolvedValue({
-          runResults: 1,
-          annotations: 0,
-          runResultRowBytes: 64,
-          annotationBytes: 0,
-          dbBytes: 64,
-          objectBytes: 128,
-          reclaimableObjectBytes: 128,
-          deferredObjectBytes: 0,
-          estimatedMatchedBytes: 192,
-          estimatedReclaimableBytes: 192,
-          payloadRefs: [payloadRef],
-        }),
-      });
-      const objectStorage = {
-        isEnabled: () => true,
-        deleteObjects: vi.fn().mockResolvedValue(undefined),
-      };
-      const service = new RunResultService(
-        repo,
-        new LocalAccessControlService(),
-        objectStorage as unknown as ObjectStorageProvider,
-      );
-
-      const out = await service.cleanupReleaseRunResults(PROJECT_ID, localActor, cleanupInput);
-      expect(out).toEqual({
+    it('returns the DB cleanup impact directly (inline storage, no object reclamation)', async () => {
+      const impact = {
         runResults: 1,
         annotations: 0,
         runResultRowBytes: 64,
         annotationBytes: 0,
         dbBytes: 64,
-        objectBytes: 128,
-        reclaimableObjectBytes: 128,
+        objectBytes: 0,
+        reclaimableObjectBytes: 0,
         deferredObjectBytes: 0,
-        estimatedMatchedBytes: 192,
-        estimatedReclaimableBytes: 192,
+        estimatedMatchedBytes: 64,
+        estimatedReclaimableBytes: 64,
+      };
+      const repo = buildRepo({
+        deleteReleaseCleanup: vi.fn().mockResolvedValue(impact),
       });
-      expect(objectStorage.deleteObjects).toHaveBeenCalledWith([payloadRef]);
+      const service = new RunResultService(repo, new LocalAccessControlService());
+
+      const out = await service.cleanupReleaseRunResults(PROJECT_ID, localActor, cleanupInput);
+      expect(out).toEqual(impact);
+      expect(repo.deleteReleaseCleanup).toHaveBeenCalledWith(PROJECT_ID, cleanupInput);
     });
 
     it('rejects cleanup when the date range is inverted', async () => {
@@ -386,14 +359,7 @@ describe('RunResultService', () => {
   });
 
   describe('release retention sweep', () => {
-    it('uses the repository retention batch and deletes payload refs after commit', async () => {
-      const payloadRef = {
-        provider: 'test',
-        key: 'run_result_shard/source/release/shard-0.jsonl.gz',
-        bytes: 256,
-        resourceType: 'run_result_shard',
-        resourceId: '55555555-5555-4555-8555-555555555555',
-      };
+    it('aggregates the repository retention batch impact (inline storage)', async () => {
       const repo = buildRepo({
         deleteReleaseRetentionCleanupBatch: vi.fn().mockResolvedValue({
           lockAcquired: true,
@@ -412,33 +378,23 @@ describe('RunResultService', () => {
                 runResultRowBytes: 100,
                 annotationBytes: 10,
                 dbBytes: 110,
-                objectBytes: 256,
-                reclaimableObjectBytes: 256,
+                objectBytes: 0,
+                reclaimableObjectBytes: 0,
                 deferredObjectBytes: 0,
-                estimatedMatchedBytes: 366,
-                estimatedReclaimableBytes: 366,
+                estimatedMatchedBytes: 110,
+                estimatedReclaimableBytes: 110,
               },
-              payloadRefs: [payloadRef],
             },
           ],
         }),
       });
-      const objectStorage = {
-        isEnabled: () => true,
-        deleteObjects: vi.fn().mockResolvedValue(undefined),
-      };
-      const service = new RunResultService(
-        repo,
-        new LocalAccessControlService(),
-        objectStorage as unknown as ObjectStorageProvider,
-      );
+      const service = new RunResultService(repo, new LocalAccessControlService());
 
       const now = new Date('2026-07-01T00:00:00.000Z');
       const out = await service.sweepReleaseRunResultRetention(now);
 
       expect(repo.deleteReleaseRetentionCleanupBatch).toHaveBeenCalledWith(now);
-      expect(out).toEqual({ targets: 1, runResults: 2, estimatedReclaimableBytes: 366 });
-      expect(objectStorage.deleteObjects).toHaveBeenCalledWith([payloadRef]);
+      expect(out).toEqual({ targets: 1, runResults: 2, estimatedReclaimableBytes: 110 });
     });
 
     it('skips retention cleanup when another replica holds the sweep lock', async () => {
@@ -449,22 +405,13 @@ describe('RunResultService', () => {
           cleanups: [],
         }),
       });
-      const objectStorage = {
-        isEnabled: () => true,
-        deleteObjects: vi.fn().mockResolvedValue(undefined),
-      };
-      const service = new RunResultService(
-        repo,
-        new LocalAccessControlService(),
-        objectStorage as unknown as ObjectStorageProvider,
-      );
+      const service = new RunResultService(repo, new LocalAccessControlService());
 
       await expect(service.sweepReleaseRunResultRetention()).resolves.toEqual({
         targets: 0,
         runResults: 0,
         estimatedReclaimableBytes: 0,
       });
-      expect(objectStorage.deleteObjects).not.toHaveBeenCalled();
     });
   });
 });

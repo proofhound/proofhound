@@ -5,7 +5,6 @@ import { ReleaseLineService } from '../release-line.service';
 import type { ReleaseLineRepository } from '../release-line.repository';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
 import type { UsageMeteringHook } from '../../../common/contracts/usage-metering.hook';
-import { type ObjectStorageProvider, type StoredObjectRef } from '../../../common/contracts/object-storage.provider';
 
 const projectId = '11111111-1111-4111-8111-111111111111';
 const promptId = '22222222-2222-4222-8222-222222222222';
@@ -64,7 +63,7 @@ function createWritableRepoMock() {
     unarchiveLine: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     restoreHistoryToLane: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     forceStopRunningLanesForDelete: vi.fn().mockResolvedValue(undefined),
-    hardDeleteLine: vi.fn().mockResolvedValue({ deleted: 1, payloadRefs: [] }),
+    hardDeleteLine: vi.fn().mockResolvedValue({ deleted: 1 }),
     updateActiveLaneRunConfig: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     updateActiveLaneOutputRoute: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
     updateActiveLaneInputRoute: vi.fn().mockResolvedValue({ id: '77777777-7777-4777-8777-777777777777' }),
@@ -87,13 +86,12 @@ function createDeletionHookMock() {
   };
 }
 
-function createService(repo: unknown, usageMetering?: UsageMeteringHook, objectStorage?: ObjectStorageProvider) {
+function createService(repo: unknown, usageMetering?: UsageMeteringHook) {
   return new ReleaseLineService(
     repo as unknown as ReleaseLineRepository,
     new LocalAccessControlService(),
     createDeletionHookMock() as never,
     usageMetering,
-    objectStorage,
   );
 }
 
@@ -503,34 +501,6 @@ describe('ReleaseLineService.deleteLine', () => {
     expect(repo.forceStopRunningLanesForDelete.mock.invocationCallOrder[0]!).toBeLessThan(
       repo.hardDeleteLine.mock.invocationCallOrder[0]!,
     );
-  });
-
-  it('cleans offloaded release run-result payload refs after permanent deletion', async () => {
-    const repo = createWritableRepoMock();
-    const payloadRef: StoredObjectRef = {
-      provider: 'r2',
-      bucket: 'proofhound-dev',
-      key: 'orgs/org-1/projects/project-1/run_result_shard/99999999-9999-4999-8999-999999999999/gen1/shard-00000.jsonl.gz',
-      bytes: 7114,
-      codec: 'gzip',
-      resourceType: 'run_result_shard',
-      resourceId: '99999999-9999-4999-8999-999999999999',
-    };
-    const objectStorage = {
-      isEnabled: vi.fn(() => true),
-      deleteObjects: vi.fn().mockResolvedValue(undefined),
-    } as unknown as ObjectStorageProvider;
-    repo.hardDeleteLine.mockResolvedValue({ deleted: 1, payloadRefs: [payloadRef] });
-    const service = createService(repo, undefined, objectStorage);
-
-    await service.deleteLine(
-      projectId,
-      '77777777-7777-4777-8777-777777777777',
-      { confirmationName: 'risk-prod', reason: 'cleanup' },
-      actor,
-    );
-
-    expect(objectStorage.deleteObjects).toHaveBeenCalledWith([payloadRef]);
   });
 
   it('rejects permanent deletion when the confirmation name does not match', async () => {

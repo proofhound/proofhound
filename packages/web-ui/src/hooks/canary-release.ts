@@ -1,15 +1,67 @@
 import { canaryReleaseClient, type CanaryAnnotationListQuery } from '@proofhound/api-client';
 import type {
   ClaimCanaryAnnotationsInputDto,
+  CanaryReleaseDto,
   CreateCanaryReleaseInputDto,
   ReleaseCanaryAnnotationInputDto,
+  ReleaseLineListResponseDto,
   SubmitCanaryAnnotationInputDto,
   UpdateCanaryTrafficRatioInputDto,
 } from '@proofhound/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { AutoRefreshInterval } from './use-auto-refresh';
 
 const ROOT_KEY = 'canary-releases' as const;
+
+function applyCanaryResultToReleaseLineCache(queryClient: QueryClient, projectId: string, canary: CanaryReleaseDto) {
+  queryClient.setQueryData<ReleaseLineListResponseDto>(['release-lines', projectId, 'list'], (current) => {
+    if (!current || !Array.isArray(current.data)) return current;
+
+    let changed = false;
+    const data = current.data.map((line) => {
+      const event = line.activeCanaryEvent;
+      if (!event || (event.id !== canary.id && line.id !== canary.releaseLineId)) return line;
+      changed = true;
+
+      return {
+        ...line,
+        updatedAt: canary.updatedAt,
+        activeCanaryEvent: {
+          ...event,
+          status: canary.status === 'pending' ? event.status : canary.status,
+          trafficRatio: canary.trafficRatio,
+          trafficMode: canary.trafficMode,
+          runConfig: canary.runConfig,
+          variableMapping: canary.variableMapping,
+          outputMapping: canary.outputMapping,
+          filterRules: canary.filterRules,
+          recordMode: canary.recordMode,
+          recordCategories: canary.recordCategories,
+          externalIdField: canary.externalIdField,
+          totalReceived: canary.totalReceived,
+          totalProcessed: canary.totalProcessed,
+          totalFiltered: canary.totalFiltered,
+          totalCorrect: canary.totalCorrect,
+          totalErrors: canary.totalErrors,
+          metrics: canary.metrics,
+          startedAt: canary.startedAt,
+          finishedAt: canary.finishedAt,
+          updatedAt: canary.updatedAt,
+        },
+      };
+    });
+
+    return changed ? { ...current, data } : current;
+  });
+}
+
+function refreshCanaryAndReleaseLineQueries(queryClient: QueryClient, projectId: string, canary: CanaryReleaseDto) {
+  applyCanaryResultToReleaseLineCache(queryClient, projectId, canary);
+  void queryClient.invalidateQueries({ queryKey: [ROOT_KEY, projectId] });
+  void queryClient.invalidateQueries({ queryKey: ['production-releases', projectId] });
+  void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
+  queryClient.setQueryData([ROOT_KEY, projectId, 'detail', canary.id], canary);
+}
 
 export function useCanaryReleaseList(projectId: string, enabled = true) {
   return useQuery({
@@ -50,9 +102,7 @@ export function useCreateCanaryRelease(projectId: string) {
     mutationFn: (input: CreateCanaryReleaseInputDto) =>
       canaryReleaseClient.create(projectId, input),
     onSuccess: (canary) => {
-      void queryClient.invalidateQueries({ queryKey: [ROOT_KEY, projectId] });
-      void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
-      void queryClient.setQueryData([ROOT_KEY, projectId, 'detail', canary.id], canary);
+      refreshCanaryAndReleaseLineQueries(queryClient, projectId, canary);
     },
   });
 }
@@ -62,9 +112,7 @@ export function useStartCanaryRelease(projectId: string) {
   return useMutation({
     mutationFn: (canaryId: string) => canaryReleaseClient.start(projectId, canaryId),
     onSuccess: (canary) => {
-      void queryClient.invalidateQueries({ queryKey: [ROOT_KEY, projectId] });
-      void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
-      void queryClient.setQueryData([ROOT_KEY, projectId, 'detail', canary.id], canary);
+      refreshCanaryAndReleaseLineQueries(queryClient, projectId, canary);
     },
   });
 }
@@ -74,9 +122,7 @@ export function useStopCanaryRelease(projectId: string) {
   return useMutation({
     mutationFn: (canaryId: string) => canaryReleaseClient.stop(projectId, canaryId),
     onSuccess: (canary) => {
-      void queryClient.invalidateQueries({ queryKey: [ROOT_KEY, projectId] });
-      void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
-      void queryClient.setQueryData([ROOT_KEY, projectId, 'detail', canary.id], canary);
+      refreshCanaryAndReleaseLineQueries(queryClient, projectId, canary);
     },
   });
 }
@@ -86,9 +132,7 @@ export function useResumeCanaryRelease(projectId: string) {
   return useMutation({
     mutationFn: (canaryId: string) => canaryReleaseClient.resume(projectId, canaryId),
     onSuccess: (canary) => {
-      void queryClient.invalidateQueries({ queryKey: [ROOT_KEY, projectId] });
-      void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
-      void queryClient.setQueryData([ROOT_KEY, projectId, 'detail', canary.id], canary);
+      refreshCanaryAndReleaseLineQueries(queryClient, projectId, canary);
     },
   });
 }
@@ -98,9 +142,7 @@ export function useCancelCanaryRelease(projectId: string) {
   return useMutation({
     mutationFn: (canaryId: string) => canaryReleaseClient.cancel(projectId, canaryId),
     onSuccess: (canary) => {
-      void queryClient.invalidateQueries({ queryKey: [ROOT_KEY, projectId] });
-      void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
-      void queryClient.setQueryData([ROOT_KEY, projectId, 'detail', canary.id], canary);
+      refreshCanaryAndReleaseLineQueries(queryClient, projectId, canary);
     },
   });
 }
@@ -116,10 +158,7 @@ export function useUpdateCanaryTrafficRatio(projectId: string) {
       body: UpdateCanaryTrafficRatioInputDto;
     }) => canaryReleaseClient.updateTrafficRatio(projectId, canaryId, body),
     onSuccess: (canary) => {
-      void queryClient.invalidateQueries({ queryKey: [ROOT_KEY, projectId] });
-      void queryClient.invalidateQueries({ queryKey: ['production-releases', projectId] });
-      void queryClient.invalidateQueries({ queryKey: ['release-lines', projectId] });
-      void queryClient.setQueryData([ROOT_KEY, projectId, 'detail', canary.id], canary);
+      refreshCanaryAndReleaseLineQueries(queryClient, projectId, canary);
     },
   });
 }

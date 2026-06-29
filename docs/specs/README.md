@@ -9,7 +9,7 @@ When you first encounter the repository, read in this order:
 1. [00 Overview](00-overview.md) — product boundaries, core loop, open-source self-hosted form
 2. [01 Navigation](01-navigation.md) — pages and menus of the local admin app
 3. [02 Tech Stack](02-tech-stack.md) — the technology stack and runtime form
-4. [03 Orchestration Spec](03-orchestration.md) / [04 PostgreSQL Usage Spec](04-postgresql.md) / [05 Logging Spec](05-logging.md) / [06 Database Schema](06-database-schema.md) / [07 Code Structure](07-code-structure.md) / [08 Control Plane Adapter Boundary](08-saas-adapter-boundary.md) / [09 MCP Server](09-mcp-server.md) — cross-cutting constraints
+4. [03 Orchestration Spec](03-orchestration.md) / [04 PostgreSQL Usage Spec](04-postgresql.md) / [05 Logging Spec](05-logging.md) / [06 Database Schema](06-database-schema.md) / [07 Code Structure](07-code-structure.md) / [08 Adapter extension points](08-adapter-extension-points.md) / [09 MCP Server](09-mcp-server.md) — cross-cutting constraints
 5. Business feature SPECs: models, datasets, prompts, experiments, optimizations, connectors, releases, run results, quick start, settings
 
 ## Index
@@ -26,7 +26,7 @@ When you first encounter the repository, read in this order:
 | 05 | [Logging Spec](05-logging.md) |
 | 06 | [Database Schema](06-database-schema.md) |
 | 07 | [Code Structure](07-code-structure.md) |
-| 08 | [Control Plane Adapter Boundary](08-saas-adapter-boundary.md) |
+| 08 | [Control Plane Adapter Boundary](08-adapter-extension-points.md) |
 | 09 | [MCP Server](09-mcp-server.md) |
 
 ### Business features

@@ -1,62 +1,57 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { DatasetUploadMetadataDto } from '@proofhound/shared';
 import { datasetImportClient } from './dataset-import';
+import { httpClient } from './http';
 
-const IMPORT_ID = '00000000-0000-4000-8000-000000000100';
+const PROJECT_ID = '00000000-0000-4000-8000-000000000001';
 
-describe('datasetImportClient.abortDatasetImportBeacon', () => {
+const METADATA: DatasetUploadMetadataDto = {
+  name: 'regression-set',
+  description: null,
+  fieldMappings: [
+    { name: 'id', role: 'id' },
+    { name: 'text', role: 'text' },
+  ],
+  sourceFormat: 'csv',
+  fileName: 'train.csv',
+};
+
+describe('datasetImportClient.uploadDataset', () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
-  it('returns false when sendBeacon is unavailable', () => {
-    vi.stubGlobal('navigator', {});
+  it('POSTs the file and metadata as multipart and returns the completed import status', async () => {
+    const status = { id: 'imp-1', state: 'completed', datasetId: 'ds-1' };
+    const post = vi.spyOn(httpClient, 'post').mockResolvedValue({ data: status } as never);
 
-    expect(datasetImportClient.abortDatasetImportBeacon('p', IMPORT_ID)).toBe(false);
+    const file = new Blob(['id,text\n1,hello\n'], { type: 'text/csv' });
+    const result = await datasetImportClient.uploadDataset(PROJECT_ID, file, METADATA);
+
+    expect(result).toBe(status);
+    expect(post).toHaveBeenCalledTimes(1);
+    const [url, body] = post.mock.calls[0] ?? [];
+    expect(url).toBe('/datasets/upload');
+    expect(body).toBeInstanceOf(FormData);
+    const form = body as FormData;
+    expect(form.get('name')).toBe('regression-set');
+    expect(form.get('sourceFormat')).toBe('csv');
+    expect(form.get('fieldMappings')).toBe(JSON.stringify(METADATA.fieldMappings));
+    expect(form.get('file')).toBeInstanceOf(Blob);
   });
 
-  it('posts the abort URL via sendBeacon and returns its result', () => {
-    vi.stubEnv('NEXT_PUBLIC_SERVER_URL', 'https://api.example.test');
-    const sendBeacon = vi.fn().mockReturnValue(true);
-    vi.stubGlobal('navigator', { sendBeacon });
-
-    const result = datasetImportClient.abortDatasetImportBeacon('p', IMPORT_ID);
-
-    expect(result).toBe(true);
-    expect(sendBeacon).toHaveBeenCalledWith(`https://api.example.test/dataset-imports/${IMPORT_ID}/abort`);
-  });
-});
-
-describe('datasetImportClient.uploadRawDatasetFile', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('puts the raw file bytes to the provider upload URL', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
-    vi.stubGlobal('fetch', fetchMock);
-    vi.stubGlobal('XMLHttpRequest', undefined);
-    const file = new Blob(['a,b\n1,2\n'], { type: 'text/csv' });
-    const onProgress = vi.fn();
-
-    await datasetImportClient.uploadRawDatasetFile(
-      {
-        sessionId: 'upload-1',
-        url: 'https://storage.example/upload',
-        headers: { 'content-type': 'text/csv' },
-        expiresAt: '2026-06-20T00:00:00.000Z',
-      },
-      file,
-      { onProgress },
-    );
-
-    expect(fetchMock).toHaveBeenCalledWith('https://storage.example/upload', {
-      method: 'PUT',
-      headers: { 'content-type': 'text/csv' },
-      body: file,
-      signal: undefined,
+  it('reports upload progress through onUploadProgress, falling back to the file size for total', async () => {
+    const post = vi.spyOn(httpClient, 'post').mockImplementation((_url, _body, config) => {
+      config?.onUploadProgress?.({ loaded: 4, total: undefined } as never);
+      return Promise.resolve({ data: { id: 'imp-1', state: 'completed' } } as never);
     });
-    expect(onProgress).toHaveBeenCalledWith({ loadedBytes: file.size, totalBytes: file.size });
+
+    const file = new Blob(['id,text\n1,hi\n'], { type: 'text/csv' });
+    const onProgress = vi.fn();
+    await datasetImportClient.uploadDataset(PROJECT_ID, file, METADATA, { onProgress });
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenCalledWith({ loadedBytes: 4, totalBytes: file.size });
   });
 });

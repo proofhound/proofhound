@@ -13,8 +13,16 @@ export * from './runtime-limits.provider';
 export * from './quota-policy.hook';
 export * from './usage-metering.hook';
 export * from './workflow-authorization.hook';
-export * from './object-storage.provider';
-export * from './local-fs-object-storage.provider';
+export {
+  DatasetSamplePayloadReader,
+  InlineDatasetSamplePayloadReader,
+  type DatasetSamplePayloadRow,
+  type DatasetSamplePayloadRef,
+} from '../../modules/dataset/dataset-sample-payload';
+export {
+  RunResultPayloadReader,
+  InlineRunResultPayloadReader,
+} from '../../modules/run-result/run-result-payload.reader';
 export * from './http-actor.guard';
 export * from './local-project-context.resolver';
 export * from './local-actor-context.resolver';

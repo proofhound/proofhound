@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../../shared/database/database.module';
 import { DrizzleRunResultWriter } from '../../infrastructure/llm/run-result-writer';
 import { OrchestrationModule } from '../../infrastructure/orchestration/orchestration.module';
-import { DatasetSamplePayloadReader } from '../dataset/dataset-sample-payload';
 import { ModelModule } from '../model/model.module';
 import { RunResultModule } from '../run-result/run-result.module';
 import { ExperimentController } from './experiment.controller';
@@ -22,7 +21,6 @@ import { ExperimentWorkflowRegistrar } from './experiment.workflow';
     ExperimentLauncher,
     ExperimentRecoveryService,
     DrizzleRunResultWriter,
-    DatasetSamplePayloadReader,
   ],
   exports: [ExperimentService, ExperimentLauncher, ExperimentRepository, ExperimentWorkflowRegistrar],
 })

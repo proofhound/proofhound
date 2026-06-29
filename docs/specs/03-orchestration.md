@@ -17,8 +17,7 @@ apps/server (mounts @proofhound/core/server)
           ▼
 apps/worker (mounts @proofhound/core/worker)
   ├─ LLM admission dispatcher
-  ├─ llm consumer -> LLM -> run_results
-  └─ dataset-import consumer -> raw file -> staging -> dataset_samples
+  └─ llm consumer -> LLM -> run_results
 ```
 
 DBOS workflow state is written to the same Postgres instance. After a server restart, DBOS workflows resume from their step boundary; the runner service resumes from business-table state.
@@ -28,11 +27,10 @@ DBOS workflow state is written to the same Postgres instance. After a server res
 | Queue            | Who enqueues             | Who consumes  | Content                                          |
 | ---------------- | ------------------------ | ------------- | ------------------------------------------------ |
 | `llm`            | admission dispatcher     | apps/worker   | Ready-to-run LLM calls                           |
-| `dataset-import` | server                   | apps/worker   | Stream-parse uploaded raw dataset and promote it |
 | `probe`          | server                   | server/worker | Model / connector connectivity probe             |
 | `export`         | server                   | server        | CSV / JSONL export                               |
 
-The server workflow / release runner / webhook producer first writes LLM calls into a Redis **pending admission backlog** keyed by the limiter/fairness key. A worker-side dispatcher admits pending jobs into the BullMQ `llm` ready queue only after a concurrency admission lease is available. This uses ordinary Redis + BullMQ primitives; BullMQ Pro groups are not required. The `dataset-import` queue is only for raw-upload imports. The legacy client-streamed batch path remains a synchronous staging/promote request path; cleanup of abandoned pre-queued sessions uses an in-server sweep tick; see [§3.5](#35-probe--export--dataset-import-cleanup).
+The server workflow / release runner / webhook producer first writes LLM calls into a Redis **pending admission backlog** keyed by the limiter/fairness key. A worker-side dispatcher admits pending jobs into the BullMQ `llm` ready queue only after a concurrency admission lease is available. This uses ordinary Redis + BullMQ primitives; BullMQ Pro groups are not required. Dataset upload/import is **synchronous in the server process** (Multer temp file → stream-parse → staging → atomic promote, see [22 §3.1.1](22-datasets.md#311-the-oss-upload-path-single-synchronous)); OSS has no `dataset-import` queue and no async import worker. Orphaned upload temp files are swept on server startup; see [§3.5](#35-probe--export--dataset-upload-cleanup).
 
 ## 3. Orchestration Inventory
 
@@ -79,7 +77,7 @@ Releases do not enter DBOS; they are driven by an in-server runner service ticki
 - Write run results, push outputs to the corresponding lane's output connector, and accumulate the release event count snapshot.
 - Read the release event's `control_state` to respond to stop / resume / cancel / extend.
 - When a split canary reaches 100%, transactionally write a `promote_canary` production lane event and set the canary event to `completed`.
-- The runner does not re-authorize on each tick. Production release submission and canary release creation / resume call `WorkflowAuthorizationHook(workflow='release')` before writing or resuming a `running` release event; the runner trusts those authorized events. For SaaS org-scoped LLM buckets, the runner may hydrate the already-known project through `ProjectContextResolver` using an internal `system_release_runner` actor and the DB row's `project_id`, only to carry `orgId` into the LLM payload.
+- The runner does not re-authorize on each tick. Production release submission and canary release creation / resume call `WorkflowAuthorizationHook(workflow='release')` before writing or resuming a `running` release event; the runner trusts those authorized events. When an override defines broader-scoped (e.g. per-organization) LLM buckets, the runner may hydrate the already-known project through `ProjectContextResolver` using an internal `system_release_runner` actor and the DB row's `project_id`, only to carry `orgId` into the LLM payload.
 
 ### 3.4 Release Event Stream
 
@@ -90,22 +88,22 @@ Release operation history is the `release_line_events` event stream:
 - When a new running event is written, the previous running production event for the same prompt is stopped in the same transaction.
 - Upstream connectors belong to the release line and cannot be changed via `config_change`.
 
-### 3.5 Probe / Export / Dataset Import Cleanup
+### 3.5 Probe / Export / Dataset Upload Cleanup
 
 - `probe`: model or connector connectivity probe. Direct probes call `WorkflowAuthorizationHook(workflow='probe')` with the resolved ProjectContext, including `orgId` when present, before invoking the model LLM probe or connector driver. Model probes can be executed by the worker when queued because they trigger real LLM calls; queued model probes apply `RuntimeLimitsProvider` before invoking the LLM client, the same as normal LLM jobs.
-- `export`: paginate over business data, write to Storage, and return a signed URL.
-- Dataset import: raw-upload import enters the `dataset-import` BullMQ queue after `POST /dataset-imports/:id/complete` (see [22 §3.1.2](22-datasets.md#312-raw-upload--asynchronous-backend-import)). The handler must be idempotent for the import id: if the session is already `completed`, `failed`, or `aborted`, it returns the existing state; otherwise it streams the raw object, writes staging batches, promotes, records usage events, and clears temporary resources. Abandoned sessions that never reached the queue (`created` / `uploading` / `uploaded`) are cleaned up by an in-server **periodic sweep tick**: it marks them `aborted`, clears staging rows, aborts pending upload sessions, deletes finalized temporary raw objects, and calls `ObjectStorageProvider.sweepPendingUploads(...)` for provider-level pending objects whose database session was never created.
+- `export`: paginate over business data and stream the file directly from the API (OSS does not write export artifacts to object storage or return signed URLs).
+- Dataset upload: OSS dataset upload is a single synchronous request (Multer temp file → stream-parse → staging → atomic promote, see [22 §3.1.1](22-datasets.md#311-the-oss-upload-path-single-synchronous)); there is no `dataset-import` queue, async worker, raw-upload session, or import-status polling. A cancelled request rolls back staging / promotion and deletes the temp file in `finally`; orphaned temp files left by a crashed request are removed by a **startup temp-file sweep**.
 
 ### 3.6 Webhook Entry Point
 
-`apps/webhook` is a standalone NestJS process shell that mounts `@proofhound/core/webhook`. It does not mount `HttpActorGuard`, does not go through the MCP context resolver, and **does not call `ProjectContextResolver`'s actor-project access check** (the webhook credential is a per-consumer channel credential and does not represent the project administrator). Entry-point authentication and context resolution are done in one step by a dedicated `ConnectorContextResolver` that directly produces a ProjectContext + ActorContext (contract in [08 §3.4](08-saas-adapter-boundary.md#34-connectorcontextresolver)).
+`apps/webhook` is a standalone NestJS process shell that mounts `@proofhound/core/webhook`. It does not mount `HttpActorGuard`, does not go through the MCP context resolver, and **does not call `ProjectContextResolver`'s actor-project access check** (the webhook credential is a per-consumer channel credential and does not represent the project administrator). Entry-point authentication and context resolution are done in one step by a dedicated `ConnectorContextResolver` that directly produces a ProjectContext + ActorContext (contract in [08 §3.4](08-adapter-extension-points.md#34-connectorcontextresolver)).
 
 Request processing path:
 
 1. Inbound `POST /:webhookSlug[/:pathName]` locates the connector by `(slug, pathName)`; not found → 404
 2. Extract the webhook token from `Authorization: Bearer <token>`, sha256-hash it, and look up `ph_core.tokens where scope='webhook' AND connector_id=<connector.id> AND token_hash=? AND revoked_at IS NULL`; verify `expires_at`; failure → 401 `invalid_webhook_token`
 3. Resolution output:
-   - `ProjectContext`: `{ projectId: connector.projectId }`. In OSS, `projectId` is fixed to the local default project; in SaaS, after replacing `ConnectorContextResolver`, it is determined by the connector configuration
+   - `ProjectContext`: `{ projectId: connector.projectId }`. In OSS, `projectId` is fixed to the local default project; after an override replaces `ConnectorContextResolver`, it is determined by the connector configuration
    - `ActorContext`: `{ actorKind: 'system_webhook', actorId: connectorId }`. This actor does not map to any user / API token actor; in run results and logs, the event's actor identity is recorded with the flat `actorKind` plus the connector id in `actorId`
 4. Subsequent routing / enqueue logic reuses the same flow as the §3.3 Release Runner: release line decisions (production / canary / split / dual_run), variable mapping, enqueue into the LLM pending admission backlog; the BullMQ job payload additionally carries `webhookTokenId` (the resolved webhook token UUID)
 5. Writes to `ph_runs.run_results` and stdout logs both use the above `ProjectContext / ActorContext`; when the worker writes a run_result, it passes the `webhookTokenId` from the payload through to the `ph_runs.run_results.webhook_token_id` column, used for per-consumer usage aggregation by token (the HTTP / MCP entry points write NULL)
@@ -114,7 +112,7 @@ Request processing path:
 Credential isolation principles:
 
 - The webhook token and the user token (shared by HTTP API + MCP) are two credential systems that do not reuse each other and do not resolve each other's tokens
-- Both physically coexist in `ph_core.tokens` (distinguished by `scope`), but their lifecycles, entry-point resolvers, and SaaS replacement paths are entirely independent
+- Both physically coexist in `ph_core.tokens` (distinguished by `scope`), but their lifecycles, entry-point resolvers, and override paths are entirely independent
 - The webhook token's lifecycle is managed by the connector resource (creation / addition / revocation / deletion follow the connector), not by `TokenService`; a single connector supports multiple valid tokens coexisting steadily for per-consumer distribution (see [26 §5.2](26-connectors.md#52-token-management))
 
 Current transition state: the existing `authorizeConnector` at `apps/webhook/src/channels/webhook/webhook.service.ts:185-206` is an inline form of `ConnectorContextResolver`. The core extraction moves the reusable webhook runtime into `packages/core/src/webhook`; this resolver refactor then switches authorization to the unified token model (scope='webhook' + connector_id) and changes the error code from `invalid_api_token` to `invalid_webhook_token`.
@@ -158,7 +156,6 @@ The current open-source schema does not keep a separate `ph_streaming` table; sh
 | Admit pending LLM jobs to BullMQ   | -           | ✓           |
 | Release runner                     | ✓           | -           |
 | Consume the `llm` queue            | -           | ✓           |
-| Consume the `dataset-import` queue | -           | ✓           |
 | Call the LLM                       | -           | ✓           |
 | Write run results                  | ✓ or worker | ✓           |
 | Redis rate limit                   | ✓ or worker | ✓           |

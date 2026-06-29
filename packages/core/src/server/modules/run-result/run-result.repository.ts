@@ -19,10 +19,8 @@ import type {
 } from '@proofhound/shared';
 import { sql, type SQL } from 'drizzle-orm';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
-import type { StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import { DatasetSamplePayloadReader, type DatasetSamplePayloadRef } from '../dataset/dataset-sample-payload';
 import type { RunResultPayloadRef } from './run-result-payload';
-import { collectStoredObjectRefs, sumStoredObjectBytes } from './run-result-payload-ref';
 import { RunResultPayloadReader } from './run-result-payload.reader';
 
 export interface BatchTerminalCounts {
@@ -35,9 +33,7 @@ export interface ExperimentAccessRow {
   projectId: string;
 }
 
-export interface ReleaseRunResultCleanupDeleteResult extends ReleaseRunResultCleanupImpactDto {
-  payloadRefs: StoredObjectRef[];
-}
+export type ReleaseRunResultCleanupDeleteResult = ReleaseRunResultCleanupImpactDto;
 
 export interface ReleaseRunResultRetentionTarget {
   projectId: string;
@@ -49,7 +45,6 @@ export interface ReleaseRunResultRetentionTarget {
 export interface ReleaseRunResultRetentionCleanup {
   target: ReleaseRunResultRetentionTarget;
   impact: ReleaseRunResultCleanupImpactDto;
-  payloadRefs: StoredObjectRef[];
 }
 
 export interface ReleaseRunResultRetentionCleanupBatch {
@@ -672,12 +667,12 @@ export class RunResultRepository {
       const cleanups: ReleaseRunResultRetentionCleanup[] = [];
 
       for (const target of targets) {
-        const { payloadRefs, ...impact } = await this.deleteReleaseCleanupWithExecutor(execute, target.projectId, {
+        const impact = await this.deleteReleaseCleanupWithExecutor(execute, target.projectId, {
           sourceIds: [target.sourceId],
           releaseVersionScope: 'exact',
           to: target.cutoff,
         });
-        cleanups.push({ target, impact, payloadRefs });
+        cleanups.push({ target, impact });
       }
 
       return { lockAcquired: true, targets: targets.length, cleanups };
@@ -730,10 +725,10 @@ export class RunResultRepository {
     projectId: string,
     filter: ReleaseRunResultCleanupFilterDto,
   ): Promise<ReleaseRunResultCleanupDeleteResult> {
-    const { impact, reclaimablePayloadRefs } = await this.describeReleaseCleanup(execute, projectId, filter);
+    const { impact } = await this.describeReleaseCleanup(execute, projectId, filter);
 
     if (impact.runResults === 0) {
-      return { ...impact, payloadRefs: [] };
+      return impact;
     }
 
     const whereSql = releaseRunResultWhereSql(projectId, filter);
@@ -771,14 +766,14 @@ export class RunResultRepository {
         AND rr.created_at = target.created_at
     `);
 
-    return { ...impact, payloadRefs: reclaimablePayloadRefs };
+    return impact;
   }
 
   private async describeReleaseCleanup(
     execute: (query: SQL) => Promise<unknown>,
     projectId: string,
     filter: ReleaseRunResultCleanupFilterDto,
-  ): Promise<{ impact: ReleaseRunResultCleanupImpactDto; reclaimablePayloadRefs: StoredObjectRef[] }> {
+  ): Promise<{ impact: ReleaseRunResultCleanupImpactDto }> {
     const whereSql = releaseRunResultWhereSql(projectId, filter);
     const impactRows = unwrapRows<{
       run_results: number | string;
@@ -815,55 +810,6 @@ export class RunResultRepository {
       `),
     );
 
-    const allPayloadRows = unwrapRows<{ payload_ref: unknown }>(
-      await execute(sql`
-        WITH target_run_results AS (
-          SELECT rr.payload_ref
-          FROM ph_runs.run_results rr
-          JOIN ph_releases.release_line_events release_event
-            ON release_event.id = rr.source_id
-           AND release_event.project_id = rr.project_id
-          LEFT JOIN ph_releases.release_versions release_version
-            ON release_version.id = COALESCE(rr.release_version_id, release_event.release_version_id)
-          WHERE ${whereSql}
-        )
-        SELECT payload_ref
-        FROM target_run_results
-        WHERE payload_ref IS NOT NULL
-      `),
-    );
-
-    const reclaimablePayloadRows = unwrapRows<{ payload_ref: unknown }>(
-      await execute(sql`
-        WITH target_run_results AS (
-          SELECT rr.id, rr.created_at, rr.payload_ref
-          FROM ph_runs.run_results rr
-          JOIN ph_releases.release_line_events release_event
-            ON release_event.id = rr.source_id
-           AND release_event.project_id = rr.project_id
-          LEFT JOIN ph_releases.release_versions release_version
-            ON release_version.id = COALESCE(rr.release_version_id, release_event.release_version_id)
-          WHERE ${whereSql}
-        )
-        SELECT DISTINCT target.payload_ref
-        FROM target_run_results target
-        WHERE target.payload_ref IS NOT NULL
-          AND NOT EXISTS (
-            SELECT 1
-            FROM ph_runs.run_results other
-            WHERE other.payload_ref IS NOT NULL
-              AND COALESCE(other.payload_ref->'shard'->>'key', other.payload_ref->>'key')
-                = COALESCE(target.payload_ref->'shard'->>'key', target.payload_ref->>'key')
-              AND NOT EXISTS (
-                SELECT 1
-                FROM target_run_results same_target
-                WHERE same_target.id = other.id
-                  AND same_target.created_at = other.created_at
-              )
-          )
-      `),
-    );
-
     const first = impactRows[0] ?? {
       run_results: 0,
       annotations: 0,
@@ -873,11 +819,11 @@ export class RunResultRepository {
     const runResultRowBytes = nonnegativeInteger(first.run_result_row_bytes);
     const annotationBytes = nonnegativeInteger(first.annotation_bytes);
     const dbBytes = runResultRowBytes + annotationBytes;
-    const allPayloadRefs = collectStoredObjectRefs(allPayloadRows.map((row) => row.payload_ref));
-    const reclaimablePayloadRefs = collectStoredObjectRefs(reclaimablePayloadRows.map((row) => row.payload_ref));
-    const objectBytes = sumStoredObjectBytes(allPayloadRefs);
-    const reclaimableObjectBytes = sumStoredObjectBytes(reclaimablePayloadRefs);
-    const deferredObjectBytes = Math.max(0, objectBytes - reclaimableObjectBytes);
+    // OSS stores run-result payloads inline in PostgreSQL; there is no object-storage tier to reclaim,
+    // so the object byte accounting is always zero and only the DB bytes are real.
+    const objectBytes = 0;
+    const reclaimableObjectBytes = 0;
+    const deferredObjectBytes = 0;
 
     return {
       impact: {
@@ -892,7 +838,6 @@ export class RunResultRepository {
         estimatedMatchedBytes: dbBytes + objectBytes,
         estimatedReclaimableBytes: dbBytes + reclaimableObjectBytes,
       },
-      reclaimablePayloadRefs,
     };
   }
 

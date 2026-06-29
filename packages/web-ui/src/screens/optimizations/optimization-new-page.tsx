@@ -47,6 +47,7 @@ import { composePromptPreview } from '../prompts/prompt-preview';
 import { renderPromptPreviewParts } from '../prompts/prompt-preview-parts';
 import { VARIABLE_TONE_CLASSES } from '../prompts/prompt-ui';
 import type { PromptVariableType } from '../prompts/prompt-model';
+import { formatOwnerHandle } from '../experiments/experiment-option-adapter';
 import {
   DEFAULT_PROMPT_LANGUAGE,
   type OptimizationGoalComparatorDto,
@@ -802,8 +803,7 @@ function PromptRow({
           )}
         </div>
         <div className="mt-1 text-[11.5px] text-muted-foreground">
-          {prompt.createdByDisplayName ? `@${prompt.createdByDisplayName}` : '@unknown'} ·{' '}
-          {formatDateTime(prompt.updatedAt)}
+          {formatOwnerHandle(prompt.createdByDisplayName, prompt.createdBy)} · {formatDateTime(prompt.updatedAt)}
         </div>
       </div>
     </button>

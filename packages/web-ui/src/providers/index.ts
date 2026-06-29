@@ -8,6 +8,12 @@ export {
 export { ProjectContextProvider, useProjectContext } from './project-context-provider';
 export { NavigationProvider, useResolveHref, type ResolveHref } from './navigation-provider';
 export {
+  WebhookEndpointProvider,
+  useWebhookEndpoint,
+  buildWebhookUrl,
+  type WebhookEndpointContract,
+} from './webhook-endpoint-provider';
+export {
   RuntimeLimitsProvider,
   useRuntimeLimits,
   capConcurrencyValue,

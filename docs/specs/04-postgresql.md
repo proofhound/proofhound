@@ -1,17 +1,16 @@
 # 04 · PostgreSQL Usage Conventions
 
-This document describes the database, object storage, and frontend refresh responsibilities for the open-source self-hosted edition. Guiding principle: the database uses native PostgreSQL, and the business runtime does not depend on managed-platform proprietary capabilities.
+This document describes the database and frontend refresh responsibilities for the open-source self-hosted edition. Guiding principle: the database uses native PostgreSQL, and the business runtime does not depend on managed-platform proprietary capabilities. The OSS trunk stores all business data — datasets and run results included — inline in PostgreSQL; it contains no object-storage mechanism (external storage is reachable only behind the dataset-upload / payload-reader adapters, [08](08-adapter-extension-points.md) §3.13/§3.14, and is out of scope for the OSS runtime).
 
 ## 1. Infrastructure in Use
 
-| Service                    | Purpose                                                                                                                                                                                      |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PostgreSQL                 | All business data, dataset import staging, DBOS workflow state                                                                                                                               |
-| StorageProvider (optional) | Export artifacts, payload tiering, and raw dataset import byte transfer when a provider supports browser-direct upload sessions; normalized samples still promote through PostgreSQL staging |
+| Service    | Purpose                                                        |
+| ---------- | ------------------------------------------------------------- |
+| PostgreSQL | All business data, dataset import staging, DBOS workflow state |
 
 Explicitly not used:
 
-- Database user system: all entrypoint authentication (HTTP API / UI / MCP / Webhook) is handled by the application-layer `ActorContextResolver` / `McpAuthResolver` / `ConnectorContextResolver`; the DB role serves only as a connection credential. See [08](08-saas-adapter-boundary.md) §3.
+- Database user system: all entrypoint authentication (HTTP API / UI / MCP / Webhook) is handled by the application-layer `ActorContextResolver` / `McpAuthResolver` / `ConnectorContextResolver`; the DB role serves only as a connection credential. See [08](08-adapter-extension-points.md) §3.
 - Database Realtime channel: page refresh uses React Query polling, and streaming content uses NestJS SSE.
 - Edge Functions: all server-side logic lives in server / webhook / worker.
 - Direct PostgREST access: the frontend does not read from or write to the database directly.
@@ -39,7 +38,7 @@ Business schemas:
 
 ## 3. RLS and Authentication
 
-RLS is not used as a business isolation mechanism. In the open-source edition, all entrypoint identity resolution is performed in the application layer by `ActorContextResolver` / `McpAuthResolver` / `ConnectorContextResolver` (see [08](08-saas-adapter-boundary.md) §3):
+RLS is not used as a business isolation mechanism. In the open-source edition, all entrypoint identity resolution is performed in the application layer by `ActorContextResolver` / `McpAuthResolver` / `ConnectorContextResolver` (see [08](08-adapter-extension-points.md) §3):
 
 - HTTP API channel: `Authorization: Bearer ph_*` user token, compared against `ph_core.tokens scope='user'` via sha256 hash.
 - HTTP UI channel: deployment-layer trusted header (default `X-Forwarded-User`) or LOCAL_ACTOR as fallback; the OSS browser does not carry application-layer credentials.
@@ -48,21 +47,13 @@ RLS is not used as a business isolation mechanism. In the open-source edition, a
 
 Neither user token nor webhook token reuses an external JWT; OSS issues, hash-compares, and revokes them independently.
 
-For public-facing deployments, UI channel authentication is handled by deployment topology B (reverse proxy + SSO, such as oauth2-proxy / Cloudflare Access / Tailscale). OSS does not include a built-in login system; see [08](08-saas-adapter-boundary.md) §3.2.1.
+For public-facing deployments, UI channel authentication is handled by deployment topology B (reverse proxy + SSO, such as oauth2-proxy / Cloudflare Access / Tailscale). OSS does not include a built-in login system; see [08](08-adapter-extension-points.md) §3.2.1.
 
 ## 4. Storage
 
-Dataset import has a PostgreSQL-first normalization path: small upload writes formal rows directly, while raw upload and legacy client-streamed import write samples into PostgreSQL staging tables (`ph_assets.dataset_imports` / `dataset_import_samples`) and atomically promote to a formal dataset only after parsing/validation succeeds. See [22 §3.1.2](22-datasets.md#312-raw-upload--asynchronous-backend-import), [22 §3.1.3](22-datasets.md#313-legacy-client-streamed-batched-import), and [06 §4.3.1](06-database-schema.md#431-ph_assetsdataset_imports--dataset_import_samples).
+Dataset import is PostgreSQL-first and fully inline. The OSS upload path is a single synchronous request: a `multipart/form-data` file upload is stream-parsed into PostgreSQL staging tables (`ph_assets.dataset_imports` / `dataset_import_samples`) and atomically promoted into a formal dataset only after parsing / validation succeeds. See [22 §3.1.1](22-datasets.md#311-the-oss-upload-path-single-synchronous) and [06 §4.3.1](06-database-schema.md#431-ph_assetsdataset_imports--dataset_import_samples).
 
-Raw dataset import uses `StorageProvider` only as a temporary byte-transfer layer: the browser uploads the raw CSV / TSV / JSONL / JSON / ZIP object through `ObjectStorageProvider.createUploadSession(...)`, the backend finalizes it with `completeUpload(...)`, and a worker streams it back with `getObjectStream(...)`, writes parsed samples into PostgreSQL staging, and then promotes. The raw object is not the source of business truth after import and must be deleted or swept on success, abort, stale-session cleanup, or pending-upload expiry. This is an OSS-generic object storage path; it must not depend on a specific managed provider such as R2.
-
-`StorageProvider` targets standard implementations such as S3 / MinIO / OSS / local file storage by default and is not bound to any specific managed platform. When object storage is enabled, follow the convention "the path does not contain project_id; business ownership is maintained by the database `project_id`":
-
-```text
-{bucket}/{resource_type}/{resource_id}/{filename}
-```
-
-Metadata registration and business validation always go through NestJS; entrypoint authentication is never delegated to storage-layer signatures.
+The OSS trunk has no object-storage runtime: there is no browser-direct upload session, no worker object read-back, and no payload tiering. Larger files, resumable / async upload, and external object storage are reachable only by replacing the dataset-upload and payload-reader adapters ([08](08-adapter-extension-points.md) §3.13/§3.14); the OSS default upload and reader stay inline. Metadata registration and business validation always go through NestJS; entrypoint authentication is never delegated to storage-layer signatures.
 
 ## 5. Frontend Refresh
 
@@ -84,17 +75,17 @@ Metadata registration and business validation always go through NestJS; entrypoi
 
 ## 7. Replacement Paths
 
-| Layer              | Replacement Method                                                                                                                                               |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PostgreSQL         | Any standard PostgreSQL 14+, replace `DATABASE_URL`                                                                                                              |
-| Storage (optional) | Implement `ObjectStorageProvider` against S3 / MinIO / OSS / local file storage; browser raw upload is available only when the provider supports upload sessions |
+| Layer      | Replacement Method                                                                                                                 |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL | Any standard PostgreSQL 14+, replace `DATABASE_URL`                                                                               |
+| Storage    | OSS keeps payloads inline in PostgreSQL; external storage is introduced only behind the upload / payload-reader adapters ([08](08-adapter-extension-points.md) §3.13/§3.14), not in the OSS runtime |
 
 ## 8. Mapping to Business SPECs
 
 | SPEC                                        | Infrastructure Focus                                         |
 | ------------------------------------------- | ------------------------------------------------------------ |
 | [06 Database Schema](06-database-schema.md) | PostgreSQL schema / migration                                |
-| [22 Datasets](22-datasets.md)               | PostgreSQL staging plus optional temporary raw object upload |
+| [22 Datasets](22-datasets.md)               | PostgreSQL staging (inline, single synchronous upload)       |
 | [24 Experiments](24-experiments.md)         | PostgreSQL + polling                                         |
 | [25 Optimizations](25-optimizations.md)     | PostgreSQL + SSE                                             |
 | [27 Releases](27-releases.md)               | PostgreSQL + SSE                                             |

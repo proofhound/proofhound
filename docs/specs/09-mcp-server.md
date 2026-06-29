@@ -8,7 +8,7 @@ tool definitions and Services.
 > The MCP channel is one of the three parallel entry channels (HTTP API / MCP / Webhook). It reuses
 > the **user token** pool (`ph_core.tokens` `scope='user'`, `ph_` prefix) — the same token a user
 > copies into an external script for the HTTP API also authenticates MCP — but it is resolved by its
-> own resolver (`McpAuthResolver`, [08 §3.3](08-saas-adapter-boundary.md)), never by the HTTP entry's
+> own resolver (`McpAuthResolver`, [08 §3.3](08-adapter-extension-points.md)), never by the HTTP entry's
 > `ActorContextResolver`. See [02 §3](02-tech-stack.md) "MCP tools and REST entry points converge on
 > the same set of Services" and hard-constraint #16 (every frontend-invocable Service method exposes
 > a corresponding MCP tool).
@@ -29,7 +29,7 @@ server is a new externally-visible entry channel, so it is specified here before
 | Protocol | MCP via `@modelcontextprotocol/sdk` | the official TypeScript SDK; OSS does not hand-roll the wire format |
 | Transport | **Streamable HTTP** | modern MCP HTTP transport (SSE is legacy); fits a self-hosted web server reachable over HTTP |
 | Endpoint | `POST/GET/DELETE /mcp` on the core server | the same NestJS app that serves the HTTP API; one origin |
-| Session | **stateless** (one transport + server instance per request) | a single-workspace OSS needs no session store; keeps the surface minimal and avoids a login/session subsystem (consistent with [08 §3.2.1](08-saas-adapter-boundary.md) formation reasoning) |
+| Session | **stateless** (one transport + server instance per request) | a single-workspace OSS needs no session store; keeps the surface minimal and avoids a login/session subsystem (consistent with [08 §3.2.1](08-adapter-extension-points.md) formation reasoning) |
 
 Not adopted:
 
@@ -40,7 +40,7 @@ Not adopted:
 
 The `@Controller('mcp')` is **not** placed under `@UseGuards(HttpActorGuard)` — MCP authentication is
 the transport's responsibility via `McpAuthResolver`, not the HTTP actor guard. The two entries share
-the user-token pool but never share a resolver ([08 §8](08-saas-adapter-boundary.md) red line).
+the user-token pool but never share a resolver ([08 §6](08-adapter-extension-points.md) red line).
 
 ## 3. Authentication
 
@@ -48,14 +48,14 @@ the user-token pool but never share a resolver ([08 §8](08-saas-adapter-boundar
   `ph_`-prefixed user token used by the HTTP API; see [06 §3.2](06-database-schema.md) and
   [34 §settings](34-settings.md) "global MCP token").
 - The transport adapter passes the request headers as `McpRequestMetadataLike.headers` to
-  `McpAuthResolver.resolveFromMcp(metadata)` ([08 §3.3](08-saas-adapter-boundary.md)). The OSS default
+  `McpAuthResolver.resolveFromMcp(metadata)` ([08 §3.3](08-adapter-extension-points.md)). The OSS default
   `LocalMcpAuthResolver` sha256-hashes the token (including the `ph_` prefix), looks it up in
   `ph_core.tokens where scope='user' AND revoked_at IS NULL`, validates `expires_at`, touches
   `last_used_at`, and returns `{ actorKind: 'system_mcp', actorId: tokenId }`.
 - `McpDispatchContextFactory.build(metadata)` then resolves the `ProjectContext` via
   `ProjectContextResolver` and assembles the `McpToolContext` injected into every tool handler.
-- OSS issues no JWTs; the MCP entry never introduces a JWT/JWKS library — that path is the SaaS
-  adapter's exclusive concern ([08 §8](08-saas-adapter-boundary.md)).
+- OSS issues no JWTs; the MCP entry never introduces a JWT/JWKS library — that path is an override's
+  exclusive concern ([08 §6](08-adapter-extension-points.md)).
 
 Error mapping (resolver throws `UnauthorizedException`):
 
@@ -73,8 +73,8 @@ Error mapping (resolver throws `UnauthorizedException`):
   `tools/call` by looking up the tool by name and invoking `handler(args, ctx)` where `ctx` is the
   `McpToolContext` carrying the resolver-validated actor + project.
 - Before the SDK dispatches a request, `McpDispatchContextFactory` validates the actor + project and calls
-  `AccessControlService.assertCan(actor, project, 'mcp_tool')` ([08 §3.6](08-saas-adapter-boundary.md)).
-  This channel-level gate lets SaaS allow / deny MCP usage independently of the HTTP API. Each `handler`
+  `AccessControlService.assertCan(actor, project, 'mcp_tool')` ([08 §3.6](08-adapter-extension-points.md)).
+  This channel-level gate lets an override allow / deny MCP usage independently of the HTTP API. Each `handler`
   then delegates to the corresponding Service method, whose normal business authorization still runs
   (`project_read`, `project_write`, `release_manage`, `user_token_manage`, etc.). The MCP channel grants
   no admin bypass to the project layer — `system_mcp` flows through access-control's system-kind handling,
@@ -85,14 +85,14 @@ The legacy "no transport yet" fallback in `getMcpActor` (which synthesized a def
 `ctx.actor` was missing) is removed: once the transport injects a validated actor, a missing actor is
 an error (`missing_user_token`), never a silent default.
 
-## 5. Boundaries & SaaS override
+## 5. Boundaries & override
 
 - The MCP server reuses the user-token credential system; it does **not** read or write
   `scope='webhook'` rows, and the webhook entry does not flow through it.
 - Starting a workflow / enqueuing a job from an MCP tool passes through
-  `WorkflowAuthorizationHook.assertCanStart` ([08 §3.8](08-saas-adapter-boundary.md)) like any other
+  `WorkflowAuthorizationHook.assertCanStart` ([08 §3.8](08-adapter-extension-points.md)) like any other
   entry; the OSS default is a no-op.
-- SaaS replaces only `McpAuthResolver` (e.g. a per-organization MCP token or JWT in MCP metadata) and
+- An override replaces only `McpAuthResolver` (e.g. a host-issued MCP token or JWT in MCP metadata) and
   keeps the same `ActorContext` shape; the transport, registration, and dispatch layers are unchanged.
   No edition flag or env branch is introduced in OSS code.
 
@@ -103,6 +103,6 @@ an error (`missing_user_token`), never a silent default.
   same enqueue path and `WorkflowAuthorizationHook`.
 - [06 Database schema §3.2](06-database-schema.md): the `scope='user'` token pool the MCP channel
   authenticates against (no "at most one global MCP token" constraint).
-- [08 Control plane adapter boundary §3.3](08-saas-adapter-boundary.md): the `McpAuthResolver`
-  extension point this server consumes, and its SaaS override path.
+- [08 Adapter extension points §3.3](08-adapter-extension-points.md): the `McpAuthResolver`
+  extension point this server consumes, and its override path.
 - [34 Settings](34-settings.md): the user-facing "global MCP token" used to authenticate this channel.

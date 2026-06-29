@@ -9,6 +9,7 @@ export interface WebContracts {
   authSource: AuthSource;
   projectContext: ProjectContext; // OSS: LOCAL_PROJECT_CONTEXT. (SaaS reactive multi-tenant source is a future extension.)
   baseUrl?: string;
+  webhookBaseUrl?: string;
   i18nExtend?: Partial<Record<Language, Record<string, string>>>;
   displayPreferences?: DisplayPreferencesContract;
   runtimeLimits?: RuntimeLimitsUiContract;

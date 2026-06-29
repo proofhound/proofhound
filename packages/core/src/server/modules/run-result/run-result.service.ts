@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { createLogger } from '@proofhound/logger';
 import type {
   ReleaseRunResultCleanupFilterDto,
@@ -15,8 +15,6 @@ import type {
 import type { ClassificationAggregateRow } from '@proofhound/metrics';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
-import { ObjectStorageProvider } from '../../common/contracts/object-storage.provider';
-import { type StoredObjectRef } from '../../common/contracts/object-storage.provider';
 import type { CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { RunResultRepository } from './run-result.repository';
 import {
@@ -40,7 +38,6 @@ export class RunResultService {
   constructor(
     private readonly repo: RunResultRepository,
     private readonly accessControl: AccessControlService,
-    @Optional() private readonly objectStorage?: ObjectStorageProvider,
   ) {}
 
   aggregateExperiment(experimentId: string): Promise<ClassificationAggregateRow[]> {
@@ -124,8 +121,7 @@ export class RunResultService {
   ): Promise<ReleaseRunResultCleanupImpactDto> {
     await this.accessControl.assertCan(toActorContext(actor), { projectId, source: 'local' }, 'release_manage');
     this.assertCleanupVersionFilter(input);
-    const { payloadRefs, ...impact } = await this.repo.deleteReleaseCleanup(projectId, input);
-    await this.cleanupPayloadRefs(payloadRefs, { projectId, operation: 'run_result.release.cleanup' });
+    const impact = await this.repo.deleteReleaseCleanup(projectId, input);
     this.logger.info(
       {
         projectId,
@@ -151,13 +147,7 @@ export class RunResultService {
     }
 
     for (const cleanup of batch.cleanups) {
-      const { target, payloadRefs, impact } = cleanup;
-      await this.cleanupPayloadRefs(payloadRefs, {
-        projectId: target.projectId,
-        sourceId: target.sourceId,
-        retentionDays: target.retentionDays,
-        operation: 'run_result.release.retention',
-      });
+      const { target, impact } = cleanup;
       summary.runResults += impact.runResults;
       summary.estimatedReclaimableBytes += impact.estimatedReclaimableBytes;
       if (impact.runResults > 0) {
@@ -203,15 +193,6 @@ export class RunResultService {
     const from = filter.from ? Date.parse(filter.from) : Number.NEGATIVE_INFINITY;
     if (!Number.isFinite(to) || (Number.isFinite(from) && from >= to)) {
       throw new BadRequestException('run_result_cleanup_invalid_time_range');
-    }
-  }
-
-  private async cleanupPayloadRefs(refs: StoredObjectRef[], context: Record<string, unknown>): Promise<void> {
-    if (refs.length === 0 || !this.objectStorage?.isEnabled()) return;
-    try {
-      await this.objectStorage.deleteObjects(refs);
-    } catch (err) {
-      this.logger.warn({ ...context, refs: refs.length, err }, 'object_storage_payload_cleanup_failed');
     }
   }
 

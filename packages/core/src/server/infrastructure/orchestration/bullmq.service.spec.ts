@@ -5,7 +5,6 @@ function buildService(llmQueue: unknown, admissionStore?: unknown) {
   return new BullmqService(
     llmQueue as never,
     {} as never,
-    {} as never,
     admissionStore as never,
     { buildModelKey: vi.fn((_project, modelId: string) => `model:${modelId}`) } as never,
   );

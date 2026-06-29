@@ -56,9 +56,9 @@ proofhound/
 
 ## 3. packages/core — Core Runtime
 
-`packages/core` publishes `@proofhound/core`, the reusable backend runtime consumed by the OSS process shells and by the separate SaaS repository. It owns the Nest modules, Controllers, Services, Repositories, contracts, local default implementations, DBOS workflows, runner services, webhook runtime, and worker handlers that form the ProofHound business loop.
+`packages/core` publishes `@proofhound/core`, the reusable backend runtime consumed by the OSS process shells and by any external consumer. It owns the Nest modules, Controllers, Services, Repositories, contracts, local default implementations, DBOS workflows, runner services, webhook runtime, and worker handlers that form the ProofHound business loop.
 
-`apps/*` must not be used as library entry points. Do not add app-level barrels to make `apps/server` importable by SaaS; when code needs to be reused, move it into `packages/core` and export it through stable package exports.
+`apps/*` must not be used as library entry points. Do not add app-level barrels to make `apps/server` importable by an external consumer; when code needs to be reused, move it into `packages/core` and export it through stable package exports.
 
 Layout:
 
@@ -162,7 +162,7 @@ A shell is `main.ts` plus a small `config/` of per-runtime process concerns (env
 - resolve the listen port and call `listen()`
 - handle bootstrap failure
 
-`apps/server` must not export a reusable library surface. SaaS imports `@proofhound/core/server`, never `apps/server/src/*`.
+`apps/server` must not export a reusable library surface. An external consumer imports `@proofhound/core/server`, never `apps/server/src/*`.
 
 ## 5. apps/webhook — OSS Webhook Shell
 
@@ -172,7 +172,7 @@ A shell is `main.ts` plus a small `config/` of per-runtime process concerns (env
 - `/healthz`
 - `/readyz`
 
-It wires process-level concerns and mounts the core webhook runtime from `@proofhound/core/webhook`. Per-connector webhook token authentication (see [08](08-saas-adapter-boundary.md) §3.4 `ConnectorContextResolver`), payload validation, and enqueueing live in the core runtime. Do not implement admin APIs in the webhook app, and do not import `apps/server` or any other app shell in reverse.
+It wires process-level concerns and mounts the core webhook runtime from `@proofhound/core/webhook`. Per-connector webhook token authentication (see [08](08-adapter-extension-points.md) §3.4 `ConnectorContextResolver`), payload validation, and enqueueing live in the core runtime. Do not implement admin APIs in the webhook app, and do not import `apps/server` or any other app shell in reverse.
 
 ## 6. apps/worker — OSS Worker Shell
 
@@ -237,7 +237,7 @@ When adding or renaming pages, update the Playwright smoke tests accordingly. Us
 | `@proofhound/metrics` | Offline experiment metric computation strategies |
 | `@proofhound/optimization-strategy` | Optimization strategies |
 | `@proofhound/ui` | Design system: shadcn atomic primitives + `cn()` + `Main` layout primitive + pure UI hooks + `UiStringsContext` |
-| `@proofhound/web-ui` | Product UI: screens / hooks / i18n / providers / components / lib / contracts (see §4.2 of [08](08-saas-adapter-boundary.md) for subpath exports) |
+| `@proofhound/web-ui` | Product UI: screens / hooks / i18n / providers / components / lib / contracts (see §4.2 of [08](08-adapter-extension-points.md) for subpath exports) |
 
 ## 9. Dependency Rules
 
@@ -255,7 +255,7 @@ packages/web-ui -> packages/ui, packages/api-client, packages/shared
 Forbidden:
 
 - `packages/*` importing `apps/*`
-- The SaaS repository importing `apps/*` paths or an app-level barrel
+- An external consumer importing `apps/*` paths or an app-level barrel
 - Adding a barrel under `apps/server` / `apps/webhook` / `apps/worker` for reuse instead of moving code into `packages/core`
 - The frontend writing business data directly to the database
 - The webhook app reusing the server's internal Services

@@ -24,9 +24,15 @@ import { LocalActorContextResolver } from './local-actor-context.resolver';
 import { LocalMcpAuthResolver } from './local-mcp-auth.resolver';
 import { LocalProjectContextResolver } from './local-project-context.resolver';
 import { LocalUserTokenVerifier } from './local-user-token.verifier';
-import { LocalFsObjectStorageProvider } from './local-fs-object-storage.provider';
 import { McpAuthResolver } from './mcp-auth.resolver';
-import { ObjectStorageProvider } from './object-storage.provider';
+import {
+  DatasetSamplePayloadReader,
+  InlineDatasetSamplePayloadReader,
+} from '../../modules/dataset/dataset-sample-payload';
+import {
+  RunResultPayloadReader,
+  InlineRunResultPayloadReader,
+} from '../../modules/run-result/run-result-payload.reader';
 import { ProjectContextResolver } from './project-context.resolver';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from './quota-policy.hook';
 import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from './runtime-limits.provider';
@@ -52,7 +58,8 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
     { provide: UsageMeteringHook, useClass: NoopUsageMeteringHook },
     { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
-    { provide: ObjectStorageProvider, useClass: LocalFsObjectStorageProvider },
+    { provide: DatasetSamplePayloadReader, useClass: InlineDatasetSamplePayloadReader },
+    { provide: RunResultPayloadReader, useClass: InlineRunResultPayloadReader },
   ],
   exports: [
     ProjectContextResolver,
@@ -66,7 +73,8 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     QuotaPolicyHook,
     UsageMeteringHook,
     WorkflowAuthorizationHook,
-    ObjectStorageProvider,
+    DatasetSamplePayloadReader,
+    RunResultPayloadReader,
     LocalUserTokenVerifier,
   ],
 })

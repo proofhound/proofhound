@@ -77,15 +77,18 @@ export const createDatasetImportSchema = z
   });
 export type CreateDatasetImportDto = z.infer<typeof createDatasetImportSchema>;
 
-export const createRawDatasetImportSchema = createDatasetImportSchema;
-export type CreateRawDatasetImportDto = z.infer<typeof createRawDatasetImportSchema>;
-
-// One streamed batch. samples 上限沿用同步路径的每请求兜底；导入总量不设上限。
-export const datasetImportBatchSchema = z.object({
-  batchStartIndex: z.number().int().nonnegative(),
-  samples: z.array(z.record(z.string(), z.unknown())).min(1).max(5000),
+// Multipart upload metadata (OSS UI path, SPEC 22 §3.1.1). The file itself rides as the multipart
+// `file` part; these are the accompanying form fields. `fieldMappings` arrives as a JSON string and
+// is parsed by the controller before validation.
+export const datasetUploadMetadataSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(1000).optional().nullable(),
+  fieldMappings: z.array(datasetFieldMappingSchema).min(1).max(200),
+  sourceFormat: datasetImportSourceFormatSchema,
+  declaredTotalRows: z.number().int().nonnegative().optional(),
+  fileName: z.string().trim().min(1).max(260).optional(),
 });
-export type DatasetImportBatchDto = z.infer<typeof datasetImportBatchSchema>;
+export type DatasetUploadMetadataDto = z.infer<typeof datasetUploadMetadataSchema>;
 
 export const datasetImportItemSchema = z.object({
   id: z.string().uuid(),
@@ -105,12 +108,6 @@ export const datasetImportItemSchema = z.object({
 });
 export type DatasetImportItemDto = z.infer<typeof datasetImportItemSchema>;
 
-export const datasetImportBatchResponseSchema = z.object({
-  importId: z.string().uuid(),
-  receivedRows: z.number().int().nonnegative(),
-});
-export type DatasetImportBatchResponseDto = z.infer<typeof datasetImportBatchResponseSchema>;
-
 export const datasetImportProgressSchema = z.object({
   state: datasetImportStateSchema,
   phase: datasetImportProgressPhaseSchema.nullable(),
@@ -126,27 +123,6 @@ export const datasetImportProgressSchema = z.object({
 });
 export type DatasetImportProgressDto = z.infer<typeof datasetImportProgressSchema>;
 
-export const datasetRawImportCapabilitiesSchema = z.object({
-  supported: z.boolean(),
-  maxBytes: z.number().int().positive(),
-});
-export type DatasetRawImportCapabilitiesDto = z.infer<typeof datasetRawImportCapabilitiesSchema>;
-
-export const datasetRawUploadSessionSchema = z.object({
-  sessionId: z.string().min(1),
-  url: z.string().url(),
-  headers: z.record(z.string(), z.string()).optional(),
-  expiresAt: z.string().datetime(),
-});
-export type DatasetRawUploadSessionDto = z.infer<typeof datasetRawUploadSessionSchema>;
-
-export const createRawDatasetImportResponseSchema = z.object({
-  import: datasetImportItemSchema,
-  uploadSession: datasetRawUploadSessionSchema,
-  maxBytes: z.number().int().positive(),
-});
-export type CreateRawDatasetImportResponseDto = z.infer<typeof createRawDatasetImportResponseSchema>;
-
 export const datasetImportStatusDtoSchema = datasetImportItemSchema.extend({
   state: datasetImportStateSchema,
   progress: datasetImportProgressSchema,
@@ -161,6 +137,3 @@ export const datasetImportStatusDtoSchema = datasetImportItemSchema.extend({
   abortedAt: z.string().datetime().nullable(),
 });
 export type DatasetImportStatusDto = z.infer<typeof datasetImportStatusDtoSchema>;
-
-export const completeDatasetImportResponseSchema = datasetImportStatusDtoSchema;
-export type CompleteDatasetImportResponseDto = z.infer<typeof completeDatasetImportResponseSchema>;

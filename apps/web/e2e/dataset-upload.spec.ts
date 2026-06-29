@@ -8,7 +8,8 @@ import { SERVER_URL } from './support/api';
 const fixturePath = resolve('e2e/fixtures/dataset-smoke.jsonl');
 // The visually-hidden file input (the folder input has no `accept`).
 const FILE_INPUT = 'input[accept=".csv,.tsv,.jsonl,.zip"]';
-const STREAMING_THRESHOLD_BYTES = 10 * 1024 * 1024;
+// Above this size the upload page previews only a head prefix (PREVIEW_PREFIX_MAX_BYTES in dataset-upload-page).
+const PREVIEW_PREFIX_THRESHOLD_BYTES = 1024 * 1024;
 
 test('uploads a JSONL dataset and browses its server-paginated detail', async ({ page }) => {
   const name = `e2e-ds-${Date.now()}`;
@@ -45,13 +46,15 @@ test('uploads a JSONL dataset and browses its server-paginated detail', async ({
     const importButton = page.getByRole('button', { name: /Import/ });
     await expect(importButton).toBeEnabled();
 
-    const createDatasetResponse = page.waitForResponse(
-      (response) => response.request().method() === 'POST' && response.url().endsWith('/datasets'),
+    const uploadResponse = page.waitForResponse(
+      (response) => response.request().method() === 'POST' && response.url().endsWith('/datasets/upload'),
     );
     await importButton.click();
-    const created = await createDatasetResponse;
+    const created = await uploadResponse;
     expect(created.status()).toBe(201);
-    datasetId = ((await created.json()) as { dataset: { id: string } }).dataset.id;
+    const uploaded = (await created.json()) as { datasetId: string | null; state: string };
+    expect(uploaded.state).toBe('completed');
+    datasetId = uploaded.datasetId ?? '';
     expect(datasetId).not.toBe('');
 
     // Lands back on the list with the new dataset visible.
@@ -86,17 +89,14 @@ test.describe('large delimited dataset upload', () => {
     { format: 'csv' as const, delimiter: ',' },
     { format: 'tsv' as const, delimiter: '\t' },
   ] satisfies Array<{ format: 'csv' | 'tsv'; delimiter: ',' | '\t' }>) {
-    test(`streams a ${format} file larger than the server body limit through dataset-import batches`, async ({
-      page,
-      request,
-    }, testInfo) => {
+    test(`uploads a large ${format} file in a single multipart request`, async ({ page, request }, testInfo) => {
       const datasetFile = testInfo.outputPath(`large-${testInfo.repeatEachIndex}.${testInfo.project.name}.${format}`);
       const { rowCount, byteLength } = await writeLargeDelimitedFixture(datasetFile, format, delimiter);
-      expect(byteLength).toBeGreaterThan(STREAMING_THRESHOLD_BYTES);
+      // Large enough that the browser previews only a head prefix instead of parsing the whole file.
+      expect(byteLength).toBeGreaterThan(PREVIEW_PREFIX_THRESHOLD_BYTES);
 
       const name = `e2e-large-${format}-${Date.now()}`;
       let datasetId = '';
-      let importId = '';
 
       try {
         await page.goto('/datasets/new');
@@ -108,51 +108,28 @@ test.describe('large delimited dataset upload', () => {
         await page.getByPlaceholder('risk-eval-v4').fill(name);
 
         const importButton = page.getByRole('button', { name: /Import/ });
+        // Large files keep only a preview prefix in state, so the button shows the streaming label.
         await expect(importButton).toContainText(/sample count tallied while importing/i);
         await expect(importButton).toBeEnabled();
 
-        const createImportResponse = page.waitForResponse(
-          (response) => response.request().method() === 'POST' && response.url().endsWith('/dataset-imports'),
-        );
-        const firstBatchResponse = page.waitForResponse(
-          (response) =>
-            response.request().method() === 'POST' && /\/dataset-imports\/[^/]+\/batch$/u.test(response.url()),
-        );
-        const completeResponse = page.waitForResponse(
-          (response) =>
-            response.request().method() === 'POST' && /\/dataset-imports\/[^/]+\/complete$/u.test(response.url()),
+        const uploadResponse = page.waitForResponse(
+          (response) => response.request().method() === 'POST' && response.url().endsWith('/datasets/upload'),
         );
 
         await importButton.click();
 
-        const created = await createImportResponse;
-        expect(created.status()).toBe(201);
-        const createBody = JSON.parse(created.request().postData() ?? '{}') as {
-          sourceFormat?: string;
-          sourceFile?: { fileSizeBytes?: number };
-        };
-        expect(createBody.sourceFormat).toBe(format);
-        expect(createBody.sourceFile?.fileSizeBytes).toBe(byteLength);
-        importId = ((await created.json()) as { id: string }).id;
-
-        const firstBatch = await firstBatchResponse;
-        expect(firstBatch.status()).toBe(201);
-        const firstBatchBody = JSON.parse(firstBatch.request().postData() ?? '{}') as {
-          samples?: Array<Record<string, unknown>>;
-        };
-        expect(firstBatchBody.samples?.length).toBeGreaterThan(0);
-        expect(Buffer.byteLength(firstBatch.request().postData() ?? '', 'utf8')).toBeLessThan(10 * 1024 * 1024);
-
-        const completed = await completeResponse;
-        expect(completed.status()).toBe(201);
-        const completeBody = (await completed.json()) as {
+        const uploaded = await uploadResponse;
+        expect(uploaded.status()).toBe(201);
+        const body = (await uploaded.json()) as {
           datasetId: string | null;
           progress: { importedRows: number };
+          sourceFormat: string;
           state: string;
         };
-        expect(completeBody.state).toBe('completed');
-        expect(completeBody.progress.importedRows).toBe(rowCount);
-        datasetId = completeBody.datasetId ?? '';
+        expect(body.state).toBe('completed');
+        expect(body.sourceFormat).toBe(format);
+        expect(body.progress.importedRows).toBe(rowCount);
+        datasetId = body.datasetId ?? '';
         expect(datasetId).not.toBe('');
 
         await page.waitForURL('**/datasets');
@@ -161,9 +138,6 @@ test.describe('large delimited dataset upload', () => {
       } finally {
         if (datasetId) {
           await request.delete(`${SERVER_URL}/datasets/${datasetId}`).catch(() => undefined);
-        }
-        if (importId) {
-          await request.delete(`${SERVER_URL}/dataset-imports/${importId}`).catch(() => undefined);
         }
       }
     });

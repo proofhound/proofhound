@@ -1,17 +1,14 @@
 import type { DbClient } from '@proofhound/db';
 import type { RunResultListQueryDto, RunResultReleaseListQueryDto } from '@proofhound/shared';
 import type { Query, SQL } from 'drizzle-orm';
-import type { ObjectStorageProvider } from '../../../common/contracts/object-storage.provider';
-import { DatasetSamplePayloadReader } from '../../dataset/dataset-sample-payload';
-import { RunResultPayloadReader } from '../run-result-payload.reader';
+import { DatasetSamplePayloadReader, InlineDatasetSamplePayloadReader } from '../../dataset/dataset-sample-payload';
+import { InlineRunResultPayloadReader } from '../run-result-payload.reader';
 import { RunResultRepository } from '../run-result.repository';
 
-// The repository hydrates large fields through RunResultPayloadReader; with object storage disabled
-// the reader is a pure inline pass-through, so these query-shape tests keep their existing behaviour.
-const passThroughReader = new RunResultPayloadReader({ isEnabled: () => false } as unknown as ObjectStorageProvider);
-const passThroughSampleReader = new DatasetSamplePayloadReader({
-  isEnabled: () => false,
-} as unknown as ObjectStorageProvider);
+// The repository hydrates large fields through RunResultPayloadReader; OSS stores every field inline,
+// so the reader is a pure inline pass-through and these query-shape tests keep their existing behaviour.
+const passThroughReader = new InlineRunResultPayloadReader();
+const passThroughSampleReader = new InlineDatasetSamplePayloadReader();
 
 function makeRepo(db: DbClient, sampleReader = passThroughSampleReader): RunResultRepository {
   return new RunResultRepository(db, passThroughReader, sampleReader);

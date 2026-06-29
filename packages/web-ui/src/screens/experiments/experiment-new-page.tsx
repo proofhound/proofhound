@@ -39,6 +39,7 @@ import {
 import { experimentTone } from './experiment-theme';
 import {
   estimateExperimentRun,
+  formatOwnerHandle,
   getModelImageEncodings,
   hasImagePromptVariables,
   isExperimentRunParamsComplete,
@@ -247,8 +248,7 @@ function PromptNameRow({
             {formatTemplate(t('experiments.new.section.promptVersionCount'), { count: prompt.latestVersionNumber })}
           </Tag>
           <Tag>
-            {prompt.createdByDisplayName ? `@${prompt.createdByDisplayName}` : '@unknown'} ·{' '}
-            {formatDateTime(prompt.updatedAt)}
+            {formatOwnerHandle(prompt.createdByDisplayName, prompt.createdBy)} · {formatDateTime(prompt.updatedAt)}
           </Tag>
         </div>
       </div>
@@ -760,7 +760,7 @@ export function ExperimentNewPage(props: ExperimentNewPageProps) {
     const query = promptSearch.trim().toLowerCase();
     if (!query) return prompts;
     return prompts.filter((prompt) =>
-      [prompt.name, prompt.createdByDisplayName ?? '', `v${prompt.latestVersionNumber}`]
+      [prompt.name, prompt.createdByDisplayName ?? '', prompt.createdBy, `v${prompt.latestVersionNumber}`]
         .join(' ')
         .toLowerCase()
         .includes(query),

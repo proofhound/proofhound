@@ -24,7 +24,7 @@ Business tables must retain the `project_id` and actor UUID fields, but the acto
 
 ProofHound exposes three external invocation channels, all of which enter the same set of Service logic:
 
-1. Web UI: the local admin app, the UI channel of the HTTP entry (deployment-layer trusted header or LOCAL_ACTOR fallback, see [08](08-saas-adapter-boundary.md) §3.2.1 deployment forms).
+1. Web UI: the local admin app, the UI channel of the HTTP entry (deployment-layer trusted header or LOCAL_ACTOR fallback, see [08](08-adapter-extension-points.md) §3.2.1 deployment forms).
 2. HTTP API + user token / Webhook + webhook token: calls from scripts / CI / external business systems; the user token (`ph_*` prefix) goes through `Authorization: Bearer`, and the webhook token goes through per-connector ingress.
 3. MCP + user token: an Agent invokes local workspace capabilities as tools; the same user token can be used for both the HTTP API and MCP entries.
 

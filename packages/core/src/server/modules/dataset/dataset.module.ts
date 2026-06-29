@@ -1,26 +1,25 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../../shared/database/database.module';
-import { BullmqOrchestrationModule } from '../../infrastructure/orchestration';
-import { DatasetSamplePayloadReader } from './dataset-sample-payload';
 import { DatasetDeletionHook, LocalDatasetDeletionHook } from './dataset-deletion.hook';
-import { DatasetImportController } from './dataset-import.controller';
-import { DatasetImportRepository } from './dataset-import.repository';
-import { DatasetImportService } from './dataset-import.service';
 import { DatasetController } from './dataset.controller';
 import { DatasetRepository } from './dataset.repository';
 import { DatasetService } from './dataset.service';
+import { DatasetImportRepository } from './dataset-import.repository';
+import { LocalDatasetUploadService } from './dataset-import.service';
+import { DatasetUploadInterface } from './dataset-upload.interface';
 
+// DatasetSamplePayloadReader is provided globally by the contracts module (08 §3.14); injected directly.
 @Module({
-  imports: [DatabaseModule, BullmqOrchestrationModule],
-  controllers: [DatasetController, DatasetImportController],
+  imports: [DatabaseModule],
+  controllers: [DatasetController],
   providers: [
     DatasetRepository,
-    DatasetSamplePayloadReader,
     { provide: DatasetDeletionHook, useClass: LocalDatasetDeletionHook },
     DatasetService,
     DatasetImportRepository,
-    DatasetImportService,
+    LocalDatasetUploadService,
+    { provide: DatasetUploadInterface, useExisting: LocalDatasetUploadService },
   ],
-  exports: [DatasetService, DatasetImportService],
+  exports: [DatasetService, DatasetUploadInterface],
 })
 export class DatasetModule {}
