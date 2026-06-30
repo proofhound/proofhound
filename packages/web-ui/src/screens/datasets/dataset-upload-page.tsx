@@ -419,6 +419,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     () => parsedFile?.columns.filter((column) => selectedFields[column]) ?? [],
     [parsedFile, selectedFields],
   );
+  const uploadLimitLabel = formatByteLimit(uploadMaxBytes);
   const isSubmitting = isUploading;
   const canImport =
     projectId.length > 0 &&
@@ -599,8 +600,11 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
             number={1}
             title={t('datasets.upload.file')}
             hint={
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono">{t('datasets.upload.fileHint')}</span>
+                <span className="text-[11px] text-muted-foreground">
+                  {formatTemplate(t('datasets.upload.limitInline'), { uploadLimit: uploadLimitLabel })}
+                </span>
                 <UploadLimitInfoIcon maxBytes={uploadMaxBytes} />
               </div>
             }

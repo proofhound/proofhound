@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ProofHoundWebProvider } from './proofhound-web-provider';
 import { localWebContracts } from '../contracts';
 import { useProjectContext } from './project-context-provider';
+import { useDatasetUploadMaxBytes } from './dataset-upload-provider';
 import { useI18n } from '../i18n';
 import { configureApiClient } from '@proofhound/api-client';
 
@@ -30,6 +31,7 @@ function Probe() {
     <>
       <span data-testid="pid">{useProjectContext().projectId}</span>
       <span data-testid="t">{useI18n().t('common.cancel')}</span>
+      <span data-testid="upload-max">{useDatasetUploadMaxBytes()}</span>
     </>
   );
 }
@@ -43,6 +45,16 @@ describe('ProofHoundWebProvider', () => {
     );
     expect(screen.getByTestId('pid').textContent).toBe(localWebContracts.projectContext.projectId);
     expect(screen.getByTestId('t').textContent).toBeTruthy();
+  });
+
+  it('injects a host-provided dataset upload limit', () => {
+    render(
+      <ProofHoundWebProvider contracts={{ ...localWebContracts, datasetUploadMaxBytes: 42_000_000 }}>
+        <Probe />
+      </ProofHoundWebProvider>,
+    );
+
+    expect(screen.getByTestId('upload-max').textContent).toBe('42000000');
   });
 
   it('configures the api client before children render (first request carries auth/project/baseUrl)', () => {

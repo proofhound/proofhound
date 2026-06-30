@@ -8,6 +8,7 @@ import { DEFAULT_LANGUAGE, resolveAcceptLanguageHeader, type Language } from '@p
 // The provider tree (which owns the class-instance contracts) lives behind a 'use client'
 // boundary so this Server Component never passes a class instance across the RSC boundary.
 import { Providers } from './providers';
+import { resolveDatasetUploadMaxBytes } from './dataset-upload-config';
 import '@xyflow/react/dist/style.css';
 import '@proofhound/web-ui/styles/globals.css';
 
@@ -76,6 +77,7 @@ async function getRequestLanguage(): Promise<Language> {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const defaultLanguage = await getRequestLanguage();
+  const datasetUploadMaxBytes = resolveDatasetUploadMaxBytes();
 
   return (
     <html lang={defaultLanguage} suppressHydrationWarning>
@@ -90,7 +92,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body>
         <Suspense fallback={null}>
-          <Providers defaultLanguage={defaultLanguage}>{children}</Providers>
+          <Providers defaultLanguage={defaultLanguage} datasetUploadMaxBytes={datasetUploadMaxBytes}>
+            {children}
+          </Providers>
         </Suspense>
       </body>
     </html>

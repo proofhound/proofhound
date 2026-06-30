@@ -4,8 +4,6 @@ import { Link } from '../../components/navigation/link';
 import { useRouter } from '../../hooks/use-router';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react';
 import {
-  DATASET_IMPORT_MAX_FILE_BYTES,
-  DATASET_IMPORT_ZIP_MAX_FILE_BYTES,
   MODEL_PRESET_GROUPS,
   MODEL_PRESETS,
   QUICK_START_DEFAULT_CONCURRENCY,
@@ -51,7 +49,7 @@ import {
 import { useDelayedLoading } from '../../hooks';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { getApiErrorMessage, buildProviderTypeOptions } from '../../lib';
-import { useDatasetUploadAdapter, useProjectContext } from '../../providers';
+import { useDatasetUploadAdapter, useDatasetUploadMaxBytes, useProjectContext } from '../../providers';
 import {
   FORMAT_CHIPS,
   getDatasetNameFromFile,
@@ -708,10 +706,10 @@ function formatByteLimit(bytes: number) {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
-function getDatasetUploadFileSizeError(file: Pick<File, 'name' | 'size'>) {
+function getDatasetUploadFileSizeError(file: Pick<File, 'name' | 'size'>, maxBytes: number) {
   const lower = file.name.toLowerCase();
-  if (lower.endsWith('.zip') && file.size > DATASET_IMPORT_ZIP_MAX_FILE_BYTES) return 'zip_file_too_large';
-  if (file.size > DATASET_IMPORT_MAX_FILE_BYTES) return 'file_too_large';
+  if (lower.endsWith('.zip') && file.size > maxBytes) return 'zip_file_too_large';
+  if (file.size > maxBytes) return 'file_too_large';
   return null;
 }
 
@@ -720,6 +718,7 @@ export function QuickStartScreen() {
   const router = useRouter();
   const { projectId } = useProjectContext();
   const uploadDataset = useDatasetUploadAdapter();
+  const datasetUploadMaxBytes = useDatasetUploadMaxBytes();
   const modelOptionsQuery = useQuickStartModelOptions();
   const createQuickStart = useCreateQuickStart();
   const [optimizationName, setOptimizationName] = useState('');
@@ -798,9 +797,9 @@ export function QuickStartScreen() {
   const parseErrorKey = getParseErrorKey(parseError);
   const parseErrorMessage =
     parseError === 'zip_file_too_large'
-      ? formatTemplate(t(parseErrorKey), { zipLimit: formatByteLimit(DATASET_IMPORT_ZIP_MAX_FILE_BYTES) })
+      ? formatTemplate(t(parseErrorKey), { zipLimit: formatByteLimit(datasetUploadMaxBytes) })
       : parseError === 'file_too_large'
-        ? formatTemplate(t(parseErrorKey), { maxLimit: formatByteLimit(DATASET_IMPORT_MAX_FILE_BYTES) })
+        ? formatTemplate(t(parseErrorKey), { maxLimit: formatByteLimit(datasetUploadMaxBytes) })
         : t(parseErrorKey);
   const datasetProgressValue = datasetImportProgress
     ? Math.round(
@@ -886,7 +885,7 @@ export function QuickStartScreen() {
     setPreviewPageIndex(0);
 
     try {
-      const fileSizeError = getDatasetUploadFileSizeError(file);
+      const fileSizeError = getDatasetUploadFileSizeError(file, datasetUploadMaxBytes);
       if (fileSizeError) throw new Error(fileSizeError);
       const parsed = await parseDatasetPreview(file);
       setSelectedFile(file);

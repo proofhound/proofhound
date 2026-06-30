@@ -2087,6 +2087,7 @@ const dictionaries = {
     'datasets.upload.unknownType': '未知类型',
     'datasets.upload.unsupportedFile': '暂不支持该文件类型，请上传 CSV、TSV、JSONL、JSON 数组或 ZIP。',
     'datasets.upload.singleFileOnly': '一次只能上传一个数据集文件，请选择单个文件。',
+    'datasets.upload.limitInline': '当前上限：{uploadLimit}',
     'datasets.upload.limitInfoLabel': '查看上传大小限制',
     'datasets.upload.limitInfoTitle': '上传大小限制',
     'datasets.upload.limitInfoUpload': '单次上传硬上限为 {uploadLimit}；浏览器只读取文件开头用于预览，整文件随提交一次性上传，由服务端解析入库。',
@@ -5395,6 +5396,7 @@ const dictionaries = {
     'datasets.upload.unknownType': 'Unknown type',
     'datasets.upload.unsupportedFile': 'Unsupported file type. Upload CSV, TSV, JSONL, a JSON array, or ZIP.',
     'datasets.upload.singleFileOnly': 'Upload one dataset file at a time. Choose a single file.',
+    'datasets.upload.limitInline': 'Current limit: {uploadLimit}',
     'datasets.upload.limitInfoLabel': 'View upload size limits',
     'datasets.upload.limitInfoTitle': 'Upload size limits',
     'datasets.upload.limitInfoUpload':
