@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.23](https://github.com/proofhound/proofhound/compare/v0.1.22...v0.1.23) (2026-06-30)
+
+
+### Features
+
+* **releases:** webhook canary traffic ratio, split and dual-run ([#76](https://github.com/proofhound/proofhound/issues/76)) ([df840c5](https://github.com/proofhound/proofhound/commit/df840c5c6d3601ceed77fd6cfa2dbfaffc25b769))
+
 ## [0.1.22](https://github.com/proofhound/proofhound/compare/v0.1.21...v0.1.22) (2026-06-28)
 
 

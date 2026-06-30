@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/crypto",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "Shared symmetric encryption util — AES-256-GCM encryption/decryption of API keys / credential ciphertexts, the single source of truth for server / worker / seed",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

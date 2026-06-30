@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/limiter",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "Redis centralized rate limiting (RPM / TPM sliding window + atomic Lua scripts) — RPM / TPM / concurrency",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

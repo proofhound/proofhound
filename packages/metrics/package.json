@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/metrics",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "Metrics aggregation strategies (extension point) — V1: classification; generative / agent reserved",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
