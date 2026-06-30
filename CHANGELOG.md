@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.25](https://github.com/proofhound/proofhound/compare/v0.1.24...v0.1.25) (2026-06-30)
+
+
+### Features
+
+* **datasets:** resolve dataset upload size cap per request ([#80](https://github.com/proofhound/proofhound/issues/80)) ([44c2df8](https://github.com/proofhound/proofhound/commit/44c2df858c7c812755bedd89a7974d96a2d6bf0d))
+
 ## [0.1.24](https://github.com/proofhound/proofhound/compare/v0.1.23...v0.1.24) (2026-06-30)
 
 
