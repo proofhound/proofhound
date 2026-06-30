@@ -31,16 +31,22 @@ export {
   LocalDatasetDeletionHook,
   type DatasetDeletionHookInput,
 } from '../../modules/dataset/dataset-deletion.hook';
+// Feature repositories backing the deletion-impact hooks. An override `contracts` module binds the
+// Local* deletion hooks (08 §3.15-§3.17), whose only dependency is the matching feature repository,
+// so the repository class must be importable to provide it privately — same as the LocalContractsModule.
+export { DatasetRepository } from '../../modules/dataset/dataset.repository';
 export {
   PromptDeletionHook,
   LocalPromptDeletionHook,
   type PromptDeletionHookInput,
 } from '../../modules/prompt/prompt-deletion.hook';
+export { PromptRepository } from '../../modules/prompt/prompt.repository';
 export {
   ReleaseLineDeletionHook,
   LocalReleaseLineDeletionHook,
   type ReleaseLineDeletionHookInput,
 } from '../../modules/release-line/release-line-deletion.hook';
+export { ReleaseLineRepository } from '../../modules/release-line/release-line.repository';
 export * from './http-actor.guard';
 export * from './local-project-context.resolver';
 export * from './local-actor-context.resolver';
