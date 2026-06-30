@@ -47,7 +47,8 @@ function buildRegistrar() {
   const bullmq = {} as never;
   const runResults = {} as never;
   const runResultWriter = {} as never;
-  const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, runResultWriter);
+  const sampleRepo = {} as never;
+  const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, runResultWriter, sampleRepo);
 
   const finalize = vi.fn().mockResolvedValue(undefined);
   const markStarted = vi.fn().mockResolvedValue(undefined);
@@ -259,6 +260,7 @@ describe('ExperimentWorkflow.pollUntilBatchDoneImpl — stop 清理队列', () =
       bullmq,
       runResults as never,
       runResultWriter as never,
+      {} as never,
     );
     const r = registrar as unknown as Record<string, unknown>;
     r['readControlStateImpl'] = vi
@@ -447,7 +449,10 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
     const bullmq = { enqueueLlmJob } as never;
     const runResults = {} as never;
     const runResultWriter = {} as never;
-    const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, runResultWriter);
+    const sampleRepo = {
+      readSamplesByIds: vi.fn().mockResolvedValue([{ id: 's1', data: options.sampleData ?? { label: 'bad' } }]),
+    } as never;
+    const registrar = new ExperimentWorkflowRegistrar(db, bullmq, runResults, runResultWriter, sampleRepo);
 
     const r = registrar as unknown as Record<string, unknown>;
     r['finalizeStep'] = vi.fn().mockResolvedValue(undefined);
@@ -470,8 +475,6 @@ describe('ExperimentWorkflow.enqueueBatchImpl — orgId 透传', () => {
       promptLanguage: 'en-US',
       expectedField: options.expectedField ?? 'label',
     });
-    r['loadSampleDataByIds'] = vi.fn().mockResolvedValue([{ id: 's1', data: options.sampleData ?? { label: 'bad' } }]);
-
     return { registrar, enqueueLlmJob };
   }
 

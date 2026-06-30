@@ -97,6 +97,8 @@ describe('runLlmJob — webhook 入口归因透传', () => {
     });
     const quotaPolicy = createSpyQuotaPolicy();
     const runLlmJob = createLlmRunner({
+      // invokeLLM is mocked, so the writer is only forwarded, never invoked.
+      runResultWriter: {} as never,
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
@@ -153,6 +155,8 @@ describe('runLlmJob — release 分类记录', () => {
       durationMs: 1,
     });
     const runLlmJob = createLlmRunner({
+      // invokeLLM is mocked, so the writer is only forwarded, never invoked.
+      runResultWriter: {} as never,
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
@@ -218,6 +222,8 @@ describe('runLlmJob — orgId 透传至限流 key 的 ProjectContext', () => {
     const spy = new SpyStrategy();
     const projectId = '22222222-2222-4222-8222-222222222222';
     const runLlmJob = createLlmRunner({
+      // invokeLLM is mocked, so the writer is only forwarded, never invoked.
+      runResultWriter: {} as never,
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: spy,
@@ -269,6 +275,8 @@ describe('runLlmJob — usage metering job lifecycle', () => {
     });
     const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
     const runLlmJob = createLlmRunner({
+      // invokeLLM is mocked, so the writer is only forwarded, never invoked.
+      runResultWriter: {} as never,
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
@@ -323,6 +331,8 @@ describe('runLlmJob — usage metering job lifecycle', () => {
     invokeLLMMock.mockRejectedValue(new Error('provider down'));
     const usageMetering = { record: vi.fn(async () => undefined) } satisfies UsageMeteringHook;
     const runLlmJob = createLlmRunner({
+      // invokeLLM is mocked, so the writer is only forwarded, never invoked.
+      runResultWriter: {} as never,
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
@@ -374,6 +384,8 @@ describe('runLlmJob — admission pre-reserved concurrency', () => {
       durationMs: 1,
     });
     const runLlmJob = createLlmRunner({
+      // invokeLLM is mocked, so the writer is only forwarded, never invoked.
+      runResultWriter: {} as never,
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
@@ -444,6 +456,8 @@ describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', 
       durationMs: 1,
     });
     const runLlmJob = createLlmRunner({
+      // invokeLLM is mocked, so the writer is only forwarded, never invoked.
+      runResultWriter: {} as never,
       db: fakeDb(activeModel),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),
@@ -484,6 +498,8 @@ describe('runLlmJob — RuntimeLimitsProvider 把 plan cap 并入有效限制', 
       durationMs: 1,
     });
     const runLlmJob = createLlmRunner({
+      // invokeLLM is mocked, so the writer is only forwarded, never invoked.
+      runResultWriter: {} as never,
       db: fakeDb({ ...activeModel, rpmLimit: -1, tpmLimit: -1, concurrencyLimit: 4 }),
       limiter: { acquire: vi.fn(async () => undefined), release: vi.fn(async () => undefined) } as never,
       limiterKeyStrategy: new LocalLimiterKeyStrategy(),

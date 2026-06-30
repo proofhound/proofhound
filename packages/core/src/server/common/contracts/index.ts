@@ -17,6 +17,12 @@ export {
   DatasetUploadService,
   type DatasetUploadInput,
 } from '../../modules/dataset/dataset-upload.contract';
+export {
+  DatasetSampleRepository,
+  type DatasetSampleRow,
+  type DatasetSampleExportCursor,
+  type DatasetSampleExportBatch,
+} from '../../modules/dataset/dataset-sample.repository.contract';
 export * from './http-actor.guard';
 export * from './local-project-context.resolver';
 export * from './local-actor-context.resolver';

@@ -44,7 +44,7 @@ All thirteen extension points (§3.1–§3.13) are abstract-class DI tokens with
 
 ## 3. Extension point list
 
-The OSS trunk provides the following 13 extension points. Each extension point requires: interface (abstract class) + OSS default implementation + Nest module registration.
+The OSS trunk provides the following 14 extension points. Each extension point requires: interface (abstract class) + OSS default implementation + Nest module registration.
 
 | No.  | Extension point             | Entry channel                                             |
 | ---- | --------------------------- | --------------------------------------------------------- |
@@ -60,7 +60,8 @@ The OSS trunk provides the following 13 extension points. Each extension point r
 | 3.10 | `RuntimeLimitsProvider`     | Per-call RPM / TPM / concurrency merge before LLM enqueue |
 | 3.11 | `QuotaPolicyHook`           | Storage writes and execution-slot admission               |
 | 3.12 | `UsageMeteringHook`         | Best-effort domain usage event emission                   |
-| 3.13 | `DatasetUploadInterface`    | Dataset file upload + import strategy (transport + storage) |
+| 3.13 | `DatasetUploadService`      | Dataset file upload + import strategy (write side: transport + storage)  |
+| 3.14 | `DatasetSampleRepository`   | Dataset sample read path (execution render / preview / search / export)  |
 
 ProofHound's entry credential system is divided into three categories by channel, mutually non-reusable and never parsing each other's credentials, corresponding to three parallel entry resolvers:
 
@@ -586,7 +587,7 @@ Caller constraints:
 - OSS emits only `projectId` and optional flat `actorId`; an override resolves any organization or billing ownership inside the replacement hook by looking up the project. OSS event payloads must not include organization, plan, billing, tenant, quota tier, or control-plane fields.
 - Current emitters cover worker job lifecycle (`job.started` / `job.completed` / `job.attempt_failed` / `job.failed` / `job.rate_limited`), immutable run-result creation (`run_result.created`), release line / event / run attachment facts, dataset and import dirty facts, and model configuration changes. These events are generic domain observations; the OSS UI does not expose a usage ledger or billing page.
 
-### 3.13 DatasetUploadInterface
+### 3.13 DatasetUploadService
 
 How an uploaded dataset file is received, parsed, staged, and promoted. The OSS default is a single synchronous path: `multipart/form-data` → Multer `diskStorage` temp file → server stream-parse → staging → atomic promote into `dataset_samples` (inline DB) → temp file deleted (see [22 §3.1.1](22-datasets.md#311-the-oss-upload-path-single-synchronous)).
 
@@ -600,7 +601,25 @@ OSS contract points that keep it replaceable:
 - The import is exposed as **composable, independently-callable units** (parse-to-staging, promote-staging-to-DB) so an alternative implementation can reuse them and wrap its own steps around them. OSS does **not** ship a post-import hook — extension is by composition.
 - The **frontend counterpart** is a swappable dataset upload component slot wired through `WebContracts` (§4): OSS provides the multipart uploader + preview / field-mapping wizard; the rest of the dataset upload screen is reused.
 - This replaces a previously code-only, never-documented `ObjectStorageProvider`, which is **removed from the OSS trunk** — OSS no longer contains any object-storage mechanism.
-- Run-result and dataset-sample payloads are stored and read **inline** from their rows; there is no payload-read seam in the OSS trunk. An external storage layer is integrated by replacing this upload adapter (write side) together with the consumer's own read path, not by an OSS-side reader seam. OSS export streams directly from the API (no signed-URL redirect).
+- Run-result payloads are stored and read **inline** from their rows with no read seam. Dataset-sample reads instead go through the §3.14 `DatasetSampleRepository` (OSS default: inline), so an external storage layer integrates by replacing **both** the write side here and the §3.14 read side, reusing the OSS execution / preview / export paths instead of forking them. OSS export streams directly from the API (no signed-URL redirect).
+
+### 3.14 DatasetSampleRepository
+
+How dataset sample rows are read back: for execution rendering (experiment / optimization), for the detail-page preview / search / category distribution, and for export. The OSS default `LocalDatasetSampleRepository` reads samples **inline** from `ph_assets.dataset_samples.data` via Drizzle; it consolidates what were previously scattered inline reads across the experiment workflow, the optimization repository, and the dataset repository into one place — a DRY/maintainability win independent of any override.
+
+| Item           | OSS default                                                          | Override                                                                       |
+| -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Implementation | `LocalDatasetSampleRepository` (inline Drizzle read of `data`)       | a repository that hydrates each sample's payload from external storage         |
+| Bound in       | `LocalContractsModule`                                               | the override's `contracts` module                                             |
+
+Contract shape (neutral — no object-storage / payload-ref / offload concept leaks into OSS):
+
+- Input is `(projectId, datasetId, sampleIds | keyset cursor)`; output is sample rows `{ id, data }`. The override decides internally whether `data` is already inline or must be loaded from elsewhere; the OSS interface never names a storage backend.
+- **The worker is not a consumer.** The experiment workflow reads sample `data` on the server side at render time (via this repository), renders the prompt, and enqueues the already-rendered prompt into BullMQ; the worker never touches `dataset_samples`. The read seam is therefore server-side only.
+- **OSS schema is unchanged**: no `payload_ref` / offload columns. An override that offloads payloads owns its own schema extension and read implementation entirely on its side; OSS stores and reads `data` inline.
+- Search (`data::text ILIKE`) and category-profiling (`data ->> <field>`) SQL aggregations are exposed as overridable methods on the same repository, so an override that offloads the entire payload can replace them too; the OSS default keeps them as inline SQL.
+
+This is the dataset-sample counterpart to the §3.13 write-side adapter: §3.13 owns how samples are written / promoted, §3.14 owns how they are read back. (Run-result payloads keep no read seam — see §3.13.)
 
 ## 4. Frontend reuse strategy
 

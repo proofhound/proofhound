@@ -7,9 +7,13 @@ import { LocalQuotaPolicyHook } from '../../../server/common/contracts/quota-pol
 import { LocalRuntimeLimitsProvider } from '../../../server/common/contracts/runtime-limits.provider';
 import { NoopUsageMeteringHook, type UsageMeteringHook } from '../../../server/common/contracts/usage-metering.hook';
 import * as llmRunnerModule from '../../runners/llm-runner';
-import * as runResultWriterModule from '../../runners/run-result-writer';
+import * as runResultWriterModule from '../../../server/infrastructure/llm/run-result-writer';
 
 const validUuid = (suffix: string) => `a1b2c3d4-e5f6-4789-a012-3456789${suffix}`;
+
+// The consumer now receives the run-result writer via DI; tests inject a real instance so the
+// onFailed prototype spy still intercepts writeRunResult.
+const stubWriter = () => new runResultWriterModule.DrizzleRunResultWriter({} as never, new LocalQuotaPolicyHook());
 
 function buildJob(overrides: Partial<Record<string, unknown>> = {}) {
   const moveToDelayed = vi.fn<(when: number, token?: string) => Promise<void>>(async () => undefined);
@@ -71,6 +75,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
       new NoopUsageMeteringHook(),
+      stubWriter(),
       admissionStore as never,
     );
 
@@ -113,6 +118,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
       new NoopUsageMeteringHook(),
+      stubWriter(),
       admissionStore as never,
     );
     const job = buildJob({
@@ -160,6 +166,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
       usageMetering,
+      stubWriter(),
     );
     const job = buildJob();
 
@@ -209,6 +216,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
       new NoopUsageMeteringHook(),
+      stubWriter(),
       admissionStore as never,
     );
     const job = buildJob({
@@ -247,6 +255,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
       new NoopUsageMeteringHook(),
+      stubWriter(),
     );
     const job = buildJob();
     const before = Date.now();
@@ -271,6 +280,7 @@ describe('LlmConsumer.process — RateLimitExceededError handling', () => {
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
       new NoopUsageMeteringHook(),
+      stubWriter(),
     );
     const job = buildJob();
 
@@ -296,6 +306,7 @@ describe('LlmConsumer.onFailed — final-error run_result write on attempts exha
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
       new NoopUsageMeteringHook(),
+      stubWriter(),
     );
 
     const job = {
@@ -346,6 +357,7 @@ describe('LlmConsumer.onFailed — final-error run_result write on attempts exha
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
       new NoopUsageMeteringHook(),
+      stubWriter(),
     );
 
     const job = {

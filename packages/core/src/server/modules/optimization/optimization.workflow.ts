@@ -64,6 +64,7 @@ import { RuntimeLimitsProvider } from '../../common/contracts/runtime-limits.pro
 import { CryptoService } from '../../../shared/crypto/crypto.service';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 import { DrizzleRunResultWriter } from '../../infrastructure/llm/run-result-writer';
+import { DatasetSampleRepository } from '../dataset/dataset-sample.repository.contract';
 import { REDIS_LIMITER } from '../../../shared/redis/redis.constants';
 import { applyRuntimeLimits } from '../../../shared/llm/runtime-limits';
 import { ExperimentService } from '../experiment/experiment.service';
@@ -258,6 +259,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     private readonly limiterKeyStrategy: LimiterKeyStrategy,
     private readonly runtimeLimitsProvider: RuntimeLimitsProvider,
     private readonly quotaPolicy: QuotaPolicyHook,
+    private readonly sampleRepo: DatasetSampleRepository,
   ) {
     super('optimization-workflow');
     this.loadConfigStep = DBOS.registerStep(this.loadConfigImpl.bind(this), {
@@ -869,7 +871,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
       );
 
       // Load and randomly sample
-      const allSamples = await this.repo.loadDatasetSamples(ctx.datasetId);
+      const allSamples = await this.sampleRepo.loadDatasetSamples(ctx.datasetId);
       const sampleCount = strategyConfig.initialSamplingRounds * strategyConfig.initialSamplesPerRound;
       if (allSamples.length === 0) {
         throw new Error('first_version_dataset_empty_v1');
@@ -1310,7 +1312,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
     }
 
     // Load dataset samples + this round's optimization context (consumed by the strategy package)
-    const samplesRaw = await this.repo.loadDatasetSamples(snapshot.datasetId);
+    const samplesRaw = await this.sampleRepo.loadDatasetSamples(snapshot.datasetId);
     if (samplesRaw.length === 0) {
       return { kind: 'fatal', errorMessage: 'dataset_empty' };
     }

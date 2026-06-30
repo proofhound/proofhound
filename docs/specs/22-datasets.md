@@ -143,12 +143,12 @@ Field roles determine the platform's runtime behavior:
 
 ## 7. Sample storage
 
-OSS stores every sample fully inline in `ph_assets.dataset_samples.data` (PostgreSQL); `data` is `NOT NULL` and is the system of record. There is no object-storage tiering, sharding, offload, or payload-read seam in the OSS trunk — `data` is read directly.
+OSS stores every sample fully inline in `ph_assets.dataset_samples.data` (PostgreSQL); `data` is `NOT NULL` and is the system of record. OSS performs no object-storage tiering, sharding, or offload — the OSS default reads `data` directly. Sample reads are funneled through a single `DatasetSampleRepository` adapter ([08 §3.14](08-adapter-extension-points.md)) whose OSS default (`LocalDatasetSampleRepository`) is exactly this inline read; an override may hydrate sample payloads from external storage without forking the OSS execution / preview / export paths. The adapter interface is neutral (input: sample ids / keyset cursor; output: `{ id, data }`) and OSS adds no `payload_ref` / offload columns.
 
 ### 7.1 Read path
 
-Sample payloads are read inline from `dataset_samples.data` directly.
+Sample reads go through `DatasetSampleRepository` (§3.14); the OSS default `LocalDatasetSampleRepository` reads `dataset_samples.data` inline directly.
 
 - **List / search / distribution** stay entirely in the DB: list reads `data`; search uses `data::text ILIKE`; classification / label distribution group by `data ->> <field>` on the configurable field.
-- **Worker sampling** (experiment rendering, optimization rounds) and **export** read `data` directly. Export keyset-paginates `dataset_samples` in stable `(created_at, id)` order and streams CSV / JSONL without building a whole-file buffer.
+- **Execution sampling** (experiment rendering, optimization rounds) and **export** read `data` through the repository. Rendering happens **server-side** at enqueue time: the experiment workflow reads sample `data`, renders the prompt, and enqueues the already-rendered prompt into BullMQ, so the worker never reads `dataset_samples` (it is not a consumer of the read seam). Export keyset-paginates `dataset_samples` in stable `(created_at, id)` order and streams CSV / JSONL without building a whole-file buffer.
 </content>

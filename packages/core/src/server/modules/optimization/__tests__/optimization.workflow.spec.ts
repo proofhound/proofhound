@@ -559,6 +559,7 @@ describe('OptimizationWorkflow.loadConfigImpl — orgId 透传 analysisLimiterKe
       limiterKeyStrategy,
       { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) } as never,
       new LocalQuotaPolicyHook(),
+      { loadDatasetSamples: vi.fn().mockResolvedValue([]) } as never,
     );
 
     const r = registrar as unknown as Record<string, unknown>;
@@ -726,6 +727,7 @@ describe('OptimizationWorkflow.runImpl — orgId survives internal config reload
       { buildModelKey } as never,
       { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) } as never,
       new LocalQuotaPolicyHook(),
+      { loadDatasetSamples: vi.fn().mockResolvedValue([]) } as never,
     );
 
     const r = registrar as unknown as Record<string, unknown>;
@@ -905,6 +907,7 @@ describe('OptimizationWorkflow.applySynchronousRuntimeLimits — plan cap', () =
       {} as never,
       runtimeLimitsProvider as never,
       new LocalQuotaPolicyHook(),
+      { loadDatasetSamples: vi.fn().mockResolvedValue([]) } as never,
     );
 
     const model = {
@@ -963,6 +966,7 @@ describe('OptimizationWorkflow.withOptimizationExecutionSlot — quota hook', ()
       {} as never,
       { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) } as never,
       quotaPolicy,
+      { loadDatasetSamples: vi.fn().mockResolvedValue([]) } as never,
     );
 
     const result = await (
@@ -1023,6 +1027,7 @@ describe('OptimizationWorkflow.runImpl — child experiment inherits snapshot.or
       {} as never, // limiterKeyStrategy
       { mergeLlmLimits: vi.fn().mockImplementation(async (input) => input.limits) } as never,
       new LocalQuotaPolicyHook(),
+      { loadDatasetSamples: vi.fn().mockResolvedValue([]) } as never,
     );
 
     // Stub the internal DBOS steps on the instance (registerStep was identity, so these props hold the bound impls).

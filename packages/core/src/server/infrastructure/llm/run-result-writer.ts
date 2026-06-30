@@ -5,22 +5,25 @@ import type { DbClient } from '@proofhound/db';
 import type { LLMRunResultRecord, LLMRunResultWriter } from '@proofhound/llm-client';
 import { createLogger } from '@proofhound/logger';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
-import { UsageMeteringHook } from '../../common/contracts/usage-metering.hook';
+import { UsageMeteringHook, type UsageMeteringSource } from '../../common/contracts/usage-metering.hook';
 import { safeRecordUsageEvent } from '../../common/contracts/usage-metering.hook';
 import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 
 // ph_runs.run_results is monthly-partitioned by created_at, so UNIQUE(id) cannot live on that table.
 // Reserve id in unpartitioned ph_runs.run_result_ids first, then insert into the partitioned fact table:
 //  - DBOS workflow retry / replay never writes a duplicate row for the same runResultId
-//  - Behaviorally equivalent to apps/worker/src/runners/run-result-writer.ts (the dual implementation will be reconciled when extracted into a package)
+//  - The single OSS run-result writer for both the server (DBOS workflow edge rows) and the worker (per-sample
+//    rows). The worker registers it with eventSource 'worker'; server callers keep the default 'workflow'.
 @Injectable()
 export class DrizzleRunResultWriter implements LLMRunResultWriter {
-  private readonly logger = createLogger('server.run-result-writer', { service: 'server' });
+  private readonly logger = createLogger('run-result-writer');
 
   constructor(
     @Inject(DATABASE_CLIENT) private readonly db: DbClient,
     private readonly quotaPolicy: QuotaPolicyHook,
     @Optional() private readonly usageMetering?: UsageMeteringHook,
+    // Subsystem label carried by run_result.created usage events; the worker overrides this to 'worker'.
+    @Optional() private readonly eventSource: UsageMeteringSource = 'workflow',
   ) {}
 
   async writeRunResult(record: LLMRunResultRecord): Promise<void> {
@@ -44,6 +47,7 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
     const bullmqJobId = record.bullmqJobId ?? null;
     const roundIndex = record.roundIndex ?? null;
     const releaseVersionId = record.releaseVersionId ?? null;
+    const webhookTokenId = record.webhookTokenId ?? null;
     const project = record.orgId
       ? { projectId: record.projectId, orgId: record.orgId, source: 'local' as const }
       : { projectId: record.projectId, source: 'local' as const };
@@ -66,7 +70,7 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
         raw_response, parsed_output, decision_output, expected_output, is_correct, judgment_status,
         status, error_class, error_message,
         latency_ms, input_tokens, output_tokens, cost_estimate, attempt,
-        dbos_workflow_id, bullmq_job_id, round_index, created_at
+        dbos_workflow_id, bullmq_job_id, round_index, webhook_token_id, created_at
       )
       SELECT
         reserved_run_result.id, ${record.projectId}::uuid, ${record.source},
@@ -80,7 +84,7 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
         ${record.status}, ${errorClass}, ${errorMessage},
         ${latencyMs}, ${inputTokens}, ${outputTokens},
         ${costEstimate}, ${attempt},
-        ${dbosWorkflowId}, ${bullmqJobId}, ${roundIndex},
+        ${dbosWorkflowId}, ${bullmqJobId}, ${roundIndex}, ${webhookTokenId}::uuid,
         reserved_run_result.created_at
       FROM reserved_run_result
       RETURNING id, created_at
@@ -97,7 +101,7 @@ export class DrizzleRunResultWriter implements LLMRunResultWriter {
           eventType: 'run_result.created',
           projectId: record.projectId,
           occurredAt,
-          source: 'workflow',
+          source: this.eventSource,
           payload: {
             runResultId: record.id,
             source: record.source,

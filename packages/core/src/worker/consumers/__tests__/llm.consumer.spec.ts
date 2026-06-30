@@ -86,6 +86,7 @@ describe('LlmConsumer webhook async receipts', () => {
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
       new NoopUsageMeteringHook(),
+      { writeRunResult: vi.fn(async () => undefined) } as never,
     );
     const result: LlmRunnerResult = {
       runResultId: validUuid('05555'),
@@ -134,6 +135,7 @@ describe('LlmConsumer webhook async receipts', () => {
       new LocalQuotaPolicyHook(),
       new LocalRuntimeLimitsProvider(),
       new NoopUsageMeteringHook(),
+      { writeRunResult: vi.fn(async () => undefined) } as never,
     );
     const writeRunResult = vi.fn().mockResolvedValue(undefined);
     (consumer as unknown as { runResultWriter: { writeRunResult: typeof writeRunResult } }).runResultWriter = {

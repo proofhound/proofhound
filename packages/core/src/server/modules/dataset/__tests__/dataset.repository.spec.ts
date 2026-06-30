@@ -15,7 +15,6 @@ describe('DatasetRepository (DB stub smoke tests)', () => {
       'findDatasetByProjectAndName',
       'listDatasets',
       'findDatasetById',
-      'listDatasetSamples',
       'hardDeleteDataset',
       'createDatasetWithSamples',
     ];

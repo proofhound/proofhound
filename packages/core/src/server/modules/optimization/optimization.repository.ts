@@ -8,7 +8,6 @@ import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 const {
   optimizationRoundSteps,
   optimizations,
-  datasetSamples,
   datasets,
   experiments,
   models,
@@ -1053,14 +1052,7 @@ export class OptimizationRepository {
     };
   }
 
-  async loadDatasetSamples(datasetId: string): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
-    const rows = await this.db
-      .select({ id: datasetSamples.id, data: datasetSamples.data })
-      .from(datasetSamples)
-      .where(eq(datasetSamples.datasetId, datasetId))
-      .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id));
-    return rows.map((r) => ({ id: r.id, data: (r.data as Record<string, unknown> | null) ?? {} }));
-  }
+  // loadDatasetSamples moved to DatasetSampleRepository (08 §3.14); optimization.workflow injects that seam.
 
   async findPreviousRoundRunResults(input: {
     optimizationId: string;

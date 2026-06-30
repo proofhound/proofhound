@@ -2,6 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { DatasetDeletionHook, LocalDatasetDeletionHook } from '../dataset-deletion.hook';
 import { DatasetRepository, type DatasetProjectAccessRow, type DatasetRow } from '../dataset.repository';
+import { DatasetSampleRepository } from '../dataset-sample.repository.contract';
 import { DatasetService } from '../dataset.service';
 import { AccessControlService } from '../../../common/contracts/access-control.service';
 import { LocalAccessControlService } from '../../../common/contracts/local-access-control.service';
@@ -49,10 +50,6 @@ function makeRepo(): Mocked<DatasetRepository> {
     findDatasetByProjectAndName: vi.fn(),
     findDatasetById: vi.fn(),
     listDatasets: vi.fn(),
-    listDatasetSamples: vi.fn(),
-    listDatasetSamplesBatch: vi.fn().mockResolvedValue({ rows: [], nextCursor: null }),
-    listDatasetSamplesPage: vi.fn().mockResolvedValue({ rows: [], total: 0 }),
-    aggregateCategoryDistribution: vi.fn().mockResolvedValue([]),
     countDatasetReferences: vi.fn().mockResolvedValue(new Map()),
     listDeletionImpact: vi.fn().mockResolvedValue({ experiments: [], optimizations: [] }),
     archiveDataset: vi.fn().mockResolvedValue(undefined),
@@ -65,18 +62,32 @@ function makeRepo(): Mocked<DatasetRepository> {
   } as unknown as Mocked<DatasetRepository>;
 }
 
+function makeSampleRepo(): Mocked<DatasetSampleRepository> {
+  return {
+    loadSampleIdBatch: vi.fn().mockResolvedValue([]),
+    readSamplesByIds: vi.fn().mockResolvedValue([]),
+    loadDatasetSamples: vi.fn().mockResolvedValue([]),
+    listDatasetSamplesPage: vi.fn().mockResolvedValue({ rows: [], total: 0 }),
+    listDatasetSamplesBatch: vi.fn().mockResolvedValue({ rows: [], nextCursor: null }),
+    aggregateCategoryDistribution: vi.fn().mockResolvedValue([]),
+  } as unknown as Mocked<DatasetSampleRepository>;
+}
+
 describe('DatasetService', () => {
   let service: DatasetService;
   let repo: Mocked<DatasetRepository>;
+  let sampleRepo: Mocked<DatasetSampleRepository>;
   let usageMetering: UsageMeteringHook & { record: Mock };
 
   beforeEach(async () => {
     repo = makeRepo();
+    sampleRepo = makeSampleRepo();
     usageMetering = { record: vi.fn(async () => undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         { provide: DatasetRepository, useValue: repo },
+        { provide: DatasetSampleRepository, useValue: sampleRepo },
         { provide: AccessControlService, useClass: LocalAccessControlService },
         { provide: QuotaPolicyHook, useClass: LocalQuotaPolicyHook },
         { provide: DatasetDeletionHook, useClass: LocalDatasetDeletionHook },
@@ -260,14 +271,14 @@ describe('DatasetService', () => {
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.listDatasets.mockResolvedValue([datasetRow({ sampleCount: 4 })]);
     // SQL GROUP BY already filters out non-scalar labels (e.g. object-valued) server-side.
-    repo.aggregateCategoryDistribution.mockResolvedValue([
+    sampleRepo.aggregateCategoryDistribution.mockResolvedValue([
       { label: 'block', count: 2 },
       { label: 'allow', count: 1 },
     ]);
 
     const result = await service.listDatasets('77777777-7777-4777-8777-777777777777', actor);
 
-    expect(repo.aggregateCategoryDistribution).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222', 'label');
+    expect(sampleRepo.aggregateCategoryDistribution).toHaveBeenCalledWith('22222222-2222-4222-8222-222222222222', 'label');
     expect(result.data[0]?.categoryDistribution).toEqual({
       field: 'label',
       total: 3,
@@ -281,7 +292,7 @@ describe('DatasetService', () => {
   it('returns a dataset and its persisted samples for the detail page', async () => {
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.findDatasetById.mockResolvedValue(datasetRow());
-    repo.listDatasetSamplesPage.mockResolvedValue({
+    sampleRepo.listDatasetSamplesPage.mockResolvedValue({
       rows: [
         {
           id: '33333333-3333-4333-8333-333333333333',
@@ -336,7 +347,7 @@ describe('DatasetService', () => {
       createdAt: new Date('2026-05-16T00:00:00Z'),
       updatedAt: new Date('2026-05-16T00:00:00Z'),
     };
-    repo.listDatasetSamplesBatch
+    sampleRepo.listDatasetSamplesBatch
       .mockResolvedValueOnce({ rows: [row], nextCursor: null })
       .mockResolvedValueOnce({ rows: [row], nextCursor: null });
 
@@ -357,7 +368,7 @@ describe('DatasetService', () => {
   it('exports dataset samples as JSONL', async () => {
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.findDatasetById.mockResolvedValue(datasetRow());
-    repo.listDatasetSamplesBatch.mockResolvedValueOnce({
+    sampleRepo.listDatasetSamplesBatch.mockResolvedValueOnce({
       nextCursor: null,
       rows: [
         {
@@ -392,7 +403,7 @@ describe('DatasetService', () => {
     function primeExport() {
       repo.findProjectAccess.mockResolvedValue(projectAccess());
       repo.findDatasetById.mockResolvedValue(datasetRow());
-      repo.listDatasetSamplesBatch.mockResolvedValue({
+      sampleRepo.listDatasetSamplesBatch.mockResolvedValue({
         nextCursor: null,
         rows: [
           {

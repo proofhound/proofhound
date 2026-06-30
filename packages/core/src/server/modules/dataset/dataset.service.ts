@@ -30,6 +30,7 @@ import { safeRecordUsageEvent } from '../../common/contracts/usage-metering.hook
 import { DatasetDeletionHook } from './dataset-deletion.hook';
 import { buildDatasetFieldSchema } from './dataset-field-schema.util';
 import { DatasetRepository } from './dataset.repository';
+import { DatasetSampleRepository } from './dataset-sample.repository.contract';
 import {
   type DatasetSampleExportCursor,
   type DatasetProjectAccessRow,
@@ -63,6 +64,7 @@ export class DatasetService {
 
   constructor(
     private readonly repo: DatasetRepository,
+    private readonly sampleRepo: DatasetSampleRepository,
     private readonly accessControl: AccessControlService,
     private readonly quotaPolicy: QuotaPolicyHook,
     @Inject(DatasetDeletionHook)
@@ -106,7 +108,7 @@ export class DatasetService {
   ): Promise<DatasetSamplesListResponseDto> {
     await this.getDataset(projectId, datasetId, actor);
 
-    const { rows, total } = await this.repo.listDatasetSamplesPage(datasetId, {
+    const { rows, total } = await this.sampleRepo.listDatasetSamplesPage(datasetId, {
       limit: query.pageSize,
       offset: (query.page - 1) * query.pageSize,
       search: query.search,
@@ -555,7 +557,7 @@ export class DatasetService {
     const expectedField = this.getExpectedOutputField(fieldSchema);
     if (!expectedField) return { field: null, total: 0, categories: [] };
 
-    const aggregated = await this.repo.aggregateCategoryDistribution(row.id, expectedField.name);
+    const aggregated = await this.sampleRepo.aggregateCategoryDistribution(row.id, expectedField.name);
     return this.toCategoryDistributionDto(expectedField.name, aggregated);
   }
 
@@ -648,7 +650,7 @@ export class DatasetService {
 
     let cursor: DatasetSampleExportCursor | null = null;
     do {
-      const batch = await this.repo.listDatasetSamplesBatch(datasetId, {
+      const batch = await this.sampleRepo.listDatasetSamplesBatch(datasetId, {
         limit: DATASET_EXPORT_BATCH_SIZE,
         cursor,
       });
@@ -670,7 +672,7 @@ export class DatasetService {
 
     let cursor: DatasetSampleExportCursor | null = null;
     do {
-      const batch = await this.repo.listDatasetSamplesBatch(datasetId, {
+      const batch = await this.sampleRepo.listDatasetSamplesBatch(datasetId, {
         limit: DATASET_EXPORT_BATCH_SIZE,
         cursor,
       });

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { DbClient } from '@proofhound/db';
 import { schema } from '@proofhound/db';
 import type { CreateDatasetDto, DatasetFieldSchemaDto } from '@proofhound/shared';
@@ -28,24 +28,13 @@ export interface DatasetRow {
   deletedAt: Date | null;
 }
 
-export interface DatasetSampleRow {
-  id: string;
-  datasetId: string;
-  data: unknown;
-  externalId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface DatasetSampleExportCursor {
-  createdAt: string;
-  id: string;
-}
-
-export interface DatasetSampleExportBatch {
-  rows: DatasetSampleRow[];
-  nextCursor: DatasetSampleExportCursor | null;
-}
+// Dataset sample row shapes live with the DatasetSampleRepository contract (08 §3.14); re-exported here so
+// existing `from './dataset.repository'` importers keep their path.
+export type {
+  DatasetSampleRow,
+  DatasetSampleExportCursor,
+  DatasetSampleExportBatch,
+} from './dataset-sample.repository.contract';
 
 export interface CreateDatasetRecordArgs {
   datasetId: string;
@@ -161,96 +150,9 @@ export class DatasetRepository {
       .where(and(eq(datasets.projectId, projectId), eq(datasets.id, datasetId), isNull(datasets.deletedAt)));
   }
 
-  // Full scan — only for export (complete dump). Detail browsing must use listDatasetSamplesPage.
-  async listDatasetSamples(datasetId: string): Promise<DatasetSampleRow[]> {
-    const rows = await this.db
-      .select()
-      .from(datasetSamples)
-      .where(eq(datasetSamples.datasetId, datasetId))
-      .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id));
-    return rows;
-  }
-
-  async listDatasetSamplesBatch(
-    datasetId: string,
-    options: { limit: number; cursor?: DatasetSampleExportCursor | null },
-  ): Promise<DatasetSampleExportBatch> {
-    const cursorWhere = options.cursor
-      ? sql`(${datasetSamples.createdAt}, ${datasetSamples.id}) > (${options.cursor.createdAt}::timestamptz, ${options.cursor.id}::uuid)`
-      : undefined;
-    const where = cursorWhere
-      ? and(eq(datasetSamples.datasetId, datasetId), cursorWhere)
-      : eq(datasetSamples.datasetId, datasetId);
-    const rows = await this.db
-      .select()
-      .from(datasetSamples)
-      .where(where)
-      .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id))
-      .limit(options.limit);
-
-    const last = rows.length >= options.limit ? rows[rows.length - 1] : null;
-    return {
-      rows,
-      nextCursor: last ? { createdAt: last.createdAt.toISOString(), id: last.id } : null,
-    };
-  }
-
-  // Server-side paginated browse with optional cross-field search (data::text ILIKE), so the detail page
-  // never loads an entire (potentially 100k+ sample) dataset into memory.
-  async listDatasetSamplesPage(
-    datasetId: string,
-    options: { limit: number; offset: number; search?: string },
-  ): Promise<{ rows: DatasetSampleRow[]; total: number }> {
-    const searchTerm = options.search?.trim();
-    // Search matches the inline sample data (SPEC 22 §7.1).
-    const where = searchTerm
-      ? and(
-          eq(datasetSamples.datasetId, datasetId),
-          sql`${datasetSamples.data}::text ILIKE ${`%${searchTerm}%`}`,
-        )
-      : eq(datasetSamples.datasetId, datasetId);
-
-    const [rows, countResult] = await Promise.all([
-      this.db
-        .select()
-        .from(datasetSamples)
-        .where(where)
-        .orderBy(asc(datasetSamples.createdAt), asc(datasetSamples.id))
-        .limit(options.limit)
-        .offset(options.offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(datasetSamples)
-        .where(where),
-    ]);
-
-    return { rows, total: Number(countResult[0]?.count ?? 0) };
-  }
-
-  // SQL GROUP BY on the expected-output field so list/detail never load all sample rows into memory.
-  // Mirrors DatasetService.toCategoryLabel: only scalar (string/number/boolean), non-blank, trimmed labels count.
-  async aggregateCategoryDistribution(
-    datasetId: string,
-    fieldName: string,
-  ): Promise<Array<{ label: string; count: number }>> {
-    // Read the field from the inline sample data, scalar only (SPEC 22 §7.1).
-    const value = sql<string | null>`${datasetSamples.data} ->> ${fieldName}`;
-    const label = sql<string>`btrim(${value})`;
-    const rows = await this.db
-      .select({ label, count: sql<number>`count(*)::int` })
-      .from(datasetSamples)
-      .where(
-        and(
-          eq(datasetSamples.datasetId, datasetId),
-          sql`jsonb_typeof(${datasetSamples.data} -> ${fieldName}) IN ('string', 'number', 'boolean')`,
-          sql`btrim(${value}) <> ''`,
-        ),
-      )
-      // GROUP BY ordinal: the same ${fieldName} binds to different param positions in select vs group-by,
-      // so Postgres won't match the expressions textually. Referencing select column 1 sidesteps that.
-      .groupBy(sql`1`);
-    return rows.map((row) => ({ label: String(row.label), count: Number(row.count) }));
-  }
+  // Dataset sample reads (preview / search / export / category distribution) moved to
+  // DatasetSampleRepository (08 §3.14, LocalDatasetSampleRepository) so an override can hydrate sample
+  // payloads from external storage without forking these paths.
 
   async hardDeleteDataset(projectId: string, datasetId: string): Promise<HardDeleteRowsResult> {
     return this.db.transaction(async (tx) => {

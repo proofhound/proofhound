@@ -28,7 +28,7 @@ import { REDIS_CLIENT, REDIS_LIMITER } from '../../shared/redis/redis.constants'
 import { resolveWorkerConcurrency } from '../config/worker-concurrency';
 import { createLlmRunner, type LlmRunnerResult } from '../runners/llm-runner';
 import type { ModelSecretResolver } from '../runners/model-secret';
-import { DrizzleRunResultWriter } from '../runners/run-result-writer';
+import { DrizzleRunResultWriter } from '../../server/infrastructure/llm/run-result-writer';
 
 export const LLM_WORKER_CONCURRENCY = resolveWorkerConcurrency();
 
@@ -37,7 +37,6 @@ export const LLM_WORKER_CONCURRENCY = resolveWorkerConcurrency();
 export class LlmConsumer extends WorkerHost {
   private readonly logger = createLogger('worker.llm', { service: 'worker' });
   private readonly runLlmJob: ReturnType<typeof createLlmRunner>;
-  private readonly runResultWriter: DrizzleRunResultWriter;
 
   constructor(
     @Inject(DATABASE_CLIENT) db: DbClient,
@@ -48,6 +47,7 @@ export class LlmConsumer extends WorkerHost {
     quotaPolicy: QuotaPolicyHook,
     runtimeLimitsProvider: RuntimeLimitsProvider,
     private readonly usageMetering: UsageMeteringHook,
+    private readonly runResultWriter: DrizzleRunResultWriter,
     @Optional() private readonly admissionStore?: LlmAdmissionStore,
   ) {
     super();
@@ -60,8 +60,8 @@ export class LlmConsumer extends WorkerHost {
       usageMetering,
       logger: this.logger,
       modelSecretResolver,
+      runResultWriter,
     });
-    this.runResultWriter = new DrizzleRunResultWriter(db, quotaPolicy, usageMetering);
   }
 
   async process(job: Job<unknown>, token?: string): Promise<LlmRunnerResult> {
@@ -356,5 +356,13 @@ export const llmConsumerProviders = [
   {
     provide: MODEL_SECRET_RESOLVER,
     useFactory: modelSecretResolverFactory,
+  },
+  {
+    // Worker run-result writer: the single DrizzleRunResultWriter, tagged with the 'worker' usage-event
+    // source. Injected into LlmConsumer and threaded into the runner — no manual `new` in either.
+    provide: DrizzleRunResultWriter,
+    useFactory: (db: DbClient, quotaPolicy: QuotaPolicyHook, usageMetering: UsageMeteringHook) =>
+      new DrizzleRunResultWriter(db, quotaPolicy, usageMetering, 'worker'),
+    inject: [DATABASE_CLIENT, QuotaPolicyHook, UsageMeteringHook],
   },
 ];

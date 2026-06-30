@@ -28,6 +28,8 @@ import { McpAuthResolver } from './mcp-auth.resolver';
 import { DatasetImportRepository } from '../../modules/dataset/dataset-import.repository';
 import { LocalDatasetUploadService } from '../../modules/dataset/dataset-import.service';
 import { DatasetUploadService } from '../../modules/dataset/dataset-upload.contract';
+import { DatasetSampleRepository } from '../../modules/dataset/dataset-sample.repository.contract';
+import { LocalDatasetSampleRepository } from '../../modules/dataset/local-dataset-sample.repository';
 import { ProjectContextResolver } from './project-context.resolver';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from './quota-policy.hook';
 import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from './runtime-limits.provider';
@@ -55,6 +57,7 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     { provide: WorkflowAuthorizationHook, useClass: LocalWorkflowAuthorizationHook },
     DatasetImportRepository,
     { provide: DatasetUploadService, useClass: LocalDatasetUploadService },
+    { provide: DatasetSampleRepository, useClass: LocalDatasetSampleRepository },
   ],
   exports: [
     ProjectContextResolver,
@@ -69,6 +72,7 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     UsageMeteringHook,
     WorkflowAuthorizationHook,
     DatasetUploadService,
+    DatasetSampleRepository,
     LocalUserTokenVerifier,
   ],
 })
