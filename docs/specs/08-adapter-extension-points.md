@@ -44,7 +44,7 @@ All thirteen extension points (§3.1–§3.13) are abstract-class DI tokens with
 
 ## 3. Extension point list
 
-The OSS trunk provides the following 14 extension points. Each extension point requires: interface (abstract class) + OSS default implementation + Nest module registration.
+The OSS trunk provides the following 17 extension points. Each extension point requires: interface (abstract class) + OSS default implementation + Nest module registration.
 
 | No.  | Extension point             | Entry channel                                             |
 | ---- | --------------------------- | --------------------------------------------------------- |
@@ -62,6 +62,9 @@ The OSS trunk provides the following 14 extension points. Each extension point r
 | 3.12 | `UsageMeteringHook`         | Best-effort domain usage event emission                   |
 | 3.13 | `DatasetUploadService`      | Dataset file upload + import strategy (write side: transport + storage)  |
 | 3.14 | `DatasetSampleRepository`   | Dataset sample read path (execution render / preview / search / export)  |
+| 3.15 | `DatasetDeletionHook`       | Dataset permanent-deletion impact list (before the rule-4 cascade)       |
+| 3.16 | `PromptDeletionHook`        | Prompt / version permanent-deletion impact list (before the rule-4 cascade) |
+| 3.17 | `ReleaseLineDeletionHook`   | Release-line permanent-deletion impact list (before the rule-4 cascade)  |
 
 ProofHound's entry credential system is divided into three categories by channel, mutually non-reusable and never parsing each other's credentials, corresponding to three parallel entry resolvers:
 
@@ -620,6 +623,27 @@ Contract shape (neutral — no object-storage / payload-ref / offload concept le
 - Search (`data::text ILIKE`) and category-profiling (`data ->> <field>`) SQL aggregations are exposed as overridable methods on the same repository, so an override that offloads the entire payload can replace them too; the OSS default keeps them as inline SQL.
 
 This is the dataset-sample counterpart to the §3.13 write-side adapter: §3.13 owns how samples are written / promoted, §3.14 owns how they are read back. (Run-result payloads keep no read seam — see §3.13.)
+
+### 3.15–3.17 Permanent-deletion impact hooks
+
+CLAUDE.md §5 rule 4 fixes the permanent-deletion flow: **run the deletion hook first to list the affected resources, surface that list in OSS, then cascade-delete.** Each of the three deletable parent resources owns one hook that computes the impact list:
+
+| No.  | Hook                       | OSS default (`Local*`)                               | Impact list it returns                                                |
+| ---- | -------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------- |
+| 3.15 | `DatasetDeletionHook`      | inline impact query via `DatasetRepository`          | affected experiments + optimizations                                 |
+| 3.16 | `PromptDeletionHook`       | inline impact query via `PromptRepository`           | affected release lines + experiments + optimizations (prompt shell or a single version) |
+| 3.17 | `ReleaseLineDeletionHook`  | inline impact query via `ReleaseLineRepository`       | affected events + versions + annotation tasks + run-result count     |
+
+| Item           | OSS default            | Override                                              |
+| -------------- | ---------------------- | ----------------------------------------------------- |
+| Implementation | `Local*DeletionHook` (inline impact query) | a hook that computes the impact set against a wider resource graph |
+| Bound in       | `LocalContractsModule` | the override's `contracts` module                     |
+
+Contract points that keep them replaceable while keeping the cascade as fixed OSS logic:
+
+- The hook computes **only the impact list** — what the OSS UI lists before the user confirms a permanent deletion. The cascade delete itself stays in the Service (`DatasetService` / `PromptService` / `ReleaseLineService`) and is fixed rule-4 OSS semantics, **not** part of the seam. An override widens what counts as "affected" without forking the cascade.
+- They are bound in `LocalContractsModule` (not in their feature module) for the same reason as §3.13 / §3.14: a feature-module binding would shadow the global one and make `forRoot({ contracts })` unable to replace it. The `Local*` impl's only dependency is its feature repository (a stateless `DATABASE_CLIENT` wrapper), provided privately in the contracts module — the same pattern as `WebhookRepository` serving `LocalConnectorContextResolver`.
+- OSS ships a single inline implementation in active use on every permanent-deletion path; the seam exists so a host that deletes against a wider resource graph (e.g. references the OSS single-project boundary does not model) can substitute its own impact computation, reusing the OSS cascade and confirmation UI unchanged.
 
 ## 4. Frontend reuse strategy
 

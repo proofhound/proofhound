@@ -1,105 +1,95 @@
-# 08b · Seam / DI 落点清单与审计
+# 08b · Seam / DI Inventory and Audit
 
-本文件是 [08 Control Plane Adapter Boundary](08-adapter-extension-points.md) 的**代码落点配套清单**：08 定义每个扩展点的契约与默认实现，本文件记录每个 seam 在代码里**绑定在哪、被谁消费、绑定层级是否可覆盖**，用于一次性审视"当前保留的 seam 是否合理、是否有未正确暴露的地方"。
+This file is the **code-landing companion** to [08 Control Plane Adapter Boundary](08-adapter-extension-points.md): 08 defines each extension point's contract and default implementation; this file records, for each seam, **where it is bound in code, who consumes it, and whether its binding layer is overridable** — a single-pass review of "are the seams we currently keep reasonable, and is anything not correctly exposed."
 
-> 范围：仅清点遵循 DI / seam 设计的可替换点（抽象类 DI token + `WebContracts` 注入字段），不含普通 Repository / Service 的内部依赖注入。术语沿用 08：`external consumer` / `host shell` / `replacement implementation` / `override`，不引入 SaaS 措辞。
+> Scope: only inventories the replaceable points that follow the DI / seam design (abstract-class DI token + `WebContracts` injection field); it excludes the ordinary internal DI of regular Repository / Service classes. Terminology follows 08: `external consumer` / `host shell` / `replacement implementation` / `override`; no SaaS wording.
 
-装配机制一句话：后端三运行时（server / webhook / worker）都经 `forRoot({ contracts })` 单点注入同一个 `@Global` 的 `LocalContractsModule`；前端经单个 `<ProofHoundWebProvider contracts>` 注入 `WebContracts`。替换只发生在这两个装配点。
-
----
-
-## 1. 后端 seam 落点
-
-### 1.1 经 `LocalContractsModule` 绑定（`forRoot({ contracts })` 可覆盖）
-
-绑定清单见 `packages/core/src/server/common/contracts/local-contracts.module.ts:47-60`；抽象类同目录 `*.resolver.ts` / `*.service.ts` / `*.hook.ts` / `*.provider.ts` / `*.strategy.ts`。
-
-| # | Seam（抽象类） | OSS 默认实现 | 主要消费方（controller / service · 方法） | 功能 / 调用时机 |
-| - | -------------- | ------------ | ----------------------------------------- | --------------- |
-| 1 | `ProjectContextResolver` | `LocalProjectContextResolver` | `HttpActorGuard.canActivate`（经 `@CurrentProject()` 读取）、`McpDispatchContextFactory.build`、release / optimization recovery | actor + hint → `ProjectContext` 并校验项目访问权；OSS 恒返回 `LOCAL_PROJECT_CONTEXT` 不校验 |
-| 2 | `ActorContextResolver` | `LocalActorContextResolver` | `HttpActorGuard.canActivate` → `resolveFromHttp` | HTTP 身份（API `ph_*` user token / UI 可信头 / LOCAL_ACTOR）→ `ActorContext` |
-| 3 | `McpAuthResolver` | `LocalMcpAuthResolver` | `McpDispatchContextFactory.build` → `resolveFromMcp` | MCP user token → `ActorContext`（与 §2 互不调用） |
-| 4 | `ConnectorContextResolver` | `LocalConnectorContextResolver` | `WebhookService.executeConnectorHook` / `recordProbeResult` | webhook token →（connector + `ProjectContext` + system actor），不经 §1 |
-| 5 | `TokenService` | `LocalTokenService` | `TokenController.list/create/update/reveal/deleteUserToken` | user token（`scope='user'`）CRUD；不碰 `scope='webhook'` |
-| 6 | `AccessControlService` | `LocalAccessControlService` | `DatasetService` / `DatasetImportService` / `ProductionReleaseService` / `RunResultService` · `assertCan`；`McpDispatchContextFactory.build`（`mcp_tool`） | `(actor, project, action)` 授权网关；OSS 仅看 `actorKind` |
-| 7 | `LimiterKeyStrategy` | `LocalLimiterKeyStrategy` | `BullmqService.enqueueLlm/ProbeJob`、`LlmRunner` / `ProbeRunner.run`、webhook bullmq | 生成限流 key（OSS `model:<modelId>`）；`@proofhound/limiter` 保持无项目感 |
-| 8 | `RuntimeLimitsProvider` | `LocalRuntimeLimitsProvider` | `LlmAdmissionDispatcher`、`LlmRunner` / `ProbeRunner.run` → `mergeLlmLimits` | 折叠部署级 RPM/TPM/并发上限到每次调用；OSS 为 pass-through |
-| 9 | `QuotaPolicyHook` | `LocalQuotaPolicyHook` | `DrizzleRunResultWriter.writeRunResult`、`DatasetService` / `DatasetImportService.assertCanStore`、`LlmRunner` / `ProbeRunner` → `withExecutionSlot` | 写入/执行点的存储配额 + 执行槽准入；OSS no-op |
-| 10 | `UsageMeteringHook` | `NoopUsageMeteringHook` | `DrizzleRunResultWriter`、`DatasetService`、`LlmRunner`（job 生命周期）经 `safeRecordUsageEvent` | 业务事实发生后发用量事件（只记录、O(1)）；OSS no-op |
-| 11 | `WorkflowAuthorizationHook` | `LocalWorkflowAuthorizationHook` | `ProductionReleaseService.recordProductionEvent`、`OptimizationService`、`WebhookService.executeConnectorHook` | workflow / job 入队前授权（`experiment`/`optimization`/`release`/`llm`/`probe`）；OSS 放行 |
-| 12 | `DatasetUploadService` | `LocalDatasetUploadService` | `DatasetController.uploadDataset` | 数据集文件接收 / 解析 / promote（写侧）；OSS 同步 Multer→inline DB |
-| 13 | `DatasetSampleRepository` | `LocalDatasetSampleRepository` | `DatasetService`（样本分页 / 搜索 / 分类分布）、`ExperimentWorkflow` / `OptimizationWorkflow` 渲染 | 数据集样本读侧（渲染 / 预览 / 搜索 / 导出）；OSS inline 读 `dataset_samples.data` |
-
-### 1.2 非 provider 的入口基类
-
-| Seam | 形态 | 引用点 | 功能 |
-| ---- | ---- | ------ | ---- |
-| `HttpActorGuard` | 可执行基类（`@UseGuards(HttpActorGuard)`，非 DI token） | 15 个 HTTP Controller（token / dataset / prompt / experiment / optimization / canary-release / production-release / release-line / run-result / annotation / connector / model / project-model / quick-start / monitoring）；MCP controller 显式排除 | 调 `ActorContextResolver` + `ProjectContextResolver`，把 `request.user` / `request.projectContext` 填好；替换认证只换 §2，不换本类（08 §3.9） |
-
-### 1.3 ⚠️ 绑定在 feature module（`forRoot({ contracts })` **不可**覆盖）
-
-这三个是抽象类 seam，但 provider 绑定在各自 feature module，会**遮蔽**任何全局 contracts 绑定 → 当前形态下 host 无法经 `forRoot` 替换。08 §3 的扩展点清单也未收录它们。
-
-| Seam | OSS 默认实现 | 绑定位置 | 消费方 · 方法 | 功能 |
-| ---- | ------------ | -------- | ------------- | ---- |
-| `DatasetDeletionHook` | `LocalDatasetDeletionHook` | `DatasetModule` (`dataset.module.ts:17`) | `DatasetService.getDatasetDeleteImpact` / `deleteDataset` | 永久删除前的影响清单（关联实验 / 优化） |
-| `ReleaseLineDeletionHook` | `LocalReleaseLineDeletionHook` | `ReleaseLineModule` (`release-line.module.ts:21`) | `ReleaseLineService.getDeleteImpact` | 删除发布线的影响清单 |
-| `PromptDeletionHook` | `LocalPromptDeletionHook` | `PromptModule` (`prompt.module.ts:15`) | `PromptService.getDeleteImpact` | 删除 prompt / 版本的影响清单 |
-
-> 对照：`DatasetUploadService` / `DatasetSampleRepository` 同样定义在 dataset 目录，但**有意**放进 `LocalContractsModule`（`dataset.module.ts:8-11` 注释明确"放 global 以免 feature module 遮蔽"）。deletion hook 留在 feature-local 是与之相反的选择，见 §3 审计 B1。
+Assembly mechanism in one line: all three backend runtimes (server / webhook / worker) inject the same `@Global` `LocalContractsModule` through a single `forRoot({ contracts })`; the frontend injects `WebContracts` through a single `<ProofHoundWebProvider contracts>`. Replacement happens only at these two assembly points.
 
 ---
 
-## 2. 前端 seam 落点
+## 1. Backend seam landing points
 
-入口：`WebContracts`（`packages/web-ui/src/contracts/index.ts`）→ `ProofHoundWebProvider`（`packages/web-ui/src/providers/proofhound-web-provider.tsx`）单点注入；OSS 默认 `localWebContracts` 只填 `authSource` + `projectContext`，其余字段 OSS 留空走 fallback。
+### 1.1 Bound via `LocalContractsModule` (overridable via `forRoot({ contracts })`)
 
-| WebContracts 字段 | 消费 Provider / 函数 | 暴露 hook / 行为 | OSS 默认 | 性质 |
-| ----------------- | -------------------- | ---------------- | -------- | ---- |
-| `authSource` | `configureApiClient`（`api-client/src/configure.ts`）拦截器 | 请求注入 `Authorization: Bearer` | `LocalAuthSource.getToken()→null`（浏览器不带凭证） | host seam |
-| `projectContext` | `ProjectContextProvider` + `getProjectId` | `useProjectContext`；并注入 `X-Project-Id` 头 | `LOCAL_PROJECT_CONTEXT` | host seam |
-| `baseUrl` | `configureApiClient` | 设 `httpClient.defaults.baseURL` | `undefined`（用 `getServerBaseUrl()`） | host seam（可选） |
-| `webhookBaseUrl` | `WebhookEndpointProvider` | `useWebhookEndpoint` / `buildWebhookUrl`（connector 详情页） | `undefined`（占位符 `$PROOFHOUND_API_ORIGIN`） | host seam（可选） |
-| `i18nExtend` | `I18nProvider` | `useI18n().t` 先查 extend | `undefined`（仅内置中英字典） | host seam（可选） |
-| `displayPreferences` | `DisplayPreferencesProvider` | `useDisplayPreferences`（时区偏好，~20 屏的 `useDateTimeFormatter`） | `undefined` → localStorage + 浏览器自动 | **OSS 内部状态兼 host seam**（见 B3） |
-| `runtimeLimits` | `RuntimeLimitsProvider` | `useRuntimeLimits` + `capConcurrencyValue` / `resolveEffectiveConcurrencyLimit`（release / experiment / optimization / model 表单的并发输入约束） | `undefined` → `{}`（无 UI 上限） | host seam（OSS fallback 无限制；见 B4） |
-| `resolveHref` | `NavigationProvider` | `useResolveHref` + `Link`（`components/navigation/link`）/ `useRouter`（`hooks/use-router`）两个 wrapper | identity（不改写） | host seam |
-| `datasetUpload` | `DatasetUploadProvider` | `useDatasetUploadAdapter`（`(projectId,file,meta)→DatasetImportStatusDto`），上传页用 | `defaultAdapter` = `datasetImportClient.uploadDataset`（multipart） | host seam（08 §3.13） |
-| `datasetUploadMaxBytes` | `DatasetUploadProvider` | `useDatasetUploadMaxBytes`（上传页前置大小校验） | 100MB（env `DATASET_UPLOAD_MAX_BYTES`，SSR 注入） | OSS 配置 + host seam |
+The binding list is the `providers` / `exports` arrays of `packages/core/src/server/common/contracts/local-contracts.module.ts`; the abstract classes live in the same directory as `*.resolver.ts` / `*.service.ts` / `*.hook.ts` / `*.provider.ts` / `*.strategy.ts`, except the three deletion hooks, which live under their feature directories.
 
-配套基础设施：
+| #  | Seam (abstract class)       | OSS default impl                | Primary consumer (controller / service · method)                                                                                                            | Function / when called                                                                                                            |
+| -- | --------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 1  | `ProjectContextResolver`    | `LocalProjectContextResolver`   | `HttpActorGuard.canActivate` (read via `@CurrentProject()`), `McpDispatchContextFactory.build`, release / optimization recovery                              | actor + hint → `ProjectContext` and validates project access; OSS always returns `LOCAL_PROJECT_CONTEXT` without validation       |
+| 2  | `ActorContextResolver`      | `LocalActorContextResolver`     | `HttpActorGuard.canActivate` → `resolveFromHttp`                                                                                                             | HTTP identity (API `ph_*` user token / UI trusted header / LOCAL_ACTOR) → `ActorContext`                                          |
+| 3  | `McpAuthResolver`           | `LocalMcpAuthResolver`          | `McpDispatchContextFactory.build` → `resolveFromMcp`                                                                                                         | MCP user token → `ActorContext` (does not call §2, and vice versa)                                                                |
+| 4  | `ConnectorContextResolver`  | `LocalConnectorContextResolver` | `WebhookService.executeConnectorHook` / `recordProbeResult`                                                                                                  | webhook token → (connector + `ProjectContext` + system actor), bypassing §1                                                       |
+| 5  | `TokenService`              | `LocalTokenService`             | `TokenController.list/create/update/reveal/deleteUserToken`                                                                                                  | user token (`scope='user'`) CRUD; never touches `scope='webhook'`                                                                 |
+| 6  | `AccessControlService`      | `LocalAccessControlService`     | `DatasetService` / `DatasetImportService` / `ProductionReleaseService` / `RunResultService` · `assertCan`; `McpDispatchContextFactory.build` (`mcp_tool`)    | `(actor, project, action)` authorization gateway; OSS only inspects `actorKind`                                                   |
+| 7  | `LimiterKeyStrategy`        | `LocalLimiterKeyStrategy`       | `BullmqService.enqueueLlm/ProbeJob`, `LlmRunner` / `ProbeRunner.run`, webhook bullmq                                                                          | builds the rate-limit key (OSS `model:<modelId>`); `@proofhound/limiter` stays project-unaware                                    |
+| 8  | `RuntimeLimitsProvider`     | `LocalRuntimeLimitsProvider`    | `LlmAdmissionDispatcher`, `LlmRunner` / `ProbeRunner.run` → `mergeLlmLimits`                                                                                 | folds deployment-level RPM/TPM/concurrency caps into each call; OSS is pass-through                                               |
+| 9  | `QuotaPolicyHook`           | `LocalQuotaPolicyHook`          | `DrizzleRunResultWriter.writeRunResult`, `DatasetService` / `DatasetImportService.assertCanStore`, `LlmRunner` / `ProbeRunner` → `withExecutionSlot`          | storage quota + execution-slot admission at write/execute points; OSS no-op                                                       |
+| 10 | `UsageMeteringHook`         | `NoopUsageMeteringHook`         | `DrizzleRunResultWriter`, `DatasetService`, `LlmRunner` (job lifecycle) via `safeRecordUsageEvent`                                                            | emits a usage event after the business fact occurs (record-only, O(1)); OSS no-op                                                 |
+| 11 | `WorkflowAuthorizationHook` | `LocalWorkflowAuthorizationHook`| `ProductionReleaseService.recordProductionEvent`, `OptimizationService`, `WebhookService.executeConnectorHook`                                                | authorization before a workflow / job is enqueued (`experiment`/`optimization`/`release`/`llm`/`probe`); OSS allows               |
+| 12 | `DatasetUploadService`      | `LocalDatasetUploadService`     | `DatasetController.uploadDataset`                                                                                                                            | dataset file receive / parse / promote (write side); OSS synchronous Multer → inline DB                                          |
+| 13 | `DatasetSampleRepository`   | `LocalDatasetSampleRepository`  | `DatasetService` (sample pagination / search / category distribution), `ExperimentWorkflow` / `OptimizationWorkflow` render                                   | dataset sample read side (render / preview / search / export); OSS inline read of `dataset_samples.data`                          |
+| 14 | `DatasetDeletionHook`       | `LocalDatasetDeletionHook`      | `DatasetService.getDatasetDeleteImpact` / `deleteDataset`                                                                                                    | permanent-deletion impact list (affected experiments / optimizations) before the rule-4 cascade; OSS inline query via `DatasetRepository` |
+| 15 | `PromptDeletionHook`        | `LocalPromptDeletionHook`       | `PromptService.getPromptDeleteImpact` / `getPromptVersionDeleteImpact` / `deletePrompt`                                                                       | permanent-deletion impact list (affected release lines / experiments / optimizations) for a prompt shell or a single version; OSS inline query via `PromptRepository` |
+| 16 | `ReleaseLineDeletionHook`   | `LocalReleaseLineDeletionHook`  | `ReleaseLineService.getDeletionImpact` / `deleteLine`                                                                                                        | permanent-deletion impact list (affected events / versions / annotation tasks / run-result count); OSS inline query via `ReleaseLineRepository` |
 
-- `AuthSource` 抽象类 + `LocalAuthSource` 默认实现：`packages/api-client/src/auth-source.ts`。
-- `configureApiClient`（`packages/api-client/src/configure.ts`）：`ProofHoundWebProvider` 首渲染（`useState` initializer）即注册幂等 axios 请求拦截器，注入 `Authorization` + `X-Project-Id`；screens / hooks 不直接读 `authSource` / `projectContext`。
-- 导航 wrapper 的护栏：`packages/web-ui/eslint.config.mjs` 的 `no-restricted-imports` 禁止 screens 直接 `import next/link` / `useRouter`，强制走 wrapper（08 §4.3）。
+> Rows 14–16 (the permanent-deletion impact hooks) were previously bound in their feature modules and have been promoted into `LocalContractsModule` so `forRoot({ contracts })` can replace them like every other seam (see §3.2 B1). Each `Local*` impl's only dependency is its feature repository — a stateless `DATABASE_CLIENT` wrapper — provided **privately** (not exported) in the contracts module, the same pattern as `WebhookRepository` serving `LocalConnectorContextResolver`. The cascade delete itself stays in the Service and is fixed rule-4 OSS logic, outside the seam. 08 §3.15–§3.17 registers them.
 
----
+### 1.2 Non-provider entry base class
 
-## 3. 审计：是否合理 / 是否有未正确暴露
-
-### 3.1 合理（保持现状）
-
-- **后端 13 个 contracts seam 统一在 `LocalContractsModule`、`forRoot` 单点可覆盖、三运行时共享同一绑定** —— 与 08 §2 一致，是干净的开核 + 适配覆盖形态。
-- **三入口 resolver（Actor / Mcp / Connector）互不调用、凭证系统物理隔离** —— 符合 08 §3 与 CLAUDE.md §8。
-- **`HttpActorGuard` 作为可执行基类不进 provider 表** —— 是 Nest `@UseGuards` 机制使然，非疏漏（08 §3.9），替换认证换 §2 即可。
-- **`LimiterKeyStrategy` / `RuntimeLimitsProvider` / `QuotaPolicyHook` / `UsageMeteringHook` 把 project/org 留在 core、`limiter` / `llm-client` 保持无感** —— 符合 08 §6。
-- **前端 `WebContracts` 单点注入；`authSource` / `resolveHref` / `datasetUpload` 是边界清晰的 host 覆盖点** —— 合理。
-
-### 3.2 待决 / 不一致（建议项，最终由 ZiqiXiao 定夺）
-
-- **B1【绑定层级不当 —— 重点】** `DatasetDeletionHook` / `ReleaseLineDeletionHook` / `PromptDeletionHook` 是抽象类 seam，却绑定在 feature module，**`forRoot({ contracts })` 无法覆盖**，且不在 08 §3 清单。需要明确它们的定位：
-  - 若仅为内部抽象（DRY / 可测 + CLAUDE.md rule 4 的"先跑删除钩子列影响再级联"业务流）：它们**不该**被当作对外扩展点，应在 08 显式归类为"内部 hook，不在 `forRoot` 覆盖面"，消除"抽象类 = 可覆盖 seam"的歧义。
-  - 若希望可覆盖：应像 `DatasetUploadService` / `DatasetSampleRepository` 那样**上提到 `LocalContractsModule`**，feature module 不再绑定。
-  - 倾向判断：删除影响 / 级联语义由 rule 4 固定为 OSS 业务逻辑，不是 host 需要替换的点 → 倾向"内部抽象"，建议走第一条（文档归类，不动绑定）。
-- **B2【文档漂移】** 08 §4 的 `WebContracts` 类型块（约 743–756 行）已过期：实际多出 `displayPreferences` / `runtimeLimits` / `datasetUpload` / `datasetUploadMaxBytes` 四个字段未在类型块列全。建议同步 08 §4。
-- **B3【性质模糊】** `displayPreferences` 主要是 OSS 自用的时区偏好（localStorage + 自动），被顺带做成可注入；当前无明确 host 覆盖诉求。建议：要么在 08 标注为"OSS 内部状态优先、host 覆盖可选"，要么从 `WebContracts` 移除退回纯内部状态，避免与真正的 host seam 混淆。
-- **B4【同名两个 seam】** 前端 `runtimeLimits`（UI 输入约束/提示）与后端 `RuntimeLimitsProvider`（§1.1 第 8 项，worker 硬上限 enforce）同名但**是两个独立 seam**。08 §4 未提前端这个。建议文档澄清二者关系（UI 软约束 vs 服务端硬上限），避免误读为同一处。
-- **B5【无硬缺口】** 扫 `packages/core/src` 全部 `export abstract class` 未发现"应暴露却完全没暴露"的遗漏点；现存问题集中在"暴露层级不当（B1）"和"文档未同步（B2/B4）"，而非缺 seam。
+| Seam              | Form                                                            | Reference points                                                                                                                                                                                                                                              | Function                                                                                                                                                              |
+| ----------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HttpActorGuard`  | executable base class (`@UseGuards(HttpActorGuard)`, not a DI token) | 15 HTTP Controllers (token / dataset / prompt / experiment / optimization / canary-release / production-release / release-line / run-result / annotation / connector / model / project-model / quick-start / monitoring); the MCP controller is explicitly excluded | calls `ActorContextResolver` + `ProjectContextResolver` to populate `request.user` / `request.projectContext`; replacing authentication swaps only §2, not this class (08 §3.9) |
 
 ---
 
-## 4. 与其它 SPEC 的关系
+## 2. Frontend seam landing points
 
-- [08 Control Plane Adapter Boundary](08-adapter-extension-points.md)：本文件是其代码落点配套；B1–B4 的结论应回填到 08 对应小节。
-- [07 Code Structure](07-code-structure.md)：`@proofhound/core` / `@proofhound/web-ui` 的包边界。
-- [22 Datasets](22-datasets.md)：`DatasetUploadService`（§3.1.1）/ `DatasetSampleRepository` 的业务上下文。
+Entry: `WebContracts` (`packages/web-ui/src/contracts/index.ts`) → `ProofHoundWebProvider` (`packages/web-ui/src/providers/proofhound-web-provider.tsx`), a single injection point; the OSS default `localWebContracts` fills only `authSource` + `projectContext`, leaving the rest empty to fall back.
+
+| `WebContracts` field    | Consuming Provider / function                              | Exposed hook / behavior                                                                                                                  | OSS default                                                  | Nature                                          |
+| ----------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------- |
+| `authSource`            | `configureApiClient` (`api-client/src/configure.ts`) interceptor | injects `Authorization: Bearer` into requests                                                                                            | `LocalAuthSource.getToken()→null` (browser carries no credential) | host seam                                       |
+| `projectContext`        | `ProjectContextProvider` + `getProjectId`                 | `useProjectContext`; also injects the `X-Project-Id` header                                                                              | `LOCAL_PROJECT_CONTEXT`                                      | host seam                                       |
+| `baseUrl`               | `configureApiClient`                                      | sets `httpClient.defaults.baseURL`                                                                                                       | `undefined` (uses `getServerBaseUrl()`)                     | host seam (optional)                            |
+| `webhookBaseUrl`        | `WebhookEndpointProvider`                                 | `useWebhookEndpoint` / `buildWebhookUrl` (connector detail page)                                                                        | `undefined` (placeholder `$PROOFHOUND_API_ORIGIN`)          | host seam (optional)                            |
+| `i18nExtend`            | `I18nProvider`                                            | `useI18n().t` checks the extend dictionary first                                                                                        | `undefined` (built-in zh/en dictionaries only)              | host seam (optional)                            |
+| `displayPreferences`    | `DisplayPreferencesProvider`                              | `useDisplayPreferences` (timezone preference, the `useDateTimeFormatter` on ~20 screens)                                                | `undefined` → localStorage + browser auto-detect            | **OSS internal state doubling as host seam** (see B3) |
+| `runtimeLimits`         | `RuntimeLimitsProvider`                                   | `useRuntimeLimits` + `capConcurrencyValue` / `resolveEffectiveConcurrencyLimit` (concurrency-input constraints on release / experiment / optimization / model forms) | `undefined` → `{}` (no UI cap)                              | host seam (OSS fallback is unlimited; see B4)   |
+| `resolveHref`           | `NavigationProvider`                                      | `useResolveHref` + the `Link` (`components/navigation/link`) / `useRouter` (`hooks/use-router`) wrappers                                | identity (no rewrite)                                       | host seam                                       |
+| `datasetUpload`         | `DatasetUploadProvider`                                   | `useDatasetUploadAdapter` (`(projectId,file,meta)→DatasetImportStatusDto`), used by the upload page                                     | `defaultAdapter` = `datasetImportClient.uploadDataset` (multipart) | host seam (08 §3.13)                            |
+| `datasetUploadMaxBytes` | `DatasetUploadProvider`                                   | `useDatasetUploadMaxBytes` (upload-page pre-flight size check)                                                                          | 100MB (env `DATASET_UPLOAD_MAX_BYTES`, SSR-injected)        | OSS config + host seam                          |
+
+Supporting infrastructure:
+
+- `AuthSource` abstract class + `LocalAuthSource` default: `packages/api-client/src/auth-source.ts`.
+- `configureApiClient` (`packages/api-client/src/configure.ts`): `ProofHoundWebProvider` registers an idempotent axios request interceptor on first render (a `useState` initializer), injecting `Authorization` + `X-Project-Id`; screens / hooks never read `authSource` / `projectContext` directly.
+- Navigation wrapper guardrail: the `no-restricted-imports` rule in `packages/web-ui/eslint.config.mjs` forbids screens from importing `next/link` / `useRouter` directly, forcing the wrappers (08 §4.3).
+
+---
+
+## 3. Audit: is it reasonable / is anything not correctly exposed
+
+### 3.1 Reasonable (keep as-is)
+
+- **All 16 backend contracts seams are unified in `LocalContractsModule`, overridable at the single `forRoot` point, and shared by all three runtimes** — consistent with 08 §2; a clean open-core + adapter-override shape.
+- **The three entry resolvers (Actor / Mcp / Connector) never call one another and the credential systems are physically isolated** — consistent with 08 §3 and CLAUDE.md §8.
+- **`HttpActorGuard` staying out of the provider table as an executable base class** — a consequence of Nest's `@UseGuards` mechanism, not an oversight (08 §3.9); replacing authentication swaps §2.
+- **`LimiterKeyStrategy` / `RuntimeLimitsProvider` / `QuotaPolicyHook` / `UsageMeteringHook` keep project/org in core while `limiter` / `llm-client` stay unaware** — consistent with 08 §6.
+- **Frontend `WebContracts` single injection point; `authSource` / `resolveHref` / `datasetUpload` are clean host override points** — reasonable.
+
+### 3.2 Pending / inconsistencies (suggestions; final call by ZiqiXiao)
+
+- **B1 [Resolved — binding layer]** The three deletion hooks (`DatasetDeletionHook` / `PromptDeletionHook` / `ReleaseLineDeletionHook`) were abstract-class seams bound in their feature modules, where the binding **shadowed** any global `contracts` binding so `forRoot({ contracts })` could not replace them, and they were absent from the 08 §3 list. **Resolution (decision by ZiqiXiao):** treat them as genuine override points and promote them into `LocalContractsModule` (the §1.1 rows 14–16), removing the feature-module bindings; 08 §3.15–§3.17 now registers them. Although OSS currently ships no divergent implementation, the abstractions already have a genuine OSS default in active use on every permanent-deletion path, so exposing the binding now carries no cost while letting a host that deletes against a wider resource graph substitute its own impact computation and reuse the OSS cascade + confirmation flow unchanged.
+- **B2 [Doc drift]** The `WebContracts` type block in 08 §4 is stale: it omits the four fields actually present — `displayPreferences` / `runtimeLimits` / `datasetUpload` / `datasetUploadMaxBytes`. Suggest syncing 08 §4.
+- **B3 [Ambiguous nature]** `displayPreferences` is mainly an OSS-internal timezone preference (localStorage + auto-detect) that was incidentally made injectable; there is currently no explicit host override demand. Suggest either marking it in 08 as "OSS internal state first, host override optional", or removing it from `WebContracts` back to pure internal state, to avoid confusion with real host seams.
+- **B4 [Two same-named seams]** The frontend `runtimeLimits` (UI input constraint / hint) and the backend `RuntimeLimitsProvider` (§1.1 row 8, worker hard-cap enforcement) share a name but are two independent seams. 08 §4 does not mention the frontend one. Suggest the doc clarify the relationship (UI soft constraint vs server-side hard cap) to prevent misreading them as one.
+- **B5 [No hard gap]** A sweep of every `export abstract class` under `packages/core/src` found no "should be exposed but entirely unexposed" omission; with B1 resolved, the remaining issues are documentation sync (B2/B4), not missing seams.
+
+---
+
+## 4. Relationship to other SPECs
+
+- [08 Control Plane Adapter Boundary](08-adapter-extension-points.md): this file is its code-landing companion; the B1 resolution and the B2/B4 conclusions should be reflected back into the matching 08 subsections.
+- [07 Code Structure](07-code-structure.md): the `@proofhound/core` / `@proofhound/web-ui` package boundaries.
+- [22 Datasets](22-datasets.md): the business context for `DatasetUploadService` (§3.1.1) / `DatasetSampleRepository`.

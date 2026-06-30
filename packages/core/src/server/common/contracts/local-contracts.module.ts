@@ -30,6 +30,12 @@ import { LocalDatasetUploadService } from '../../modules/dataset/dataset-import.
 import { DatasetUploadService } from '../../modules/dataset/dataset-upload.contract';
 import { DatasetSampleRepository } from '../../modules/dataset/dataset-sample.repository.contract';
 import { LocalDatasetSampleRepository } from '../../modules/dataset/local-dataset-sample.repository';
+import { DatasetRepository } from '../../modules/dataset/dataset.repository';
+import { DatasetDeletionHook, LocalDatasetDeletionHook } from '../../modules/dataset/dataset-deletion.hook';
+import { PromptRepository } from '../../modules/prompt/prompt.repository';
+import { LocalPromptDeletionHook, PromptDeletionHook } from '../../modules/prompt/prompt-deletion.hook';
+import { ReleaseLineRepository } from '../../modules/release-line/release-line.repository';
+import { LocalReleaseLineDeletionHook, ReleaseLineDeletionHook } from '../../modules/release-line/release-line-deletion.hook';
 import { ProjectContextResolver } from './project-context.resolver';
 import { LocalQuotaPolicyHook, QuotaPolicyHook } from './quota-policy.hook';
 import { LocalRuntimeLimitsProvider, RuntimeLimitsProvider } from './runtime-limits.provider';
@@ -58,6 +64,17 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     DatasetImportRepository,
     { provide: DatasetUploadService, useClass: LocalDatasetUploadService },
     { provide: DatasetSampleRepository, useClass: LocalDatasetSampleRepository },
+    // Deletion-impact hooks (08 §3.15-§3.17): the abstract-class seam is bound here, not in the
+    // feature module, so an override `contracts` module can replace it without the feature module
+    // shadowing the binding. The Local* impl's only dependency is its feature repository, which is a
+    // stateless DATABASE_CLIENT wrapper provided here privately — same pattern as WebhookRepository
+    // above (a second stateless instance, never exported).
+    DatasetRepository,
+    { provide: DatasetDeletionHook, useClass: LocalDatasetDeletionHook },
+    PromptRepository,
+    { provide: PromptDeletionHook, useClass: LocalPromptDeletionHook },
+    ReleaseLineRepository,
+    { provide: ReleaseLineDeletionHook, useClass: LocalReleaseLineDeletionHook },
   ],
   exports: [
     ProjectContextResolver,
@@ -73,6 +90,9 @@ import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from './wor
     WorkflowAuthorizationHook,
     DatasetUploadService,
     DatasetSampleRepository,
+    DatasetDeletionHook,
+    PromptDeletionHook,
+    ReleaseLineDeletionHook,
     LocalUserTokenVerifier,
   ],
 })
