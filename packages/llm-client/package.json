@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/llm-client",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "description": "LLM invocation wrapper — carries the docs/specs/05-logging.md §5.6 logging contract + upfront rate limiting",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

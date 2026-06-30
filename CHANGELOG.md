@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.24](https://github.com/proofhound/proofhound/compare/v0.1.23...v0.1.24) (2026-06-30)
+
+
+### Features
+
+* **contracts:** export deletion-impact hook repositories ([#78](https://github.com/proofhound/proofhound/issues/78)) ([8410fc8](https://github.com/proofhound/proofhound/commit/8410fc845e351622ac192f370ca14a6eaecea350))
+
 ## [0.1.23](https://github.com/proofhound/proofhound/compare/v0.1.22...v0.1.23) (2026-06-30)
 
 
