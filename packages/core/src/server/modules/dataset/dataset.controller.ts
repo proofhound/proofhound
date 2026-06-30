@@ -16,11 +16,8 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { tmpdir } from 'node:os';
 import { unlink } from 'node:fs/promises';
 import {
-  DATASET_UPLOAD_MAX_BYTES as DATASET_UPLOAD_MAX_BYTES_DEFAULT,
   createDatasetSchema,
   datasetExportFormatSchema,
   datasetIdParamSchema,
@@ -36,13 +33,7 @@ import { CurrentProject } from '../../common/decorators/current-project.decorato
 import type { ProjectContext } from '@proofhound/shared';
 import { DatasetService } from './dataset.service';
 import { DatasetUploadService } from './dataset-upload.contract';
-
-// File-size cap for the multipart upload, read once at module load (SPEC 22 §3.1.1). Falls back to
-// the shared OSS default so controller validation never diverges from the shared / UI cap.
-const DATASET_UPLOAD_MAX_BYTES = (() => {
-  const raw = Number(process.env['DATASET_UPLOAD_MAX_BYTES']);
-  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DATASET_UPLOAD_MAX_BYTES_DEFAULT;
-})();
+import { DatasetUploadLimitInterceptor } from './dataset-upload-limit.interceptor';
 
 /** Minimal Multer file shape (avoids a hard @types/multer dependency). */
 interface UploadedDatasetFile {
@@ -151,7 +142,7 @@ export class DatasetController {
   // Multipart file upload (OSS UI path): the file streams to a Multer temp file, then the upload
   // adapter parses it synchronously, stages, and promotes into a dataset (SPEC 22 §3.1.1).
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file', { dest: tmpdir(), limits: { fileSize: DATASET_UPLOAD_MAX_BYTES } }))
+  @UseInterceptors(DatasetUploadLimitInterceptor)
   async uploadDataset(
     @UploadedFile() file: UploadedDatasetFile | undefined,
     @Body() rawBody: Record<string, unknown>,

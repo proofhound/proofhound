@@ -26,7 +26,6 @@ import type {
   DatasetImportStatus,
   DatasetImportStatusDto,
 } from '@proofhound/shared';
-import { DATASET_UPLOAD_MAX_BYTES } from '@proofhound/shared';
 import { toActorContext } from '../../common/access-control';
 import { AccessControlService } from '../../common/contracts/access-control.service';
 import { QuotaPolicyHook } from '../../common/contracts/quota-policy.hook';
@@ -50,7 +49,6 @@ const DEFAULT_SWEEP_INTERVAL_MS = 60_000;
 const DEFAULT_STALE_TIMEOUT_MS = 120_000;
 const MIN_TICK_MS = 1_000;
 const IMAGE_ROLES = new Set(['image', 'image_url', 'image_base64']);
-const DEFAULT_DATASET_UPLOAD_MAX_BYTES = DATASET_UPLOAD_MAX_BYTES;
 
 @Injectable()
 export class LocalDatasetUploadService extends DatasetUploadService implements OnModuleInit, OnModuleDestroy {
@@ -86,7 +84,7 @@ export class LocalDatasetUploadService extends DatasetUploadService implements O
   ): Promise<DatasetImportStatusDto> {
     await this.getWritableProject(projectId, actor);
     this.assertConsistentMappings(input.fieldMappings);
-    this.assertUploadSizeWithinLimit(input.fileSizeBytes);
+    await this.assertUploadSizeWithinLimit(projectId, input.fileSizeBytes);
     if (await this.repo.isDatasetNameTaken(projectId, input.name)) {
       throw new ConflictException('dataset_name_taken');
     }
@@ -288,8 +286,14 @@ export class LocalDatasetUploadService extends DatasetUploadService implements O
     return fieldMappings.find((field) => field.role === 'id')?.name ?? null;
   }
 
-  private assertUploadSizeWithinLimit(bytes: number | undefined): void {
-    if (nonnegativeInteger(bytes) > this.getUploadMaxBytes()) {
+  private async assertUploadSizeWithinLimit(projectId: string, bytes: number | undefined): Promise<void> {
+    // Defence-in-depth behind the streaming interceptor: re-check the actual file size against the same
+    // plan-resolved ceiling (QuotaPolicyHook), so the cap holds even for non-HTTP callers.
+    const maxBytes = await this.quotaPolicy.resolveStorageQuotaBytes({
+      project: { projectId, source: 'local' },
+      source: 'dataset_upload',
+    });
+    if (maxBytes !== null && nonnegativeInteger(bytes) > maxBytes) {
       throw new BadRequestException('dataset_upload_too_large');
     }
   }
@@ -330,11 +334,6 @@ export class LocalDatasetUploadService extends DatasetUploadService implements O
   private getStaleTimeoutMs(): number {
     const raw = Number(process.env['DATASET_IMPORT_STALE_TIMEOUT_MS']);
     return Number.isFinite(raw) && raw >= MIN_TICK_MS ? Math.floor(raw) : DEFAULT_STALE_TIMEOUT_MS;
-  }
-
-  private getUploadMaxBytes(): number {
-    const raw = Number(process.env['DATASET_UPLOAD_MAX_BYTES']);
-    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_DATASET_UPLOAD_MAX_BYTES;
   }
 }
 

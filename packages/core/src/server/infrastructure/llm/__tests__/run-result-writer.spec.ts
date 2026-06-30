@@ -249,5 +249,6 @@ function createSpyQuotaPolicy(): QuotaPolicyHook {
   return {
     assertCanStore: vi.fn(async () => undefined),
     withExecutionSlot: vi.fn(async (_input, run) => run()),
+    resolveStorageQuotaBytes: vi.fn(async () => null),
   };
 }
