@@ -63,11 +63,12 @@ The user can also explicitly choose "go straight to production", which is equiva
 
 ### 4.2 Webhook Connectors
 
-Webhook input connectors do not surface the canary concept on the first release and create production directly:
+Webhook input connectors default the first release to 100% production, but the initial traffic ratio is still adjustable:
 
-- Each webhook request is naturally an explicit call, so the first release does not face the problem of carving out part of the traffic from an existing queue production consumer.
-- Once the first production is submitted it immediately enters `running`, and synchronous or asynchronous webhooks return results per the connector configuration.
-- Afterwards, a canary candidate can be added on this production release line using split or dual_run.
+- Each webhook request is naturally an explicit call, so the first release defaults to production at 100% rather than carving out a slice; the traffic ratio control therefore defaults to 100% instead of the queue canary-first default.
+- Keeping 100% creates production directly: once submitted it immediately enters `running`, and synchronous or asynchronous webhooks return results per the connector configuration.
+- Lowering the initial ratio below 100% carves a first-time canary candidate exactly like a first-time queue canary: requests are bucketed by the request external ID field, hits go to the candidate, and non-hit requests produce no ProofHound output (there is no production lane yet). The request external ID field is required so the bucketing is stable.
+- Afterwards, a canary candidate can be added on a running production release line using split or dual_run, with the same configurable traffic ratio; the candidate inherits the production's request external ID field and buckets each request by it, so a webhook upstream is never pinned to 100%.
 
 ## 5. Queue Traffic Configuration
 
@@ -100,10 +101,10 @@ The goal of stable hashing is to keep the same external ID assigned as consisten
 `split` means carving out a portion of online production traffic and handing it to the candidate version:
 
 - When there is a production lane, messages hitting the canary ratio are processed by the candidate version, and the rest continue to be processed by the current production version.
-- In a first-time queue canary with no production lane, messages hitting the canary ratio are processed by the candidate version; messages that do not hit produce no ProofHound output. This mode suits wiring in mirrored traffic, test queues, or scenarios where the upstream can already tolerate partial takeover.
-- Once the candidate ratio reaches 100%, the candidate version is automatically promoted to production, and the old production lane is marked `stopped(replaced)`.
+- In a first-time queue or webhook canary with no production lane, messages hitting the canary ratio are processed by the candidate version; messages that do not hit produce no ProofHound output. This mode suits wiring in mirrored traffic, test queues, or scenarios where the upstream can already tolerate partial takeover.
+- Once a queue candidate ratio reaches 100%, the candidate version is automatically promoted to production, and the old production lane is marked `stopped(replaced)`. A webhook split at 100% routes every request to the candidate but does not auto-promote; promotion stays an explicit action.
 
-Only `split` at 100% triggers promotion.
+Only a queue `split` at 100% triggers automatic promotion.
 
 ### 6.2 Dual Run
 
@@ -291,9 +292,10 @@ Webhook production is request-time routing:
 - Asynchronous webhook: the production lane returns a `call_id`, and the result is written to a short-lived receipt and the run result.
 - When a split canary hits the candidate, the synchronous response returns the candidate result; when it does not hit, it returns the production result.
 - A dual_run canary always returns the production result, and the candidate result is only written to run results and the observation downstream.
+- A webhook canary candidate exposes the same traffic-ratio and `split` / `dual_run` controls as a queue canary. Request-time routing performs stable hash bucketing by the inherited request external ID field, so `0 < traffic_ratio <= 1` decides whether each request hits the candidate; both split takeover and dual-run mirroring honor the ratio. A webhook split at 100% routes every request to the candidate but does not auto-promote — promotion stays an explicit action, because only a queue split 100% auto-promotes.
 - Both the webhook and queue runners write run results uniformly per `release_line_events`: `source='release'`, `source_id=release_line_events.id`.
 
-A first-time webhook release has no canary concept; the "add canary" entry only appears once a production already exists.
+A first-time webhook release defaults to 100% production, but lowering the initial ratio below 100% carves a first-time canary candidate (see §4.2); the release detail page's "add canary" entry only appears once a production already exists, while the first-time canary is created from the new-release page.
 
 ## 12. Rollback and Stop
 
@@ -389,8 +391,8 @@ When a canary candidate or production configures an output connector, the releas
 - The same release line can simultaneously have one running production lane and one running canary candidate lane.
 - The same release line has at most one running canary candidate at any time.
 - The upstream connector is immutable within a release line.
-- A first-time webhook release goes straight to production; a canary can only be added afterwards.
-- Only a queue release's split 100% automatically writes a `promote_canary` production event.
+- A first-time webhook release defaults to 100% production; lowering the initial ratio below 100% carves a first-time canary, and a canary can also be added afterwards.
+- Only a queue release's split 100% automatically writes a `promote_canary` production event; a webhook split 100% never auto-promotes.
 - The request external ID field is required for all live traffic releases.
 - Configuration changes, rollback, and force stop must all go through the event stream.
 

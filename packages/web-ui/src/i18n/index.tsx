@@ -1036,9 +1036,11 @@ const dictionaries = {
     'releases.new.field.traffic': '流量选择',
     'releases.new.traffic.production100': 'production 100%',
     'releases.new.traffic.productionHint': '新建正式发布提交后直接接管该线路的全部 production 流量',
-    'releases.new.traffic.queueTitle': '队列流量比例',
-    'releases.new.traffic.queueHint':
-      'Redis / Kafka 输入可选择初始接入比例；低于 100% 会创建灰度候选，100% 直接进入 production。',
+    'releases.new.traffic.ratioTitle': '流量比例',
+    'releases.new.traffic.firstReleaseHint':
+      '可选择初始接入比例：低于 100% 会创建灰度候选，100% 直接进入 production；webhook 默认 100%。',
+    'releases.new.traffic.canaryRatioHint':
+      '灰度候选的接入比例：按外部 ID 稳定分桶；切流时命中部分交给灰度 runner，双跑时命中部分镜像进灰度 runner。',
     'releases.new.traffic.percentAriaLabel': '流量比例',
     'releases.new.traffic.percentInput': '流量百分比',
     'releases.new.trafficMode.split': '切流',
@@ -3050,7 +3052,6 @@ const dictionaries = {
     'canaryReleases.new.field.outputMappingUnavailable': '暂不提供输出映射功能；模型输出将按默认结构传递给输出连接器。',
     'canaryReleases.new.field.trafficRatio': '流量比例',
     'canaryReleases.new.field.trafficRatioHelp': '队列输入可按比例采样',
-    'canaryReleases.new.field.trafficRatioWebhookHelp': 'Webhook 输入不支持服务侧采样，流量比例固定为 100%',
     'canaryReleases.new.field.filterRules': '数据过滤',
     'canaryReleases.new.field.filterRulesHelp': '基于输入连接器字段筛选数据，支持 AND / OR / NOT 嵌套',
     'canaryReleases.new.filter.empty': '未启用过滤',
@@ -4295,9 +4296,11 @@ const dictionaries = {
     'releases.new.field.traffic': 'Traffic selection',
     'releases.new.traffic.production100': 'production 100%',
     'releases.new.traffic.productionHint': 'A new production release takes 100% of this line immediately after submit',
-    'releases.new.traffic.queueTitle': 'Queue traffic ratio',
-    'releases.new.traffic.queueHint':
-      'Redis / Kafka inputs can choose an initial rollout percentage; below 100% creates a canary candidate, and 100% goes directly to production.',
+    'releases.new.traffic.ratioTitle': 'Traffic ratio',
+    'releases.new.traffic.firstReleaseHint':
+      'Choose an initial rollout percentage; below 100% creates a canary candidate, and 100% goes directly to production. Webhook defaults to 100%.',
+    'releases.new.traffic.canaryRatioHint':
+      "The canary candidate's rollout ratio; requests bucket stably by external ID. Split hands the hit share to the canary runner, while dual-run mirrors it for comparison.",
     'releases.new.traffic.percentAriaLabel': 'Traffic ratio',
     'releases.new.traffic.percentInput': 'Traffic percentage',
     'releases.new.trafficMode.split': 'Split',
@@ -6376,7 +6379,6 @@ const dictionaries = {
       'Output mapping is not available yet; model output will be sent with the default structure.',
     'canaryReleases.new.field.trafficRatio': 'Traffic ratio',
     'canaryReleases.new.field.trafficRatioHelp': 'Queue inputs can be sampled by percentage',
-    'canaryReleases.new.field.trafficRatioWebhookHelp': 'Webhook inputs cannot be sampled by ProofHound; fixed at 100%',
     'canaryReleases.new.field.filterRules': 'Filter rules',
     'canaryReleases.new.field.filterRulesHelp': 'Filter by input connector fields; supports nested AND / OR / NOT',
     'canaryReleases.new.filter.empty': 'Filtering is disabled',

@@ -107,7 +107,8 @@ test('adds a canary release to a running production line through the UI', async 
 
     // ---- Drive the add-canary UI (?mode=canary&line=...). Prompt + input connector + variable
     // mapping + external id are LOCKED/inherited from the production event; the user only picks a
-    // different prompt version + model. With a webhook input, traffic is fixed at 100%. ----
+    // different prompt version + model. A webhook upstream now exposes the canary traffic ratio and
+    // the split / dual-run mode controls — it is no longer pinned to 100%. ----
     await page.goto(`/releases/new?mode=canary&line=${encodeURIComponent(releaseLineId)}`);
     await expect(page.getByTestId('release-new-page')).toBeVisible();
 
@@ -115,7 +116,12 @@ test('adds a canary release to a running production line through the UI', async 
     await page.getByTestId(`release-new-version-row-${canaryVersionId}`).click();
     await page.getByTestId(`release-new-model-row-${modelId}`).click();
 
-    // ---- Submit -> POST /canary-releases; capture the canary EVENT id from the response ----
+    // The webhook canary can now carve traffic by ratio and mirror via dual-run: choose 30% dual-run.
+    await expect(page.getByTestId('release-new-traffic-mode-dual-run')).toBeVisible();
+    await page.getByTestId('release-new-traffic-mode-dual-run').click();
+    await page.getByTestId('release-new-traffic').fill('30');
+
+    // ---- Submit -> POST /canary-releases; assert the carved ratio/mode + capture the EVENT id ----
     const [createResponse] = await Promise.all([
       page.waitForResponse(
         (response) =>
@@ -123,6 +129,12 @@ test('adds a canary release to a running production line through the UI', async 
       ),
       page.getByTestId('release-new-submit').click(),
     ]);
+    const createPayload = createResponse.request().postDataJSON() as {
+      trafficRatio: number;
+      trafficMode: string;
+    };
+    expect(createPayload.trafficRatio).toBeCloseTo(0.3, 5);
+    expect(createPayload.trafficMode).toBe('dual_run');
     const createdCanary = (await createResponse.json()) as { id: string };
     canaryEventId = createdCanary.id;
 

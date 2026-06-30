@@ -191,12 +191,15 @@ function formatStopConditionSummary(
   return parts.length > 0 ? parts.join(' / ') : labels.manual;
 }
 
-function initialTrafficPercentFromParams(params: Pick<URLSearchParams, 'get'>): string {
+// Returns the explicit traffic percent carried in the URL (a prefilled / "create canary" link), or
+// null when none was provided so the page can apply a context default (webhook first release -> 100%,
+// otherwise the canary-first queue default).
+function initialTrafficPercentInput(params: Pick<URLSearchParams, 'get'>): string | null {
   const percent = params.get('trafficPercent');
   if (percent && trafficPercentFromText(percent) !== null) return percent;
   const ratio = Number(params.get('trafficRatio'));
   if (Number.isFinite(ratio) && ratio > 0 && ratio <= 1) return String(Math.round(ratio * 100));
-  return String(DEFAULT_QUEUE_TRAFFIC_PERCENT);
+  return null;
 }
 
 function initialTrafficModeFromParams(params: Pick<URLSearchParams, 'get'>): ReleaseTrafficMode {
@@ -896,14 +899,14 @@ function RecordCategoriesField({
 }
 
 function TrafficSelectionField({
-  isQueueInput,
+  editable,
   value,
   trafficMode,
   showTrafficMode = false,
   onChange,
   onTrafficModeChange,
 }: {
-  isQueueInput: boolean;
+  editable: boolean;
   value: string;
   trafficMode: ReleaseTrafficMode;
   showTrafficMode?: boolean;
@@ -914,14 +917,14 @@ function TrafficSelectionField({
   const parsed = trafficPercentFromText(value);
   const sliderValue = parsed ?? DEFAULT_QUEUE_TRAFFIC_PERCENT;
 
-  if (!isQueueInput) {
+  if (!editable) {
     return (
       <div className="rounded-md border bg-background p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="font-mono text-[13px] font-semibold">{t('releases.new.traffic.production100')}</div>
             <div className="mt-1 text-[12px] text-muted-foreground">
-              {t('canaryReleases.new.field.trafficRatioWebhookHelp')}
+              {t('releases.new.traffic.productionHint')}
             </div>
           </div>
           <Tag tone="positive">100%</Tag>
@@ -938,6 +941,7 @@ function TrafficSelectionField({
             type="button"
             onClick={() => onTrafficModeChange('split')}
             aria-pressed={trafficMode === 'split'}
+            data-testid="release-new-traffic-mode-split"
             className={cn(
               'rounded-md border px-3 py-2 text-left transition-colors',
               trafficMode === 'split' ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/50',
@@ -955,6 +959,7 @@ function TrafficSelectionField({
             type="button"
             onClick={() => onTrafficModeChange('dual_run')}
             aria-pressed={trafficMode === 'dual_run'}
+            data-testid="release-new-traffic-mode-dual-run"
             className={cn(
               'rounded-md border px-3 py-2 text-left transition-colors',
               trafficMode === 'dual_run'
@@ -976,8 +981,10 @@ function TrafficSelectionField({
       ) : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="font-mono text-[13px] font-semibold">{t('releases.new.traffic.queueTitle')}</div>
-          <div className="mt-1 max-w-2xl text-[12px] text-muted-foreground">{t('releases.new.traffic.queueHint')}</div>
+          <div className="font-mono text-[13px] font-semibold">{t('releases.new.traffic.ratioTitle')}</div>
+          <div className="mt-1 max-w-2xl text-[12px] text-muted-foreground">
+            {t(showTrafficMode ? 'releases.new.traffic.canaryRatioHint' : 'releases.new.traffic.firstReleaseHint')}
+          </div>
         </div>
         <Tag tone={sliderValue === 100 ? 'positive' : 'info'}>{sliderValue}%</Tag>
       </div>
@@ -1228,7 +1235,9 @@ export function ReleaseNewPage({ projectId, initialName }: ReleaseNewPageProps) 
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
   const [externalIdFieldOverride, setExternalIdFieldOverride] = useState('');
   const [filterRules, setFilterRules] = useState<CanaryReleaseFilterNodeDto | null>(null);
-  const [trafficPercent, setTrafficPercent] = useState(() => initialTrafficPercentFromParams(searchParams));
+  const [trafficPercentInput, setTrafficPercent] = useState<string | null>(() =>
+    initialTrafficPercentInput(searchParams),
+  );
   const [trafficMode, setTrafficMode] = useState<ReleaseTrafficMode>(() => initialTrafficModeFromParams(searchParams));
   const [useStopMaxSamples, setUseStopMaxSamples] = useState(false);
   const [useStopMaxDurationSeconds, setUseStopMaxDurationSeconds] = useState(false);
@@ -1331,10 +1340,20 @@ export function ReleaseNewPage({ projectId, initialName }: ReleaseNewPageProps) 
       ? externalIdFieldOverride
       : inferExternalIdField(inputFieldOptions);
   const isQueueInput = selectedInputConnector?.type === 'redis' || selectedInputConnector?.type === 'kafka';
-  const trafficPercentValue = isQueueInput ? trafficPercentFromText(trafficPercent) : 100;
+  const isWebhookInput = selectedInputConnector?.type === 'webhook';
+  // Every live-traffic upstream (queue or webhook) carves traffic by ratio, so the ratio control is
+  // editable whenever an input connector is selected. A webhook first release defaults to 100%
+  // (production-first); queue and add-canary keep the canary-first default. Lowering below 100% on a
+  // first release carves a first-time canary; adding a canary onto a running production also exposes
+  // the split / dual-run mode controls (showTrafficMode).
+  const canConfigureTraffic = isQueueInput || isWebhookInput || isAddCanaryToProduction;
+  const webhookFirstRelease = isWebhookInput && !isAddCanaryToProduction;
+  const trafficPercent =
+    trafficPercentInput ?? (webhookFirstRelease ? '100' : String(DEFAULT_QUEUE_TRAFFIC_PERCENT));
+  const trafficPercentValue = canConfigureTraffic ? trafficPercentFromText(trafficPercent) : 100;
   const trafficRatioValue = trafficPercentValue === null ? null : trafficPercentValue / 100;
   const shouldCreateCanaryRelease =
-    isAddCanaryToProduction || (isQueueInput && trafficRatioValue !== null && trafficRatioValue < 1);
+    isAddCanaryToProduction || (canConfigureTraffic && trafficRatioValue !== null && trafficRatioValue < 1);
   const isSubmitting = createRelease.isPending || createCanaryRelease.isPending || startCanaryRelease.isPending;
 
   const filteredPrompts = useMemo(() => {
@@ -1428,7 +1447,9 @@ export function ReleaseNewPage({ projectId, initialName }: ReleaseNewPageProps) 
   const connectorComplete =
     (!isCanaryLineMode || isAddCanaryToProduction) &&
     Boolean(selectedInputConnector) &&
-    (!isQueueInput || effectiveExternalIdField.trim().length > 0) &&
+    // The request external ID field is required for all live-traffic releases (SPEC 27 §16); webhook
+    // included, because request-time routing buckets and the runtime rejects a missing external id.
+    effectiveExternalIdField.trim().length > 0 &&
     requiredVariableMappingComplete &&
     filterRulesValid &&
     trafficRatioValue !== null;
@@ -1966,8 +1987,8 @@ export function ReleaseNewPage({ projectId, initialName }: ReleaseNewPageProps) 
                 <Label>{t('releases.new.field.traffic')}</Label>
                 <div className="mt-2">
                   <TrafficSelectionField
-                    isQueueInput={isQueueInput}
-                    value={isQueueInput ? trafficPercent : '100'}
+                    editable={canConfigureTraffic}
+                    value={canConfigureTraffic ? trafficPercent : '100'}
                     trafficMode={trafficMode}
                     showTrafficMode={isAddCanaryToProduction}
                     onChange={setTrafficPercent}
@@ -2173,7 +2194,7 @@ export function ReleaseNewPage({ projectId, initialName }: ReleaseNewPageProps) 
                   value={
                     trafficRatioValue === null
                       ? '—'
-                      : isQueueInput
+                      : canConfigureTraffic
                         ? `${Math.round(trafficRatioValue * 100)}%`
                         : t('releases.new.traffic.production100')
                   }

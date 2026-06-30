@@ -251,7 +251,7 @@ function assertRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function selectWebhookLanes(
+export function selectWebhookLanes(
   line: WebhookReleaseRuntimeLineRow,
   payload: Record<string, unknown>,
 ): Array<{ lane: WebhookReleaseRuntimeRow; canonical: boolean }> {

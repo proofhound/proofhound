@@ -70,7 +70,9 @@ test('creates a production release through the UI and lands on a running release
     await page.getByTestId('release-new-mapping-external-id').click();
     await page.getByTestId('release-new-mapping-external-id-option-id').click();
 
-    // Webhook input is not a queue, so traffic is fixed at 100% (no release-new-traffic control).
+    // The webhook traffic ratio is now editable but defaults to 100%; leaving it at 100% still creates
+    // a production directly (lowering it below 100% would carve a first-time canary instead).
+    await expect(page.getByTestId('release-new-traffic')).toHaveValue('100');
 
     // ---- Submit -> POST /production-releases; capture the event id from the response ----
     const [createResponse] = await Promise.all([
