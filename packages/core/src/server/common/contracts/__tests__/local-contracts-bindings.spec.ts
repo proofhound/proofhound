@@ -11,6 +11,8 @@ import { TokenService } from '../token.service';
 import { NoopUsageMeteringHook, UsageMeteringHook } from '../usage-metering.hook';
 import { LocalWorkflowAuthorizationHook, WorkflowAuthorizationHook } from '../workflow-authorization.hook';
 import { DatasetDeletionHook, LocalDatasetDeletionHook } from '../../../modules/dataset/dataset-deletion.hook';
+import { DatasetModule } from '../../../modules/dataset/dataset.module';
+import { DatasetRepository } from '../../../modules/dataset/dataset.repository';
 import { LocalPromptDeletionHook, PromptDeletionHook } from '../../../modules/prompt/prompt-deletion.hook';
 import {
   LocalReleaseLineDeletionHook,
@@ -62,6 +64,14 @@ describe('LocalContractsModule new bindings', () => {
     expect(providerFor(DatasetDeletionHook)?.useClass).toBe(LocalDatasetDeletionHook);
   });
 
+  it('provides DatasetRepository from contracts instead of DatasetModule', () => {
+    const contractProviders = Reflect.getMetadata(MODULE_METADATA.PROVIDERS, LocalContractsModule) ?? [];
+    const datasetProviders = Reflect.getMetadata(MODULE_METADATA.PROVIDERS, DatasetModule) ?? [];
+
+    expect(contractProviders).toContain(DatasetRepository);
+    expect(datasetProviders).not.toContain(DatasetRepository);
+  });
+
   it('binds PromptDeletionHook -> LocalPromptDeletionHook', () => {
     expect(providerFor(PromptDeletionHook)?.useClass).toBe(LocalPromptDeletionHook);
   });
@@ -79,6 +89,7 @@ describe('LocalContractsModule new bindings', () => {
     expect(exports).toContain(QuotaPolicyHook);
     expect(exports).toContain(UsageMeteringHook);
     expect(exports).toContain(WorkflowAuthorizationHook);
+    expect(exports).toContain(DatasetRepository);
     expect(exports).toContain(DatasetDeletionHook);
     expect(exports).toContain(PromptDeletionHook);
     expect(exports).toContain(ReleaseLineDeletionHook);
