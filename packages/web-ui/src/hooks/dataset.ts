@@ -9,7 +9,7 @@ import type {
   DeleteDatasetSamplesDto,
   UpdateDatasetMetadataDto,
 } from '@proofhound/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface CreateDatasetVariables extends DatasetTransferOptions {
   body: CreateDatasetDto;
@@ -38,9 +38,44 @@ interface DatasetLifecycleVariables {
 
 type DatasetListResponse = { data: DatasetListItemDto[]; total: number };
 
+const datasetsQueryRoot = (projectId: string) => ['datasets', projectId] as const;
+const datasetSamplesQueryRoot = (projectId: string, datasetId: string) =>
+  ['dataset-samples', projectId, datasetId] as const;
+
+export function getDatasetListQueryKey(projectId: string) {
+  return datasetsQueryRoot(projectId);
+}
+
+export function getDatasetDetailQueryKey(projectId: string, datasetId: string) {
+  return [...datasetsQueryRoot(projectId), datasetId] as const;
+}
+
+export function getDatasetDeleteImpactQueryKey(projectId: string, datasetId: string) {
+  return [...getDatasetDetailQueryKey(projectId, datasetId), 'delete-impact'] as const;
+}
+
+export function getDatasetSamplesQueryKey(projectId: string, datasetId: string, query: DatasetSamplesQuery) {
+  return [...datasetSamplesQueryRoot(projectId, datasetId), query.page, query.pageSize, query.search] as const;
+}
+
+export async function handleDatasetDeleted(queryClient: QueryClient, projectId: string, datasetId: string) {
+  const detailKey = getDatasetDetailQueryKey(projectId, datasetId);
+  const samplesKey = datasetSamplesQueryRoot(projectId, datasetId);
+
+  await Promise.all([
+    queryClient.cancelQueries({ queryKey: detailKey }),
+    queryClient.cancelQueries({ queryKey: samplesKey }),
+  ]);
+
+  queryClient.removeQueries({ queryKey: detailKey });
+  queryClient.removeQueries({ queryKey: samplesKey });
+
+  return queryClient.invalidateQueries({ queryKey: getDatasetListQueryKey(projectId), exact: true });
+}
+
 export function useDatasets(projectId: string) {
   return useQuery({
-    queryKey: ['datasets', projectId],
+    queryKey: getDatasetListQueryKey(projectId),
     queryFn: () => datasetClient.listDatasets(projectId),
     enabled: projectId.length > 0,
     placeholderData: (previousData) => previousData,
@@ -49,7 +84,7 @@ export function useDatasets(projectId: string) {
 
 export function useDataset(projectId: string, datasetId: string) {
   return useQuery({
-    queryKey: ['datasets', projectId, datasetId],
+    queryKey: getDatasetDetailQueryKey(projectId, datasetId),
     queryFn: () => datasetClient.getDataset(projectId, datasetId),
     enabled: projectId.length > 0 && datasetId.length > 0,
   });
@@ -57,7 +92,7 @@ export function useDataset(projectId: string, datasetId: string) {
 
 export function useDatasetDeleteImpact(projectId: string, datasetId: string) {
   return useQuery<DatasetDeletionImpactDto>({
-    queryKey: ['datasets', projectId, datasetId, 'delete-impact'],
+    queryKey: getDatasetDeleteImpactQueryKey(projectId, datasetId),
     queryFn: () => datasetClient.getDatasetDeleteImpact(projectId, datasetId),
     enabled: projectId.length > 0 && datasetId.length > 0,
   });
@@ -71,7 +106,7 @@ export interface DatasetSamplesQuery {
 
 export function useDatasetSamples(projectId: string, datasetId: string, query: DatasetSamplesQuery) {
   return useQuery({
-    queryKey: ['dataset-samples', projectId, datasetId, query.page, query.pageSize, query.search],
+    queryKey: getDatasetSamplesQueryKey(projectId, datasetId, query),
     queryFn: () =>
       datasetClient.listDatasetSamples(projectId, datasetId, {
         page: query.page,
@@ -169,11 +204,7 @@ export function useDeleteDataset(projectId: string) {
 
   return useMutation({
     mutationFn: (datasetId: string) => datasetClient.deleteDataset(projectId, datasetId),
-    onSuccess: (_data, datasetId) => {
-      void queryClient.invalidateQueries({ queryKey: ['datasets', projectId] });
-      void queryClient.removeQueries({ queryKey: ['datasets', projectId, datasetId] });
-      void queryClient.removeQueries({ queryKey: ['dataset-samples', projectId, datasetId] });
-    },
+    onSuccess: (_data, datasetId) => handleDatasetDeleted(queryClient, projectId, datasetId),
   });
 }
 
