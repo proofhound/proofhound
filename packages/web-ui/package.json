@@ -1,6 +1,6 @@
 {
   "name": "@proofhound/web-ui",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "ProofHound reusable product frontend: screens / hooks / providers / i18n / components / contracts",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

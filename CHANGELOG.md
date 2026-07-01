@@ -1,5 +1,12 @@
 # proofhound
 
+## [0.1.26](https://github.com/proofhound/proofhound/compare/v0.1.25...v0.1.26) (2026-07-01)
+
+
+### Features
+
+* **datasets:** dataset upload UX + adapter seams ([#82](https://github.com/proofhound/proofhound/issues/82)) ([f657ab5](https://github.com/proofhound/proofhound/commit/f657ab5f48bf72d5a8c88e45183b65f33fb73275))
+
 ## [0.1.25](https://github.com/proofhound/proofhound/compare/v0.1.24...v0.1.25) (2026-06-30)
 
 
