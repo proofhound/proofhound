@@ -7,10 +7,16 @@ import { Progress, formatProgressLabel, cn } from '@proofhound/ui';
 import { useI18n } from '../../i18n';
 type TransferStatus = 'running' | 'success' | 'error';
 
+// Which leg of the transfer the snapshot describes. A replacement upload adapter whose server-side
+// ingestion runs after the bytes are sent (e.g. browser-direct-to-object-storage) uses `processing`
+// to let an injected progress panel render its own post-upload progress logic.
+export type DatasetTransferPhase = 'uploading' | 'processing';
+
 interface DatasetTransferState {
   title: string;
   description?: string;
   status: TransferStatus;
+  phase: DatasetTransferPhase;
   loadedBytes: number;
   totalBytes: number | null;
   percentOverride: number | null;
@@ -76,6 +82,7 @@ export function useDatasetTransferProgress() {
       title,
       description,
       status: 'running',
+      phase: 'uploading',
       loadedBytes: 0,
       totalBytes: totalBytes ?? null,
       percentOverride: null,
@@ -99,23 +106,27 @@ export function useDatasetTransferProgress() {
     });
   }, []);
 
-  const setMessage = useCallback((title: string, description?: string, percentOverride?: number | null) => {
-    setState((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        title,
-        description,
-        percentOverride:
-          percentOverride === undefined
-            ? current.percentOverride
-            : percentOverride === null
-              ? null
-              : clampPercent(percentOverride),
-        updatedAt: now(),
-      };
-    });
-  }, []);
+  const setMessage = useCallback(
+    (title: string, description?: string, percentOverride?: number | null, phase?: DatasetTransferPhase) => {
+      setState((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          title,
+          description,
+          phase: phase ?? current.phase,
+          percentOverride:
+            percentOverride === undefined
+              ? current.percentOverride
+              : percentOverride === null
+                ? null
+                : clampPercent(percentOverride),
+          updatedAt: now(),
+        };
+      });
+    },
+    [],
+  );
 
   const complete = useCallback((loadedBytes?: number) => {
     setState((current) => {

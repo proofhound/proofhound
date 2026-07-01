@@ -4,7 +4,11 @@ import type { Language } from '../i18n';
 import type { DisplayPreferencesContract } from '../providers/display-preferences-provider';
 import type { ResolveHref } from '../providers/navigation-provider';
 import type { RuntimeLimitsUiContract } from '../providers/runtime-limits-provider';
-import type { DatasetUploadAdapter } from '../providers/dataset-upload-provider';
+import type {
+  DatasetUploadAdapter,
+  DatasetUploadProgressRenderer,
+  DatasetUploadReporter,
+} from '../providers/dataset-upload-provider';
 
 export interface WebContracts {
   authSource: AuthSource;
@@ -22,6 +26,13 @@ export interface WebContracts {
   // DATASET_UPLOAD_MAX_BYTES). A replacement implementation injects its own upload implementation and/or a per-plan max.
   datasetUpload?: DatasetUploadAdapter;
   datasetUploadMaxBytes?: number;
+  // Reports a failed dataset upload through the hosting shell's issue reporter. OSS omits it (no report
+  // affordance); a replacement implementation opens its support/issue flow with the error attached.
+  datasetUploadReportIssue?: DatasetUploadReporter;
+  // Replaces the built-in dataset transfer progress panel. OSS omits it (default determinate upload
+  // panel). A replacement implementation whose upload runs server-side ingestion after the bytes are
+  // sent injects its own panel to render the post-upload `processing` phase (e.g. a single combined bar).
+  datasetUploadProgressPanel?: DatasetUploadProgressRenderer;
 }
 
 export const localWebContracts: WebContracts = {

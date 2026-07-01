@@ -56,6 +56,17 @@ export class DatasetController {
     return this.datasetService.listDatasets(project.projectId, actor);
   }
 
+  // Declared before the `:datasetId` routes so the literal path is not captured as a dataset id.
+  @Get('name-available')
+  async checkDatasetNameAvailable(
+    @Query('name') name: string | undefined,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ): Promise<{ available: boolean }> {
+    const available = await this.datasetService.isNameAvailable(project.projectId, name ?? '', actor);
+    return { available };
+  }
+
   @Get(':datasetId/samples')
   async listDatasetSamples(
     @Param('datasetId') datasetId: string,

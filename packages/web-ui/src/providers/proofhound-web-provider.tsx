@@ -51,6 +51,8 @@ export function ProofHoundWebProvider({
                   <DatasetUploadProvider
                     adapter={contracts.datasetUpload}
                     maxBytes={contracts.datasetUploadMaxBytes}
+                    onReportIssue={contracts.datasetUploadReportIssue}
+                    progressPanel={contracts.datasetUploadProgressPanel}
                   >
                     <RefineProvider>{children}</RefineProvider>
                   </DatasetUploadProvider>

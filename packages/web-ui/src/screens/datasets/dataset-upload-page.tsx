@@ -37,7 +37,12 @@ import {
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
 import { useUploadDataset } from '../../hooks';
-import { useDatasetUploadMaxBytes } from '../../providers';
+import {
+  useDatasetNameChecker,
+  useDatasetUploadMaxBytes,
+  useDatasetUploadProgressPanel,
+  useDatasetUploadReportIssue,
+} from '../../providers';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { DatasetTransferProgressPanel, useDatasetTransferProgress } from './dataset-transfer-progress';
 import { RoleArrowLabel, RolePill } from './dataset-ui';
@@ -223,6 +228,22 @@ function getDroppedFiles(dataTransfer: DataTransfer) {
   return Array.from(dataTransfer.files);
 }
 
+/** Best-effort error code from a failed upload: an Axios response body, a nested payload, or an Error. */
+export function extractUploadErrorCode(error: unknown): string | null {
+  const data = (error as { response?: { data?: unknown } } | null)?.response?.data;
+  if (data && typeof data === 'object') {
+    const record = data as { message?: unknown; error?: unknown };
+    if (typeof record.message === 'string') return record.message;
+    if (record.message && typeof record.message === 'object') {
+      const nested = (record.message as { error?: unknown }).error;
+      if (typeof nested === 'string') return nested;
+    }
+    if (typeof record.error === 'string') return record.error;
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return null;
+}
+
 function getParseErrorKey(parseError: string | null): TranslationKey {
   if (parseError === 'unsupported_file_type') return 'datasets.upload.unsupportedFile';
   if (parseError === 'large_requires_streaming_format') return 'datasets.upload.largeRequiresStreamingFormat';
@@ -318,10 +339,18 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
   const router = useRouter();
   const uploadDataset = useUploadDataset(projectId);
   const uploadMaxBytes = useDatasetUploadMaxBytes();
+  const checkNameAvailable = useDatasetNameChecker();
+  const reportUploadIssue = useDatasetUploadReportIssue();
+  const InjectedProgressPanel = useDatasetUploadProgressPanel();
   const uploadProgress = useDatasetTransferProgress();
   const fileInputId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [datasetName, setDatasetName] = useState('');
+  // Last resolved availability check, keyed by the name it ran for so a stale result auto-clears on edit.
+  const [nameCheck, setNameCheck] = useState<{ name: string; available: boolean } | null>(null);
+  // Raw error from the most recent failed submit that was NOT a name clash (name clashes surface at the
+  // name input instead). Drives the generic failure banner + the optional report-issue button.
+  const [submitError, setSubmitError] = useState<unknown>(null);
   const [description, setDescription] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [parsedFile, setParsedFile] = useState<ParsedDatasetFile | null>(null);
@@ -335,6 +364,28 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
   const leaveActionRef = useRef<(() => void) | null>(null);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [previewPageIndex, setPreviewPageIndex] = useState(0);
+
+  // Warn about a taken dataset name while typing, before a file is uploaded. Debounced; the result is
+  // keyed by the checked name (so it auto-clears on edit) and a failed check is ignored so the server
+  // stays the authoritative gate. Only the async callback sets state — never synchronously in the effect.
+  useEffect(() => {
+    const trimmed = datasetName.trim();
+    if (projectId.length === 0 || trimmed.length === 0) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      checkNameAvailable(projectId, trimmed)
+        .then((available) => {
+          if (!cancelled) setNameCheck({ name: trimmed, available });
+        })
+        .catch(() => {
+          if (!cancelled) setNameCheck(null);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [datasetName, projectId, checkNameAvailable]);
 
   // Leaving before the upload finishes aborts the in-flight request.
   useEffect(
@@ -421,9 +472,11 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
   );
   const uploadLimitLabel = formatByteLimit(uploadMaxBytes);
   const isSubmitting = isUploading;
+  const nameTaken = nameCheck !== null && nameCheck.name === datasetName.trim() && !nameCheck.available;
   const canImport =
     projectId.length > 0 &&
     datasetName.trim().length > 0 &&
+    !nameTaken &&
     parsedFile !== null &&
     selectedFile !== null &&
     selectedColumns.length > 0 &&
@@ -515,6 +568,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     const totalBytes = selectedFile.size;
     const controller = new AbortController();
     uploadAbortRef.current = controller;
+    setSubmitError(null);
     setIsUploading(true);
     uploadProgress.start(
       t('datasets.transfer.uploadTitle'),
@@ -529,19 +583,29 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
         signal: controller.signal,
         onProgress: (progress) => {
           uploadProgress.update(progress);
-          // Once the bytes are fully sent, the server parses + promotes synchronously: show "processing".
+          // Once the bytes are fully sent, the server parses + promotes: switch to the `processing`
+          // phase so a determinate default panel shows "processing" and an injected panel can render
+          // its own post-upload progress.
           if (progress.totalBytes !== null && progress.loadedBytes >= progress.totalBytes) {
             uploadProgress.setMessage(
               t('datasets.transfer.processingTitle'),
               t('datasets.transfer.processingDescription'),
+              undefined,
+              'processing',
             );
           }
         },
       });
       uploadProgress.complete(totalBytes);
       router.push(`/datasets`);
-    } catch {
+    } catch (error) {
       uploadProgress.fail();
+      if (extractUploadErrorCode(error) === 'dataset_name_taken') {
+        // A name clash slipped past the pre-check (race): surface it at the name input, not the banner.
+        setNameCheck({ name: datasetName.trim(), available: false });
+      } else {
+        setSubmitError(error);
+      }
     } finally {
       setIsUploading(false);
       uploadAbortRef.current = null;
@@ -573,10 +637,23 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
           </div>
         </div>
 
-        {uploadDataset.isError && (
+        {submitError !== null && (
           <div className="mb-4 flex gap-2 rounded-md border border-destructive/35 bg-destructive/10 p-3 text-sm text-destructive">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-            {t('datasets.upload.importFailed')}
+            <div className="flex flex-col gap-2">
+              <span>{t('datasets.upload.importFailed')}</span>
+              {reportUploadIssue ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-fit"
+                  onClick={() => reportUploadIssue(submitError)}
+                  data-testid="dataset-upload-report-issue"
+                >
+                  {t('datasets.upload.reportIssue')}
+                </Button>
+              ) : null}
+            </div>
           </div>
         )}
 
@@ -593,7 +670,14 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
           </div>
         )}
 
-        <DatasetTransferProgressPanel progress={uploadProgress.progress} className="mb-4" />
+        {InjectedProgressPanel ? (
+          // A stable contract-provided component (from context, not created per render), so this never
+          // remounts; the static-components heuristic can't see that it comes from WebContracts.
+          // eslint-disable-next-line react-hooks/static-components
+          <InjectedProgressPanel progress={uploadProgress.progress} className="mb-4" />
+        ) : (
+          <DatasetTransferProgressPanel progress={uploadProgress.progress} className="mb-4" />
+        )}
 
         <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
           <Section
@@ -702,12 +786,22 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
                   {t('datasets.upload.name')} <span className="text-destructive">*</span>
                 </label>
                 <input
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className={cn(
+                    'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    nameTaken && 'border-destructive focus-visible:ring-destructive',
+                  )}
                   value={datasetName}
                   onChange={(event) => setDatasetName(event.target.value)}
                   placeholder="risk-eval-v4"
+                  aria-invalid={nameTaken}
                 />
-                <div className="mt-1 text-[11px] text-muted-foreground">{t('datasets.upload.nameHelp')}</div>
+                {nameTaken ? (
+                  <div className="mt-1 text-[11px] text-destructive" data-testid="dataset-upload-name-taken">
+                    {t('datasets.upload.nameTaken')}
+                  </div>
+                ) : (
+                  <div className="mt-1 text-[11px] text-muted-foreground">{t('datasets.upload.nameHelp')}</div>
+                )}
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-medium">{t('datasets.upload.description')}</label>

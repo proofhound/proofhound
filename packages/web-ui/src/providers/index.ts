@@ -25,6 +25,14 @@ export {
   DatasetUploadProvider,
   useDatasetUploadAdapter,
   useDatasetUploadMaxBytes,
+  useDatasetNameChecker,
+  useDatasetUploadReportIssue,
+  useDatasetUploadProgressPanel,
   type DatasetUploadAdapter,
+  type DatasetNameChecker,
+  type DatasetUploadReporter,
+  type DatasetUploadProgressRenderer,
+  type DatasetTransferSnapshot,
+  type DatasetTransferPhase,
 } from './dataset-upload-provider';
 export { RefineProvider } from './refine-provider';

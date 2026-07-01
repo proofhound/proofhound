@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DATASET_IMAGE_SAMPLE_DOWNLOADS,
+  extractUploadErrorCode,
   formatFileSize,
   getDatasetImageSampleDownloadHref,
   selectSingleDatasetUploadFile,
@@ -58,5 +59,29 @@ describe('DatasetUploadPage upload helpers', () => {
         new File(['id\n2\n'], 'extra.csv', { type: 'text/csv' }),
       ]),
     ).rejects.toThrow('single_file_only');
+  });
+});
+
+describe('extractUploadErrorCode', () => {
+  it('reads a NestJS conflict message from the response body', () => {
+    expect(extractUploadErrorCode({ response: { data: { message: 'dataset_name_taken' } } })).toBe(
+      'dataset_name_taken',
+    );
+  });
+
+  it('reads a nested payload error (e.g. the 413 too-large body)', () => {
+    expect(
+      extractUploadErrorCode({ response: { data: { message: { error: 'dataset_upload_too_large' } } } }),
+    ).toBe('dataset_upload_too_large');
+  });
+
+  it('falls back to the response error field, then the Error message', () => {
+    expect(extractUploadErrorCode({ response: { data: { error: 'forbidden' } } })).toBe('forbidden');
+    expect(extractUploadErrorCode(new Error('network_down'))).toBe('network_down');
+  });
+
+  it('returns null when no code can be found', () => {
+    expect(extractUploadErrorCode(null)).toBeNull();
+    expect(extractUploadErrorCode({ response: { data: {} } })).toBeNull();
   });
 });

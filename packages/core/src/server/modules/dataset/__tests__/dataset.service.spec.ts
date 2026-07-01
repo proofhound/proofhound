@@ -107,6 +107,26 @@ describe('DatasetService', () => {
     return out;
   }
 
+  const NAME_CHECK_PROJECT_ID = '77777777-7777-4777-8777-777777777777';
+
+  it('reports an unused dataset name as available', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findDatasetByProjectAndName.mockResolvedValue(null);
+    await expect(service.isNameAvailable(NAME_CHECK_PROJECT_ID, 'risk-eval-v9', actor)).resolves.toBe(true);
+  });
+
+  it('reports a taken dataset name as unavailable', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    repo.findDatasetByProjectAndName.mockResolvedValue(datasetRow());
+    await expect(service.isNameAvailable(NAME_CHECK_PROJECT_ID, 'risk-eval-v4', actor)).resolves.toBe(false);
+  });
+
+  it('treats a blank dataset name as unavailable without a lookup', async () => {
+    repo.findProjectAccess.mockResolvedValue(projectAccess());
+    await expect(service.isNameAvailable(NAME_CHECK_PROJECT_ID, '   ', actor)).resolves.toBe(false);
+    expect(repo.findDatasetByProjectAndName).not.toHaveBeenCalled();
+  });
+
   it('creates a dataset with inferred schema metadata', async () => {
     repo.findProjectAccess.mockResolvedValue(projectAccess());
     repo.findDatasetByProjectAndName.mockResolvedValue(null);

@@ -6,11 +6,32 @@ This file is the **code-landing companion** to [08 Control Plane Adapter Boundar
 
 Assembly mechanism in one line: all three backend runtimes (server / webhook / worker) inject the same `@Global` `LocalContractsModule` through a single `forRoot({ contracts })`; the frontend injects `WebContracts` through a single `<ProofHoundWebProvider contracts>`. Replacement happens only at these two assembly points.
 
+**Two lenses on the same set of seams.** §1 groups them by **product capability** (the finer-grained "which seams are in play for feature X" view); §2 and §3 land each seam by its **binding layer** (backend provider / frontend `WebContracts`). §1 is an index into §2–§3, not a separate list.
+
 ---
 
-## 1. Backend seam landing points
+## 1. Seams grouped by product capability
 
-### 1.1 Bound via `LocalContractsModule` (overridable via `forRoot({ contracts })`)
+A cross-cutting index over the exact same seams detailed by layer in §2 (backend) and §3 (frontend). Each row is one product capability; a host usually overrides a whole capability group together. `#N` points at the numbered row of the §2.1 backend table; frontend entries are `WebContracts` keys detailed in §3.
+
+| Group | Product capability (SPEC)                    | Backend seams (§2.1 `#`, §2.2)                                                                                      | Frontend `WebContracts` (§3)                          | What overriding the group unlocks                                                                                                     |
+| ----- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| A     | Entry identity & tokens (08)                 | `#1` ProjectContextResolver, `#2` ActorContextResolver, `#3` McpAuthResolver, `#4` ConnectorContextResolver, `#5` TokenService, §2.2 `HttpActorGuard` | `authSource`, `projectContext`                        | host SSO / bearer-JWT identity, multi-tenant project resolution, host-managed token CRUD — without touching business code            |
+| B     | Authorization gates (cross-cutting)          | `#6` AccessControlService, `#11` WorkflowAuthorizationHook                                                          | —                                                     | role / permission / approval checks before a service action and before a workflow / job is enqueued                                  |
+| C     | Throughput & resource control (21 / 03)      | `#7` LimiterKeyStrategy, `#8` RuntimeLimitsProvider, `#9` QuotaPolicyHook                                           | `runtimeLimits`                                       | per-tenant rate-limit keys, deployment RPM/TPM/concurrency caps, storage + execution-slot quotas, plus the matching UI input caps    |
+| D     | Usage metering (cross-cutting)               | `#10` UsageMeteringHook                                                                                             | —                                                     | emit domain usage events to billing / analytics after each business fact                                                            |
+| E     | Datasets (22)                                | `#12` DatasetUploadService, `#13` DatasetSampleRepository, `#14` DatasetDeletionHook                                | `datasetUpload`, `datasetUploadMaxBytes`              | external sample storage (write + read), a custom import pipeline, a wider deletion-impact graph, host upload transport + size cap     |
+| F     | Prompts (23)                                 | `#15` PromptDeletionHook                                                                                            | —                                                     | a wider prompt / version deletion-impact graph                                                                                       |
+| G     | Releases & connectors (26 / 27)              | `#16` ReleaseLineDeletionHook                                                                                       | `webhookBaseUrl`                                      | a wider release-line deletion-impact graph; a host-rendered public webhook endpoint                                                 |
+| H     | App shell & presentation (01 / i18n)         | —                                                                                                                  | `baseUrl`, `i18nExtend`, `displayPreferences`, `resolveHref` | API origin, extra i18n strings, timezone / display defaults, href rewriting for host routing                                        |
+
+> **Dedicated vs cross-cutting.** Only the business-resource groups **E / F / G** own a *dedicated* seam (the dataset write/read/delete adapters, and the three deletion-impact hooks). The platform groups **A–D / H** are cross-cutting and serve *every* feature. Product features that have **no dedicated seam** — experiments (24), optimizations (25), run results (30), models (21) — are served entirely by these cross-cutting groups: e.g. experiment / optimization rendering reads through `DatasetSampleRepository` (`#13`), is gated by `WorkflowAuthorizationHook` (`#11`), throttled by `#7`–`#9`, and metered by `UsageMeteringHook` (`#10`); run-result writes go through `QuotaPolicyHook` (`#9`) + `UsageMeteringHook` (`#10`) + `AccessControlService` (`#6`).
+
+---
+
+## 2. Backend seam landing points
+
+### 2.1 Bound via `LocalContractsModule` (overridable via `forRoot({ contracts })`)
 
 The binding list is the `providers` / `exports` arrays of `packages/core/src/server/common/contracts/local-contracts.module.ts`; the abstract classes live in the same directory as `*.resolver.ts` / `*.service.ts` / `*.hook.ts` / `*.provider.ts` / `*.strategy.ts`, except the three deletion hooks, which live under their feature directories.
 
@@ -18,8 +39,8 @@ The binding list is the `providers` / `exports` arrays of `packages/core/src/ser
 | -- | --------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | 1  | `ProjectContextResolver`    | `LocalProjectContextResolver`   | `HttpActorGuard.canActivate` (read via `@CurrentProject()`), `McpDispatchContextFactory.build`, release / optimization recovery                              | actor + hint → `ProjectContext` and validates project access; OSS always returns `LOCAL_PROJECT_CONTEXT` without validation       |
 | 2  | `ActorContextResolver`      | `LocalActorContextResolver`     | `HttpActorGuard.canActivate` → `resolveFromHttp`                                                                                                             | HTTP identity (API `ph_*` user token / UI trusted header / LOCAL_ACTOR) → `ActorContext`                                          |
-| 3  | `McpAuthResolver`           | `LocalMcpAuthResolver`          | `McpDispatchContextFactory.build` → `resolveFromMcp`                                                                                                         | MCP user token → `ActorContext` (does not call §2, and vice versa)                                                                |
-| 4  | `ConnectorContextResolver`  | `LocalConnectorContextResolver` | `WebhookService.executeConnectorHook` / `recordProbeResult`                                                                                                  | webhook token → (connector + `ProjectContext` + system actor), bypassing §1                                                       |
+| 3  | `McpAuthResolver`           | `LocalMcpAuthResolver`          | `McpDispatchContextFactory.build` → `resolveFromMcp`                                                                                                         | MCP user token → `ActorContext` (never calls the row-2 HTTP resolver, and vice versa)                                            |
+| 4  | `ConnectorContextResolver`  | `LocalConnectorContextResolver` | `WebhookService.executeConnectorHook` / `recordProbeResult`                                                                                                  | webhook token → (connector + `ProjectContext` + system actor), building its own `ProjectContext` without going through row 1      |
 | 5  | `TokenService`              | `LocalTokenService`             | `TokenController.list/create/update/reveal/deleteUserToken`                                                                                                  | user token (`scope='user'`) CRUD; never touches `scope='webhook'`                                                                 |
 | 6  | `AccessControlService`      | `LocalAccessControlService`     | `DatasetService` / `DatasetImportService` / `ProductionReleaseService` / `RunResultService` · `assertCan`; `McpDispatchContextFactory.build` (`mcp_tool`)    | `(actor, project, action)` authorization gateway; OSS only inspects `actorKind`                                                   |
 | 7  | `LimiterKeyStrategy`        | `LocalLimiterKeyStrategy`       | `BullmqService.enqueueLlm/ProbeJob`, `LlmRunner` / `ProbeRunner.run`, webhook bullmq                                                                          | builds the rate-limit key (OSS `model:<modelId>`); `@proofhound/limiter` stays project-unaware                                    |
@@ -33,17 +54,17 @@ The binding list is the `providers` / `exports` arrays of `packages/core/src/ser
 | 15 | `PromptDeletionHook`        | `LocalPromptDeletionHook`       | `PromptService.getPromptDeleteImpact` / `getPromptVersionDeleteImpact` / `deletePrompt`                                                                       | permanent-deletion impact list (affected release lines / experiments / optimizations) for a prompt shell or a single version; OSS inline query via `PromptRepository` |
 | 16 | `ReleaseLineDeletionHook`   | `LocalReleaseLineDeletionHook`  | `ReleaseLineService.getDeletionImpact` / `deleteLine`                                                                                                        | permanent-deletion impact list (affected events / versions / annotation tasks / run-result count); OSS inline query via `ReleaseLineRepository` |
 
-> Rows 14–16 (the permanent-deletion impact hooks) were previously bound in their feature modules and have been promoted into `LocalContractsModule` so `forRoot({ contracts })` can replace them like every other seam (see §3.2 B1). Each `Local*` impl's only dependency is its feature repository — a stateless `DATABASE_CLIENT` wrapper — provided **privately** (not exported) in the contracts module, the same pattern as `WebhookRepository` serving `LocalConnectorContextResolver`. The cascade delete itself stays in the Service and is fixed rule-4 OSS logic, outside the seam. 08 §3.15–§3.17 registers them.
+> Rows 14–16 (the permanent-deletion impact hooks) were previously bound in their feature modules and have been promoted into `LocalContractsModule` so `forRoot({ contracts })` can replace them like every other seam (see §4.2 B1). Each `Local*` impl's only dependency is its feature repository — a stateless `DATABASE_CLIENT` wrapper — provided **privately** (not exported) in the contracts module, the same pattern as `WebhookRepository` serving `LocalConnectorContextResolver`. The cascade delete itself stays in the Service and is fixed rule-4 OSS logic, outside the seam. 08 §3.15–§3.17 registers them.
 
-### 1.2 Non-provider entry base class
+### 2.2 Non-provider entry base class
 
 | Seam              | Form                                                            | Reference points                                                                                                                                                                                                                                              | Function                                                                                                                                                              |
 | ----------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HttpActorGuard`  | executable base class (`@UseGuards(HttpActorGuard)`, not a DI token) | 15 HTTP Controllers (token / dataset / prompt / experiment / optimization / canary-release / production-release / release-line / run-result / annotation / connector / model / project-model / quick-start / monitoring); the MCP controller is explicitly excluded | calls `ActorContextResolver` + `ProjectContextResolver` to populate `request.user` / `request.projectContext`; replacing authentication swaps only §2, not this class (08 §3.9) |
+| `HttpActorGuard`  | executable base class (`@UseGuards(HttpActorGuard)`, not a DI token) | 15 HTTP Controllers (token / dataset / prompt / experiment / optimization / canary-release / production-release / release-line / run-result / annotation / connector / model / project-model / quick-start / monitoring); the MCP controller is explicitly excluded | calls `ActorContextResolver` + `ProjectContextResolver` to populate `request.user` / `request.projectContext`; replacing authentication swaps only row 2 (`ActorContextResolver`), not this class (08 §3.9) |
 
 ---
 
-## 2. Frontend seam landing points
+## 3. Frontend seam landing points
 
 Entry: `WebContracts` (`packages/web-ui/src/contracts/index.ts`) → `ProofHoundWebProvider` (`packages/web-ui/src/providers/proofhound-web-provider.tsx`), a single injection point; the OSS default `localWebContracts` fills only `authSource` + `projectContext`, leaving the rest empty to fall back.
 
@@ -68,27 +89,27 @@ Supporting infrastructure:
 
 ---
 
-## 3. Audit: is it reasonable / is anything not correctly exposed
+## 4. Audit: is it reasonable / is anything not correctly exposed
 
-### 3.1 Reasonable (keep as-is)
+### 4.1 Reasonable (keep as-is)
 
 - **All 16 backend contracts seams are unified in `LocalContractsModule`, overridable at the single `forRoot` point, and shared by all three runtimes** — consistent with 08 §2; a clean open-core + adapter-override shape.
 - **The three entry resolvers (Actor / Mcp / Connector) never call one another and the credential systems are physically isolated** — consistent with 08 §3 and CLAUDE.md §8.
-- **`HttpActorGuard` staying out of the provider table as an executable base class** — a consequence of Nest's `@UseGuards` mechanism, not an oversight (08 §3.9); replacing authentication swaps §2.
+- **`HttpActorGuard` staying out of the provider table as an executable base class** — a consequence of Nest's `@UseGuards` mechanism, not an oversight (08 §3.9); replacing authentication swaps row 2 (`ActorContextResolver`).
 - **`LimiterKeyStrategy` / `RuntimeLimitsProvider` / `QuotaPolicyHook` / `UsageMeteringHook` keep project/org in core while `limiter` / `llm-client` stay unaware** — consistent with 08 §6.
 - **Frontend `WebContracts` single injection point; `authSource` / `resolveHref` / `datasetUpload` are clean host override points** — reasonable.
 
-### 3.2 Pending / inconsistencies (suggestions; final call by ZiqiXiao)
+### 4.2 Pending / inconsistencies (suggestions; final call by ZiqiXiao)
 
-- **B1 [Resolved — binding layer]** The three deletion hooks (`DatasetDeletionHook` / `PromptDeletionHook` / `ReleaseLineDeletionHook`) were abstract-class seams bound in their feature modules, where the binding **shadowed** any global `contracts` binding so `forRoot({ contracts })` could not replace them, and they were absent from the 08 §3 list. **Resolution (decision by ZiqiXiao):** treat them as genuine override points and promote them into `LocalContractsModule` (the §1.1 rows 14–16), removing the feature-module bindings; 08 §3.15–§3.17 now registers them. Although OSS currently ships no divergent implementation, the abstractions already have a genuine OSS default in active use on every permanent-deletion path, so exposing the binding now carries no cost while letting a host that deletes against a wider resource graph substitute its own impact computation and reuse the OSS cascade + confirmation flow unchanged.
+- **B1 [Resolved — binding layer]** The three deletion hooks (`DatasetDeletionHook` / `PromptDeletionHook` / `ReleaseLineDeletionHook`) were abstract-class seams bound in their feature modules, where the binding **shadowed** any global `contracts` binding so `forRoot({ contracts })` could not replace them, and they were absent from the 08 §3 list. **Resolution (decision by ZiqiXiao):** treat them as genuine override points and promote them into `LocalContractsModule` (the §2.1 rows 14–16), removing the feature-module bindings; 08 §3.15–§3.17 now registers them. Although OSS currently ships no divergent implementation, the abstractions already have a genuine OSS default in active use on every permanent-deletion path, so exposing the binding now carries no cost while letting a host that deletes against a wider resource graph substitute its own impact computation and reuse the OSS cascade + confirmation flow unchanged.
 - **B2 [Doc drift]** The `WebContracts` type block in 08 §4 is stale: it omits the four fields actually present — `displayPreferences` / `runtimeLimits` / `datasetUpload` / `datasetUploadMaxBytes`. Suggest syncing 08 §4.
 - **B3 [Ambiguous nature]** `displayPreferences` is mainly an OSS-internal timezone preference (localStorage + auto-detect) that was incidentally made injectable; there is currently no explicit host override demand. Suggest either marking it in 08 as "OSS internal state first, host override optional", or removing it from `WebContracts` back to pure internal state, to avoid confusion with real host seams.
-- **B4 [Two same-named seams]** The frontend `runtimeLimits` (UI input constraint / hint) and the backend `RuntimeLimitsProvider` (§1.1 row 8, worker hard-cap enforcement) share a name but are two independent seams. 08 §4 does not mention the frontend one. Suggest the doc clarify the relationship (UI soft constraint vs server-side hard cap) to prevent misreading them as one.
+- **B4 [Two same-named seams]** The frontend `runtimeLimits` (UI input constraint / hint, group C) and the backend `RuntimeLimitsProvider` (§2.1 row 8, worker hard-cap enforcement) share a name but are two independent seams. 08 §4 does not mention the frontend one. Suggest the doc clarify the relationship (UI soft constraint vs server-side hard cap) to prevent misreading them as one.
 - **B5 [No hard gap]** A sweep of every `export abstract class` under `packages/core/src` found no "should be exposed but entirely unexposed" omission; with B1 resolved, the remaining issues are documentation sync (B2/B4), not missing seams.
 
 ---
 
-## 4. Relationship to other SPECs
+## 5. Relationship to other SPECs
 
 - [08 Control Plane Adapter Boundary](08-adapter-extension-points.md): this file is its code-landing companion; the B1 resolution and the B2/B4 conclusions should be reflected back into the matching 08 subsections.
 - [07 Code Structure](07-code-structure.md): the `@proofhound/core` / `@proofhound/web-ui` package boundaries.

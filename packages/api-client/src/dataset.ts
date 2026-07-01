@@ -55,6 +55,10 @@ export const datasetClient = {
     httpClient
       .get<{ data: DatasetListItemDto[]; total: number }>(`/datasets`)
       .then((r) => r.data),
+  checkDatasetNameAvailable: (_projectId: string, name: string) =>
+    httpClient
+      .get<{ available: boolean }>(`/datasets/name-available`, { params: { name } })
+      .then((r) => r.data.available),
   getDataset: (_projectId: string, datasetId: string) =>
     httpClient.get<DatasetListItemDto>(`/datasets/${datasetId}`).then((r) => r.data),
   getDatasetDeleteImpact: (_projectId: string, datasetId: string) =>

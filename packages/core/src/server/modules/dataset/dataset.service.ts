@@ -87,6 +87,19 @@ export class DatasetService {
     return { data, total: data.length };
   }
 
+  /**
+   * Whether `name` is free to use for a new dataset in the project — the same project-scoped, non-deleted
+   * uniqueness the create / upload paths enforce, exposed so the UI can warn before a file is uploaded.
+   */
+  async isNameAvailable(projectId: string, name: string, actor: CurrentUserPayload): Promise<boolean> {
+    await this.getAccessibleProject(projectId, actor);
+
+    const trimmed = name.trim();
+    if (trimmed.length === 0) return false;
+    const existing = await this.repo.findDatasetByProjectAndName(projectId, trimmed);
+    return existing === null;
+  }
+
   async getDataset(projectId: string, datasetId: string, actor: CurrentUserPayload): Promise<DatasetListItemDto> {
     await this.getAccessibleProject(projectId, actor);
 
