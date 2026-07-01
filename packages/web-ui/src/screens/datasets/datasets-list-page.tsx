@@ -217,7 +217,7 @@ function DatasetActions({
       >
         {downloading ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
       </TableActionIconButton>
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <TableActionTooltip label={t('datasets.action.more')} disabled={pending}>
           <DropdownMenuTrigger asChild>
             <Button

@@ -327,7 +327,7 @@ function ModelActions({
       >
         <CopyPlus className="size-3.5" />
       </TableActionIconButton>
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <TableActionTooltip label={t('models.action.more')}>
           <DropdownMenuTrigger asChild>
             <Button
