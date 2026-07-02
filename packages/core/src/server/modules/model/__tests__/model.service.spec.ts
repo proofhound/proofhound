@@ -432,7 +432,9 @@ describe('ModelService', () => {
   it('does not run a quick start draft probe when the workflow hook rejects', async () => {
     workflowAuth.assertCanStart.mockRejectedValueOnce(new Error('workflow_denied'));
 
-    await expect(service.probeQuickStartDraftModel(draftProbeDto(), ACTOR)).rejects.toThrow('workflow_denied');
+    await expect(service.probeQuickStartDraftModel(WORKSPACE_ID, draftProbeDto(), ACTOR)).rejects.toThrow(
+      'workflow_denied',
+    );
 
     expect(workflowAuth.assertCanStart).toHaveBeenCalledWith(
       expect.objectContaining({ actorId: ACTOR.sub, actorKind: 'local_user' }),
@@ -718,14 +720,24 @@ describe('ModelService', () => {
     expect(limiter.getUsage).toHaveBeenCalledWith(`project:${WORKSPACE_ID}:model:00000000-0000-4000-8000-000000000101`);
   });
 
-  it('reads quick-start option usage with no org (endpoint is not project-scoped)', async () => {
+  it('reads quick-start option usage with the current project key when no org is supplied', async () => {
     const globalRow = fakeRow({ id: '00000000-0000-4000-8000-000000000201' });
-    repo.findModelById.mockResolvedValue(globalRow);
+    repo.findModelAccessibleToProject.mockResolvedValue(globalRow);
 
-    await service.getQuickStartModelOption(globalRow.id, ACTOR);
+    await service.getQuickStartModelOption(WORKSPACE_ID, globalRow.id, ACTOR);
 
-    // Quick-start has no @CurrentProject, so no org is threaded → falls back to the project key, never org:*.
     expect(limiter.getUsage).toHaveBeenCalledWith(`project:${WORKSPACE_ID}:model:00000000-0000-4000-8000-000000000201`);
+  });
+
+  it('threads the project orgId into quick-start option usage reads', async () => {
+    const globalRow = fakeRow({ id: '00000000-0000-4000-8000-000000000202' });
+    repo.findModelAccessibleToProject.mockResolvedValue(globalRow);
+
+    await service.getQuickStartModelOption(WORKSPACE_ID, globalRow.id, ACTOR, '00000000-0000-4000-8000-000000000777');
+
+    expect(limiter.getUsage).toHaveBeenCalledWith(
+      'org:00000000-0000-4000-8000-000000000777:model:00000000-0000-4000-8000-000000000202',
+    );
   });
 
   it('handles context window dictionary operations', async () => {

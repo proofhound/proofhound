@@ -48,6 +48,7 @@ export type CreateOptimizationGoalDto = z.infer<typeof createOptimizationGoalSch
 export const optimizationFieldWhitelistSchema = z.object({
   inputFields: z.array(z.string().trim().min(1).max(160)),
   metaFields: z.array(z.string().trim().min(1).max(160)),
+  expectedField: z.string().trim().min(1).max(160).optional(),
 });
 export type OptimizationFieldWhitelistDto = z.infer<typeof optimizationFieldWhitelistSchema>;
 

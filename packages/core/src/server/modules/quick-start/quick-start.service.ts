@@ -42,16 +42,26 @@ export class QuickStartService {
     private readonly optimizations: OptimizationService,
   ) {}
 
-  async listModelOptions(actor: CurrentUserPayload) {
-    return this.models.listQuickStartModelOptions(actor);
+  async listModelOptions(project: ProjectContext, actor: CurrentUserPayload) {
+    return this.models.listQuickStartModelOptions(project.projectId, actor, project.orgId);
   }
 
-  async probeDraftModel(dto: ProbeQuickStartDraftModelDto, actor: CurrentUserPayload, source: AuditSource = 'api') {
-    return this.models.probeQuickStartDraftModel(dto, actor, source);
+  async probeDraftModel(
+    dto: ProbeQuickStartDraftModelDto,
+    project: ProjectContext,
+    actor: CurrentUserPayload,
+    source: AuditSource = 'api',
+  ) {
+    return this.models.probeQuickStartDraftModel(project.projectId, dto, actor, source, project.orgId);
   }
 
-  async probeExistingModel(modelId: string, actor: CurrentUserPayload, source: AuditSource = 'api') {
-    return this.models.probeQuickStartExistingModel(modelId, actor, source);
+  async probeExistingModel(
+    modelId: string,
+    project: ProjectContext,
+    actor: CurrentUserPayload,
+    source: AuditSource = 'api',
+  ) {
+    return this.models.probeQuickStartExistingModel(project.projectId, modelId, actor, source, project.orgId);
   }
 
   async createQuickStart(
@@ -134,7 +144,7 @@ export class QuickStartService {
     if (cache[cacheKey]) return cache[cacheKey];
 
     if (ref.kind === 'existing') {
-      const model = await this.models.getQuickStartModelOption(ref.modelId, actor);
+      const model = await this.models.getQuickStartModelOption(project.projectId, ref.modelId, actor, project.orgId);
       const resolved = {
         id: model.id,
         rpmLimit: toRunConfigLimit(model.rpm.limit, QUICK_START_DEFAULT_RPM_LIMIT),
@@ -179,15 +189,18 @@ function buildFieldWhitelist(fieldMappings: CreateQuickStartDto['dataset']['fiel
   const metaFields = fieldMappings
     .filter((field) => field.role === 'id' || field.role === 'metadata')
     .map((field) => field.name);
+  const expectedField = fieldMappings.find((field) => field.role === 'expected')?.name;
 
   if (inputFields.length === 0) {
     throw new BadRequestException('quick_start_input_field_required');
   }
 
-  return { inputFields, metaFields };
+  return { inputFields, metaFields, ...(expectedField ? { expectedField } : {}) };
 }
 
-function isImportedDataset(dataset: QuickStartDatasetDto): dataset is Extract<QuickStartDatasetDto, { kind: 'imported' }> {
+function isImportedDataset(
+  dataset: QuickStartDatasetDto,
+): dataset is Extract<QuickStartDatasetDto, { kind: 'imported' }> {
   return 'kind' in dataset && dataset.kind === 'imported';
 }
 

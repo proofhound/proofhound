@@ -16,22 +16,30 @@ export class QuickStartController {
   constructor(private readonly quickStart: QuickStartService) {}
 
   @Get('models')
-  async listModels(@CurrentUser() actor: CurrentUserPayload) {
-    return this.quickStart.listModelOptions(actor);
+  async listModels(@CurrentUser() actor: CurrentUserPayload, @CurrentProject() project: ProjectContext) {
+    return this.quickStart.listModelOptions(project, actor);
   }
 
   @Post('models/probe-draft')
-  async probeDraftModel(@Body() rawBody: unknown, @CurrentUser() actor: CurrentUserPayload) {
+  async probeDraftModel(
+    @Body() rawBody: unknown,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
     const parse = probeQuickStartDraftModelSchema.safeParse(rawBody);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.quickStart.probeDraftModel(parse.data, actor);
+    return this.quickStart.probeDraftModel(parse.data, project, actor);
   }
 
   @Post('models/:modelId/probe')
-  async probeExistingModel(@Param('modelId') modelId: string, @CurrentUser() actor: CurrentUserPayload) {
+  async probeExistingModel(
+    @Param('modelId') modelId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @CurrentProject() project: ProjectContext,
+  ) {
     const parse = modelIdParamSchema.safeParse(modelId);
     if (!parse.success) throw new BadRequestException(parse.error.issues);
-    return this.quickStart.probeExistingModel(parse.data, actor);
+    return this.quickStart.probeExistingModel(parse.data, project, actor);
   }
 
   @Post()

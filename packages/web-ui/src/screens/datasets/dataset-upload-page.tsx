@@ -3,23 +3,8 @@
 import { Link } from '../../components/navigation/link';
 import { useRouter } from '../../hooks/use-router';
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from 'react';
-import type {
-  DatasetFieldMappingDto,
-  DatasetFieldRole,
-  DatasetImportSourceFormat,
-  DatasetUploadMetadataDto,
-} from '@proofhound/shared';
-import {
-  AlertTriangle,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  FileText,
-  Info,
-  Loader2,
-  Upload,
-} from 'lucide-react';
+import type { DatasetFieldMappingDto, DatasetFieldRole, DatasetUploadMetadataDto } from '@proofhound/shared';
+import { AlertTriangle, Check, Download, Info, Loader2 } from 'lucide-react';
 import {
   Button,
   Dialog,
@@ -27,12 +12,10 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  Progress,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-  formatProgressLabel,
   cn,
 } from '@proofhound/ui';
 import { Main } from '@proofhound/ui/layout';
@@ -45,29 +28,31 @@ import {
 } from '../../providers';
 import { useI18n, type TranslationKey } from '../../i18n';
 import { DatasetTransferProgressPanel, useDatasetTransferProgress } from './dataset-transfer-progress';
-import { RoleArrowLabel, RolePill } from './dataset-ui';
 import {
-  FORMAT_CHIPS,
-  PREVIEW_LIMIT,
   getDatasetNameFromFile,
-  getDatasetPreviewPage,
-  getDisplayValue,
   getUploadFilePath,
   inferRole,
   isStreamingImportFile,
   parseDatasetFile,
   parseStreamingPrefix,
-  selectDatasetFile,
   type ParsedDatasetFile,
 } from './dataset-upload-parser';
+import {
+  DatasetPreviewAndMappingPanel,
+  DatasetUploadFileDropzone,
+  DatasetUploadParseErrorBanner,
+  PREVIEW_PREFIX_MAX_BYTES,
+  droppedSelectionContainsDirectory,
+  formatByteLimit,
+  formatTemplate,
+  getDatasetUploadFileSizeError,
+  getDroppedFiles,
+  normalizeExpectedRoles,
+  selectSingleDatasetUploadFile,
+  toUploadSourceFormat,
+} from './dataset-upload-shared';
 
-const ROLE_OPTIONS: Array<{ role: DatasetFieldRole; labelKey: TranslationKey }> = [
-  { role: 'id', labelKey: 'datasets.role.id' },
-  { role: 'text', labelKey: 'datasets.role.text' },
-  { role: 'image', labelKey: 'datasets.role.image' },
-  { role: 'expected', labelKey: 'datasets.role.expected' },
-  { role: 'metadata', labelKey: 'datasets.role.metadata' },
-];
+export { formatFileSize, selectSingleDatasetUploadFile, toUploadSourceFormat } from './dataset-upload-shared';
 
 export type DatasetImageSampleDownload = {
   labelKey: TranslationKey;
@@ -147,24 +132,6 @@ export function getDatasetImageSampleDownloadHref(sample: DatasetImageSampleDown
   return `data:${sample.mimeType},${encodeURIComponent(sample.content)}`;
 }
 
-function normalizeExpectedRoles(
-  roles: Record<string, DatasetFieldRole>,
-  preferredColumn?: string,
-): Record<string, DatasetFieldRole> {
-  let expectedColumn: string | null = preferredColumn && roles[preferredColumn] === 'expected' ? preferredColumn : null;
-
-  if (!expectedColumn) {
-    expectedColumn = Object.entries(roles).find(([, role]) => role === 'expected')?.[0] ?? null;
-  }
-
-  return Object.fromEntries(
-    Object.entries(roles).map(([column, role]) => [
-      column,
-      role === 'expected' && column !== expectedColumn ? 'metadata' : role,
-    ]),
-  );
-}
-
 function SectionNumber({ value }: { value: number }) {
   return (
     <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary font-mono text-[11px] font-semibold text-primary-foreground">
@@ -198,36 +165,6 @@ function Section({
   );
 }
 
-export function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
-}
-
-function formatByteLimit(bytes: number) {
-  if (bytes < 1024 * 1024 * 1024) return formatFileSize(bytes);
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
-}
-
-function formatTemplate(template: string, values: Record<string, string | number>) {
-  return Object.entries(values).reduce(
-    (output, [key, value]) => output.replaceAll(`{${key}}`, String(value)),
-    template,
-  );
-}
-
-function droppedSelectionContainsDirectory(dataTransfer: DataTransfer) {
-  return Array.from(dataTransfer.items).some((item) => {
-    const getEntry = (item as { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry;
-    return getEntry?.call(item)?.isDirectory === true;
-  });
-}
-
-function getDroppedFiles(dataTransfer: DataTransfer) {
-  return Array.from(dataTransfer.files);
-}
-
 /** Best-effort error code from a failed upload: an Axios response body, a nested payload, or an Error. */
 export function extractUploadErrorCode(error: unknown): string | null {
   const data = (error as { response?: { data?: unknown } } | null)?.response?.data;
@@ -242,31 +179,6 @@ export function extractUploadErrorCode(error: unknown): string | null {
   }
   if (error instanceof Error && error.message) return error.message;
   return null;
-}
-
-function getParseErrorKey(parseError: string | null): TranslationKey {
-  if (parseError === 'unsupported_file_type') return 'datasets.upload.unsupportedFile';
-  if (parseError === 'large_requires_streaming_format') return 'datasets.upload.largeRequiresStreamingFormat';
-  if (parseError === 'file_too_large') return 'datasets.upload.fileTooLarge';
-  if (parseError === 'single_file_only') return 'datasets.upload.singleFileOnly';
-  return 'datasets.upload.parseFailed';
-}
-
-// Files larger than this are not parsed whole on selection: only a head prefix is read for preview.
-const PREVIEW_PREFIX_MAX_BYTES = 1024 * 1024;
-
-export async function selectSingleDatasetUploadFile(files: File[]): Promise<File> {
-  if (files.length !== 1) throw new Error('single_file_only');
-  return selectDatasetFile(files);
-}
-
-export function toUploadSourceFormat(fileName: string): DatasetImportSourceFormat {
-  const lower = fileName.toLowerCase();
-  if (lower.endsWith('.csv')) return 'csv';
-  if (lower.endsWith('.tsv')) return 'tsv';
-  if (lower.endsWith('.json')) return 'json';
-  if (lower.endsWith('.zip')) return 'zip';
-  return 'jsonl';
 }
 
 function UploadLimitInfoIcon({ maxBytes }: { maxBytes: number }) {
@@ -461,11 +373,6 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     leaveActionRef.current = null;
   };
 
-  const previewRows = useMemo(() => parsedFile?.samples.slice(0, PREVIEW_LIMIT) ?? [], [parsedFile]);
-  const previewPage = useMemo(
-    () => getDatasetPreviewPage(previewRows, previewPageIndex),
-    [previewRows, previewPageIndex],
-  );
   const selectedColumns = useMemo(
     () => parsedFile?.columns.filter((column) => selectedFields[column]) ?? [],
     [parsedFile, selectedFields],
@@ -481,7 +388,6 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     selectedFile !== null &&
     selectedColumns.length > 0 &&
     !isSubmitting;
-  const parseErrorKey = getParseErrorKey(parseError);
   // Large files keep only a preview prefix in state, so show a streaming label instead of a misleading row count.
   const sampleCountLabel = isLargeFile
     ? t('datasets.upload.streamingFile')
@@ -508,9 +414,8 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
 
     try {
       const file = await selectSingleDatasetUploadFile(files);
-      if (file.size > uploadMaxBytes) {
-        throw new Error('file_too_large');
-      }
+      const fileSizeError = getDatasetUploadFileSizeError(file, uploadMaxBytes);
+      if (fileSizeError) throw new Error(fileSizeError);
       const large = file.size > PREVIEW_PREFIX_MAX_BYTES;
       if (large && !isStreamingImportFile(file)) {
         // Large JSON arrays / ZIPs cannot be previewed with a bounded prefix parser.
@@ -570,11 +475,7 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
     uploadAbortRef.current = controller;
     setSubmitError(null);
     setIsUploading(true);
-    uploadProgress.start(
-      t('datasets.transfer.uploadTitle'),
-      totalBytes,
-      t('datasets.transfer.uploadDescription'),
-    );
+    uploadProgress.start(t('datasets.transfer.uploadTitle'), totalBytes, t('datasets.transfer.uploadDescription'));
 
     try {
       await uploadDataset.mutateAsync({
@@ -694,20 +595,17 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
             }
           >
             <div className="space-y-3">
-              <div
-                className={cn(
-                  'block cursor-pointer rounded-lg border border-dashed border-[var(--status-running-bd)] bg-[var(--status-running-bg)]/45 p-4 transition-colors hover:bg-[var(--status-running-bg)]/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                  isDragOver && 'border-primary bg-primary/10',
-                )}
-                role="button"
-                tabIndex={0}
-                aria-label={selectedFile ? t('datasets.action.replaceFile') : t('datasets.upload.chooseFile')}
-                onClick={openFilePicker}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return;
-                  event.preventDefault();
-                  openFilePicker();
-                }}
+              <DatasetUploadFileDropzone
+                fileInputId={fileInputId}
+                fileInputRef={fileInputRef}
+                selectedFile={selectedFile}
+                parsedFile={parsedFile}
+                isDragOver={isDragOver}
+                progressValue={parsedFile ? 100 : 0}
+                sampleCountLabel={sampleCountLabel}
+                disabled={isUploading}
+                onOpenFilePicker={openFilePicker}
+                onFileInputChange={updateFileInput}
                 onDragEnter={(event) => {
                   event.preventDefault();
                   setIsDragOver(true);
@@ -715,65 +613,9 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
                 onDragOver={(event) => event.preventDefault()}
                 onDragLeave={() => setIsDragOver(false)}
                 onDrop={handleDrop}
-              >
-                <input
-                  id={fileInputId}
-                  ref={fileInputRef}
-                  type="file"
-                  accept={FORMAT_CHIPS.join(',')}
-                  className="sr-only"
-                  onChange={updateFileInput}
-                />
-                <div className="flex items-start gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[var(--status-running-bg)] text-[var(--status-running-fg)]">
-                    {selectedFile ? <FileText className="size-5" /> : <Upload className="size-5" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[13.5px] font-semibold">
-                        {selectedFile ? getUploadFilePath(selectedFile) : t('datasets.upload.chooseFile')}
-                      </span>
-                      {selectedFile && (
-                        <span className="font-mono text-[11px] text-muted-foreground">
-                          {formatFileSize(selectedFile.size)} · {selectedFile.type || t('datasets.upload.unknownType')}
-                        </span>
-                      )}
-                      {parsedFile && (
-                        <span className="status-running ml-auto inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium">
-                          <span className="dot-running size-1.5 rounded-full" />
-                          {t('datasets.upload.parsed')}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">
-                      {parsedFile
-                        ? `${sampleCountLabel} · ${parsedFile.columns.length} ${t('datasets.detail.fields')}`
-                        : t('datasets.upload.chooseFileHelp')}
-                    </div>
-                    <Progress
-                      value={parsedFile ? 100 : 0}
-                      label={formatProgressLabel({ value: parsedFile ? 1 : 0, max: 1 })}
-                      className="mt-2"
-                    />
-                    <div className="mt-1.5 flex items-center gap-3">
-                      <span className="font-mono text-[10.5px] text-[var(--status-running-fg)]">
-                        {parsedFile
-                          ? t('datasets.upload.uploadReady')
-                          : isDragOver
-                            ? t('datasets.upload.dropHere')
-                            : t('datasets.upload.waitingForFile')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              />
 
-              {parseError && (
-                <div className="flex gap-2 rounded-md border border-destructive/35 bg-destructive/10 p-3 text-[12px] text-destructive">
-                  <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                  <div>{t(parseErrorKey)}</div>
-                </div>
-              )}
+              <DatasetUploadParseErrorBanner parseError={parseError} maxBytes={uploadMaxBytes} />
 
               <ImageSampleDownloads />
             </div>
@@ -825,182 +667,33 @@ export function DatasetUploadPage({ projectId }: { projectId: string }) {
             }
             className="xl:col-span-2"
           >
-            {!parsedFile ? (
-              <div className="rounded-md border border-dashed bg-muted/30 p-8 text-center text-sm text-muted-foreground">
-                {t('datasets.upload.noPreview')}
-              </div>
-            ) : (
-              <div className="-m-4">
-                <div className="border-b">
-                  <div className="flex flex-col gap-2 bg-muted/30 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold">{t('datasets.upload.samplePreview')}</span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {t('datasets.upload.samplePreviewHint')}
-                      </span>
-                    </div>
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {t('datasets.upload.fieldRoleHint')}
-                    </span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[880px] text-sm">
-                      <thead>
-                        <tr className="border-b bg-muted/60 text-left text-xs font-medium text-muted-foreground">
-                          {parsedFile.columns.map((column) => (
-                            <th key={column} className={cn('px-3 py-3', !selectedFields[column] && 'opacity-45')}>
-                              <div className="flex flex-col">
-                                <span>{column}</span>
-                                {selectedFields[column] ? (
-                                  <RoleArrowLabel role={fieldRoles[column] ?? 'metadata'} />
-                                ) : (
-                                  <span className="font-mono text-[10px] font-normal text-muted-foreground">
-                                    {'->'} {t('datasets.upload.notImported')}
-                                  </span>
-                                )}
-                              </div>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {previewPage.rows.map((row, index) => (
-                          <tr
-                            key={previewPage.rangeStart + index - 1}
-                            className="border-b last:border-b-0 hover:bg-muted/35"
-                          >
-                            {parsedFile.columns.map((column) => (
-                              <td key={column} className="max-w-[280px] truncate px-3 py-3 font-mono text-[12px]">
-                                {getDisplayValue(row[column])}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="flex items-center justify-between border-t px-4 py-2.5 text-xs text-muted-foreground">
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-7"
-                        aria-label={t('common.previousPage')}
-                        disabled={!previewPage.canGoPrevious}
-                        onClick={() => setPreviewPageIndex(Math.max(0, previewPage.pageIndex - 1))}
-                      >
-                        <ChevronLeft className="size-3.5" />
-                      </Button>
-                      <span className="font-mono">
-                        {previewPage.rangeStart}-{previewPage.rangeEnd} / {previewPage.totalRows}{' '}
-                        {isLargeFile ? `· ${t('datasets.upload.previewPrefixOnly')}` : null}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="size-7"
-                        aria-label={t('common.nextPage')}
-                        disabled={!previewPage.canGoNext}
-                        onClick={() =>
-                          setPreviewPageIndex(Math.min(previewPage.pageCount - 1, previewPage.pageIndex + 1))
-                        }
-                      >
-                        <ChevronRight className="size-3.5" />
-                      </Button>
-                    </div>
-                    <span className="font-mono text-[11.5px]">
-                      {sampleCountLabel} · {selectedColumns.length} {t('datasets.detail.fields')}{' '}
-                      {selectedColumns.length > 0
-                        ? t('datasets.upload.readyToImport')
-                        : t('datasets.upload.noSelectedFields')}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex flex-col gap-2 bg-muted/30 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold">{t('datasets.upload.fieldMapping')}</span>
-                      <span className="text-[11px] text-muted-foreground">{t('datasets.upload.fieldMappingHint')}</span>
-                    </div>
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {t('datasets.upload.selectedFields')}: {selectedColumns.length} / {parsedFile.columns.length}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {ROLE_OPTIONS.map((option) => (
-                        <RolePill key={option.role} role={option.role} />
-                      ))}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-[44px_96px_minmax(0,1fr)_minmax(0,1.2fr)_200px] border-t bg-muted/60 px-4 py-2.5 text-xs font-medium text-muted-foreground">
-                    <div>#</div>
-                    <div>{t('datasets.upload.importField')}</div>
-                    <div>{t('datasets.upload.originalColumn')}</div>
-                    <div>{t('datasets.upload.firstRow')}</div>
-                    <div>{t('datasets.upload.role')}</div>
-                  </div>
-                  {parsedFile.columns.map((column, index) => (
-                    <div
-                      key={column}
-                      className={cn(
-                        'grid grid-cols-[44px_96px_minmax(0,1fr)_minmax(0,1.2fr)_200px] items-center border-t px-4 py-3 text-sm',
-                        !selectedFields[column] && 'bg-muted/25 text-muted-foreground',
-                      )}
-                    >
-                      <span className="flex size-6 items-center justify-center rounded bg-muted font-mono text-[11px] text-muted-foreground">
-                        {index + 1}
-                      </span>
-                      <label className="inline-flex items-center gap-2 text-xs font-medium">
-                        <input
-                          type="checkbox"
-                          checked={selectedFields[column] ?? false}
-                          onChange={(event) =>
-                            setSelectedFields((current) => ({
-                              ...current,
-                              [column]: event.target.checked,
-                            }))
-                          }
-                          className="size-4 accent-primary"
-                          aria-label={`${t('datasets.upload.importField')}: ${column}`}
-                        />
-                        {selectedFields[column] ? t('datasets.upload.importField') : t('datasets.upload.notImported')}
-                      </label>
-                      <div className="min-w-0">
-                        <div className="truncate font-mono text-[12.5px] font-semibold">{column}</div>
-                      </div>
-                      <div className="truncate rounded-md bg-muted/45 px-2 py-1 font-mono text-[11.5px] text-muted-foreground">
-                        {getDisplayValue(parsedFile.samples[0]?.[column])}
-                      </div>
-                      <select
-                        value={fieldRoles[column] ?? 'metadata'}
-                        onChange={(event) =>
-                          setFieldRoles((current) =>
-                            normalizeExpectedRoles(
-                              {
-                                ...current,
-                                [column]: event.target.value as DatasetFieldRole,
-                              },
-                              column,
-                            ),
-                          )
-                        }
-                        disabled={!selectedFields[column]}
-                        className="h-8 rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        aria-label={`${t('datasets.upload.role')}: ${column}`}
-                      >
-                        {ROLE_OPTIONS.map((option) => (
-                          <option key={option.role} value={option.role}>
-                            {t(option.labelKey)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <DatasetPreviewAndMappingPanel
+              parsedFile={parsedFile}
+              fieldRoles={fieldRoles}
+              selectedFields={selectedFields}
+              previewPageIndex={previewPageIndex}
+              sampleCountLabel={sampleCountLabel}
+              emptyLabel={t('datasets.upload.noPreview')}
+              isLargeFile={isLargeFile}
+              onPreviewPageIndexChange={setPreviewPageIndex}
+              onRoleChange={(column, role) =>
+                setFieldRoles((current) =>
+                  normalizeExpectedRoles(
+                    {
+                      ...current,
+                      [column]: role,
+                    },
+                    column,
+                  ),
+                )
+              }
+              onSelectedFieldChange={(column, selected) =>
+                setSelectedFields((current) => ({
+                  ...current,
+                  [column]: selected,
+                }))
+              }
+            />
           </Section>
         </div>
       </div>

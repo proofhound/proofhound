@@ -98,20 +98,29 @@ export class ModelService {
     return { data, total: data.length };
   }
 
-  // Quick-start option listing is not project-scoped (no @CurrentProject at the endpoint), so no org is
-  // threaded — usage is read with undefined org (key stays project/model-scoped). OSS-identical.
-  async listQuickStartModelOptions(_actor: CurrentUserPayload): Promise<QuickStartModelOptionsResponseDto> {
-    const rows = await this.repo.listQuickStartGlobalModels();
-    const data = await Promise.all(rows.map((row) => this.toProjectModelListItem(row)));
+  async listQuickStartModelOptions(
+    projectId: string,
+    actor: CurrentUserPayload,
+    orgId?: string,
+  ): Promise<QuickStartModelOptionsResponseDto> {
+    await this.getAccessibleProject(projectId, actor);
+    const rows = await this.repo.listProjectModels(projectId);
+    const data = await Promise.all(rows.map((row) => this.toProjectModelListItem(row, orgId)));
     return { data, total: data.length };
   }
 
-  async getQuickStartModelOption(modelId: string, _actor: CurrentUserPayload): Promise<ProjectModelListItemDto> {
-    const row = await this.repo.findModelById(modelId);
+  async getQuickStartModelOption(
+    projectId: string,
+    modelId: string,
+    actor: CurrentUserPayload,
+    orgId?: string,
+  ): Promise<ProjectModelListItemDto> {
+    await this.getAccessibleProject(projectId, actor);
+    const row = await this.repo.findModelAccessibleToProject(projectId, modelId);
     if (!row) {
       throw new NotFoundException(`Model ${modelId} not found`);
     }
-    return this.toProjectModelListItem(row);
+    return this.toProjectModelListItem(row, orgId);
   }
 
   async getProjectModelDetail(
@@ -196,12 +205,15 @@ export class ModelService {
   }
 
   async probeQuickStartDraftModel(
+    projectId: string,
     dto: ProbeQuickStartDraftModelDto,
     actor: CurrentUserPayload,
     source: ActionSource = 'api',
+    orgId?: string,
   ): Promise<ProbeModelResponseDto> {
     void source;
-    await this.assertProbeWorkflowStart(LOCAL_PROJECT_CONTEXT, actor);
+    await this.getWritableProject(projectId, actor);
+    await this.assertProbeWorkflowStart({ projectId, orgId, source: 'local' }, actor);
     const modelId = randomUUID();
     const model: ModelInvocationConfig = {
       id: modelId,
@@ -219,9 +231,11 @@ export class ModelService {
       extraBody: dto.extraBody ?? {},
     };
 
-    // Quick-start probe is not project-scoped (no @CurrentProject at the endpoint), so there is no project
-    // org to source — the rate-limit bucket is LOCAL_PROJECT_CONTEXT with undefined org. OSS-identical.
-    const result = await this.runConnectivityProbe(LOCAL_PROJECT_CONTEXT, model, `probe-quick-start-draft-${modelId}`);
+    const result = await this.runConnectivityProbe(
+      { projectId, orgId, source: 'local' },
+      model,
+      `probe-quick-start-draft-${modelId}`,
+    );
     const probedAt = new Date(result.checkedAt);
     const probeError = result.ok ? null : (result.errorMessage ?? result.errorClass ?? 'unknown');
 
@@ -353,18 +367,19 @@ export class ModelService {
   }
 
   async probeQuickStartExistingModel(
+    projectId: string,
     modelId: string,
     actor: CurrentUserPayload,
     source: ActionSource = 'api',
+    orgId?: string,
   ): Promise<ProbeModelResponseDto> {
-    const row = await this.repo.findModelById(modelId);
+    await this.getAccessibleProject(projectId, actor);
+    const row = await this.repo.findModelAccessibleToProject(projectId, modelId);
     if (!row) {
       throw new NotFoundException(`Model ${modelId} not found`);
     }
-    await this.assertProbeWorkflowStart(LOCAL_PROJECT_CONTEXT, actor);
-    // Quick-start probe is not project-scoped (no @CurrentProject at the endpoint), so there is no project
-    // org to source — the rate-limit bucket is LOCAL_PROJECT_CONTEXT with undefined org. OSS-identical.
-    return this.probeAndRecord(LOCAL_PROJECT_CONTEXT, row, actor.sub, source, 'quick_start');
+    await this.assertProbeWorkflowStart({ projectId, orgId, source: 'local' }, actor);
+    return this.probeAndRecord({ projectId, orgId, source: 'local' }, row, actor.sub, source, 'quick_start');
   }
 
   async getProjectModelReferences(

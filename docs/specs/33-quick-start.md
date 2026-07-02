@@ -17,7 +17,10 @@ The entry point appears in the fixed top action bar, on the Local admin app home
 - Dataset file: CSV / TSV / JSONL / ZIP.
 - Field roles: text, image, image URL, image base64, expected output, metadata.
 - There must be exactly one field marked as the expected output.
-- The Web quick start flow uses the same dataset import session as the regular dataset upload page: preview parsing is capped at the first 100 rows for field mapping and displayed 10 rows per page, CSV / TSV / JSONL stream through client batches, ZIP uses the bounded ZIP parser, and the quick start submit step waits for import completion before creating the optimization.
+- The expected-output field name is carried into the created optimization's field whitelist as `expectedField`; the first generated prompt version derives judgment rules from this value so datasets using fields such as `label` do not fall back to `expected_output`.
+- The Web quick start flow uses the same dataset import session and shared upload UI modules as the regular dataset upload page: file intake, drop validation, preview parsing, field-role mapping, and parse-error messaging are rendered by the shared dataset upload components. Preview parsing is capped at the first 100 rows for field mapping and displayed 10 rows per page, CSV / TSV / JSONL stream through client batches, ZIP uses the bounded ZIP parser, and the quick start submit step waits for import completion before creating the optimization.
+- The Web quick start screen stacks the model, dataset, optimization, and advanced-configuration sections vertically. It does not use a 2 x 2 section grid because the dataset preview and field-mapping table must keep full-page width after upload.
+- During Quick Start submission, the dataset import stage is visible as a first-class in-progress state: Quick Start reuses the dataset upload page's transfer progress hook and progress panel, switches from byte upload to the server processing phase once the file is sent, keeps the fixed footer explicit about the long-running dataset transfer, and scrolls back to the dataset section so the user can see the progress.
 
 ### 3.2 Task description
 
@@ -57,7 +60,7 @@ The Web flow runs in sequence:
 
 1. Create a dataset import session and import the selected file through the same client-driven batch path described in [22 §3.1.1](22-datasets.md#311-client-driven-batched-import).
 2. Wait for import completion and obtain the resulting `datasetId`.
-3. Submit quick start with the imported `datasetId`, field mappings, models, task description, and run configuration.
+3. Submit quick start with the imported `datasetId`, field mappings, models, task description, optimization goal, and run configuration.
 4. Call the analysis model to generate names for the prompt and the optimization task; fall back to a template on failure.
 5. Create the prompt container.
 6. Create the optimization task, with `from_dataset_only` as the starting point.
