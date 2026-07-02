@@ -62,8 +62,11 @@ function lane(overrides: Partial<ReleaseRunnerLaneRow> = {}): ReleaseRunnerLaneR
 function line(overrides: Partial<ReleaseRunnerLineRow> = {}): ReleaseRunnerLineRow {
   return {
     id: releaseLineId,
+    name: 'Checkout release',
     projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    createdBy: '88888888-8888-4888-8888-888888888888',
     inputConnectorId: '99999999-9999-4999-8999-999999999999',
+    inputConnectorName: 'orders input',
     inputConnectorType: 'kafka',
     inputConnectorDirection: 'input',
     inputConnectorConfig: { topic: 'orders', consumerGroup: 'orders-g1', batchSize: 1 },
@@ -219,6 +222,34 @@ describe('ReleaseRunnerService', () => {
       }),
       runResultId,
     );
+    expect(lease.release).toHaveBeenCalled();
+  });
+
+  it('treats upstream connector consume exceptions as user connector failures', async () => {
+    const row = line();
+    const repo = repoMock(row);
+    const driverFactory = {
+      consume: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+      push: vi.fn(),
+    };
+    const bullmq = { enqueueLlmJob: vi.fn().mockResolvedValue('job-1') };
+    const { mutex, lease } = mutexMock();
+    const projectResolver = projectResolverMock();
+    const service = new ReleaseRunnerService(
+      repo as unknown as ReleaseRunnerRepository,
+      driverFactory as unknown as ConnectorDriverFactory,
+      bullmq as unknown as BullmqService,
+      mutex as unknown as RedisMutexService,
+      projectResolver as unknown as ProjectContextResolver,
+    );
+
+    await service.scanOnce();
+    await flushPromises();
+    await service.onModuleDestroy();
+
+    expect(driverFactory.consume).toHaveBeenCalledTimes(1);
+    expect(bullmq.enqueueLlmJob).not.toHaveBeenCalled();
+    expect(repo.incrementReceived).not.toHaveBeenCalled();
     expect(lease.release).toHaveBeenCalled();
   });
 
@@ -383,6 +414,7 @@ describe('ReleaseRunnerService', () => {
     repo.listOutputConnectorsByIds.mockResolvedValue([
       {
         id: outputConnectorId,
+        name: 'webhook output',
         type: 'webhook',
         direction: 'output',
         config: {},
@@ -550,8 +582,22 @@ describe('ReleaseRunnerService', () => {
     const repo = repoMock(row);
     repo.attachCompletedRunResults.mockResolvedValue([completedRunResult()]);
     repo.listOutputConnectorsByIds.mockResolvedValue([
-      { id: redisConnectorId, type: 'redis', direction: 'output', config: {}, configEncrypted: null },
-      { id: kafkaConnectorId, type: 'kafka', direction: 'output', config: {}, configEncrypted: null },
+      {
+        id: redisConnectorId,
+        name: 'redis output',
+        type: 'redis',
+        direction: 'output',
+        config: {},
+        configEncrypted: null,
+      },
+      {
+        id: kafkaConnectorId,
+        name: 'kafka output',
+        type: 'kafka',
+        direction: 'output',
+        config: {},
+        configEncrypted: null,
+      },
     ]);
     const driverFactory = driverFactoryMock();
     driverFactory.push.mockResolvedValue({ pushed: 1, error: null });
@@ -603,8 +649,22 @@ describe('ReleaseRunnerService', () => {
     const repo = repoMock(row);
     repo.attachCompletedRunResults.mockResolvedValue([completedRunResult()]);
     repo.listOutputConnectorsByIds.mockResolvedValue([
-      { id: redisConnectorId, type: 'redis', direction: 'output', config: {}, configEncrypted: null },
-      { id: excludedConnectorId, type: 'kafka', direction: 'output', config: {}, configEncrypted: null },
+      {
+        id: redisConnectorId,
+        name: 'redis output',
+        type: 'redis',
+        direction: 'output',
+        config: {},
+        configEncrypted: null,
+      },
+      {
+        id: excludedConnectorId,
+        name: 'kafka output',
+        type: 'kafka',
+        direction: 'output',
+        config: {},
+        configEncrypted: null,
+      },
     ]);
     const driverFactory = driverFactoryMock();
     driverFactory.push.mockResolvedValue({ pushed: 1, error: null });

@@ -126,28 +126,46 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
       await this.releaseLease(line.id, lease);
     });
     this.active.set(line.id, { abortController, lease, renewTimer, promise });
-    this.logger.info(
-      { releaseLineId: line.id, connectorId: line.inputConnectorId, connectorType: line.inputConnectorType },
-      'release_runner_started',
-    );
+    this.logger.info(this.lineLogContext(line), 'release_runner_started');
   }
 
   private async consumeLine(line: ReleaseRunnerLineRow, signal: AbortSignal): Promise<void> {
-    const result = await this.driverFactory.consume({
-      configEncrypted: line.inputConnectorConfigEncrypted,
-      type: line.inputConnectorType as ConnectorType,
-      direction: line.inputConnectorDirection as ConnectorDirection,
-      config: resolveInputConnectorConfig(line),
-      batchSize: resolveBatchSize(line),
-      timeoutMs: DEFAULT_CONSUME_TIMEOUT_MS,
-      consumerName: `release-line-${line.id}`,
-      signal,
-      onMessage: (message) => this.handleQueueMessage(line, message),
-    });
+    let result: Awaited<ReturnType<ConnectorDriverFactory['consume']>>;
+    try {
+      result = await this.driverFactory.consume({
+        configEncrypted: line.inputConnectorConfigEncrypted,
+        type: line.inputConnectorType as ConnectorType,
+        direction: line.inputConnectorDirection as ConnectorDirection,
+        config: resolveInputConnectorConfig(line),
+        batchSize: resolveBatchSize(line),
+        timeoutMs: DEFAULT_CONSUME_TIMEOUT_MS,
+        consumerName: `release-line-${line.id}`,
+        signal,
+        onMessage: (message) => this.handleQueueMessage(line, message),
+      });
+    } catch (error) {
+      if (!signal.aborted) {
+        this.logger.warn(
+          {
+            ...this.lineLogContext(line),
+            errorKind: 'user_connector',
+            errorClass: error instanceof Error ? error.name : 'UnknownError',
+            errorMessage: error instanceof Error ? error.message : String(error),
+          },
+          'release_runner_input_connector_failed',
+        );
+      }
+      return;
+    }
     if (result.error && !signal.aborted) {
-      this.logger.error(
-        { releaseLineId: line.id, connectorId: line.inputConnectorId, error: result.error },
-        'release_runner_consume_failed',
+      this.logger.warn(
+        {
+          ...this.lineLogContext(line),
+          errorKind: 'user_connector',
+          errorMessage: result.error,
+          driverSource: result.source,
+        },
+        'release_runner_input_connector_failed',
       );
     }
   }
@@ -361,33 +379,47 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
           runResult,
         }),
       );
-      const result = await this.driverFactory.push({
-        configEncrypted: connector.configEncrypted,
-        type: connector.type as ConnectorType,
-        direction: connector.direction as ConnectorDirection,
-        config: connector.config as ConnectorConfigShape,
-        messages,
-      });
-      if (result.error) {
+      let result: Awaited<ReturnType<ConnectorDriverFactory['push']>>;
+      try {
+        result = await this.driverFactory.push({
+          configEncrypted: connector.configEncrypted,
+          type: connector.type as ConnectorType,
+          direction: connector.direction as ConnectorDirection,
+          config: connector.config as ConnectorConfigShape,
+          messages,
+        });
+      } catch (error) {
         failedCount += messages.length;
-        this.logger.error(
+        this.logger.warn(
           {
-            releaseLineEventId: lane.id,
-            connectorId: connector.id,
-            error: result.error,
+            ...this.outputConnectorLogContext(lane, connector),
+            errorKind: 'user_connector',
+            errorClass: error instanceof Error ? error.name : 'UnknownError',
+            errorMessage: error instanceof Error ? error.message : String(error),
             messageCount: messages.length,
           },
-          'release_runner_output_push_failed',
+          'release_runner_output_connector_failed',
+        );
+        continue;
+      }
+      if (result.error) {
+        failedCount += messages.length;
+        this.logger.warn(
+          {
+            ...this.outputConnectorLogContext(lane, connector),
+            errorKind: 'user_connector',
+            errorMessage: result.error,
+            driverSource: result.source,
+            messageCount: messages.length,
+          },
+          'release_runner_output_connector_failed',
         );
         continue;
       }
       const pushed = Math.min(messages.length, Math.max(0, Math.trunc(result.pushed)));
       successCount += pushed;
       failedCount += Math.max(0, messages.length - pushed);
-      this.logger.info(
-        { releaseLineEventId: lane.id, connectorId: connector.id, pushed },
-        'release_runner_output_pushed',
-      );
+      this.logger.info({ ...this.outputConnectorLogContext(lane, connector), pushed }, 'release_runner_output_pushed');
     }
 
     await this.repo.recordOutputDelivery(lane.id, { successCount, failedCount });
@@ -397,7 +429,10 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
     const found = new Set(outputConnectors.map((connector) => connector.id));
     const missing = lane.outputConnectorIds.filter((id) => !found.has(id));
     if (missing.length === 0) return;
-    this.logger.warn({ releaseLineEventId: lane.id, connectorIds: missing }, 'release_runner_output_connector_missing');
+    this.logger.warn(
+      { ...this.laneLogContext(lane), connectorIds: missing, errorKind: 'user_connector' },
+      'release_runner_output_connector_missing',
+    );
   }
 
   private countMissingOutputDeliveries(
@@ -504,6 +539,45 @@ export class ReleaseRunnerService implements OnModuleInit, OnModuleDestroy {
       projectId: lane.projectId,
       projectIdHeader: lane.projectId,
     });
+  }
+
+  private lineLogContext(line: ReleaseRunnerLineRow): Record<string, unknown> {
+    const lanes = [line.production, line.canary].filter((lane): lane is ReleaseRunnerLaneRow => Boolean(lane));
+    return {
+      projectId: line.projectId,
+      actorId: line.createdBy,
+      releaseLineId: line.id,
+      releaseLineName: line.name,
+      inputConnectorId: line.inputConnectorId,
+      inputConnectorName: line.inputConnectorName,
+      connectorType: line.inputConnectorType,
+      releaseLineEventIds: lanes.map((lane) => lane.id),
+      releaseVersionIds: lanes.map((lane) => lane.releaseVersionId).filter((id): id is string => Boolean(id)),
+      lanes: lanes.map((lane) => lane.laneType),
+    };
+  }
+
+  private laneLogContext(lane: ReleaseRunnerLaneRow): Record<string, unknown> {
+    return {
+      projectId: lane.projectId,
+      actorId: lane.createdBy,
+      releaseLineId: lane.releaseLineId,
+      releaseLineEventId: lane.id,
+      releaseVersionId: lane.releaseVersionId,
+      lane: lane.laneType,
+    };
+  }
+
+  private outputConnectorLogContext(
+    lane: ReleaseRunnerLaneRow,
+    connector: ReleaseOutputConnectorRow,
+  ): Record<string, unknown> {
+    return {
+      ...this.laneLogContext(lane),
+      connectorId: connector.id,
+      connectorName: connector.name,
+      connectorType: connector.type,
+    };
   }
 }
 
