@@ -99,6 +99,11 @@ describe('readExpectedField', () => {
     expect(readExpectedField({ ruleName: 'enum_match' })).toBe('expected_output');
   });
 
+  it('uses the supplied fallback when rules omit an expected field', () => {
+    expect(readExpectedField({ rules: [] }, 'label')).toBe('label');
+    expect(readExpectedField(null, 'gold_label')).toBe('gold_label');
+  });
+
   it('reads snake_case expected_field', () => {
     expect(readExpectedField({ expected_field: 'label' })).toBe('label');
   });
@@ -465,7 +470,10 @@ describe('toLoopFieldWhitelist (ground-truth 字段保护)', () => {
   });
 
   it('honors custom expected_field from judgment rules', () => {
-    const out = toLoopFieldWhitelist({ inputFields: ['text', 'gold_label'], metaFields: ['source'] }, 'gold_label');
+    const out = toLoopFieldWhitelist(
+      { inputFields: ['text', 'gold_label'], metaFields: ['source'], expectedField: 'gold_label' },
+      'gold_label',
+    );
     expect(out.promptVariables).toEqual(['text']);
     expect(out.analysisOnlyFields).toEqual(['source', 'gold_label']);
   });

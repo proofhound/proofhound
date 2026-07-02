@@ -11,20 +11,25 @@ export function createQuickStartTools(service: QuickStartService): McpToolDefini
   return [
     {
       name: 'quick_start_list_model_options',
-      description: '列出快速开始可直接用于新项目的已有全局模型',
+      description: '列出快速开始可直接用于当前项目的已有模型',
       inputSchema: { type: 'object', properties: {} },
-      handler: async (_input, ctx) => service.listModelOptions(getMcpActor(ctx)),
+      handler: async (_input, ctx) => service.listModelOptions(resolveMcpProjectContext(ctx), getMcpActor(ctx)),
     },
     {
       name: 'quick_start_probe_existing_model',
-      description: '对快速开始中选择的已有全局模型发起连通性测试',
+      description: '对快速开始中选择的当前项目已有模型发起连通性测试',
       inputSchema: {
         type: 'object',
         required: ['modelId'],
         properties: { modelId: { type: 'string', format: 'uuid' } },
       },
       handler: async (input, ctx) =>
-        service.probeExistingModel(modelIdParamSchema.parse(input.modelId), getMcpActor(ctx), 'mcp'),
+        service.probeExistingModel(
+          modelIdParamSchema.parse(input.modelId),
+          resolveMcpProjectContext(ctx),
+          getMcpActor(ctx),
+          'mcp',
+        ),
     },
     {
       name: 'quick_start_probe_draft_model',
@@ -32,7 +37,7 @@ export function createQuickStartTools(service: QuickStartService): McpToolDefini
       inputSchema: { type: 'object', properties: {} },
       handler: async (input, ctx) => {
         const dto = probeQuickStartDraftModelSchema.parse(input);
-        return service.probeDraftModel(dto, getMcpActor(ctx), 'mcp');
+        return service.probeDraftModel(dto, resolveMcpProjectContext(ctx), getMcpActor(ctx), 'mcp');
       },
     },
     {

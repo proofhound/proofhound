@@ -5,8 +5,11 @@ import { DATABASE_CLIENT } from '../../../shared/database/database.constants';
 
 export interface ReleaseRunnerLineRow {
   id: string;
+  name: string;
   projectId: string;
+  createdBy: string;
   inputConnectorId: string;
+  inputConnectorName: string;
   inputConnectorType: string;
   inputConnectorDirection: string;
   inputConnectorConfig: Record<string, unknown>;
@@ -51,6 +54,7 @@ export interface ReleaseRunnerLaneRow {
 
 export interface ReleaseOutputConnectorRow {
   id: string;
+  name: string;
   type: string;
   direction: string;
   config: Record<string, unknown>;
@@ -82,8 +86,11 @@ export class ReleaseRunnerRepository {
     const rows = await this.db.execute(sql`
       SELECT
         line.id,
+        line.name,
         line.project_id,
+        line.created_by,
         line.input_connector_id,
+        ic.name AS input_connector_name,
         ic.type AS input_connector_type,
         ic.direction AS input_connector_direction,
         ic.config AS input_connector_config,
@@ -114,8 +121,11 @@ export class ReleaseRunnerRepository {
     const rows = await this.db.execute(sql`
       SELECT
         line.id,
+        line.name,
         line.project_id,
+        line.created_by,
         line.input_connector_id,
+        ic.name AS input_connector_name,
         ic.type AS input_connector_type,
         ic.direction AS input_connector_direction,
         ic.config AS input_connector_config,
@@ -146,7 +156,7 @@ export class ReleaseRunnerRepository {
   async listOutputConnectorsByIds(projectId: string, connectorIds: string[]): Promise<ReleaseOutputConnectorRow[]> {
     if (connectorIds.length === 0) return [];
     const rows = await this.db.execute(sql`
-      SELECT id, type, direction, config, config_encrypted
+      SELECT id, name, type, direction, config, config_encrypted
       FROM ph_assets.connectors
       WHERE id IN (${uuidList(connectorIds)})
         AND project_id = ${projectId}::uuid
@@ -158,6 +168,7 @@ export class ReleaseRunnerRepository {
         row['id'] as string,
         {
           id: row['id'] as string,
+          name: row['name'] as string,
           type: row['type'] as string,
           direction: row['direction'] as string,
           config: (row['config'] as Record<string, unknown> | null) ?? {},
@@ -426,8 +437,11 @@ function laneSelectSql(alias: 'prod' | 'canary') {
 function mapLineRow(row: Record<string, unknown>): ReleaseRunnerLineRow {
   return {
     id: row['id'] as string,
+    name: (row['name'] as string | null) ?? 'release',
     projectId: row['project_id'] as string,
+    createdBy: row['created_by'] as string,
     inputConnectorId: row['input_connector_id'] as string,
+    inputConnectorName: (row['input_connector_name'] as string | null) ?? 'connector',
     inputConnectorType: row['input_connector_type'] as string,
     inputConnectorDirection: row['input_connector_direction'] as string,
     inputConnectorConfig: (row['input_connector_config'] as Record<string, unknown> | null) ?? {},

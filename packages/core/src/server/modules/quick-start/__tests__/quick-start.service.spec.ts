@@ -129,7 +129,7 @@ describe('QuickStartService', () => {
         strategyConfig: { initialSamplingRounds: 3, initialSamplesPerRound: 10 },
         loopLimits: { maxRounds: 3, stopAfterNoImprovementRounds: 0 },
         runConfig: expect.objectContaining({ temperature: 0.3, rpmLimit: 60, tpmLimit: 100000, concurrency: 20 }),
-        fieldWhitelist: { inputFields: ['conversation'], metaFields: ['source'] },
+        fieldWhitelist: { inputFields: ['conversation'], metaFields: ['source'], expectedField: 'label' },
       }),
       actor,
       'api',
@@ -167,17 +167,13 @@ describe('QuickStartService', () => {
     const result = await service.createQuickStart(input, project, actor);
 
     expect(result.datasetId).toBe('22222222-2222-4222-8222-000000000002');
-    expect(datasets.getDataset).toHaveBeenCalledWith(
-      LOCAL_PROJECT_ID,
-      '22222222-2222-4222-8222-000000000002',
-      actor,
-    );
+    expect(datasets.getDataset).toHaveBeenCalledWith(LOCAL_PROJECT_ID, '22222222-2222-4222-8222-000000000002', actor);
     expect(datasets.createDataset).not.toHaveBeenCalled();
     expect(optimizations.createOptimization).toHaveBeenCalledWith(
       LOCAL_PROJECT_ID,
       expect.objectContaining({
         datasetId: '22222222-2222-4222-8222-000000000002',
-        fieldWhitelist: { inputFields: ['conversation'], metaFields: ['source'] },
+        fieldWhitelist: { inputFields: ['conversation'], metaFields: ['source'], expectedField: 'label' },
       }),
       actor,
       'api',

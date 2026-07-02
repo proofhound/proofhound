@@ -81,7 +81,7 @@ describe('MCP quick-start tools', () => {
 
     expect(result.isError).toBeUndefined();
     expect(service.listModelOptions).toHaveBeenCalledTimes(1);
-    expect(service.listModelOptions).toHaveBeenCalledWith(actor);
+    expect(service.listModelOptions).toHaveBeenCalledWith(projectContext, actor);
   });
 
   it('quick_start_probe_existing_model: delegates parsed modelId + actor via mcp source', async () => {
@@ -94,7 +94,7 @@ describe('MCP quick-start tools', () => {
     );
 
     expect(result.isError).toBeUndefined();
-    expect(service.probeExistingModel).toHaveBeenCalledWith(MODEL_ID, actor, 'mcp');
+    expect(service.probeExistingModel).toHaveBeenCalledWith(MODEL_ID, projectContext, actor, 'mcp');
   });
 
   it('quick_start_probe_existing_model: non-uuid modelId is a clean tool error, not a throw', async () => {
@@ -123,6 +123,7 @@ describe('MCP quick-start tools', () => {
     expect(result.isError).toBeUndefined();
     expect(service.probeDraftModel).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'draft model', providerType: 'openai', providerModelId: 'gpt-4o' }),
+      projectContext,
       actor,
       'mcp',
     );

@@ -92,6 +92,8 @@ Routing order:
 4. For filter-matched messages, perform stable hash bucketing by `external_id + release_line_events.id`.
 5. Decide, based on the traffic mode, whether to enter the production lane, the canary candidate lane, or to dual-run both.
 
+If the upstream queue connector itself fails to consume (for example a user-configured Redis / Kafka endpoint is unreachable), the runner logs a structured `warn` with `projectId`, `actorId`, `releaseLineId`, release event / version ids, and connector id / name / type. It is classified as a user connector failure, not as a platform runner error.
+
 The goal of stable hashing is to keep the same external ID assigned as consistently as possible under the same canary candidate, avoiding the same business object repeatedly jumping groups when the user adjusts the ratio.
 
 ## 6. Traffic Modes
@@ -382,6 +384,7 @@ When a canary candidate or production configures an output connector, the releas
 - `result` defaults to `parsed_output`, falling back to `decision_output` / `raw_response` in order when there is no structured output.
 - When an output mapping is configured for a connector, the target object delivered to that connector is generated from `parsed_output` or built-in fields per `source -> target`. If a selected connector has an entry with no mapping rows (empty `outputMapping`), it receives the default result envelope shape. If an older lane-wide mapping snapshot is present (a single flat mapping array, or no mapping at all), the runner applies that mapping to every selected connector and falls back to the default result envelope. However, when the snapshot uses the per-connector form and a selected output connector has **no entry at all** for it, that connector is **excluded**: the runner delivers nothing to it (it does not receive the raw default envelope), preventing an unintended full-payload leak to a connector the operator did not map.
 - A Redis List writes a JSON string; a Redis Stream writes the `payload` field and additionally writes `external_id` / `run_result_id` / `status`; a Kafka value writes the full JSON, and the message key prefers the connector-configured `partitionKey`, falling back to `external_id` / `run_result_id` when not configured. The Kafka output producer allows auto-creating topics by default; if auto-creation is disabled on the broker side, the topic must still be created in advance.
+- Downstream output connector failures are counted under downstream delivery failure metrics and logged as structured `warn` records with the release line, release version, lane, actor, and connector context. They do not throw out of the runner loop and must not be recorded as LLM / run-result failures.
 
 ## 16. Key Constraints
 

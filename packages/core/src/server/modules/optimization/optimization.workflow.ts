@@ -734,10 +734,8 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
 
     const childRunConfig = parseChildRunConfigFromOptimization(runConfig);
 
-    const fieldWhitelist: FieldWhitelist = toLoopFieldWhitelist(
-      fwParsed.data,
-      readExpectedField(ctx.baseVersionJudgmentRules),
-    );
+    const expectedField = readExpectedField(ctx.baseVersionJudgmentRules, fwParsed.data.expectedField);
+    const fieldWhitelist: FieldWhitelist = toLoopFieldWhitelist(fwParsed.data, expectedField);
 
     return {
       ok: true,
@@ -891,10 +889,8 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         );
       }
 
-      const fieldWhitelist: FieldWhitelist = toLoopFieldWhitelist(
-        fwParsed.data,
-        readExpectedField(ctx.baseVersionJudgmentRules),
-      );
+      const expectedField = readExpectedField(ctx.baseVersionJudgmentRules, fwParsed.data.expectedField);
+      const fieldWhitelist: FieldWhitelist = toLoopFieldWhitelist(fwParsed.data, expectedField);
 
       // Call LLM to generate the first version
       const promptLanguage = parsePromptLanguage(ctx.promptLanguage);
@@ -944,10 +940,7 @@ export class OptimizationWorkflowRegistrar extends ConfiguredInstance {
         body: generated.newPromptBody,
         variables: generated.variables,
         outputSchema: generated.outputSchema,
-        judgmentRules: deriveJudgmentRulesFromOutputSchema(
-          generated.outputSchema,
-          readExpectedField(ctx.baseVersionJudgmentRules),
-        ),
+        judgmentRules: deriveJudgmentRulesFromOutputSchema(generated.outputSchema, expectedField),
         promptLanguage,
         optimizationId,
         changeReason: 'optimization:first-version',
@@ -2569,8 +2562,8 @@ function normalizeBaselineExperimentStatus(status: string): BaselineExperimentSt
 
 // Behavior matches experiment.workflow.ts's same-name helper: reads the expected field name from canonical judgmentRules
 // (with legacy aliases supported by @proofhound/shared) and defaults to 'expected_output'.
-export function readExpectedField(rules: unknown): string {
-  return readPromptJudgmentExpectedField(rules);
+export function readExpectedField(rules: unknown, fallback = 'expected_output'): string {
+  return readPromptJudgmentExpectedField(rules, fallback);
 }
 
 // Project the dataset's raw samples into SampleRecord consumed by the strategy package; expected is pulled from data[expectedField];
