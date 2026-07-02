@@ -1,5 +1,17 @@
 # proofhound
 
+## [0.1.27](https://github.com/proofhound/proofhound/compare/v0.1.26...v0.1.27) (2026-07-02)
+
+
+### Features
+
+* **quick-start:** reuse shared dataset upload UI and carry expected field into the optimization ([243826a](https://github.com/proofhound/proofhound/commit/243826aded483a942505ebdc4a1bbb27a3b7e160))
+
+
+### Bug Fixes
+
+* **release-line:** classify upstream/downstream connector failures without failing the runner ([3643ae1](https://github.com/proofhound/proofhound/commit/3643ae1f5d1413eff0cab42b5cc1ee4fcc097959))
+
 ## [0.1.26](https://github.com/proofhound/proofhound/compare/v0.1.25...v0.1.26) (2026-07-01)
 
 
