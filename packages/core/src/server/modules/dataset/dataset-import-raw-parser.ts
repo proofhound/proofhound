@@ -80,10 +80,24 @@ async function* parseDelimitedRows(
     transform: parseDelimitedCell,
     transformHeader: (header: string, index: number) => header.trim() || `field_${index + 1}`,
   });
+  // Papaparse's Node stream mode resurrects trailing blank lines into phantom
+  // `{ field_1: ... }` rows once the parsed rows cross its object-stream buffer,
+  // because `transformHeader` gets reapplied to an EOF chunk whose first line is
+  // blank. Strip whitespace-only bytes at the end of the stream before parsing so
+  // trailing blank lines never reach papaparse. Blank lines inside quoted fields
+  // are always followed by non-whitespace bytes, so they are preserved.
   const guardedStream = stream.pipe(createLineByteGuard(maxLineBytes));
+  const trimmedStream = guardedStream.pipe(stripTrailingBlankLines());
+  // Papaparse's Node stream mode stringifies each raw chunk on its own, so a
+  // chunk that ends inside a multi-byte UTF-8 character corrupts it into U+FFFD.
+  // Decode to complete character boundaries first so multi-byte text (e.g. CJK)
+  // survives arbitrary chunk splits.
+  const decodedStream = trimmedStream.pipe(decodeUtf8Boundaries());
 
-  guardedStream.on('error', (error) => papaStream.destroy(error));
-  guardedStream.pipe(papaStream);
+  guardedStream.on('error', (error) => trimmedStream.destroy(error));
+  trimmedStream.on('error', (error) => decodedStream.destroy(error));
+  decodedStream.on('error', (error) => papaStream.destroy(error));
+  decodedStream.pipe(papaStream);
 
   for await (const row of papaStream as AsyncIterable<unknown>) {
     if (row && typeof row === 'object' && !Array.isArray(row)) {
@@ -113,6 +127,62 @@ function createLineByteGuard(maxLineBytes: number): Transform {
         }
       }
       callback(null, chunk);
+    },
+  });
+}
+
+function stripTrailingBlankLines(): Transform {
+  const isAsciiWhitespace = (byte: number): boolean =>
+    byte === 0x0a || byte === 0x0d || byte === 0x20 || byte === 0x09;
+  // Buffer whitespace-only runs until non-whitespace confirms they are interior;
+  // whatever remains buffered at EOF is a trailing blank-line run and is dropped.
+  let pendingWhitespace: Buffer | null = null;
+
+  return new Transform({
+    transform(chunk: Buffer | string, _encoding, callback) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+
+      let lastNonWhitespace = -1;
+      for (let index = buffer.length - 1; index >= 0; index -= 1) {
+        if (!isAsciiWhitespace(buffer[index]!)) {
+          lastNonWhitespace = index;
+          break;
+        }
+      }
+
+      if (lastNonWhitespace === -1) {
+        pendingWhitespace = pendingWhitespace ? Buffer.concat([pendingWhitespace, buffer]) : Buffer.from(buffer);
+        callback();
+        return;
+      }
+
+      const head = buffer.subarray(0, lastNonWhitespace + 1);
+      const trailing = buffer.subarray(lastNonWhitespace + 1);
+      const flushed = pendingWhitespace ? Buffer.concat([pendingWhitespace, head]) : head;
+      pendingWhitespace = trailing.length > 0 ? Buffer.from(trailing) : null;
+      callback(null, flushed);
+    },
+    flush(callback) {
+      pendingWhitespace = null;
+      callback();
+    },
+  });
+}
+
+function decodeUtf8Boundaries(): Transform {
+  const decoder = new StringDecoder('utf8');
+  return new Transform({
+    transform(chunk: Buffer | string, _encoding, callback) {
+      const decoded = decoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      if (decoded.length === 0) {
+        callback();
+        return;
+      }
+      callback(null, Buffer.from(decoded, 'utf8'));
+    },
+    flush(callback) {
+      const rest = decoder.end();
+      callback(null, rest.length > 0 ? Buffer.from(rest, 'utf8') : undefined);
     },
   });
 }

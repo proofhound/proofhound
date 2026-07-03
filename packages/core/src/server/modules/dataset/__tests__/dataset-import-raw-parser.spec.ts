@@ -127,6 +127,73 @@ describe('parseRawDatasetRows', () => {
     ]);
   });
 
+  // Trailing blank lines regress into phantom rows only once the parsed rows
+  // cross papaparse's object-stream buffer (highWaterMark 16), which is why
+  // these fixtures use enough rows to reproduce the real upload failure.
+  const buildDelimited = (rowCount: number, delimiter: ',' | '\t', trailing: string): string => {
+    const header = ['label', 'review'].join(delimiter);
+    const lines = [header];
+    for (let index = 0; index < rowCount; index += 1) {
+      lines.push(['bad', `review ${index}`].join(delimiter));
+    }
+    return `${lines.join('\n')}\n${trailing}`;
+  };
+
+  const expectedDelimitedRows = (rowCount: number) =>
+    Array.from({ length: rowCount }, (_, index) => ({ label: 'bad', review: `review ${index}` }));
+
+  it('ignores trailing blank lines at the end of a CSV file', async () => {
+    const rows = await collectRows([buildDelimited(30, ',', '\n\n')], 'csv');
+
+    expect(rows).toEqual(expectedDelimitedRows(30));
+  });
+
+  it('ignores trailing whitespace-only lines and a missing final newline', async () => {
+    const rows = await collectRows([buildDelimited(30, ',', '   \n\t')], 'csv');
+
+    expect(rows).toEqual(expectedDelimitedRows(30));
+  });
+
+  it('ignores trailing blank lines split across a chunk boundary', async () => {
+    const payload = buildDelimited(30, ',', '\n\n');
+    const boundary = payload.length - 2;
+
+    const rows = await collectRows([payload.slice(0, boundary), payload.slice(boundary)], 'csv');
+
+    expect(rows).toEqual(expectedDelimitedRows(30));
+  });
+
+  it('ignores trailing blank lines at the end of a TSV file', async () => {
+    const rows = await collectRows([buildDelimited(30, '\t', '\n\n')], 'tsv');
+
+    expect(rows).toEqual(expectedDelimitedRows(30));
+  });
+
+  it('keeps blank lines that sit inside a quoted CSV field', async () => {
+    const header = 'label,note';
+    const lines = [header];
+    for (let index = 0; index < 30; index += 1) {
+      lines.push(`bad,"line ${index}\n\nsecond"`);
+    }
+    const rows = await collectRows([`${lines.join('\n')}\n\n`], 'csv');
+
+    expect(rows).toEqual(
+      Array.from({ length: 30 }, (_, index) => ({ label: 'bad', note: `line ${index}\n\nsecond` })),
+    );
+  });
+
+  it('keeps multi-byte characters intact when CSV chunks split a multibyte boundary', async () => {
+    const encoded = Buffer.from('label,review\nbad,慢得离谱\n', 'utf8');
+    const splitInsideChar = encoded.indexOf(Buffer.from('慢', 'utf8')) + 1;
+
+    const rows = await collectRows(
+      [encoded.subarray(0, splitInsideChar), encoded.subarray(splitInsideChar)],
+      'csv',
+    );
+
+    expect(rows).toEqual([{ label: 'bad', review: '慢得离谱' }]);
+  });
+
   it('rejects CSV rows over the configured parser byte guard', async () => {
     await expect(collectRows([`id,text\n1,${'x'.repeat(32)}\n`], 'csv', { maxLineBytes: 12 })).rejects.toThrow(
       'dataset_import_line_too_large',
