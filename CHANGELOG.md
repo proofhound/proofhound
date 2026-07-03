@@ -1,5 +1,13 @@
 # proofhound
 
+## [0.1.28](https://github.com/proofhound/proofhound/compare/v0.1.27...v0.1.28) (2026-07-03)
+
+
+### Bug Fixes
+
+* **datasets:** keep CSV row counts and multibyte text stable in streamed import ([392ad8f](https://github.com/proofhound/proofhound/commit/392ad8fb2abd6770e426bf10137e2c50811a3895))
+* **datasets:** keep CSV row counts and multibyte text stable in streamed import ([f9f89d8](https://github.com/proofhound/proofhound/commit/f9f89d8238b11cf9710458c87bc7773396f57ad3))
+
 ## [0.1.27](https://github.com/proofhound/proofhound/compare/v0.1.26...v0.1.27) (2026-07-02)
 
 
