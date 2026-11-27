@@ -66,7 +66,10 @@ jobs:
   # Functional end-to-end suite against a real server/worker/webhook + ephemeral Postgres/Redis,
   # with the LLM faked (Playwright starts the fake server + the web dev server itself).
   e2e:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to Ubuntu 26.04, which Playwright 1.60 cannot install
+    # browser dependencies for. Revert to ubuntu-latest after upgrading Playwright to a
+    # release that supports 26.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
       postgres:
