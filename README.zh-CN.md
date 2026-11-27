@@ -45,7 +45,11 @@
 </p>
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/8290f7f3-0fc8-4464-87b1-d351b3d54fb5" controls muted playsinline width="100%" title="ProofHound 快速开始演示"></video>
+  <video src="https://github.com/user-attachments/assets/65336118-d835-4902-83df-68d93db10620" controls muted playsinline width="100%" title="ProofHound 快速开始演示"></video>
+</p>
+
+<p align="center">
+  <sub>视频无法播放？<a href="assets/proofhound-quickstart.mp4">直接打开 MP4 文件</a></sub>
 </p>
 
 ProofHound 一站式管理提示词全生命周期，内置数据驱动自动迭代优化，支持完整自托管部署，彻底简化提示词调优流程。

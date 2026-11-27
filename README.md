@@ -45,7 +45,11 @@
 </p>
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/8290f7f3-0fc8-4464-87b1-d351b3d54fb5" controls muted playsinline width="100%" title="ProofHound quick start demo"></video>
+  <video src="https://github.com/user-attachments/assets/65336118-d835-4902-83df-68d93db10620" controls muted playsinline width="100%" title="ProofHound quick start demo"></video>
+</p>
+
+<p align="center">
+  <sub>Video not loading? <a href="assets/proofhound-quickstart.mp4">Open the MP4 file</a></sub>
 </p>
 
 ProofHound turns prompt engineering into a data-driven, traceable workflow. Instead of stitching together scripts, ad-hoc experiments, spreadsheets, and hand-rolled release logic, you run the whole loop — dataset regression, experiments, automatic optimization, canary and production releases, immutable run results, and rollback — in one place, self-hosted on infrastructure you control.
